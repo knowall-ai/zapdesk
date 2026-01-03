@@ -1,0 +1,225 @@
+= DevDesk Setup Guide
+:toc:
+:toc-placement!:
+
+toc::[]
+
+== Overview
+
+DevDesk is a Zendesk-style support ticketing portal that uses Azure DevOps as its backend. Work items tagged with `ticket` are displayed as support tickets.
+
+== Prerequisites
+
+* Azure subscription
+* Azure DevOps organization
+* Microsoft 365 tenant (for authentication and email)
+* GitHub repository (for CI/CD)
+
+== Azure AD App Registration
+
+. Go to https://portal.azure.com[Azure Portal] > Azure Active Directory > App registrations
+. Click "New registration"
+. Configure:
+** Name: `DevDesk`
+** Supported account types: "Accounts in this organizational directory only"
+** Redirect URI: `https://devdesk.knowall.ai/api/auth/callback/azure-ad` (Web)
+. After creation, note the:
+** Application (client) ID → `AZURE_AD_CLIENT_ID`
+** Directory (tenant) ID → `AZURE_AD_TENANT_ID`
+. Go to "Certificates & secrets" > "New client secret"
+** Note the secret value → `AZURE_AD_CLIENT_SECRET`
+. Go to "API permissions" and add:
+** Microsoft Graph: `User.Read`, `email`, `profile`, `openid`
+** Azure DevOps: `user_impersonation`
+
+== Azure DevOps Configuration
+
+=== Personal Access Token (PAT)
+
+Create a PAT for the service account used to create tickets from emails:
+
+. Go to https://dev.azure.com[Azure DevOps] > User Settings > Personal Access Tokens
+. Create new token with scopes:
+** Work Items: Read & Write
+** Project and Team: Read
+. Note the token → `AZURE_DEVOPS_PAT`
+
+=== Email Routing
+
+Email routing is configured via Azure DevOps project descriptions. Add an `Email:` line to each project's description to specify which email domains route to that project.
+
+.Example project description
+----
+Customer support project for Cairn Homes.
+
+Email: cairnhomes.com
+----
+
+.Multiple domains
+----
+Medite customer support portal.
+
+Email: medite.com, medite.ie
+----
+
+The system queries DevOps every 5 minutes to refresh the routing map. If no domains are found in project descriptions, it falls back to hardcoded defaults.
+
+== Azure App Service
+
+=== Create App Service
+
+[source,bash]
+----
+# Create App Service Plan
+az appservice plan create \
+  --name devdesk-plan \
+  --resource-group KnowAllAIRG \
+  --sku B1 \
+  --is-linux
+
+# Create Web App
+az webapp create \
+  --name devdesk-knowall \
+  --resource-group KnowAllAIRG \
+  --plan devdesk-plan \
+  --runtime "NODE:20-lts"
+
+# Enable HTTPS only
+az webapp update \
+  --name devdesk-knowall \
+  --resource-group KnowAllAIRG \
+  --https-only true
+----
+
+=== Custom Domain
+
+. Add CNAME record: `devdesk` → `devdesk-knowall.azurewebsites.net`
+. Add custom domain to App Service:
++
+[source,bash]
+----
+az webapp config hostname add \
+  --webapp-name devdesk-knowall \
+  --resource-group KnowAllAIRG \
+  --hostname devdesk.knowall.ai
+----
+
+. Create managed SSL certificate (after DNS propagates):
++
+[source,bash]
+----
+# Create certificate
+az webapp config ssl create \
+  --name devdesk-knowall \
+  --resource-group KnowAllAIRG \
+  --hostname devdesk.knowall.ai
+
+# Bind certificate (use thumbprint from previous command)
+az webapp config ssl bind \
+  --name devdesk-knowall \
+  --resource-group KnowAllAIRG \
+  --hostname devdesk.knowall.ai \
+  --certificate-thumbprint <THUMBPRINT> \
+  --ssl-type SNI
+----
+
+== GitHub Secrets
+
+Configure these secrets in your GitHub repository for the CI/CD pipeline:
+
+[cols="1,2"]
+|===
+|Secret |Description
+
+|`AZURE_WEBAPP_PUBLISH_PROFILE`
+|Azure Web App publish profile (XML). Get with: `az webapp deployment list-publishing-profiles --name devdesk-knowall --resource-group KnowAllAIRG --xml`
+
+|`NEXTAUTH_SECRET`
+|Random 32-byte hex string. Generate with: `openssl rand -hex 32`
+
+|`AZURE_AD_CLIENT_ID`
+|Azure AD Application (client) ID
+
+|`AZURE_AD_CLIENT_SECRET`
+|Azure AD client secret value
+
+|`AZURE_AD_TENANT_ID`
+|Azure AD Directory (tenant) ID
+
+|`AZURE_DEVOPS_PAT`
+|Azure DevOps Personal Access Token
+
+|`EMAIL_WEBHOOK_SECRET`
+|Secret for validating inbound email webhooks. Generate with: `openssl rand -hex 16`
+
+|`SMTP_PASSWORD`
+|SMTP password for outbound emails (Microsoft 365 app password)
+|===
+
+.Set secrets via CLI
+[source,bash]
+----
+# Auto-generated secrets
+az webapp deployment list-publishing-profiles \
+  --name devdesk-knowall \
+  --resource-group KnowAllAIRG \
+  --xml | gh secret set AZURE_WEBAPP_PUBLISH_PROFILE
+
+gh secret set NEXTAUTH_SECRET --body "$(openssl rand -hex 32)"
+gh secret set EMAIL_WEBHOOK_SECRET --body "$(openssl rand -hex 16)"
+
+# Your credentials
+gh secret set AZURE_AD_CLIENT_ID --body "your-client-id"
+gh secret set AZURE_AD_CLIENT_SECRET --body "your-client-secret"
+gh secret set AZURE_AD_TENANT_ID --body "your-tenant-id"
+gh secret set AZURE_DEVOPS_PAT --body "your-devops-pat"
+gh secret set SMTP_PASSWORD --body "your-smtp-password"
+----
+
+== Email Configuration
+
+=== Inbound Email (Webhook)
+
+Configure your email provider to forward emails to `devdesk@knowall.ai` via webhook:
+
+* Webhook URL: `https://devdesk.knowall.ai/api/email/webhook`
+* Header: `x-webhook-secret: <EMAIL_WEBHOOK_SECRET>`
+* Payload format:
++
+[source,json]
+----
+{
+  "from": "sender@example.com",
+  "subject": "Help needed",
+  "body": "<html>...</html>"
+}
+----
+
+=== Outbound Email (SMTP)
+
+DevDesk uses Microsoft 365 SMTP for sending emails:
+
+* Host: `smtp.office365.com`
+* Port: `587`
+* User: `devdesk@knowall.ai`
+* TLS: Required
+
+Create an app password in Microsoft 365 admin for the SMTP_PASSWORD.
+
+== Local Development
+
+. Copy `.env.example` to `.env` and fill in values
+. Install dependencies: `npm install`
+. Run development server: `npm run dev`
+. Open http://localhost:3000
+
+== Deployment
+
+The GitHub Actions workflow automatically deploys to Azure on push to `main`:
+
+. Builds the Next.js application
+. Uploads artifacts
+. Deploys to Azure Web App
+. Configures app settings
+
+Manual deployment trigger: Go to Actions > "Deploy to Azure App Service" > "Run workflow"

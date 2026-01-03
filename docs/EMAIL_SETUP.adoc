@@ -1,0 +1,225 @@
+= DevDesk Email Integration Setup
+:toc: left
+:toclevels: 3
+:icons: font
+
+== Overview
+
+DevDesk integrates with Exchange Online to provide:
+
+* **Inbound**: Customers email devdesk@knowall.ai to create tickets
+* **Outbound**: Agent replies are emailed to the ticket requester
+
+== Exchange Online Configuration
+
+=== Create Shared Mailbox
+
+1. Go to Microsoft 365 Admin Center
+2. Navigate to Teams & Groups > Shared mailboxes
+3. Click "Add a shared mailbox"
+4. Set display name: "DevDesk Support"
+5. Set email: devdesk@knowall.ai
+6. Click "Create"
+
+=== Enable SMTP Authentication
+
+SMTP AUTH is disabled by default for new mailboxes:
+
+[source,powershell]
+----
+# Connect to Exchange Online
+Connect-ExchangeOnline
+
+# Enable SMTP AUTH for the mailbox
+Set-CASMailbox -Identity "devdesk@knowall.ai" -SmtpClientAuthenticationDisabled $false
+
+# Verify
+Get-CASMailbox -Identity "devdesk@knowall.ai" | Select SmtpClientAuthenticationDisabled
+----
+
+=== Create App Password (Basic Auth)
+
+If using basic authentication:
+
+1. Sign in as a user with access to the shared mailbox
+2. Go to https://mysignins.microsoft.com/security-info
+3. Click "Add sign-in method" > "App password"
+4. Name it "DevDesk SMTP"
+5. Copy the generated password
+
+=== Configure OAuth (Recommended)
+
+For production, use OAuth instead of basic auth:
+
+1. Register application in Azure AD
+2. Add Mail.Send permission
+3. Configure client credentials flow
+4. Use Microsoft Graph API for sending
+
+== Inbound Email Processing
+
+=== Option 1: Power Automate
+
+Create a Power Automate flow:
+
+1. **Trigger**: "When a new email arrives (V3)"
+   - Folder: Inbox
+   - To: devdesk@knowall.ai
+
+2. **Action**: "HTTP"
+   - Method: POST
+   - URI: https://devdesk.knowall.ai/api/email/webhook
+   - Headers:
+     - x-webhook-secret: <EMAIL_WEBHOOK_SECRET>
+   - Body:
+   ```json
+   {
+     "from": "@{triggerOutputs()?['body/from']}",
+     "to": "@{triggerOutputs()?['body/toRecipients']}",
+     "subject": "@{triggerOutputs()?['body/subject']}",
+     "body": "@{triggerOutputs()?['body/body']}"
+   }
+   ```
+
+=== Option 2: Mail Flow Rules
+
+For advanced routing, use Exchange transport rules:
+
+1. Go to Exchange Admin Center
+2. Navigate to Mail flow > Rules
+3. Create rule to redirect to webhook endpoint via connector
+
+=== Option 3: Azure Logic Apps
+
+Similar to Power Automate but with more control:
+
+1. Create Logic App in Azure
+2. Add Office 365 Outlook connector
+3. Add HTTP action for webhook
+
+== Outbound Email Processing
+
+=== Environment Variables
+
+Add to `.env`:
+
+[source,env]
+----
+# SMTP Configuration (Basic Auth)
+SMTP_HOST=smtp.office365.com
+SMTP_PORT=587
+SMTP_USER=devdesk@knowall.ai
+SMTP_PASSWORD=<app-password>
+SMTP_FROM=devdesk@knowall.ai
+SMTP_FROM_NAME=DevDesk Support
+
+# Or OAuth Configuration
+SMTP_OAUTH_CLIENT_ID=<client-id>
+SMTP_OAUTH_CLIENT_SECRET=<client-secret>
+SMTP_OAUTH_TENANT_ID=<tenant-id>
+----
+
+=== Email Templates
+
+Outbound emails include:
+
+* Ticket reference number for threading
+* Link back to ticket in DevDesk
+* Requester's original message (quoted)
+* Agent's response
+
+Example format:
+----
+Subject: Re: [DevDesk #123] Original Subject
+
+Hi {RequesterName},
+
+{AgentResponse}
+
+---
+Ticket: #123
+Status: {Status}
+View online: https://devdesk.knowall.ai/tickets/123
+
+--- Original Message ---
+{OriginalMessage}
+----
+
+== Email Threading
+
+Emails are threaded using:
+
+* Subject prefix: `[DevDesk #123]`
+* In-Reply-To header
+* References header
+* Message-ID stored in DevOps work item
+
+== Security Considerations
+
+=== Inbound
+
+* Webhook protected by shared secret
+* Validate sender domain for project mapping
+* Rate limiting recommended
+* Attachment scanning (future)
+
+=== Outbound
+
+* Use TLS for SMTP connection
+* OAuth preferred over basic auth
+* App passwords expire - monitor and rotate
+* Log all outbound emails
+
+== Testing
+
+=== Test Inbound
+
+[source,bash]
+----
+curl -X POST https://devdesk.knowall.ai/api/email/webhook \
+  -H "Content-Type: application/json" \
+  -H "x-webhook-secret: your-secret" \
+  -d '{
+    "from": "test@cairnhomes.com",
+    "to": "devdesk@knowall.ai",
+    "subject": "Test ticket",
+    "body": "This is a test"
+  }'
+----
+
+=== Test Outbound
+
+[source,bash]
+----
+# Via DevDesk UI
+1. Open a ticket
+2. Add a reply
+3. Check requester's inbox
+
+# Via API
+curl -X POST https://devdesk.knowall.ai/api/devops/tickets/123/reply \
+  -H "Authorization: Bearer <token>" \
+  -d '{"message": "Test reply"}'
+----
+
+== Troubleshooting
+
+[cols="1,2"]
+|===
+|Issue |Solution
+
+|Emails not creating tickets
+|Check webhook secret, sender domain mapping, server logs
+
+|Replies not sending
+|Verify SMTP credentials, check Exchange Online auth policy
+
+|Threading not working
+|Ensure Message-ID stored, check subject prefix format
+
+|Attachments missing
+|Attachment processing not yet implemented
+
+|Rate limited
+|Contact Microsoft support, implement retry logic
+|===

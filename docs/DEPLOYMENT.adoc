@@ -1,0 +1,202 @@
+= DevDesk Deployment Guide
+:toc: left
+:toclevels: 3
+:icons: font
+
+== Overview
+
+DevDesk is deployed to Azure App Service using GitHub Actions for CI/CD.
+
+== Prerequisites
+
+* Azure subscription
+* Azure App Service plan (B1 or higher recommended)
+* Azure AD application registration
+* Azure DevOps organization with projects
+* GitHub repository with Actions enabled
+
+== Azure AD Configuration
+
+=== Create Application Registration
+
+1. Go to Azure Portal > Azure Active Directory > App registrations
+2. Click "New registration"
+3. Enter name: "DevDesk"
+4. Select "Accounts in any organizational directory" (for multi-tenant)
+5. Add redirect URIs:
+   - `http://localhost:3000/api/auth/callback/azure-ad` (development)
+   - `https://devdesk.knowall.ai/api/auth/callback/azure-ad` (production)
+6. Click "Register"
+
+=== Configure API Permissions
+
+1. Go to "API permissions"
+2. Click "Add a permission"
+3. Select "APIs my organization uses"
+4. Search for "Azure DevOps"
+5. Select "Delegated permissions" > "user_impersonation"
+6. Click "Grant admin consent"
+
+=== Create Client Secret
+
+1. Go to "Certificates & secrets"
+2. Click "New client secret"
+3. Set description and expiry
+4. Copy the secret value immediately
+
+== Azure App Service Setup
+
+=== Create App Service
+
+[source,bash]
+----
+# Create resource group
+az group create --name devdesk-rg --location westeurope
+
+# Create App Service plan
+az appservice plan create \
+  --name devdesk-plan \
+  --resource-group devdesk-rg \
+  --sku B1 \
+  --is-linux
+
+# Create Web App
+az webapp create \
+  --name devdesk-knowall \
+  --resource-group devdesk-rg \
+  --plan devdesk-plan \
+  --runtime "NODE:18-lts"
+----
+
+=== Configure Application Settings
+
+Set the following environment variables in Azure App Service > Configuration:
+
+[cols="1,2"]
+|===
+|Variable |Value
+
+|`NEXTAUTH_URL`
+|https://devdesk.knowall.ai
+
+|`NEXTAUTH_SECRET`
+|<generate-with-openssl-rand-hex-32>
+
+|`AZURE_AD_CLIENT_ID`
+|<from-azure-ad-app>
+
+|`AZURE_AD_CLIENT_SECRET`
+|<from-azure-ad-app>
+
+|`AZURE_AD_TENANT_ID`
+|common (for multi-tenant)
+
+|`AZURE_DEVOPS_ORG`
+|KnowAll
+
+|`AZURE_DEVOPS_PAT`
+|<personal-access-token>
+
+|`EMAIL_WEBHOOK_SECRET`
+|<generate-secret>
+
+|`WEBSITE_NODE_DEFAULT_VERSION`
+|18-lts
+|===
+
+=== Configure Custom Domain
+
+1. Go to Azure App Service > Custom domains
+2. Add custom domain: devdesk.knowall.ai
+3. Configure DNS CNAME record
+4. Enable HTTPS with managed certificate
+
+== GitHub Actions Deployment
+
+=== Configure Secrets
+
+In GitHub repository settings, add these secrets:
+
+* `AZURE_WEBAPP_PUBLISH_PROFILE` - Download from Azure Portal
+
+=== Deployment Workflow
+
+The workflow at `.github/workflows/deploy.yml` handles:
+
+1. Install dependencies
+2. Build Next.js application
+3. Deploy to Azure App Service
+
+=== Trigger Deployment
+
+Deployment triggers on:
+
+* Push to `main` branch
+* Manual workflow dispatch
+
+== Manual Deployment
+
+If needed, you can deploy manually:
+
+[source,bash]
+----
+# Build the application
+npm run build
+
+# Create deployment package
+zip -r deploy.zip .next package.json package-lock.json public next.config.ts
+
+# Deploy to Azure
+az webapp deployment source config-zip \
+  --resource-group devdesk-rg \
+  --name devdesk-knowall \
+  --src deploy.zip
+----
+
+== Post-Deployment Checklist
+
+* [ ] Verify NEXTAUTH_URL matches custom domain
+* [ ] Test Microsoft login flow
+* [ ] Verify Azure AD redirect URI includes production URL
+* [ ] Test ticket listing from Azure DevOps
+* [ ] Verify email webhook endpoint (if configured)
+* [ ] Check Application Insights for errors
+
+== Monitoring
+
+=== Application Insights
+
+Enable Application Insights for monitoring:
+
+[source,bash]
+----
+az webapp config appsettings set \
+  --name devdesk-knowall \
+  --resource-group devdesk-rg \
+  --settings APPLICATIONINSIGHTS_CONNECTION_STRING="<connection-string>"
+----
+
+=== Health Check
+
+Configure health check endpoint:
+
+* Path: `/api/auth/providers`
+* Interval: 30 seconds
+* Threshold: 3 failures
+
+== Rollback
+
+To rollback to a previous deployment:
+
+[source,bash]
+----
+# List deployment slots
+az webapp deployment list --name devdesk-knowall --resource-group devdesk-rg
+
+# Rollback to specific deployment
+az webapp deployment slot swap \
+  --name devdesk-knowall \
+  --resource-group devdesk-rg \
+  --slot staging \
+  --target-slot production
+----

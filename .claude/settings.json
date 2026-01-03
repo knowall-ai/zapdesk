@@ -1,0 +1,13 @@
+{
+  "commands": {
+    "pennie": {
+      "description": "Pennie the Prepper - Requirements analyst who creates GitHub issues for features"
+    },
+    "teddie": {
+      "description": "Teddie the Tester - QA engineer who creates and runs Playwright tests"
+    },
+    "archie": {
+      "description": "Archie the Architect - Solution architect who reviews code for best practices"
+    }
+  }
+}
