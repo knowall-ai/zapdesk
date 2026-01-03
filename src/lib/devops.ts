@@ -17,16 +17,16 @@ const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
 // Map Azure DevOps states to Zendesk-like statuses
 function mapStateToStatus(state: string): TicketStatus {
   const stateMap: Record<string, TicketStatus> = {
-    'New': 'New',
-    'Active': 'Open',
+    New: 'New',
+    Active: 'Open',
     'In Progress': 'In Progress',
-    'Doing': 'In Progress',
-    'Resolved': 'Resolved',
-    'Closed': 'Closed',
-    'Done': 'Closed',
-    'Removed': 'Closed',
+    Doing: 'In Progress',
+    Resolved: 'Resolved',
+    Closed: 'Closed',
+    Done: 'Closed',
+    Removed: 'Closed',
     // Custom states for support
-    'Pending': 'Pending',
+    Pending: 'Pending',
     'Waiting for Customer': 'Pending',
     'On Hold': 'Pending',
   };
@@ -43,7 +43,12 @@ function mapPriority(priority?: number): TicketPriority {
 }
 
 // Convert DevOps identity to User
-function identityToUser(identity?: { displayName: string; uniqueName: string; id: string; imageUrl?: string }): User | undefined {
+function identityToUser(identity?: {
+  displayName: string;
+  uniqueName: string;
+  id: string;
+  imageUrl?: string;
+}): User | undefined {
   if (!identity) return undefined;
   return {
     id: identity.id,
@@ -54,7 +59,12 @@ function identityToUser(identity?: { displayName: string; uniqueName: string; id
 }
 
 // Convert DevOps identity to Customer
-function identityToCustomer(identity: { displayName: string; uniqueName: string; id: string; imageUrl?: string }): Customer {
+function identityToCustomer(identity: {
+  displayName: string;
+  uniqueName: string;
+  id: string;
+  imageUrl?: string;
+}): Customer {
   return {
     id: identity.id,
     displayName: identity.displayName,
@@ -79,10 +89,16 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     requester: identityToCustomer(fields['System.CreatedBy']),
     assignee: identityToUser(fields['System.AssignedTo']),
     organization,
-    tags: fields['System.Tags']?.split(';').map((t: string) => t.trim()).filter(Boolean) || [],
+    tags:
+      fields['System.Tags']
+        ?.split(';')
+        .map((t: string) => t.trim())
+        .filter(Boolean) || [],
     createdAt: new Date(fields['System.CreatedDate']),
     updatedAt: new Date(fields['System.ChangedDate']),
-    devOpsUrl: workItem._links?.html?.href || `${DEVOPS_BASE_URL}/${fields['System.TeamProject']}/_workitems/edit/${workItem.id}`,
+    devOpsUrl:
+      workItem._links?.html?.href ||
+      `${DEVOPS_BASE_URL}/${fields['System.TeamProject']}/_workitems/edit/${workItem.id}`,
     project: fields['System.TeamProject'],
     comments: [],
   };
@@ -103,17 +119,16 @@ export class AzureDevOpsService {
 
   private get headers(): HeadersInit {
     return {
-      'Authorization': `Bearer ${this.accessToken}`,
+      Authorization: `Bearer ${this.accessToken}`,
       'Content-Type': 'application/json',
     };
   }
 
   // Get all projects the user has access to
   async getProjects(): Promise<DevOpsProject[]> {
-    const response = await fetch(
-      `${this.baseUrl}/_apis/projects?api-version=7.0`,
-      { headers: this.headers }
-    );
+    const response = await fetch(`${this.baseUrl}/_apis/projects?api-version=7.0`, {
+      headers: this.headers,
+    });
 
     if (!response.ok) {
       throw new Error(`Failed to fetch projects: ${response.statusText}`);
@@ -137,7 +152,7 @@ export class AzureDevOpsService {
           AND [System.Tags] CONTAINS 'ticket'
           ${additionalFilters || ''}
         ORDER BY [System.ChangedDate] DESC
-      `
+      `,
     };
 
     const queryResponse = await fetch(
@@ -208,17 +223,26 @@ export class AzureDevOpsService {
     }
 
     const data = await response.json();
-    return data.comments?.map((c: { id: number; text: string; createdDate: string; createdBy: { displayName: string; uniqueName: string; id: string } }) => ({
-      id: c.id,
-      content: c.text,
-      createdAt: new Date(c.createdDate),
-      author: {
-        id: c.createdBy.id,
-        displayName: c.createdBy.displayName,
-        email: c.createdBy.uniqueName,
-      },
-      isInternal: false,
-    })) || [];
+    return (
+      data.comments?.map(
+        (c: {
+          id: number;
+          text: string;
+          createdDate: string;
+          createdBy: { displayName: string; uniqueName: string; id: string };
+        }) => ({
+          id: c.id,
+          content: c.text,
+          createdAt: new Date(c.createdDate),
+          author: {
+            id: c.createdBy.id,
+            displayName: c.createdBy.displayName,
+            email: c.createdBy.uniqueName,
+          },
+          isInternal: false,
+        })
+      ) || []
+    );
   }
 
   // Create a new work item (ticket)
@@ -315,10 +339,12 @@ export class AzureDevOpsService {
   }
 
   // Update work item state
-  async updateTicketState(projectName: string, workItemId: number, state: string): Promise<DevOpsWorkItem> {
-    const patchDocument = [
-      { op: 'add', path: '/fields/System.State', value: state },
-    ];
+  async updateTicketState(
+    projectName: string,
+    workItemId: number,
+    state: string
+  ): Promise<DevOpsWorkItem> {
+    const patchDocument = [{ op: 'add', path: '/fields/System.State', value: state }];
 
     const response = await fetch(
       `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?api-version=7.0`,
@@ -356,7 +382,7 @@ export class AzureDevOpsService {
           createdAt: new Date(),
           updatedAt: new Date(),
         };
-        const tickets = workItems.map(wi => workItemToTicket(wi, organization));
+        const tickets = workItems.map((wi) => workItemToTicket(wi, organization));
         allTickets.push(...tickets);
       } catch (error) {
         console.error(`Failed to fetch tickets from ${project.name}:`, error);
@@ -389,7 +415,7 @@ export class AzureDevOpsService {
       if (membersResponse.ok) {
         const membersData = await membersResponse.json();
         for (const member of membersData.value || []) {
-          if (member.identity && !allMembers.find(m => m.id === member.identity.id)) {
+          if (member.identity && !allMembers.find((m) => m.id === member.identity.id)) {
             allMembers.push({
               id: member.identity.id,
               displayName: member.identity.displayName,
@@ -436,8 +462,8 @@ function parseEmailDomainsFromDescription(description: string): string[] {
 
   return emailMatch[1]
     .split(/[,;\s]+/)
-    .map(d => d.trim().toLowerCase())
-    .filter(d => d.includes('.') && !d.startsWith('.'));
+    .map((d) => d.trim().toLowerCase())
+    .filter((d) => d.includes('.') && !d.startsWith('.'));
 }
 
 // Fetch domain map from DevOps project descriptions
@@ -455,7 +481,7 @@ async function fetchDomainMapFromDevOps(): Promise<Record<string, string>> {
       `https://dev.azure.com/${org}/_apis/projects?api-version=7.0&$expand=description`,
       {
         headers: {
-          'Authorization': `Basic ${Buffer.from(':' + pat).toString('base64')}`,
+          Authorization: `Basic ${Buffer.from(':' + pat).toString('base64')}`,
           'Content-Type': 'application/json',
         },
       }
@@ -492,7 +518,7 @@ async function fetchDomainMapFromDevOps(): Promise<Record<string, string>> {
 export async function getProjectDomainMap(): Promise<Record<string, string>> {
   const now = Date.now();
 
-  if (domainMapCache && (now - domainMapCache.timestamp) < CACHE_TTL_MS) {
+  if (domainMapCache && now - domainMapCache.timestamp < CACHE_TTL_MS) {
     return domainMapCache.map;
   }
 

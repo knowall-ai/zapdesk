@@ -70,9 +70,6 @@ export async function GET() {
     return NextResponse.json({ customers });
   } catch (error) {
     console.error('Error fetching customers:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch customers' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch customers' }, { status: 500 });
   }
 }

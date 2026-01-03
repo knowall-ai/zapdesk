@@ -59,8 +59,14 @@ export default function HomePage() {
 
   if (status === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--background)' }}>
-        <div className="animate-spin w-8 h-8 border-2 border-t-transparent rounded-full" style={{ borderColor: 'var(--primary)' }} />
+      <div
+        className="flex min-h-screen items-center justify-center"
+        style={{ backgroundColor: 'var(--background)' }}
+      >
+        <div
+          className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
+          style={{ borderColor: 'var(--primary)' }}
+        />
       </div>
     );
   }
@@ -106,7 +112,7 @@ export default function HomePage() {
       <div className="p-6">
         {/* Welcome section */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+          <h1 className="mb-2 text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
             Welcome back, {session.user?.name?.split(' ')[0] || 'User'}
           </h1>
           <p style={{ color: 'var(--text-secondary)' }}>
@@ -115,16 +121,16 @@ export default function HomePage() {
         </div>
 
         {/* Stats cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           {statCards.map((stat) => (
             <Link
               key={stat.title}
               href={stat.href}
-              className="card p-6 hover:bg-[var(--surface-hover)] transition-colors"
+              className="card p-6 transition-colors hover:bg-[var(--surface-hover)]"
             >
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-sm mb-1" style={{ color: 'var(--text-muted)' }}>
+                  <p className="mb-1 text-sm" style={{ color: 'var(--text-muted)' }}>
                     {stat.title}
                   </p>
                   <p className="text-3xl font-bold" style={{ color: stat.color }}>
@@ -132,7 +138,7 @@ export default function HomePage() {
                   </p>
                 </div>
                 <div
-                  className="p-3 rounded-lg"
+                  className="rounded-lg p-3"
                   style={{ backgroundColor: `${stat.color}20`, color: stat.color }}
                 >
                   {stat.icon}
@@ -143,18 +149,18 @@ export default function HomePage() {
         </div>
 
         {/* Quick actions */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
           {/* Recent activity */}
           <div className="card">
-            <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+            <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
               <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                 Quick Actions
               </h2>
             </div>
-            <div className="p-4 space-y-3">
+            <div className="space-y-3 p-4">
               <Link
                 href="/tickets?view=your-unsolved"
-                className="flex items-center justify-between p-3 rounded-lg hover:bg-[var(--surface-hover)] transition-colors"
+                className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
               >
                 <div className="flex items-center gap-3">
                   <Ticket size={20} style={{ color: 'var(--primary)' }} />
@@ -164,7 +170,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/tickets?view=unassigned"
-                className="flex items-center justify-between p-3 rounded-lg hover:bg-[var(--surface-hover)] transition-colors"
+                className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
               >
                 <div className="flex items-center gap-3">
                   <AlertCircle size={20} style={{ color: 'var(--status-open)' }} />
@@ -174,7 +180,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/customers"
-                className="flex items-center justify-between p-3 rounded-lg hover:bg-[var(--surface-hover)] transition-colors"
+                className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
               >
                 <div className="flex items-center gap-3">
                   <Users size={20} style={{ color: 'var(--status-progress)' }} />
@@ -184,7 +190,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/organizations"
-                className="flex items-center justify-between p-3 rounded-lg hover:bg-[var(--surface-hover)] transition-colors"
+                className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
               >
                 <div className="flex items-center gap-3">
                   <Building2 size={20} style={{ color: 'var(--status-pending)' }} />
@@ -197,13 +203,13 @@ export default function HomePage() {
 
           {/* Projects */}
           <div className="card">
-            <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+            <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
               <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                 Your Projects
               </h2>
             </div>
             <div className="p-4">
-              <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
+              <p className="mb-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
                 Tickets are fetched from Azure DevOps projects you have access to.
               </p>
               <div className="space-y-2">
@@ -211,10 +217,10 @@ export default function HomePage() {
                   href="https://dev.azure.com/KnowAll/Medite"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-between p-3 rounded-lg hover:bg-[var(--surface-hover)] transition-colors"
+                  className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
+                    <div className="flex h-8 w-8 items-center justify-center rounded bg-blue-600 text-sm font-medium text-white">
                       M
                     </div>
                     <span style={{ color: 'var(--text-primary)' }}>Medite</span>
@@ -225,10 +231,10 @@ export default function HomePage() {
                   href="https://dev.azure.com/KnowAll/Cairn%20Homes"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-between p-3 rounded-lg hover:bg-[var(--surface-hover)] transition-colors"
+                  className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded bg-orange-600 flex items-center justify-center text-white text-sm font-medium">
+                    <div className="flex h-8 w-8 items-center justify-center rounded bg-orange-600 text-sm font-medium text-white">
                       CH
                     </div>
                     <span style={{ color: 'var(--text-primary)' }}>Cairn Homes</span>
@@ -242,7 +248,7 @@ export default function HomePage() {
 
         {/* Info banner */}
         <div
-          className="card p-4 flex items-center gap-4"
+          className="card flex items-center gap-4 p-4"
           style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'var(--primary)' }}
         >
           <TrendingUp size={24} style={{ color: 'var(--primary)' }} />

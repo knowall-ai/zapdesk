@@ -33,11 +33,13 @@ export default function OrganizationsPage() {
       const response = await fetch('/api/devops/organizations');
       if (response.ok) {
         const data = await response.json();
-        setOrganizations(data.organizations.map((o: Organization & { createdAt: string; updatedAt: string }) => ({
-          ...o,
-          createdAt: new Date(o.createdAt),
-          updatedAt: new Date(o.updatedAt),
-        })));
+        setOrganizations(
+          data.organizations.map((o: Organization & { createdAt: string; updatedAt: string }) => ({
+            ...o,
+            createdAt: new Date(o.createdAt),
+            updatedAt: new Date(o.updatedAt),
+          }))
+        );
       }
     } catch (error) {
       console.error('Failed to fetch organizations:', error);
@@ -46,16 +48,20 @@ export default function OrganizationsPage() {
     }
   };
 
-  const filteredOrganizations = organizations.filter((org) =>
-    org.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    org.domain?.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredOrganizations = organizations.filter(
+    (org) =>
+      org.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      org.domain?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   if (status === 'loading') {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="animate-spin w-8 h-8 border-2 border-t-transparent rounded-full" style={{ borderColor: 'var(--primary)' }} />
+        <div className="flex h-full items-center justify-center">
+          <div
+            className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
+            style={{ borderColor: 'var(--primary)' }}
+          />
         </div>
       </MainLayout>
     );
@@ -69,9 +75,9 @@ export default function OrganizationsPage() {
     <MainLayout>
       <div className="p-6">
         {/* Header */}
-        <div className="flex items-start justify-between mb-6">
+        <div className="mb-6 flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+            <h1 className="mb-2 text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
               Organizations
             </h1>
             <p style={{ color: 'var(--text-secondary)' }}>
@@ -79,7 +85,7 @@ export default function OrganizationsPage() {
             </p>
             <a
               href="#"
-              className="text-sm flex items-center gap-1 mt-1"
+              className="mt-1 flex items-center gap-1 text-sm"
               style={{ color: 'var(--primary)' }}
             >
               Learn about organizations <ExternalLink size={12} />
@@ -100,7 +106,7 @@ export default function OrganizationsPage() {
           <div className="relative max-w-md">
             <Search
               size={18}
-              className="absolute left-3 top-1/2 -translate-y-1/2"
+              className="absolute top-1/2 left-3 -translate-y-1/2"
               style={{ color: 'var(--text-muted)' }}
             />
             <input
@@ -114,7 +120,7 @@ export default function OrganizationsPage() {
         </div>
 
         {/* Count */}
-        <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+        <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
           {filteredOrganizations.length} organization{filteredOrganizations.length !== 1 ? 's' : ''}
         </p>
 
@@ -123,19 +129,34 @@ export default function OrganizationsPage() {
           <table className="w-full">
             <thead className="table-header">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
                   Name
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
                   Domain
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
                   Tags
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
                   Created at
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
                   Last updated
                 </th>
               </tr>
@@ -143,13 +164,21 @@ export default function OrganizationsPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center" style={{ color: 'var(--text-muted)' }}>
+                  <td
+                    colSpan={5}
+                    className="px-4 py-8 text-center"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
                     Loading organizations...
                   </td>
                 </tr>
               ) : filteredOrganizations.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center" style={{ color: 'var(--text-muted)' }}>
+                  <td
+                    colSpan={5}
+                    className="px-4 py-8 text-center"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
                     No organizations found
                   </td>
                 </tr>
@@ -174,8 +203,11 @@ export default function OrganizationsPage() {
                           {org.tags.map((tag) => (
                             <span
                               key={tag}
-                              className="px-2 py-0.5 text-xs rounded"
-                              style={{ backgroundColor: 'var(--surface-hover)', color: 'var(--text-secondary)' }}
+                              className="rounded px-2 py-0.5 text-xs"
+                              style={{
+                                backgroundColor: 'var(--surface-hover)',
+                                color: 'var(--text-secondary)',
+                              }}
                             >
                               {tag}
                             </span>

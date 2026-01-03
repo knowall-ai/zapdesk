@@ -2,14 +2,7 @@
 
 import { useState } from 'react';
 import { format } from 'date-fns';
-import {
-  ArrowLeft,
-  ExternalLink,
-  Clock,
-  Building2,
-  Send,
-  Paperclip,
-} from 'lucide-react';
+import { ArrowLeft, ExternalLink, Clock, Building2, Send, Paperclip } from 'lucide-react';
 import Link from 'next/link';
 import type { Ticket, TicketComment } from '@/types';
 import StatusBadge from '../common/StatusBadge';
@@ -47,25 +40,25 @@ export default function TicketDetail({
   return (
     <div className="flex h-full">
       {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
-          <div className="flex items-center gap-4 mb-3">
+        <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
+          <div className="mb-3 flex items-center gap-4">
             <Link
               href="/tickets"
-              className="p-1 rounded hover:bg-[var(--surface-hover)] transition-colors"
+              className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
               style={{ color: 'var(--text-muted)' }}
             >
               <ArrowLeft size={20} />
             </Link>
-            <h1 className="text-lg font-semibold flex-1" style={{ color: 'var(--text-primary)' }}>
+            <h1 className="flex-1 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
               {ticket.title}
             </h1>
             <a
               href={ticket.devOpsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 text-sm px-3 py-1.5 rounded-md transition-colors hover:bg-[var(--surface-hover)]"
+              className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
               style={{ color: 'var(--primary)' }}
             >
               View in DevOps <ExternalLink size={14} />
@@ -89,11 +82,11 @@ export default function TicketDetail({
         {/* Conversation */}
         <div className="flex-1 overflow-auto p-4">
           {/* Original ticket */}
-          <div className="card p-4 mb-4">
+          <div className="card mb-4 p-4">
             <div className="flex items-start gap-3">
               <Avatar name={ticket.requester.displayName} size="md" />
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="mb-2 flex items-center gap-2">
                   <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
                     {ticket.requester.displayName}
                   </span>
@@ -104,7 +97,9 @@ export default function TicketDetail({
                 <div
                   className="prose prose-sm prose-invert max-w-none"
                   style={{ color: 'var(--text-secondary)' }}
-                  dangerouslySetInnerHTML={{ __html: ticket.description || '<em>No description provided</em>' }}
+                  dangerouslySetInnerHTML={{
+                    __html: ticket.description || '<em>No description provided</em>',
+                  }}
                 />
               </div>
             </div>
@@ -114,19 +109,19 @@ export default function TicketDetail({
           {comments.map((comment) => (
             <div
               key={comment.id}
-              className={`card p-4 mb-4 ${comment.isInternal ? 'border-l-4' : ''}`}
+              className={`card mb-4 p-4 ${comment.isInternal ? 'border-l-4' : ''}`}
               style={comment.isInternal ? { borderLeftColor: 'var(--status-pending)' } : {}}
             >
               <div className="flex items-start gap-3">
                 <Avatar name={comment.author.displayName} size="md" />
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="mb-2 flex items-center gap-2">
                     <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
                       {comment.author.displayName}
                     </span>
                     {comment.isInternal && (
                       <span
-                        className="text-xs px-1.5 py-0.5 rounded"
+                        className="rounded px-1.5 py-0.5 text-xs"
                         style={{ backgroundColor: 'var(--status-pending)', color: 'white' }}
                       >
                         Internal note
@@ -148,11 +143,12 @@ export default function TicketDetail({
         </div>
 
         {/* Reply box */}
-        <div className="p-4 border-t" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-          <div className="flex items-center gap-2 mb-3">
-            <span
-              className="px-3 py-1.5 text-sm rounded-md bg-[var(--primary)] text-white"
-            >
+        <div
+          className="border-t p-4"
+          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+        >
+          <div className="mb-3 flex items-center gap-2">
+            <span className="rounded-md bg-[var(--primary)] px-3 py-1.5 text-sm text-white">
               Public reply
             </span>
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -165,11 +161,11 @@ export default function TicketDetail({
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
               placeholder="Type your reply..."
-              className="input w-full min-h-[100px] resize-none pr-24"
+              className="input min-h-[100px] w-full resize-none pr-24"
             />
-            <div className="absolute bottom-3 right-3 flex items-center gap-2">
+            <div className="absolute right-3 bottom-3 flex items-center gap-2">
               <button
-                className="p-2 rounded hover:bg-[var(--surface-hover)] transition-colors"
+                className="rounded p-2 transition-colors hover:bg-[var(--surface-hover)]"
                 style={{ color: 'var(--text-muted)' }}
               >
                 <Paperclip size={18} />
@@ -177,7 +173,7 @@ export default function TicketDetail({
               <button
                 onClick={handleSubmitComment}
                 disabled={!newComment.trim() || isSubmitting}
-                className="btn-primary flex items-center gap-1 text-sm py-1.5"
+                className="btn-primary flex items-center gap-1 py-1.5 text-sm"
               >
                 <Send size={16} />
                 {isSubmitting ? 'Sending...' : 'Submit'}
@@ -189,18 +185,21 @@ export default function TicketDetail({
 
       {/* Sidebar */}
       <div
-        className="w-80 border-l overflow-auto"
+        className="w-80 overflow-auto border-l"
         style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
       >
         <div className="p-4">
-          <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--text-primary)' }}>
+          <h3 className="mb-4 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
             Ticket Details
           </h3>
 
           <div className="space-y-4">
             {/* Assignee */}
             <div>
-              <label className="text-xs uppercase mb-1 block" style={{ color: 'var(--text-muted)' }}>
+              <label
+                className="mb-1 block text-xs uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 Assignee
               </label>
               {ticket.assignee ? (
@@ -219,13 +218,16 @@ export default function TicketDetail({
 
             {/* Requester */}
             <div>
-              <label className="text-xs uppercase mb-1 block" style={{ color: 'var(--text-muted)' }}>
+              <label
+                className="mb-1 block text-xs uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 Requester
               </label>
               <div className="flex items-center gap-2">
                 <Avatar name={ticket.requester.displayName} size="sm" />
                 <div>
-                  <span className="text-sm block" style={{ color: 'var(--text-primary)' }}>
+                  <span className="block text-sm" style={{ color: 'var(--text-primary)' }}>
                     {ticket.requester.displayName}
                   </span>
                   <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -237,7 +239,10 @@ export default function TicketDetail({
 
             {/* Priority */}
             <div>
-              <label className="text-xs uppercase mb-1 block" style={{ color: 'var(--text-muted)' }}>
+              <label
+                className="mb-1 block text-xs uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 Priority
               </label>
               <PriorityIndicator priority={ticket.priority} showLabel />
@@ -246,7 +251,10 @@ export default function TicketDetail({
             {/* Organization */}
             {ticket.organization && (
               <div>
-                <label className="text-xs uppercase mb-1 block" style={{ color: 'var(--text-muted)' }}>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
                   Organization
                 </label>
                 <div className="flex items-center gap-2">
@@ -260,15 +268,21 @@ export default function TicketDetail({
 
             {/* Tags */}
             <div>
-              <label className="text-xs uppercase mb-1 block" style={{ color: 'var(--text-muted)' }}>
+              <label
+                className="mb-1 block text-xs uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 Tags
               </label>
               <div className="flex flex-wrap gap-1">
                 {ticket.tags.map((tag) => (
                   <span
                     key={tag}
-                    className="px-2 py-0.5 text-xs rounded"
-                    style={{ backgroundColor: 'var(--surface-hover)', color: 'var(--text-secondary)' }}
+                    className="rounded px-2 py-0.5 text-xs"
+                    style={{
+                      backgroundColor: 'var(--surface-hover)',
+                      color: 'var(--text-secondary)',
+                    }}
                   >
                     {tag}
                   </span>
@@ -278,7 +292,10 @@ export default function TicketDetail({
 
             {/* Dates */}
             <div>
-              <label className="text-xs uppercase mb-1 block" style={{ color: 'var(--text-muted)' }}>
+              <label
+                className="mb-1 block text-xs uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 Created
               </label>
               <div className="flex items-center gap-2">
@@ -290,7 +307,10 @@ export default function TicketDetail({
             </div>
 
             <div>
-              <label className="text-xs uppercase mb-1 block" style={{ color: 'var(--text-muted)' }}>
+              <label
+                className="mb-1 block text-xs uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 Last Updated
               </label>
               <div className="flex items-center gap-2">

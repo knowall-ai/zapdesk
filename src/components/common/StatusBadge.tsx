@@ -8,12 +8,12 @@ interface StatusBadgeProps {
 }
 
 const statusConfig: Record<TicketStatus, { label: string; className: string }> = {
-  'New': { label: 'New', className: 'status-new' },
-  'Open': { label: 'Open', className: 'status-open' },
+  New: { label: 'New', className: 'status-new' },
+  Open: { label: 'Open', className: 'status-open' },
   'In Progress': { label: 'In Progress', className: 'status-in-progress' },
-  'Pending': { label: 'Pending', className: 'status-pending' },
-  'Resolved': { label: 'Resolved', className: 'status-resolved' },
-  'Closed': { label: 'Closed', className: 'status-closed' },
+  Pending: { label: 'Pending', className: 'status-pending' },
+  Resolved: { label: 'Resolved', className: 'status-resolved' },
+  Closed: { label: 'Closed', className: 'status-closed' },
 };
 
 export default function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
@@ -22,7 +22,7 @@ export default function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
   return (
     <span
       className={`status-badge ${config.className} ${
-        size === 'sm' ? 'text-[10px] px-1.5 py-0.5' : ''
+        size === 'sm' ? 'px-1.5 py-0.5 text-[10px]' : ''
       }`}
     >
       {config.label}

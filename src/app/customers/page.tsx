@@ -35,10 +35,12 @@ export default function CustomersPage() {
       const response = await fetch('/api/devops/customers');
       if (response.ok) {
         const data = await response.json();
-        setCustomers(data.customers.map((c: Customer & { lastUpdated: string }) => ({
-          ...c,
-          lastUpdated: new Date(c.lastUpdated),
-        })));
+        setCustomers(
+          data.customers.map((c: Customer & { lastUpdated: string }) => ({
+            ...c,
+            lastUpdated: new Date(c.lastUpdated),
+          }))
+        );
       }
     } catch (error) {
       console.error('Failed to fetch customers:', error);
@@ -47,16 +49,20 @@ export default function CustomersPage() {
     }
   };
 
-  const filteredCustomers = customers.filter((customer) =>
-    customer.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    customer.email.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredCustomers = customers.filter(
+    (customer) =>
+      customer.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      customer.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   if (status === 'loading') {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="animate-spin w-8 h-8 border-2 border-t-transparent rounded-full" style={{ borderColor: 'var(--primary)' }} />
+        <div className="flex h-full items-center justify-center">
+          <div
+            className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
+            style={{ borderColor: 'var(--primary)' }}
+          />
         </div>
       </MainLayout>
     );
@@ -70,14 +76,17 @@ export default function CustomersPage() {
     <MainLayout>
       <div className="flex h-full">
         {/* Sidebar */}
-        <div className="w-64 border-r p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-          <h2 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-muted)' }}>
+        <div
+          className="w-64 border-r p-4"
+          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+        >
+          <h2 className="mb-4 text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>
             Customer lists
           </h2>
           <nav className="space-y-1">
             <button
               onClick={() => setActiveList('all')}
-              className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+              className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
                 activeList === 'all'
                   ? 'bg-[rgba(34,197,94,0.15)] text-[var(--primary)]'
                   : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
@@ -87,7 +96,7 @@ export default function CustomersPage() {
             </button>
             <button
               onClick={() => setActiveList('suspended')}
-              className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+              className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
                 activeList === 'suspended'
                   ? 'bg-[rgba(34,197,94,0.15)] text-[var(--primary)]'
                   : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
@@ -99,11 +108,11 @@ export default function CustomersPage() {
         </div>
 
         {/* Main content */}
-        <div className="flex-1 p-6 overflow-auto">
+        <div className="flex-1 overflow-auto p-6">
           {/* Header */}
-          <div className="flex items-start justify-between mb-6">
+          <div className="mb-6 flex items-start justify-between">
             <div>
-              <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+              <h1 className="mb-2 text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
                 Customers
               </h1>
               <p style={{ color: 'var(--text-secondary)' }}>
@@ -111,7 +120,7 @@ export default function CustomersPage() {
               </p>
               <a
                 href="#"
-                className="text-sm flex items-center gap-1 mt-1"
+                className="mt-1 flex items-center gap-1 text-sm"
                 style={{ color: 'var(--primary)' }}
               >
                 Learn about this page <ExternalLink size={12} />
@@ -132,7 +141,7 @@ export default function CustomersPage() {
             <div className="relative max-w-md">
               <Search
                 size={18}
-                className="absolute left-3 top-1/2 -translate-y-1/2"
+                className="absolute top-1/2 left-3 -translate-y-1/2"
                 style={{ color: 'var(--text-muted)' }}
               />
               <input
@@ -146,7 +155,7 @@ export default function CustomersPage() {
           </div>
 
           {/* Count */}
-          <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+          <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
             {filteredCustomers.length} customer{filteredCustomers.length !== 1 ? 's' : ''}
           </p>
 
@@ -158,19 +167,34 @@ export default function CustomersPage() {
                   <th className="w-10 px-4 py-3">
                     <input type="checkbox" className="rounded" />
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
                     Name
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
                     Email
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
                     Tags
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
                     Timezone
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
                     Last updated
                   </th>
                 </tr>
@@ -178,13 +202,21 @@ export default function CustomersPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center" style={{ color: 'var(--text-muted)' }}>
+                    <td
+                      colSpan={6}
+                      className="px-4 py-8 text-center"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
                       Loading customers...
                     </td>
                   </tr>
                 ) : filteredCustomers.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center" style={{ color: 'var(--text-muted)' }}>
+                    <td
+                      colSpan={6}
+                      className="px-4 py-8 text-center"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
                       No customers found
                     </td>
                   </tr>
@@ -196,7 +228,11 @@ export default function CustomersPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <Avatar name={customer.displayName} image={customer.avatarUrl} size="sm" />
+                          <Avatar
+                            name={customer.displayName}
+                            image={customer.avatarUrl}
+                            size="sm"
+                          />
                           <Link
                             href={`/customers/${customer.id}`}
                             className="font-medium hover:underline"
@@ -217,8 +253,11 @@ export default function CustomersPage() {
                             {customer.tags.map((tag) => (
                               <span
                                 key={tag}
-                                className="px-2 py-0.5 text-xs rounded"
-                                style={{ backgroundColor: 'var(--surface-hover)', color: 'var(--text-secondary)' }}
+                                className="rounded px-2 py-0.5 text-xs"
+                                style={{
+                                  backgroundColor: 'var(--surface-hover)',
+                                  color: 'var(--text-secondary)',
+                                }}
                               >
                                 {tag}
                               </span>

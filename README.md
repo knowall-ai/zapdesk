@@ -44,17 +44,20 @@
 ### Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/knowall-ai/devdesk.git
    cd devdesk
    ```
 
 2. **Install dependencies**
+
    ```bash
    npm install
    ```
 
 3. **Configure environment variables**
+
    ```bash
    cp .env.example .env
    ```
@@ -62,6 +65,7 @@
    Edit `.env` with your values (see [.env.example](.env.example))
 
 4. **Run the development server**
+
    ```bash
    npm run dev
    ```
@@ -93,11 +97,11 @@ Only Azure DevOps work items with the **"ticket"** tag will appear in DevDesk. T
 
 DevDesk maps Azure DevOps projects to organizations/clients:
 
-| Project | Domain | Description |
-|---------|--------|-------------|
-| Medite | medite.com | Medite client project |
+| Project     | Domain         | Description                |
+| ----------- | -------------- | -------------------------- |
+| Medite      | medite.com     | Medite client project      |
 | Cairn Homes | cairnhomes.com | Cairn Homes client project |
-| KnowAll | knowall.ai | Internal KnowAll project |
+| KnowAll     | knowall.ai     | Internal KnowAll project   |
 
 ## Email Integration
 
@@ -176,13 +180,28 @@ npm run build
 
 # Run production server
 npm start
+```
 
-# Run linting
-npm run lint
+### Code Quality Checks
+
+The following checks run automatically on every pull request via GitHub Actions:
+
+```bash
+# Run all checks (recommended before pushing)
+npm run check
+
+# Individual checks
+npm run typecheck      # TypeScript type checking
+npm run lint           # ESLint
+npm run lint:fix       # ESLint with auto-fix
+npm run format:check   # Prettier format check
+npm run format         # Prettier auto-format
 
 # Run tests
 npm run test
 ```
+
+All checks must pass before a PR can be merged.
 
 ## License
 

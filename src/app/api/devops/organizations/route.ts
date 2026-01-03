@@ -7,15 +7,15 @@ import type { Organization } from '@/types';
 // Domain mappings for organizations
 const DOMAIN_MAP: Record<string, string> = {
   'Cairn Homes': 'cairnhomes.com',
-  'Medite': 'medite.com',
-  'KnowAll': 'knowall.ai',
+  Medite: 'medite.com',
+  KnowAll: 'knowall.ai',
 };
 
 // Tag mappings for organizations (SLA levels)
 const TAG_MAP: Record<string, string[]> = {
   'Cairn Homes': ['gold'],
-  'Medite': ['silver'],
-  'KnowAll': [],
+  Medite: ['silver'],
+  KnowAll: [],
 };
 
 export async function GET() {
@@ -43,9 +43,6 @@ export async function GET() {
     return NextResponse.json({ organizations });
   } catch (error) {
     console.error('Error fetching organizations:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch organizations' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch organizations' }, { status: 500 });
   }
 }

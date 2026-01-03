@@ -22,7 +22,7 @@ export default function MainLayout({ children, ticketCounts }: MainLayoutProps) 
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar ticketCounts={ticketCounts} />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-auto" style={{ backgroundColor: 'var(--background)' }}>
           {children}

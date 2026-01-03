@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* KnowAll DevDesk - Dark Theme with Bright Green Accent */
 :root {
@@ -61,7 +61,8 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 /* Custom scrollbar for dark theme */
@@ -85,25 +86,51 @@ body {
 
 /* Status badge styles */
 .status-badge {
-  @apply px-2 py-1 rounded-full text-xs font-medium;
+  @apply rounded-full px-2 py-1 text-xs font-medium;
 }
 
-.status-new { background: var(--status-new); color: white; }
-.status-open { background: var(--status-open); color: white; }
-.status-in-progress { background: var(--status-progress); color: white; }
-.status-pending { background: var(--status-pending); color: white; }
-.status-resolved { background: var(--status-resolved); color: white; }
-.status-closed { background: var(--status-closed); color: white; }
+.status-new {
+  background: var(--status-new);
+  color: white;
+}
+.status-open {
+  background: var(--status-open);
+  color: white;
+}
+.status-in-progress {
+  background: var(--status-progress);
+  color: white;
+}
+.status-pending {
+  background: var(--status-pending);
+  color: white;
+}
+.status-resolved {
+  background: var(--status-resolved);
+  color: white;
+}
+.status-closed {
+  background: var(--status-closed);
+  color: white;
+}
 
 /* Priority indicator styles */
-.priority-urgent { color: var(--priority-urgent); }
-.priority-high { color: var(--priority-high); }
-.priority-normal { color: var(--priority-normal); }
-.priority-low { color: var(--priority-low); }
+.priority-urgent {
+  color: var(--priority-urgent);
+}
+.priority-high {
+  color: var(--priority-high);
+}
+.priority-normal {
+  color: var(--priority-normal);
+}
+.priority-low {
+  color: var(--priority-low);
+}
 
 /* Focus ring for accessibility */
 .focus-ring {
-  @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+  @apply focus:ring-2 focus:ring-offset-2 focus:outline-none;
   --tw-ring-color: var(--primary);
   --tw-ring-offset-color: var(--background);
 }
@@ -127,7 +154,7 @@ body {
 .btn-primary {
   background: var(--primary);
   color: white;
-  @apply px-4 py-2 rounded-md font-medium transition-colors;
+  @apply rounded-md px-4 py-2 font-medium transition-colors;
 }
 
 .btn-primary:hover {
@@ -138,7 +165,7 @@ body {
   background: var(--surface);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  @apply px-4 py-2 rounded-md font-medium transition-colors;
+  @apply rounded-md px-4 py-2 font-medium transition-colors;
 }
 
 .btn-secondary:hover {
@@ -157,7 +184,7 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text-primary);
-  @apply px-3 py-2 rounded-md transition-colors;
+  @apply rounded-md px-3 py-2 transition-colors;
 }
 
 .input:focus {
@@ -173,7 +200,7 @@ body {
 /* Sidebar navigation */
 .nav-item {
   color: var(--text-secondary);
-  @apply flex items-center gap-3 px-3 py-2 rounded-md transition-colors;
+  @apply flex items-center gap-3 rounded-md px-3 py-2 transition-colors;
 }
 
 .nav-item:hover {
@@ -188,13 +215,23 @@ body {
 
 /* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes slideIn {
-  from { transform: translateX(-10px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+  from {
+    transform: translateX(-10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 .animate-fade-in {

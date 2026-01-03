@@ -3,10 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService, workItemToTicket } from '@/lib/devops';
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -64,9 +61,6 @@ export async function PATCH(
     return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
   } catch (error) {
     console.error('Error updating ticket status:', error);
-    return NextResponse.json(
-      { error: 'Failed to update ticket status' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update ticket status' }, { status: 500 });
   }
 }

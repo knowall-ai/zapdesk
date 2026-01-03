@@ -11,17 +11,36 @@ import Avatar from '../common/Avatar';
 interface TicketListProps {
   tickets: Ticket[];
   title: string;
-  showGroupBy?: boolean;
 }
 
-type SortField = 'status' | 'subject' | 'requester' | 'requested' | 'priority' | 'updated' | 'assignee';
+type SortField =
+  | 'status'
+  | 'subject'
+  | 'requester'
+  | 'requested'
+  | 'priority'
+  | 'updated'
+  | 'assignee';
 type SortDirection = 'asc' | 'desc';
 
 interface GroupedTickets {
   [key: string]: Ticket[];
 }
 
-export default function TicketList({ tickets, title, showGroupBy = true }: TicketListProps) {
+function SortIcon({
+  field,
+  sortField,
+  sortDirection,
+}: {
+  field: SortField;
+  sortField: SortField;
+  sortDirection: SortDirection;
+}) {
+  if (sortField !== field) return null;
+  return sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
+}
+
+export default function TicketList({ tickets, title }: TicketListProps) {
   const [sortField, setSortField] = useState<SortField>('updated');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [selectedTickets, setSelectedTickets] = useState<Set<number>>(new Set());
@@ -67,7 +86,7 @@ export default function TicketList({ tickets, title, showGroupBy = true }: Ticke
       case 'requested':
         return multiplier * (a.createdAt.getTime() - b.createdAt.getTime());
       case 'priority':
-        const priorityOrder = { 'Urgent': 0, 'High': 1, 'Normal': 2, 'Low': 3 };
+        const priorityOrder = { Urgent: 0, High: 1, Normal: 2, Low: 3 };
         return multiplier * (priorityOrder[a.priority] - priorityOrder[b.priority]);
       case 'updated':
         return multiplier * (a.updatedAt.getTime() - b.updatedAt.getTime());
@@ -81,25 +100,21 @@ export default function TicketList({ tickets, title, showGroupBy = true }: Ticke
   });
 
   // Group tickets by assignee if groupBy is set
-  const groupedTickets: GroupedTickets = groupBy === 'assignee'
-    ? sortedTickets.reduce((groups, ticket) => {
-        const key = ticket.assignee?.displayName || 'Unassigned';
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(ticket);
-        return groups;
-      }, {} as GroupedTickets)
-    : { 'All Tickets': sortedTickets };
-
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return null;
-    return sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
-  };
+  const groupedTickets: GroupedTickets =
+    groupBy === 'assignee'
+      ? sortedTickets.reduce((groups, ticket) => {
+          const key = ticket.assignee?.displayName || 'Unassigned';
+          if (!groups[key]) groups[key] = [];
+          groups[key].push(ticket);
+          return groups;
+        }, {} as GroupedTickets)
+      : { 'All Tickets': sortedTickets };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
-        <div className="flex items-center justify-between mb-4">
+      <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
+        <div className="mb-4 flex items-center justify-between">
           <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
             {title}
           </h1>
@@ -138,66 +153,73 @@ export default function TicketList({ tickets, title, showGroupBy = true }: Ticke
                 />
               </th>
               <th
-                className="px-4 py-3 text-left text-xs font-medium uppercase cursor-pointer"
+                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('status')}
               >
                 <div className="flex items-center gap-1">
-                  Ticket status <SortIcon field="status" />
+                  Ticket status{' '}
+                  <SortIcon field="status" sortField={sortField} sortDirection={sortDirection} />
                 </div>
               </th>
               <th
-                className="px-4 py-3 text-left text-xs font-medium uppercase cursor-pointer"
+                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('subject')}
               >
                 <div className="flex items-center gap-1">
-                  Subject <SortIcon field="subject" />
+                  Subject{' '}
+                  <SortIcon field="subject" sortField={sortField} sortDirection={sortDirection} />
                 </div>
               </th>
               <th
-                className="px-4 py-3 text-left text-xs font-medium uppercase cursor-pointer"
+                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('requester')}
               >
                 <div className="flex items-center gap-1">
-                  Requester <SortIcon field="requester" />
+                  Requester{' '}
+                  <SortIcon field="requester" sortField={sortField} sortDirection={sortDirection} />
                 </div>
               </th>
               <th
-                className="px-4 py-3 text-left text-xs font-medium uppercase cursor-pointer"
+                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('requested')}
               >
                 <div className="flex items-center gap-1">
-                  Requested <SortIcon field="requested" />
+                  Requested{' '}
+                  <SortIcon field="requested" sortField={sortField} sortDirection={sortDirection} />
                 </div>
               </th>
               <th
-                className="px-4 py-3 text-left text-xs font-medium uppercase cursor-pointer"
+                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('priority')}
               >
                 <div className="flex items-center gap-1">
-                  Priority <SortIcon field="priority" />
+                  Priority{' '}
+                  <SortIcon field="priority" sortField={sortField} sortDirection={sortDirection} />
                 </div>
               </th>
               <th
-                className="px-4 py-3 text-left text-xs font-medium uppercase cursor-pointer"
+                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('updated')}
               >
                 <div className="flex items-center gap-1">
-                  Updated <SortIcon field="updated" />
+                  Updated{' '}
+                  <SortIcon field="updated" sortField={sortField} sortDirection={sortDirection} />
                 </div>
               </th>
               <th
-                className="px-4 py-3 text-left text-xs font-medium uppercase cursor-pointer"
+                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('assignee')}
               >
                 <div className="flex items-center gap-1">
-                  Assignee <SortIcon field="assignee" />
+                  Assignee{' '}
+                  <SortIcon field="assignee" sortField={sortField} sortDirection={sortDirection} />
                 </div>
               </th>
             </tr>
@@ -278,7 +300,7 @@ export default function TicketList({ tickets, title, showGroupBy = true }: Ticke
 
         {tickets.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16">
-            <p className="text-lg mb-2" style={{ color: 'var(--text-muted)' }}>
+            <p className="mb-2 text-lg" style={{ color: 'var(--text-muted)' }}>
               No tickets found
             </p>
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>

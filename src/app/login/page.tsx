@@ -17,34 +17,40 @@ export default function LoginPage() {
 
   if (status === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--background)' }}>
-        <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--primary)' }} />
+      <div
+        className="flex min-h-screen items-center justify-center"
+        style={{ backgroundColor: 'var(--background)' }}
+      >
+        <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--primary)' }} />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--background)' }}>
-      <div className="card p-8 w-full max-w-md">
+    <div
+      className="flex min-h-screen items-center justify-center"
+      style={{ backgroundColor: 'var(--background)' }}
+    >
+      <div className="card w-full max-w-md p-8">
         {/* Logo */}
-        <div className="flex flex-col items-center mb-8">
+        <div className="mb-8 flex flex-col items-center">
           <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+            className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
             style={{ backgroundColor: 'var(--primary)' }}
           >
-            <span className="text-white font-bold text-3xl">D</span>
+            <span className="text-3xl font-bold text-white">D</span>
           </div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--primary)' }}>
             DevDesk
           </h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+          <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
             by KnowAll
           </p>
         </div>
 
         {/* Title */}
-        <div className="text-center mb-8">
-          <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+        <div className="mb-8 text-center">
+          <h2 className="mb-2 text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
             Welcome back
           </h2>
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
@@ -55,7 +61,7 @@ export default function LoginPage() {
         {/* Sign in button */}
         <button
           onClick={() => signIn('azure-ad', { callbackUrl: '/' })}
-          className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors"
+          className="flex w-full items-center justify-center gap-3 rounded-lg px-4 py-3 font-medium transition-colors"
           style={{
             backgroundColor: 'var(--surface-hover)',
             color: 'var(--text-primary)',
@@ -63,19 +69,19 @@ export default function LoginPage() {
           }}
         >
           <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
-            <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
-            <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
-            <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
-            <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+            <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+            <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+            <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+            <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
           </svg>
           Sign in with Microsoft
         </button>
 
         {/* Info */}
-        <div className="mt-8 pt-6 border-t" style={{ borderColor: 'var(--border)' }}>
-          <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
-            DevDesk connects to Azure DevOps to display work items tagged as tickets.
-            You&apos;ll only see tickets from projects you have access to.
+        <div className="mt-8 border-t pt-6" style={{ borderColor: 'var(--border)' }}>
+          <p className="text-center text-xs" style={{ color: 'var(--text-muted)' }}>
+            DevDesk connects to Azure DevOps to display work items tagged as tickets. You&apos;ll
+            only see tickets from projects you have access to.
           </p>
         </div>
 

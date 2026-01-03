@@ -3,10 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -38,9 +35,7 @@ export async function POST(
         const workItem = await devopsService.getWorkItem(project.name, ticketId);
         if (workItem) {
           // Add internal note prefix if needed
-          const commentText = isInternal
-            ? `[Internal Note] ${comment}`
-            : comment;
+          const commentText = isInternal ? `[Internal Note] ${comment}` : comment;
 
           await devopsService.addComment(project.name, ticketId, commentText);
 
@@ -55,9 +50,6 @@ export async function POST(
     return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
   } catch (error) {
     console.error('Error adding comment:', error);
-    return NextResponse.json(
-      { error: 'Failed to add comment' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to add comment' }, { status: 500 });
   }
 }

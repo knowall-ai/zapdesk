@@ -4,11 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import {
-  ArrowLeft,
-  Send,
-  Loader2,
-} from 'lucide-react';
+import { ArrowLeft, Send, Loader2 } from 'lucide-react';
 import type { DevOpsProject, User } from '@/types';
 
 interface NewTicketForm {
@@ -74,7 +70,9 @@ export default function NewTicketPage() {
   const fetchTeamMembers = async (projectName: string) => {
     setIsLoadingMembers(true);
     try {
-      const response = await fetch(`/api/devops/projects/${encodeURIComponent(projectName)}/members`);
+      const response = await fetch(
+        `/api/devops/projects/${encodeURIComponent(projectName)}/members`
+      );
       if (!response.ok) throw new Error('Failed to fetch team members');
       const data = await response.json();
       setTeamMembers(data.members || []);
@@ -140,7 +138,7 @@ export default function NewTicketPage() {
 
   if (status === 'loading') {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex h-full items-center justify-center">
         <Loader2 className="animate-spin" size={32} style={{ color: 'var(--primary)' }} />
       </div>
     );
@@ -154,20 +152,20 @@ export default function NewTicketPage() {
   return (
     <div className="flex h-full">
       {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+        <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-4">
             <Link
               href="/tickets"
-              className="p-1 rounded hover:bg-[var(--surface-hover)] transition-colors"
+              className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
               style={{ color: 'var(--text-muted)' }}
             >
               <ArrowLeft size={20} />
             </Link>
             <div className="flex items-center gap-2">
               <span
-                className="px-2 py-0.5 text-xs font-medium rounded"
+                className="rounded px-2 py-0.5 text-xs font-medium"
                 style={{ backgroundColor: 'var(--status-new)', color: 'white' }}
               >
                 New
@@ -180,11 +178,11 @@ export default function NewTicketPage() {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
+        <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-hidden">
           <div className="flex-1 overflow-auto p-4">
             {error && (
               <div
-                className="mb-4 p-3 rounded-md text-sm"
+                className="mb-4 rounded-md p-3 text-sm"
                 style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--status-closed)' }}
               >
                 {error}
@@ -210,14 +208,14 @@ export default function NewTicketPage() {
                 placeholder="Description..."
                 value={form.description}
                 onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-                className="input w-full min-h-[200px] resize-none"
+                className="input min-h-[200px] w-full resize-none"
               />
             </div>
           </div>
 
           {/* Submit bar */}
           <div
-            className="p-4 border-t flex items-center justify-between"
+            className="flex items-center justify-between border-t p-4"
             style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
           >
             <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
@@ -228,11 +226,7 @@ export default function NewTicketPage() {
               disabled={isSubmitting || !form.project || !form.subject.trim()}
               className="btn-primary flex items-center gap-2"
             >
-              {isSubmitting ? (
-                <Loader2 className="animate-spin" size={16} />
-              ) : (
-                <Send size={16} />
-              )}
+              {isSubmitting ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
               Submit as New
             </button>
           </div>
@@ -241,24 +235,29 @@ export default function NewTicketPage() {
 
       {/* Sidebar */}
       <div
-        className="w-80 border-l overflow-auto"
+        className="w-80 overflow-auto border-l"
         style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
       >
-        <div className="p-4 space-y-4">
+        <div className="space-y-4 p-4">
           {/* Project (Organization) */}
           <div>
-            <label className="text-xs uppercase mb-1 block" style={{ color: 'var(--text-muted)' }}>
+            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
               Project *
             </label>
             {isLoadingProjects ? (
-              <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 <Loader2 className="animate-spin" size={14} />
                 Loading projects...
               </div>
             ) : (
               <select
                 value={form.project}
-                onChange={(e) => setForm((prev) => ({ ...prev, project: e.target.value, assignee: '' }))}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, project: e.target.value, assignee: '' }))
+                }
                 className="input w-full"
                 required
               >
@@ -274,7 +273,7 @@ export default function NewTicketPage() {
 
           {/* Assignee */}
           <div>
-            <div className="flex items-center justify-between mb-1">
+            <div className="mb-1 flex items-center justify-between">
               <label className="text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
                 Assignee
               </label>
@@ -289,7 +288,10 @@ export default function NewTicketPage() {
               </button>
             </div>
             {isLoadingMembers ? (
-              <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 <Loader2 className="animate-spin" size={14} />
                 Loading...
               </div>
@@ -312,7 +314,7 @@ export default function NewTicketPage() {
 
           {/* Tags */}
           <div>
-            <label className="text-xs uppercase mb-1 block" style={{ color: 'var(--text-muted)' }}>
+            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
               Tags
             </label>
             <input
@@ -322,14 +324,14 @@ export default function NewTicketPage() {
               onChange={(e) => setForm((prev) => ({ ...prev, tags: e.target.value }))}
               className="input w-full"
             />
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
               Comma-separated. &quot;ticket&quot; tag added automatically.
             </p>
           </div>
 
           {/* Priority */}
           <div>
-            <label className="text-xs uppercase mb-1 block" style={{ color: 'var(--text-muted)' }}>
+            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
               Priority
             </label>
             <select
@@ -346,7 +348,7 @@ export default function NewTicketPage() {
 
           {/* Work Item Type - fixed to Task */}
           <div>
-            <label className="text-xs uppercase mb-1 block" style={{ color: 'var(--text-muted)' }}>
+            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
               Work Item Type
             </label>
             <select className="input w-full" disabled>

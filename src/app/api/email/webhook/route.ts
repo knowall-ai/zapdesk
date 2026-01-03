@@ -27,10 +27,7 @@ export async function POST(request: NextRequest) {
     // Extract sender email
     const senderEmail = extractEmail(from);
     if (!senderEmail) {
-      return NextResponse.json(
-        { error: 'Invalid sender email' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid sender email' }, { status: 400 });
     }
 
     // Determine which project to create the ticket in based on sender domain
@@ -50,10 +47,7 @@ export async function POST(request: NextRequest) {
     const pat = process.env.AZURE_DEVOPS_PAT;
     if (!pat) {
       console.error('AZURE_DEVOPS_PAT not configured');
-      return NextResponse.json(
-        { error: 'Service not configured' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Service not configured' }, { status: 500 });
     }
 
     // Create Azure DevOps service with PAT (base64 encoded)
@@ -81,10 +75,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error processing email webhook:', error);
-    return NextResponse.json(
-      { error: 'Failed to process email' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to process email' }, { status: 500 });
   }
 }
 
@@ -104,7 +95,7 @@ class AzureDevOpsServiceWithPAT {
 
   private get headers(): HeadersInit {
     return {
-      'Authorization': `Basic ${this.encodedPat}`,
+      Authorization: `Basic ${this.encodedPat}`,
       'Content-Type': 'application/json',
     };
   }
@@ -121,7 +112,11 @@ class AzureDevOpsServiceWithPAT {
       { op: 'add', path: '/fields/System.Description', value: description },
       { op: 'add', path: '/fields/System.Tags', value: 'ticket; email' },
       { op: 'add', path: '/fields/Microsoft.VSTS.Common.Priority', value: priority },
-      { op: 'add', path: '/fields/System.History', value: `Ticket created from email by ${requesterEmail}` },
+      {
+        op: 'add',
+        path: '/fields/System.History',
+        value: `Ticket created from email by ${requesterEmail}`,
+      },
     ];
 
     const response = await fetch(
@@ -154,7 +149,11 @@ function extractEmail(from: string): string | null {
 function determinePriority(subject: string): number {
   const lowerSubject = subject.toLowerCase();
 
-  if (lowerSubject.includes('urgent') || lowerSubject.includes('critical') || lowerSubject.includes('emergency')) {
+  if (
+    lowerSubject.includes('urgent') ||
+    lowerSubject.includes('critical') ||
+    lowerSubject.includes('emergency')
+  ) {
     return 1; // Urgent
   }
 

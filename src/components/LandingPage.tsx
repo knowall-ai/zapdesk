@@ -1,34 +1,32 @@
 'use client';
 
 import { signIn } from 'next-auth/react';
-import {
-  Ticket,
-  Users,
-  BarChart3,
-  FolderKanban,
-  CheckCircle,
-} from 'lucide-react';
+import { Ticket, Users, BarChart3, FolderKanban, CheckCircle } from 'lucide-react';
 
 const features = [
   {
     icon: <Ticket size={24} />,
     title: 'Zendesk-Style Interface',
-    description: 'A familiar support portal experience for managing tickets, customers, and organizations from Azure DevOps.',
+    description:
+      'A familiar support portal experience for managing tickets, customers, and organizations from Azure DevOps.',
   },
   {
     icon: <FolderKanban size={24} />,
     title: 'Azure DevOps Backend',
-    description: 'Uses your existing DevOps work items as tickets. No new database or data migration required.',
+    description:
+      'Uses your existing DevOps work items as tickets. No new database or data migration required.',
   },
   {
     icon: <BarChart3 size={24} />,
     title: 'Insightful Reports',
-    description: 'Track ticket volumes, response times, SLA compliance, and team performance with built-in dashboards.',
+    description:
+      'Track ticket volumes, response times, SLA compliance, and team performance with built-in dashboards.',
   },
   {
     icon: <Users size={24} />,
     title: 'Customer Management',
-    description: 'View tickets by customer or organization. Route emails to the right DevOps project automatically.',
+    description:
+      'View tickets by customer or organization. Route emails to the right DevOps project automatically.',
   },
 ];
 
@@ -44,22 +42,22 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--background)' }}>
       {/* Header */}
-      <header className="px-4 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+      <header className="border-b px-4 py-4" style={{ borderColor: 'var(--border)' }}>
+        <div className="mx-auto flex max-w-4xl items-center justify-between">
           <div className="flex items-center gap-2">
             <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center"
+              className="flex h-8 w-8 items-center justify-center rounded-lg"
               style={{ backgroundColor: 'var(--primary)' }}
             >
-              <span className="text-white font-bold">D</span>
+              <span className="font-bold text-white">D</span>
             </div>
-            <span className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
+            <span className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
               DevDesk
             </span>
           </div>
           <button
             onClick={() => signIn('azure-ad', { callbackUrl: '/' })}
-            className="btn-primary text-sm py-2 px-4"
+            className="btn-primary px-4 py-2 text-sm"
           >
             Sign in with Microsoft
           </button>
@@ -67,34 +65,37 @@ export default function LandingPage() {
       </header>
 
       {/* Hero */}
-      <section className="py-16 px-4">
-        <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
+      <section className="px-4 py-16">
+        <div className="mx-auto max-w-4xl text-center">
+          <h1
+            className="mb-4 text-3xl font-bold sm:text-4xl lg:text-5xl"
+            style={{ color: 'var(--text-primary)' }}
+          >
             Everything You Need for Support Ticketing
           </h1>
-          <p className="text-base sm:text-lg max-w-2xl mx-auto" style={{ color: 'var(--text-secondary)' }}>
-            Built specifically for teams using Azure DevOps who need a modern, efficient way
-            to manage and track support tickets.
+          <p
+            className="mx-auto max-w-2xl text-base sm:text-lg"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            Built specifically for teams using Azure DevOps who need a modern, efficient way to
+            manage and track support tickets.
           </p>
         </div>
       </section>
 
       {/* Features - 2 column grid */}
-      <section className="py-8 px-4">
-        <div className="max-w-4xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <section className="px-4 py-8">
+        <div className="mx-auto max-w-4xl">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             {features.map((feature) => (
-              <div
-                key={feature.title}
-                className="card p-6"
-              >
+              <div key={feature.title} className="card p-6">
                 <div
-                  className="w-12 h-12 rounded-lg flex items-center justify-center mb-4"
+                  className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg"
                   style={{ backgroundColor: 'rgba(34, 197, 94, 0.15)', color: 'var(--primary)' }}
                 >
                   {feature.icon}
                 </div>
-                <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                <h3 className="mb-2 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                   {feature.title}
                 </h3>
                 <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
@@ -107,20 +108,20 @@ export default function LandingPage() {
       </section>
 
       {/* Built for KnowAll.ai Teams */}
-      <section className="py-16 px-4" style={{ backgroundColor: 'var(--surface)' }}>
-        <div className="max-w-4xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+      <section className="px-4 py-16" style={{ backgroundColor: 'var(--surface)' }}>
+        <div className="mx-auto max-w-4xl">
+          <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
             {/* Left side - Text */}
             <div>
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
-                Built for{' '}
-                <span style={{ color: 'var(--primary)' }}>KnowAll.ai</span>
-                {' '}Teams
+              <h2
+                className="mb-4 text-2xl font-bold sm:text-3xl"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Built for <span style={{ color: 'var(--primary)' }}>KnowAll.ai</span> Teams
               </h2>
               <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>
-                DevDesk is designed exclusively for KnowAll.ai users, providing a
-                seamless experience for managing support tickets against Azure DevOps
-                projects.
+                DevDesk is designed exclusively for KnowAll.ai users, providing a seamless
+                experience for managing support tickets against Azure DevOps projects.
               </p>
               <div className="space-y-3">
                 {benefits.map((benefit) => (
@@ -133,24 +134,22 @@ export default function LandingPage() {
             </div>
 
             {/* Right side - Sign in card */}
-            <div
-              className="card p-8 text-center"
-            >
+            <div className="card p-8 text-center">
               <div
-                className="w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-6"
+                className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-xl"
                 style={{ backgroundColor: 'var(--surface-hover)' }}
               >
                 <svg width="32" height="32" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
-                  <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
-                  <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
-                  <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
-                  <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+                  <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+                  <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+                  <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+                  <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+              <h3 className="mb-2 text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
                 Sign in with Microsoft
               </h3>
-              <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
+              <p className="mb-6 text-sm" style={{ color: 'var(--text-muted)' }}>
                 Use your KnowAll.ai Microsoft account to access DevDesk securely.
               </p>
               <button
@@ -165,14 +164,14 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="py-6 px-4 border-t" style={{ borderColor: 'var(--border)' }}>
-        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <footer className="border-t px-4 py-6" style={{ borderColor: 'var(--border)' }}>
+        <div className="mx-auto flex max-w-4xl flex-col items-center justify-between gap-4 sm:flex-row">
           <div className="flex items-center gap-2">
             <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center"
+              className="flex h-8 w-8 items-center justify-center rounded-lg"
               style={{ backgroundColor: 'var(--primary)' }}
             >
-              <span className="text-white font-bold">D</span>
+              <span className="font-bold text-white">D</span>
             </div>
             <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
               DevDesk
@@ -193,13 +192,13 @@ export default function LandingPage() {
               href="https://github.com/knowall-ai/devdesk"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-[var(--text-primary)] transition-colors"
+              className="transition-colors hover:text-[var(--text-primary)]"
             >
               GitHub
             </a>
             <a
               href="mailto:support@knowall.ai"
-              className="hover:text-[var(--text-primary)] transition-colors"
+              className="transition-colors hover:text-[var(--text-primary)]"
             >
               Contact
             </a>

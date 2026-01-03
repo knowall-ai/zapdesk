@@ -3,10 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService, workItemToTicket } from '@/lib/devops';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -56,9 +53,6 @@ export async function GET(
     return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
   } catch (error) {
     console.error('Error fetching ticket:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch ticket' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch ticket' }, { status: 500 });
   }
 }

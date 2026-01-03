@@ -24,9 +24,18 @@ function getInitials(name: string): string {
 
 function getColorFromName(name: string): string {
   const colors = [
-    '#ef4444', '#f97316', '#f59e0b', '#84cc16',
-    '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
-    '#6366f1', '#8b5cf6', '#a855f7', '#ec4899',
+    '#ef4444',
+    '#f97316',
+    '#f59e0b',
+    '#84cc16',
+    '#22c55e',
+    '#14b8a6',
+    '#06b6d4',
+    '#3b82f6',
+    '#6366f1',
+    '#8b5cf6',
+    '#a855f7',
+    '#ec4899',
   ];
 
   let hash = 0;
@@ -50,7 +59,7 @@ export default function Avatar({ name, image, size = 'md', className = '' }: Ava
 
   return (
     <div
-      className={`${sizeClasses[size]} rounded-full flex items-center justify-center font-medium text-white ${className}`}
+      className={`${sizeClasses[size]} flex items-center justify-center rounded-full font-medium text-white ${className}`}
       style={{ backgroundColor: getColorFromName(name) }}
     >
       {getInitials(name)}

@@ -60,8 +60,11 @@ export default function ReportingPage() {
   if (status === 'loading') {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="animate-spin w-8 h-8 border-2 border-t-transparent rounded-full" style={{ borderColor: 'var(--primary)' }} />
+        <div className="flex h-full items-center justify-center">
+          <div
+            className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
+            style={{ borderColor: 'var(--primary)' }}
+          />
         </div>
       </MainLayout>
     );
@@ -110,9 +113,9 @@ export default function ReportingPage() {
     <MainLayout>
       <div className="p-6">
         {/* Header */}
-        <div className="flex items-start justify-between mb-6">
+        <div className="mb-6 flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+            <h1 className="mb-2 text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
               Reporting
             </h1>
             <p style={{ color: 'var(--text-secondary)' }}>
@@ -134,12 +137,12 @@ export default function ReportingPage() {
         </div>
 
         {/* Stats cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           {statCards.map((stat) => (
             <div key={stat.title} className="card p-6">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-sm mb-1" style={{ color: 'var(--text-muted)' }}>
+                  <p className="mb-1 text-sm" style={{ color: 'var(--text-muted)' }}>
                     {stat.title}
                   </p>
                   <p className="text-3xl font-bold" style={{ color: stat.color }}>
@@ -147,7 +150,7 @@ export default function ReportingPage() {
                   </p>
                 </div>
                 <div
-                  className="p-3 rounded-lg"
+                  className="rounded-lg p-3"
                   style={{ backgroundColor: `${stat.color}20`, color: stat.color }}
                 >
                   {stat.icon}
@@ -158,10 +161,10 @@ export default function ReportingPage() {
         </div>
 
         {/* Charts section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
           {/* Ticket Volume Chart */}
           <div className="card">
-            <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+            <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
               <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                 Ticket Volume
               </h2>
@@ -171,7 +174,7 @@ export default function ReportingPage() {
             </div>
             <div className="p-4">
               <div
-                className="h-64 flex items-center justify-center rounded-lg"
+                className="flex h-64 items-center justify-center rounded-lg"
                 style={{ backgroundColor: 'var(--surface-hover)' }}
               >
                 <div className="text-center">
@@ -186,7 +189,7 @@ export default function ReportingPage() {
 
           {/* Response Time Chart */}
           <div className="card">
-            <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+            <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
               <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                 Response Times
               </h2>
@@ -196,7 +199,7 @@ export default function ReportingPage() {
             </div>
             <div className="p-4">
               <div
-                className="h-64 flex items-center justify-center rounded-lg"
+                className="flex h-64 items-center justify-center rounded-lg"
                 style={{ backgroundColor: 'var(--surface-hover)' }}
               >
                 <div className="text-center">
@@ -212,7 +215,7 @@ export default function ReportingPage() {
 
         {/* Team Performance */}
         <div className="card">
-          <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+          <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
             <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
               Team Performance
             </h2>
@@ -222,7 +225,7 @@ export default function ReportingPage() {
           </div>
           <div className="p-4">
             <div
-              className="h-48 flex items-center justify-center rounded-lg"
+              className="flex h-48 items-center justify-center rounded-lg"
               style={{ backgroundColor: 'var(--surface-hover)' }}
             >
               <div className="text-center">

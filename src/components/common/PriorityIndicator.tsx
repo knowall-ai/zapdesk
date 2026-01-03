@@ -8,23 +8,26 @@ interface PriorityIndicatorProps {
   showLabel?: boolean;
 }
 
-const priorityConfig: Record<TicketPriority, { icon: React.ReactNode; className: string; label: string }> = {
-  'Urgent': {
+const priorityConfig: Record<
+  TicketPriority,
+  { icon: React.ReactNode; className: string; label: string }
+> = {
+  Urgent: {
     icon: <AlertTriangle size={14} />,
     className: 'priority-urgent',
     label: 'Urgent',
   },
-  'High': {
+  High: {
     icon: <ArrowUp size={14} />,
     className: 'priority-high',
     label: 'High',
   },
-  'Normal': {
+  Normal: {
     icon: <Minus size={14} />,
     className: 'priority-normal',
     label: 'Normal',
   },
-  'Low': {
+  Low: {
     icon: <ArrowDown size={14} />,
     className: 'priority-low',
     label: 'Low',

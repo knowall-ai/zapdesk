@@ -1,12 +1,12 @@
-import type { Metadata } from "next";
-import SessionProvider from "@/components/providers/SessionProvider";
-import "./globals.css";
+import type { Metadata } from 'next';
+import SessionProvider from '@/components/providers/SessionProvider';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "DevDesk - Support Ticketing by KnowAll",
-  description: "Azure DevOps powered support ticketing system",
+  title: 'DevDesk - Support Ticketing by KnowAll',
+  description: 'Azure DevOps powered support ticketing system',
   icons: {
-    icon: "/favicon.ico",
+    icon: '/favicon.ico',
   },
 };
 
@@ -18,9 +18,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="antialiased">
-        <SessionProvider>
-          {children}
-        </SessionProvider>
+        <SessionProvider>{children}</SessionProvider>
       </body>
     </html>
   );

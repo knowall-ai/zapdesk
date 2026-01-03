@@ -34,10 +34,12 @@ export default function TicketDetailPage() {
           createdAt: new Date(data.ticket.createdAt),
           updatedAt: new Date(data.ticket.updatedAt),
         });
-        setComments(data.comments.map((c: TicketComment & { createdAt: string }) => ({
-          ...c,
-          createdAt: new Date(c.createdAt),
-        })));
+        setComments(
+          data.comments.map((c: TicketComment & { createdAt: string }) => ({
+            ...c,
+            createdAt: new Date(c.createdAt),
+          }))
+        );
       } else {
         router.push('/tickets');
       }
@@ -90,8 +92,11 @@ export default function TicketDetailPage() {
   if (status === 'loading' || loading) {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="animate-spin w-8 h-8 border-2 border-t-transparent rounded-full" style={{ borderColor: 'var(--primary)' }} />
+        <div className="flex h-full items-center justify-center">
+          <div
+            className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
+            style={{ borderColor: 'var(--primary)' }}
+          />
         </div>
       </MainLayout>
     );

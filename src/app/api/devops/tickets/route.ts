@@ -16,10 +16,7 @@ export async function POST(request: NextRequest) {
     const { project, title, description, priority, assignee, tags } = body;
 
     if (!project || !title) {
-      return NextResponse.json(
-        { error: 'Project and title are required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Project and title are required' }, { status: 400 });
     }
 
     const devopsService = new AzureDevOpsService(session.accessToken);
@@ -41,10 +38,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ticket, success: true });
   } catch (error) {
     console.error('Error creating ticket:', error);
-    return NextResponse.json(
-      { error: 'Failed to create ticket' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to create ticket' }, { status: 500 });
   }
 }
 
@@ -63,7 +57,7 @@ export async function GET(request: NextRequest) {
     const tickets = await devopsService.getAllTickets();
 
     // Filter tickets based on view
-    let filteredTickets = filterTicketsByView(tickets, view, session.user?.email);
+    const filteredTickets = filterTicketsByView(tickets, view, session.user?.email);
 
     return NextResponse.json({
       tickets: filteredTickets,
@@ -71,10 +65,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error fetching tickets:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch tickets' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch tickets' }, { status: 500 });
   }
 }
 
