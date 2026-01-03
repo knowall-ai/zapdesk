@@ -1,0 +1,206 @@
+@import "tailwindcss";
+
+/* KnowAll DevDesk - Dark Theme with Bright Green Accent */
+:root {
+  /* Dark theme as default */
+  --background: #0f1117;
+  --foreground: #e5e7eb;
+
+  /* KnowAll Brand Colors */
+  --primary: #22c55e;
+  --primary-hover: #16a34a;
+  --primary-light: #4ade80;
+  --primary-dark: #15803d;
+
+  /* Surface colors */
+  --surface: #1a1d26;
+  --surface-hover: #252832;
+  --surface-active: #2d313d;
+
+  /* Border colors */
+  --border: #2d313d;
+  --border-light: #3d4251;
+
+  /* Status colors */
+  --status-new: #3b82f6;
+  --status-open: #f59e0b;
+  --status-progress: #8b5cf6;
+  --status-pending: #ec4899;
+  --status-resolved: #22c55e;
+  --status-closed: #6b7280;
+
+  /* Priority colors */
+  --priority-urgent: #ef4444;
+  --priority-high: #f97316;
+  --priority-normal: #3b82f6;
+  --priority-low: #6b7280;
+
+  /* Text colors */
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+
+  /* Sidebar */
+  --sidebar-bg: #0a0c10;
+  --sidebar-hover: #1a1d26;
+  --sidebar-active: #22c55e;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Status badge styles */
+.status-badge {
+  @apply px-2 py-1 rounded-full text-xs font-medium;
+}
+
+.status-new { background: var(--status-new); color: white; }
+.status-open { background: var(--status-open); color: white; }
+.status-in-progress { background: var(--status-progress); color: white; }
+.status-pending { background: var(--status-pending); color: white; }
+.status-resolved { background: var(--status-resolved); color: white; }
+.status-closed { background: var(--status-closed); color: white; }
+
+/* Priority indicator styles */
+.priority-urgent { color: var(--priority-urgent); }
+.priority-high { color: var(--priority-high); }
+.priority-normal { color: var(--priority-normal); }
+.priority-low { color: var(--priority-low); }
+
+/* Focus ring for accessibility */
+.focus-ring {
+  @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+  --tw-ring-color: var(--primary);
+  --tw-ring-offset-color: var(--background);
+}
+
+/* Table styles */
+.table-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.table-row {
+  border-bottom: 1px solid var(--border);
+  transition: background-color 0.15s ease;
+}
+
+.table-row:hover {
+  background: var(--surface-hover);
+}
+
+/* Button styles */
+.btn-primary {
+  background: var(--primary);
+  color: white;
+  @apply px-4 py-2 rounded-md font-medium transition-colors;
+}
+
+.btn-primary:hover {
+  background: var(--primary-hover);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  @apply px-4 py-2 rounded-md font-medium transition-colors;
+}
+
+.btn-secondary:hover {
+  background: var(--surface-hover);
+}
+
+/* Card styles */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  @apply rounded-lg;
+}
+
+/* Input styles */
+.input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  @apply px-3 py-2 rounded-md transition-colors;
+}
+
+.input:focus {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+}
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Sidebar navigation */
+.nav-item {
+  color: var(--text-secondary);
+  @apply flex items-center gap-3 px-3 py-2 rounded-md transition-colors;
+}
+
+.nav-item:hover {
+  background: var(--sidebar-hover);
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--primary);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from { transform: translateX(-10px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.2s ease-out;
+}

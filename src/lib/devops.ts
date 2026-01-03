@@ -1,0 +1,377 @@
+// Azure DevOps API Service Layer
+import type {
+  DevOpsWorkItem,
+  DevOpsProject,
+  Ticket,
+  TicketStatus,
+  TicketPriority,
+  Customer,
+  User,
+  Organization,
+  TicketComment,
+} from '@/types';
+
+const DEVOPS_ORG = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
+
+// Map Azure DevOps states to Zendesk-like statuses
+function mapStateToStatus(state: string): TicketStatus {
+  const stateMap: Record<string, TicketStatus> = {
+    'New': 'New',
+    'Active': 'Open',
+    'In Progress': 'In Progress',
+    'Doing': 'In Progress',
+    'Resolved': 'Resolved',
+    'Closed': 'Closed',
+    'Done': 'Closed',
+    'Removed': 'Closed',
+    // Custom states for support
+    'Pending': 'Pending',
+    'Waiting for Customer': 'Pending',
+    'On Hold': 'Pending',
+  };
+  return stateMap[state] || 'Open';
+}
+
+// Map priority numbers to Zendesk-like priorities
+function mapPriority(priority?: number): TicketPriority {
+  if (!priority) return 'Normal';
+  if (priority === 1) return 'Urgent';
+  if (priority === 2) return 'High';
+  if (priority === 3) return 'Normal';
+  return 'Low';
+}
+
+// Convert DevOps identity to User
+function identityToUser(identity?: { displayName: string; uniqueName: string; id: string; imageUrl?: string }): User | undefined {
+  if (!identity) return undefined;
+  return {
+    id: identity.id,
+    displayName: identity.displayName,
+    email: identity.uniqueName,
+    avatarUrl: identity.imageUrl,
+  };
+}
+
+// Convert DevOps identity to Customer
+function identityToCustomer(identity: { displayName: string; uniqueName: string; id: string; imageUrl?: string }): Customer {
+  return {
+    id: identity.id,
+    displayName: identity.displayName,
+    email: identity.uniqueName,
+    timezone: 'Europe/Dublin',
+    tags: [],
+    avatarUrl: identity.imageUrl,
+    lastUpdated: new Date(),
+  };
+}
+
+// Convert DevOps work item to Ticket
+export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organization): Ticket {
+  const fields = workItem.fields;
+  return {
+    id: workItem.id,
+    workItemId: workItem.id,
+    title: fields['System.Title'],
+    description: fields['System.Description'] || '',
+    status: mapStateToStatus(fields['System.State']),
+    priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
+    requester: identityToCustomer(fields['System.CreatedBy']),
+    assignee: identityToUser(fields['System.AssignedTo']),
+    organization,
+    tags: fields['System.Tags']?.split(';').map((t: string) => t.trim()).filter(Boolean) || [],
+    createdAt: new Date(fields['System.CreatedDate']),
+    updatedAt: new Date(fields['System.ChangedDate']),
+    devOpsUrl: workItem._links?.html?.href || `${DEVOPS_BASE_URL}/${fields['System.TeamProject']}/_workitems/edit/${workItem.id}`,
+    project: fields['System.TeamProject'],
+    comments: [],
+  };
+}
+
+export class AzureDevOpsService {
+  private accessToken: string;
+  private organization: string;
+
+  constructor(accessToken: string, organization: string = DEVOPS_ORG) {
+    this.accessToken = accessToken;
+    this.organization = organization;
+  }
+
+  private get baseUrl(): string {
+    return `https://dev.azure.com/${this.organization}`;
+  }
+
+  private get headers(): HeadersInit {
+    return {
+      'Authorization': `Bearer ${this.accessToken}`,
+      'Content-Type': 'application/json',
+    };
+  }
+
+  // Get all projects the user has access to
+  async getProjects(): Promise<DevOpsProject[]> {
+    const response = await fetch(
+      `${this.baseUrl}/_apis/projects?api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch projects: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.value;
+  }
+
+  // Get work items with "ticket" tag from a specific project
+  async getTickets(projectName: string, additionalFilters?: string): Promise<DevOpsWorkItem[]> {
+    // WIQL query to get work items tagged as "ticket"
+    const wiql = {
+      query: `
+        SELECT [System.Id], [System.Title], [System.State], [System.CreatedDate],
+               [System.ChangedDate], [System.CreatedBy], [System.AssignedTo],
+               [System.Tags], [Microsoft.VSTS.Common.Priority], [System.Description],
+               [System.WorkItemType], [System.AreaPath], [System.TeamProject]
+        FROM WorkItems
+        WHERE [System.TeamProject] = '${projectName}'
+          AND [System.Tags] CONTAINS 'ticket'
+          ${additionalFilters || ''}
+        ORDER BY [System.ChangedDate] DESC
+      `
+    };
+
+    const queryResponse = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/wiql?api-version=7.0`,
+      {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify(wiql),
+      }
+    );
+
+    if (!queryResponse.ok) {
+      throw new Error(`Failed to query work items: ${queryResponse.statusText}`);
+    }
+
+    const queryData = await queryResponse.json();
+    const workItemIds = queryData.workItems?.map((wi: { id: number }) => wi.id) || [];
+
+    if (workItemIds.length === 0) {
+      return [];
+    }
+
+    // Fetch work item details in batches
+    const batchSize = 200;
+    const allWorkItems: DevOpsWorkItem[] = [];
+
+    for (let i = 0; i < workItemIds.length; i += batchSize) {
+      const batch = workItemIds.slice(i, i + batchSize);
+      const workItemsResponse = await fetch(
+        `${this.baseUrl}/_apis/wit/workitems?ids=${batch.join(',')}&$expand=all&api-version=7.0`,
+        { headers: this.headers }
+      );
+
+      if (!workItemsResponse.ok) {
+        throw new Error(`Failed to fetch work items: ${workItemsResponse.statusText}`);
+      }
+
+      const workItemsData = await workItemsResponse.json();
+      allWorkItems.push(...workItemsData.value);
+    }
+
+    return allWorkItems;
+  }
+
+  // Get a single work item by ID
+  async getWorkItem(projectName: string, workItemId: number): Promise<DevOpsWorkItem> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?$expand=all&api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch work item: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // Get comments for a work item
+  async getWorkItemComments(projectName: string, workItemId: number): Promise<TicketComment[]> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/comments?api-version=7.0-preview`,
+      { headers: this.headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch comments: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.comments?.map((c: { id: number; text: string; createdDate: string; createdBy: { displayName: string; uniqueName: string; id: string } }) => ({
+      id: c.id,
+      content: c.text,
+      createdAt: new Date(c.createdDate),
+      author: {
+        id: c.createdBy.id,
+        displayName: c.createdBy.displayName,
+        email: c.createdBy.uniqueName,
+      },
+      isInternal: false,
+    })) || [];
+  }
+
+  // Create a new work item (ticket)
+  async createTicket(
+    projectName: string,
+    title: string,
+    description: string,
+    requesterEmail: string,
+    priority: number = 3
+  ): Promise<DevOpsWorkItem> {
+    const patchDocument = [
+      { op: 'add', path: '/fields/System.Title', value: title },
+      { op: 'add', path: '/fields/System.Description', value: description },
+      { op: 'add', path: '/fields/System.Tags', value: 'ticket' },
+      { op: 'add', path: '/fields/Microsoft.VSTS.Common.Priority', value: priority },
+      { op: 'add', path: '/fields/System.History', value: `Ticket created by ${requesterEmail}` },
+    ];
+
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$Task?api-version=7.0`,
+      {
+        method: 'POST',
+        headers: {
+          ...this.headers,
+          'Content-Type': 'application/json-patch+json',
+        },
+        body: JSON.stringify(patchDocument),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to create work item: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // Add a comment to a work item
+  async addComment(projectName: string, workItemId: number, comment: string): Promise<void> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/comments?api-version=7.0-preview`,
+      {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({ text: comment }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to add comment: ${response.statusText}`);
+    }
+  }
+
+  // Update work item state
+  async updateTicketState(projectName: string, workItemId: number, state: string): Promise<DevOpsWorkItem> {
+    const patchDocument = [
+      { op: 'add', path: '/fields/System.State', value: state },
+    ];
+
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?api-version=7.0`,
+      {
+        method: 'PATCH',
+        headers: {
+          ...this.headers,
+          'Content-Type': 'application/json-patch+json',
+        },
+        body: JSON.stringify(patchDocument),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to update work item: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // Get all tickets from all accessible projects
+  async getAllTickets(): Promise<Ticket[]> {
+    const projects = await this.getProjects();
+    const allTickets: Ticket[] = [];
+
+    for (const project of projects) {
+      try {
+        const workItems = await this.getTickets(project.name);
+        const organization: Organization = {
+          id: project.id,
+          name: project.name,
+          devOpsProject: project.name,
+          devOpsOrg: this.organization,
+          tags: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        const tickets = workItems.map(wi => workItemToTicket(wi, organization));
+        allTickets.push(...tickets);
+      } catch (error) {
+        console.error(`Failed to fetch tickets from ${project.name}:`, error);
+      }
+    }
+
+    return allTickets.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  }
+
+  // Get team members from a project
+  async getTeamMembers(projectName: string): Promise<User[]> {
+    const response = await fetch(
+      `${this.baseUrl}/_apis/projects/${encodeURIComponent(projectName)}/teams?api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const teamsData = await response.json();
+    const allMembers: User[] = [];
+
+    for (const team of teamsData.value || []) {
+      const membersResponse = await fetch(
+        `${this.baseUrl}/_apis/projects/${encodeURIComponent(projectName)}/teams/${team.id}/members?api-version=7.0`,
+        { headers: this.headers }
+      );
+
+      if (membersResponse.ok) {
+        const membersData = await membersResponse.json();
+        for (const member of membersData.value || []) {
+          if (member.identity && !allMembers.find(m => m.id === member.identity.id)) {
+            allMembers.push({
+              id: member.identity.id,
+              displayName: member.identity.displayName,
+              email: member.identity.uniqueName,
+              avatarUrl: member.identity.imageUrl,
+            });
+          }
+        }
+      }
+    }
+
+    return allMembers;
+  }
+}
+
+// Helper to get project from email domain mapping
+export const PROJECT_DOMAIN_MAP: Record<string, string> = {
+  'cairnhomes.com': 'Cairn Homes',
+  'medite.com': 'Medite',
+  'medite.ie': 'Medite',
+  'knowall.ai': 'KnowAll', // Internal project
+};
+
+export function getProjectFromEmail(email: string): string | undefined {
+  const domain = email.split('@')[1]?.toLowerCase();
+  return PROJECT_DOMAIN_MAP[domain];
+}

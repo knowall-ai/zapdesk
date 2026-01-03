@@ -1,0 +1,228 @@
+= DevDesk Solution Design
+:toc: left
+:toclevels: 3
+:icons: font
+
+== Overview
+
+DevDesk is a customer support ticketing portal that provides a Zendesk-like experience while using Azure DevOps as the backend work item management system. This enables organizations to manage customer support requests alongside their development work.
+
+== Architecture
+
+=== High-Level Architecture
+
+[source]
+----
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│                 │     │                 │     │                 │
+│   Client        │────▶│   DevDesk       │────▶│   Azure DevOps  │
+│   (Browser)     │     │   (Next.js)     │     │   REST API      │
+│                 │     │                 │     │                 │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                               │
+                               │
+                        ┌──────▼──────┐
+                        │             │
+                        │  Azure AD   │
+                        │  (Auth)     │
+                        │             │
+                        └─────────────┘
+----
+
+=== Technology Stack
+
+[cols="1,2"]
+|===
+|Component |Technology
+
+|Frontend
+|Next.js 15 (App Router), React 19, TypeScript
+
+|Styling
+|Tailwind CSS with CSS Variables
+
+|Authentication
+|NextAuth.js with Azure AD Provider
+
+|Backend API
+|Azure DevOps REST API v7.0
+
+|Deployment
+|Azure App Service
+
+|Email Integration
+|Webhook endpoint for email providers
+|===
+
+== Authentication Flow
+
+=== OAuth 2.0 with Azure AD
+
+[source]
+----
+1. User clicks "Sign in with Microsoft"
+2. Redirect to Azure AD authorization endpoint
+3. User authenticates and consents
+4. Azure AD redirects back with authorization code
+5. NextAuth exchanges code for tokens
+6. Access token includes Azure DevOps scope
+7. Token stored in encrypted JWT session
+----
+
+=== Required Scopes
+
+* `openid` - OpenID Connect
+* `profile` - User profile
+* `email` - Email address
+* `offline_access` - Refresh tokens
+* `499b84ac-1321-427f-aa17-267ca6975798/.default` - Azure DevOps API
+
+== Data Model
+
+=== Mapping to Azure DevOps
+
+[cols="1,1,2"]
+|===
+|DevDesk Concept |DevOps Entity |Notes
+
+|Ticket
+|Work Item
+|Must have "ticket" tag
+
+|Organization
+|Project
+|One project per client
+
+|Customer
+|Identity
+|Work item creator/requester
+
+|Status
+|Work Item State
+|Mapped to Zendesk-like statuses
+
+|Priority
+|Priority Field
+|1=Urgent, 2=High, 3=Normal, 4=Low
+|===
+
+=== Status Mapping
+
+[cols="1,1"]
+|===
+|Azure DevOps State |DevDesk Status
+
+|New
+|New
+
+|Active
+|Open
+
+|In Progress / Doing
+|In Progress
+
+|Pending / On Hold
+|Pending
+
+|Resolved
+|Resolved
+
+|Closed / Done
+|Closed
+|===
+
+== API Design
+
+=== Internal API Routes
+
+[cols="1,1,2"]
+|===
+|Endpoint |Method |Description
+
+|`/api/auth/*`
+|Various
+|NextAuth.js authentication endpoints
+
+|`/api/devops/tickets`
+|GET
+|List tickets with filtering
+
+|`/api/devops/tickets/[id]`
+|GET
+|Get single ticket details
+
+|`/api/devops/tickets/[id]/comments`
+|POST
+|Add comment to ticket
+
+|`/api/devops/tickets/[id]/status`
+|PATCH
+|Update ticket status
+
+|`/api/devops/stats`
+|GET
+|Dashboard statistics
+
+|`/api/devops/organizations`
+|GET
+|List organizations (projects)
+
+|`/api/devops/customers`
+|GET
+|List customers
+
+|`/api/email/webhook`
+|POST
+|Email-to-ticket creation
+|===
+
+== Security Considerations
+
+=== Authentication
+
+* All API routes require authenticated session
+* JWT tokens encrypted with NEXTAUTH_SECRET
+* Token refresh handled automatically
+
+=== Authorization
+
+* Users only see tickets from projects they have access to
+* Azure DevOps permissions are respected
+* No data stored locally - all from DevOps
+
+=== Email Webhook
+
+* Protected by shared secret header
+* Validates sender domain for project mapping
+* Rate limiting recommended at infrastructure level
+
+== Multi-Tenant Design
+
+=== Project-Based Tenancy
+
+Each client organization has:
+
+* Dedicated Azure DevOps project
+* Domain mapping for email integration
+* SLA tags for service level differentiation
+
+=== Domain Mapping
+
+[source,typescript]
+----
+const PROJECT_DOMAIN_MAP = {
+  'cairnhomes.com': 'Cairn Homes',
+  'medite.com': 'Medite',
+  'knowall.ai': 'KnowAll',
+};
+----
+
+== Future Enhancements
+
+* Real-time updates via WebSocket/SSE
+* CSAT (Customer Satisfaction) surveys
+* SLA timer visualization
+* Bulk ticket operations
+* Custom views and saved filters
+* Reporting dashboard
+* Mobile responsive improvements

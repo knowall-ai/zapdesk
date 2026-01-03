@@ -1,0 +1,103 @@
+= DevDesk Troubleshooting Guide
+:toc: left
+:icons: font
+
+== Common Issues
+
+[cols="2,3"]
+|===
+|Problem |Solution
+
+|**"Sign in failed" after Microsoft login**
+|Verify Azure AD redirect URI matches exactly: `https://devdesk.knowall.ai/api/auth/callback/azure-ad`. Check AZURE_AD_CLIENT_ID and AZURE_AD_CLIENT_SECRET are correct.
+
+|**"Unauthorized" when viewing tickets**
+|Session may have expired. Sign out and sign in again. Check NEXTAUTH_SECRET is set correctly and matches across deployments.
+
+|**No tickets showing in list**
+|Ensure work items have the "ticket" tag in Azure DevOps. Verify user has permission to access the Azure DevOps project. Check browser console for API errors.
+
+|**"Failed to fetch tickets" error**
+|Azure DevOps API may be down. Check https://status.dev.azure.com/. Verify AZURE_DEVOPS_ORG is set correctly. Check user has valid Azure DevOps license.
+
+|**Comments not saving**
+|User may not have write permission in Azure DevOps. Check the work item is not locked. Verify session hasn't expired.
+
+|**Email webhook not creating tickets**
+|Verify EMAIL_WEBHOOK_SECRET header matches. Check sender domain has project mapping. Review server logs for error details.
+
+|**Blank page after login**
+|Check browser console for JavaScript errors. Verify all environment variables are set. Clear browser cache and cookies.
+
+|**"Invalid configuration" on login page**
+|AZURE_AD_CLIENT_ID or AZURE_AD_TENANT_ID is missing or invalid. Check .env file and Azure App Service configuration.
+
+|**Slow ticket loading**
+|Large number of tickets may cause delays. Consider pagination. Check Azure DevOps API rate limits.
+
+|**CSS/styles not loading**
+|Clear browser cache. Run `npm run build` to regenerate styles. Check Tailwind configuration.
+
+|**"Token expired" errors**
+|Refresh token may have expired. Sign out and sign in again. Check token lifetimes in Azure AD app settings.
+
+|**Can't see specific project's tickets**
+|User lacks permission to that Azure DevOps project. Add user to project in Azure DevOps. Check project exists in organization.
+
+|**Search not returning expected results**
+|Search only covers client-side loaded tickets. Use Azure DevOps for advanced queries. Check filter settings.
+
+|**Avatar images not loading**
+|Azure DevOps image URLs may require authentication. This is expected behavior - initials shown instead.
+
+|**"CORS error" in browser**
+|API routes should proxy all requests. Check you're using /api/ routes, not calling DevOps directly. Verify NEXTAUTH_URL is correct.
+
+|**Deployment failing**
+|Check GitHub Actions logs. Verify AZURE_WEBAPP_PUBLISH_PROFILE secret is current. Ensure Node.js version matches (18+).
+
+|**Custom domain not working**
+|Verify DNS CNAME record. Check Azure SSL certificate status. Allow up to 24 hours for DNS propagation.
+|===
+
+== Debugging Tips
+
+=== Check Server Logs
+
+In Azure App Service:
+[source,bash]
+----
+az webapp log tail --name devdesk-knowall --resource-group devdesk-rg
+----
+
+=== Check Browser Console
+
+1. Open browser developer tools (F12)
+2. Go to Console tab
+3. Look for red error messages
+4. Check Network tab for failed requests
+
+=== Verify Environment Variables
+
+[source,bash]
+----
+# Local development
+cat .env
+
+# Azure App Service
+az webapp config appsettings list --name devdesk-knowall --resource-group devdesk-rg
+----
+
+=== Test Azure DevOps Connection
+
+[source,bash]
+----
+# Test API with PAT
+curl -u ":YOUR_PAT" "https://dev.azure.com/KnowAll/_apis/projects?api-version=7.0"
+----
+
+== Getting Help
+
+* Check GitHub Issues: https://github.com/knowall-ai/devdesk/issues
+* Contact Support: support@knowall.ai
+* Azure DevOps Status: https://status.dev.azure.com/

@@ -1,0 +1,269 @@
+= DevDesk Testing Guide
+:toc: left
+:toclevels: 3
+:icons: font
+
+== Overview
+
+This guide covers testing strategies and procedures for DevDesk.
+
+== Test Types
+
+=== Unit Tests
+
+Unit tests for utility functions and services.
+
+[source,bash]
+----
+npm run test:unit
+----
+
+=== Integration Tests
+
+Integration tests for API routes.
+
+[source,bash]
+----
+npm run test:integration
+----
+
+=== End-to-End Tests
+
+Playwright tests for full user flows.
+
+[source,bash]
+----
+npm run test:e2e
+----
+
+== Running Tests
+
+=== Prerequisites
+
+1. Install dependencies:
+[source,bash]
+----
+npm install
+----
+
+2. Install Playwright browsers:
+[source,bash]
+----
+npx playwright install
+----
+
+3. Set up test environment:
+[source,bash]
+----
+cp .env.example .env.test
+----
+
+=== Run All Tests
+
+[source,bash]
+----
+npm test
+----
+
+=== Run Specific Tests
+
+[source,bash]
+----
+# Unit tests only
+npm run test:unit
+
+# Integration tests only
+npm run test:integration
+
+# E2E tests only
+npm run test:e2e
+
+# Specific test file
+npx playwright test tests/tickets.spec.ts
+----
+
+== Manual Testing Checklist
+
+=== Authentication
+
+* [ ] Sign in with Microsoft account
+* [ ] Verify redirect to home page after login
+* [ ] Verify user name displayed in header
+* [ ] Sign out successfully
+* [ ] Verify redirect to login page when accessing protected route
+
+=== Ticket List
+
+* [ ] View all unsolved tickets
+* [ ] Filter by "Your unsolved tickets"
+* [ ] Filter by "Pending tickets"
+* [ ] Filter by "Unassigned tickets"
+* [ ] Sort by status, date, priority
+* [ ] Search tickets
+* [ ] Verify only "ticket" tagged items appear
+
+=== Ticket Detail
+
+* [ ] View ticket details
+* [ ] See ticket description/content
+* [ ] View comments
+* [ ] Add public comment
+* [ ] Add internal note
+* [ ] View ticket in Azure DevOps (external link)
+* [ ] See requester information
+* [ ] See assignee information
+
+=== Organizations
+
+* [ ] View list of organizations
+* [ ] Search organizations
+* [ ] See organization details (domain, tags)
+* [ ] Click through to organization detail
+
+=== Customers
+
+* [ ] View list of customers
+* [ ] Search customers
+* [ ] See customer details (email, timezone)
+* [ ] View customer ticket history
+
+=== Dashboard
+
+* [ ] View ticket statistics
+* [ ] Verify stat counts match filters
+* [ ] Quick action links work
+* [ ] Project links work
+
+== Test Data Setup
+
+=== Azure DevOps Test Items
+
+Create test work items in Azure DevOps:
+
+1. Create Task work item
+2. Add "ticket" tag
+3. Set various states (New, Active, Resolved)
+4. Set different priorities
+5. Add comments
+
+=== Test Scenarios
+
+==== Scenario 1: New Ticket
+
+1. Create Task in DevOps
+2. Add "ticket" tag
+3. Verify appears in DevDesk
+4. Check status shows as "New"
+
+==== Scenario 2: In Progress Ticket
+
+1. Change DevOps state to "Active"
+2. Verify DevDesk shows "Open"
+3. Change to "Doing"
+4. Verify shows "In Progress"
+
+==== Scenario 3: Add Comment
+
+1. Open ticket in DevDesk
+2. Add comment
+3. Verify comment appears
+4. Check comment visible in DevOps
+
+== Playwright Test Structure
+
+=== Test Files
+
+[source]
+----
+tests/
+├── auth.spec.ts        # Authentication tests
+├── tickets.spec.ts     # Ticket listing tests
+├── ticket-detail.spec.ts # Ticket detail tests
+├── organizations.spec.ts # Organization tests
+├── customers.spec.ts   # Customer tests
+└── fixtures/
+    └── test-data.ts    # Test data helpers
+----
+
+=== Example Test
+
+[source,typescript]
+----
+import { test, expect } from '@playwright/test';
+
+test.describe('Ticket List', () => {
+  test.beforeEach(async ({ page }) => {
+    // Login before each test
+    await page.goto('/login');
+    // ... login flow
+  });
+
+  test('should display tickets', async ({ page }) => {
+    await page.goto('/tickets');
+    await expect(page.locator('h1')).toContainText('unsolved tickets');
+    await expect(page.locator('table')).toBeVisible();
+  });
+
+  test('should filter pending tickets', async ({ page }) => {
+    await page.goto('/tickets?view=pending');
+    await expect(page.locator('h1')).toContainText('Pending tickets');
+  });
+});
+----
+
+== CI/CD Testing
+
+Tests run automatically in GitHub Actions:
+
+1. On pull request to `main`
+2. Before deployment
+
+=== Test Environment
+
+CI tests use:
+
+* Mock Azure DevOps API responses
+* Test Azure AD credentials
+* Isolated test database (if applicable)
+
+== Debugging Tests
+
+=== Playwright UI Mode
+
+[source,bash]
+----
+npx playwright test --ui
+----
+
+=== Debug Mode
+
+[source,bash]
+----
+npx playwright test --debug
+----
+
+=== Test Report
+
+View HTML test report:
+
+[source,bash]
+----
+npx playwright show-report
+----
+
+== Performance Testing
+
+=== Load Testing
+
+Use k6 or Artillery for load testing:
+
+[source,bash]
+----
+k6 run tests/load/tickets.js
+----
+
+=== Metrics to Monitor
+
+* Response time < 500ms for API calls
+* Time to First Byte < 1s
+* Lighthouse score > 80
