@@ -1,9 +1,12 @@
 name: Create Azure Staging Issue
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - claude/azure-staging-deployment-37ra5
+      - main
+    paths:
+      - '.github/workflows/create-azure-staging-issue.yml'
 
 permissions:
   issues: write
