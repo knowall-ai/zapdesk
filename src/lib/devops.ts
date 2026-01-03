@@ -363,15 +363,112 @@ export class AzureDevOpsService {
   }
 }
 
-// Helper to get project from email domain mapping
-export const PROJECT_DOMAIN_MAP: Record<string, string> = {
+// Email routing: Maps email domains to DevOps projects
+// Reads from project descriptions in format: "Email: domain1.com, domain2.com"
+// Falls back to hardcoded defaults if DevOps query fails
+
+interface DomainMapCache {
+  map: Record<string, string>;
+  timestamp: number;
+}
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+let domainMapCache: DomainMapCache | null = null;
+
+// Fallback mapping if DevOps query fails
+const FALLBACK_DOMAIN_MAP: Record<string, string> = {
   'cairnhomes.com': 'Cairn Homes',
   'medite.com': 'Medite',
   'medite.ie': 'Medite',
-  'knowall.ai': 'KnowAll', // Internal project
+  'knowall.ai': 'KnowAll',
 };
 
-export function getProjectFromEmail(email: string): string | undefined {
+// Parse project description for email domains
+// Expected format in description: "Email: domain1.com, domain2.com" or "Email domains: ..."
+function parseEmailDomainsFromDescription(description: string): string[] {
+  if (!description) return [];
+
+  // Match patterns like "Email: domain.com" or "Email domains: domain1.com, domain2.com"
+  const emailMatch = description.match(/email(?:\s+domains?)?\s*:\s*([^\n]+)/i);
+  if (!emailMatch) return [];
+
+  return emailMatch[1]
+    .split(/[,;\s]+/)
+    .map(d => d.trim().toLowerCase())
+    .filter(d => d.includes('.') && !d.startsWith('.'));
+}
+
+// Fetch domain map from DevOps project descriptions
+async function fetchDomainMapFromDevOps(): Promise<Record<string, string>> {
+  const pat = process.env.AZURE_DEVOPS_PAT;
+  const org = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+
+  if (!pat) {
+    console.warn('AZURE_DEVOPS_PAT not set, using fallback domain map');
+    return FALLBACK_DOMAIN_MAP;
+  }
+
+  try {
+    const response = await fetch(
+      `https://dev.azure.com/${org}/_apis/projects?api-version=7.0&$expand=description`,
+      {
+        headers: {
+          'Authorization': `Basic ${Buffer.from(':' + pat).toString('base64')}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch projects: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const domainMap: Record<string, string> = {};
+
+    for (const project of data.value || []) {
+      const domains = parseEmailDomainsFromDescription(project.description || '');
+      for (const domain of domains) {
+        domainMap[domain] = project.name;
+      }
+    }
+
+    // If no domains found in any project, use fallback
+    if (Object.keys(domainMap).length === 0) {
+      console.warn('No email domains found in DevOps project descriptions, using fallback');
+      return FALLBACK_DOMAIN_MAP;
+    }
+
+    return domainMap;
+  } catch (error) {
+    console.error('Failed to fetch domain map from DevOps:', error);
+    return FALLBACK_DOMAIN_MAP;
+  }
+}
+
+// Get domain map with caching
+export async function getProjectDomainMap(): Promise<Record<string, string>> {
+  const now = Date.now();
+
+  if (domainMapCache && (now - domainMapCache.timestamp) < CACHE_TTL_MS) {
+    return domainMapCache.map;
+  }
+
+  const map = await fetchDomainMapFromDevOps();
+  domainMapCache = { map, timestamp: now };
+  return map;
+}
+
+// Get project name from email address
+export async function getProjectFromEmail(email: string): Promise<string | undefined> {
   const domain = email.split('@')[1]?.toLowerCase();
-  return PROJECT_DOMAIN_MAP[domain];
+  if (!domain) return undefined;
+
+  const domainMap = await getProjectDomainMap();
+  return domainMap[domain];
+}
+
+// Clear cache (useful for testing or when project descriptions change)
+export function clearDomainMapCache(): void {
+  domainMapCache = null;
 }

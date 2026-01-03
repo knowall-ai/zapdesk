@@ -34,7 +34,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Determine which project to create the ticket in based on sender domain
-    const projectName = getProjectFromEmail(senderEmail);
+    // This queries DevOps project descriptions for email domain mappings
+    const projectName = await getProjectFromEmail(senderEmail);
 
     if (!projectName) {
       // Default to a general project or return error
