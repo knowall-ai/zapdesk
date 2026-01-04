@@ -18,6 +18,7 @@ import {
   AlertCircle,
   CheckCircle,
   PlusCircle,
+  X,
 } from 'lucide-react';
 import DevDeskIcon from '@/components/common/DevDeskIcon';
 
@@ -55,9 +56,16 @@ interface SidebarProps {
     createdToday: number;
   };
   onNewTicket?: () => void;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
-export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
+export default function Sidebar({
+  ticketCounts,
+  onNewTicket,
+  isOpen = false,
+  onClose,
+}: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -124,21 +132,37 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
   ];
 
   return (
-    <aside className="flex h-screen w-64 flex-col" style={{ backgroundColor: 'var(--sidebar-bg)' }}>
-      {/* Logo */}
+    <aside
+      className={`fixed inset-y-0 left-0 z-50 flex h-screen w-64 transform flex-col transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}
+      style={{ backgroundColor: 'var(--sidebar-bg)' }}
+    >
+      {/* Logo with mobile close button */}
       <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
-        <Link href="/" className="flex items-center gap-2">
-          <DevDeskIcon size={32} />
-          <span className="text-xl font-semibold" style={{ color: 'var(--primary)' }}>
-            DevDesk
-          </span>
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2" onClick={() => onClose?.()}>
+            <DevDeskIcon size={32} />
+            <span className="text-xl font-semibold" style={{ color: 'var(--primary)' }}>
+              DevDesk
+            </span>
+          </Link>
+          <button
+            onClick={() => onClose?.()}
+            className="rounded-md p-1 transition-colors hover:bg-[var(--surface-hover)] md:hidden"
+            style={{ color: 'var(--text-muted)' }}
+            aria-label="Close sidebar"
+          >
+            <X size={20} />
+          </button>
+        </div>
       </div>
 
       {/* Add button */}
       <div className="border-b p-3" style={{ borderColor: 'var(--border)' }}>
         <button
-          onClick={onNewTicket}
+          onClick={() => {
+            onNewTicket?.();
+            onClose?.();
+          }}
           className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
           style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}
         >
@@ -157,6 +181,7 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
               key={item.id}
               href={item.href}
               className={`nav-item mx-2 ${isActive ? 'active' : ''}`}
+              onClick={() => onClose?.()}
             >
               {item.icon}
               <span className="text-sm">{item.name}</span>
@@ -199,6 +224,7 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
                       ? 'bg-[rgba(34,197,94,0.15)] text-[var(--primary)]'
                       : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
                   }`}
+                  onClick={() => onClose?.()}
                 >
                   <span className="truncate">{view.name}</span>
                   {view.count !== undefined && (
@@ -225,6 +251,7 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
           <Link
             href="/tickets?view=removed"
             className="flex items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]"
+            onClick={() => onClose?.()}
           >
             <span>Removed tickets</span>
             <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-xs">0</span>

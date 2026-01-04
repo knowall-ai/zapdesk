@@ -261,9 +261,12 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
     <div className="flex h-full flex-col">
       {/* Header - only show if not hiding filters or has title/bulk actions */}
       {(!hideFilters || title || selectedTickets.size > 0) && (
-        <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
-          <div className="mb-4 flex items-center justify-between">
-            <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
+        <div className="border-b p-3 sm:p-4" style={{ borderColor: 'var(--border)' }}>
+          <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:items-center sm:justify-between">
+            <h1
+              className="text-lg font-semibold sm:text-xl"
+              style={{ color: 'var(--text-primary)' }}
+            >
               {title}
             </h1>
             <div className="flex items-center gap-2">
@@ -273,7 +276,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                     <button
                       onClick={() => setShowBulkMenu(!showBulkMenu)}
                       disabled={bulkActionLoading}
-                      className="btn-secondary flex items-center gap-2"
+                      className="btn-secondary flex items-center gap-1 text-sm sm:gap-2"
                     >
                       {bulkActionLoading ? 'Processing...' : 'Bulk Action'}{' '}
                       <ChevronDown size={16} />
@@ -300,8 +303,9 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                       </div>
                     )}
                   </div>
-                  <button className="btn-secondary flex items-center gap-2">
-                    <Play size={16} /> Play
+                  <button className="btn-secondary flex items-center gap-1 text-sm sm:gap-2">
+                    <Play size={16} />
+                    <span className="hidden sm:inline">Play</span>
                   </button>
                 </>
               )}
@@ -310,13 +314,13 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
 
           {/* Filter dropdowns and count - only if not hiding filters */}
           {!hideFilters && (
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
                 {filteredTickets.length} ticket{filteredTickets.length !== 1 ? 's' : ''}
                 {hasActiveFilters && ` (filtered from ${tickets.length})`}
               </span>
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <select
                   value={filters.status}
                   onChange={(e) =>
@@ -350,7 +354,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                 <select
                   value={filters.assignee}
                   onChange={(e) => setFilters({ ...filters, assignee: e.target.value })}
-                  className="input text-sm"
+                  className="input hidden text-sm sm:block"
                 >
                   <option value="">All Assignees</option>
                   {filterOptions.assignees.map((assignee) => (
@@ -363,7 +367,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                 <select
                   value={filters.requester}
                   onChange={(e) => setFilters({ ...filters, requester: e.target.value })}
-                  className="input text-sm"
+                  className="input hidden text-sm sm:block"
                 >
                   <option value="">All Requesters</option>
                   {filterOptions.requesters.map((requester) => (
@@ -380,7 +384,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                     style={{ color: 'var(--text-secondary)' }}
                   >
                     <X size={14} />
-                    Clear filters
+                    <span className="hidden sm:inline">Clear filters</span>
                   </button>
                 )}
               </div>
@@ -394,7 +398,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
         <table className="w-full">
           <thead className="table-header sticky top-0">
             <tr>
-              <th className="w-10 px-4 py-3">
+              <th className="w-10 px-2 py-3 sm:px-4">
                 <input
                   type="checkbox"
                   checked={
@@ -405,17 +409,17 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                 />
               </th>
               <th
-                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
+                className="cursor-pointer px-2 py-3 text-left text-xs font-medium uppercase sm:px-4"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('status')}
               >
                 <div className="flex items-center gap-1">
-                  Ticket status{' '}
+                  <span className="hidden sm:inline">Ticket </span>status
                   <SortIcon field="status" sortField={sortField} sortDirection={sortDirection} />
                 </div>
               </th>
               <th
-                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
+                className="cursor-pointer px-2 py-3 text-left text-xs font-medium uppercase sm:px-4"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('subject')}
               >
@@ -425,7 +429,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                 </div>
               </th>
               <th
-                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
+                className="hidden cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase md:table-cell"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('project')}
               >
@@ -445,7 +449,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                 </div>
               </th>
               <th
-                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
+                className="hidden cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase lg:table-cell"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('requested')}
               >
@@ -455,7 +459,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                 </div>
               </th>
               <th
-                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
+                className="hidden cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase sm:table-cell"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('priority')}
               >
@@ -465,7 +469,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                 </div>
               </th>
               <th
-                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
+                className="hidden cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase lg:table-cell"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('updated')}
               >
@@ -475,7 +479,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                 </div>
               </th>
               <th
-                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
+                className="hidden cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase md:table-cell"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('assignee')}
               >
@@ -502,7 +506,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                 )}
                 {groupTickets.map((ticket) => (
                   <tr key={ticket.id} className="table-row">
-                    <td className="px-4 py-3">
+                    <td className="px-2 py-3 sm:px-4">
                       <input
                         type="checkbox"
                         checked={selectedTickets.has(ticket.id)}
@@ -510,10 +514,10 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                         className="rounded"
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-2 py-3 sm:px-4">
                       <StatusBadge status={ticket.devOpsState} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-2 py-3 sm:px-4">
                       <Link
                         href={`/tickets/${ticket.id}`}
                         className="text-sm hover:underline"
@@ -522,7 +526,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                         {ticket.title}
                       </Link>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="hidden px-4 py-3 md:table-cell">
                       <Link
                         href={`/projects/${ticket.organization?.id || ''}`}
                         className="text-sm hover:underline"
@@ -538,21 +542,33 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                           image={ticket.requester.avatarUrl}
                           size="sm"
                         />
-                        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        <span
+                          className="hidden text-sm sm:inline"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
                           {ticket.requester.displayName}
                         </span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    <td
+                      className="hidden px-4 py-3 text-sm lg:table-cell"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
                       {format(ticket.createdAt, 'dd MMM yyyy')}
                     </td>
-                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    <td
+                      className="hidden px-4 py-3 text-sm sm:table-cell"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
                       {ticket.priority || '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    <td
+                      className="hidden px-4 py-3 text-sm lg:table-cell"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
                       {format(ticket.updatedAt, 'dd MMM yyyy')}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="hidden px-4 py-3 md:table-cell">
                       {ticket.assignee ? (
                         <div className="flex items-center gap-2">
                           <Avatar

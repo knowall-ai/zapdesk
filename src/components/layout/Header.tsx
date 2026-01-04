@@ -15,6 +15,7 @@ import {
   Building2,
   Users,
   Loader2,
+  Menu,
 } from 'lucide-react';
 import { Avatar } from '@/components/common';
 import { useProfilePhoto } from '@/hooks';
@@ -29,7 +30,11 @@ interface SearchResult {
   status?: string;
 }
 
-export default function Header() {
+interface HeaderProps {
+  onMenuClick?: () => void;
+}
+
+export default function Header({ onMenuClick }: HeaderProps) {
   const { data: session, status } = useSession();
   const { photoUrl } = useProfilePhoto(status === 'authenticated');
   const router = useRouter();
@@ -132,9 +137,19 @@ export default function Header() {
 
   return (
     <header
-      className="flex h-14 items-center justify-between border-b px-4"
+      className="flex h-14 items-center justify-between border-b px-2 sm:px-4"
       style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
     >
+      {/* Mobile menu button */}
+      <button
+        onClick={() => onMenuClick?.()}
+        className="mr-2 rounded-md p-2 transition-colors hover:bg-[var(--surface-hover)] md:hidden"
+        style={{ color: 'var(--text-secondary)' }}
+        aria-label="Toggle menu"
+      >
+        <Menu size={20} />
+      </button>
+
       {/* Search */}
       <div className="flex max-w-xl flex-1 items-center">
         <div className="relative w-full" ref={searchContainerRef}>
@@ -242,13 +257,13 @@ export default function Header() {
       </div>
 
       {/* Right side actions */}
-      <div className="ml-4 flex items-center gap-2">
+      <div className="ml-2 flex items-center gap-1 sm:ml-4 sm:gap-2">
         {/* Organization Switcher */}
         <OrganizationSwitcher />
 
         {/* Notifications */}
         <button
-          className="rounded-md p-2 transition-colors hover:bg-[var(--surface-hover)]"
+          className="rounded-md p-1.5 transition-colors hover:bg-[var(--surface-hover)] sm:p-2"
           style={{ color: 'var(--text-secondary)' }}
         >
           <Bell size={20} />
