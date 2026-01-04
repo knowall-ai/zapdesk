@@ -9,7 +9,9 @@ import type {
   User,
   Organization,
   TicketComment,
+  SLALevel,
 } from '@/types';
+import { parseSLAFromDescription, calculateTicketSLA, DEFAULT_SLA_LEVEL } from './sla';
 
 const DEVOPS_ORG = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
 const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
@@ -368,21 +370,70 @@ export class AzureDevOpsService {
   // Get all tickets from all accessible projects
   async getAllTickets(): Promise<Ticket[]> {
     const projects = await this.getProjects();
+    const slaMap = await getProjectSLAMap();
     const allTickets: Ticket[] = [];
 
     for (const project of projects) {
       try {
         const workItems = await this.getTickets(project.name);
+        const slaLevel = slaMap[project.name] || DEFAULT_SLA_LEVEL;
         const organization: Organization = {
           id: project.id,
           name: project.name,
           devOpsProject: project.name,
           devOpsOrg: this.organization,
-          tags: [],
+          tags: [slaLevel.toLowerCase()],
+          slaLevel,
           createdAt: new Date(),
           updatedAt: new Date(),
         };
-        const tickets = workItems.map((wi) => workItemToTicket(wi, organization));
+        const tickets = workItems.map((wi) => {
+          const ticket = workItemToTicket(wi, organization);
+
+          // Populate SLA-relevant timestamps from work item fields
+          const fields = wi.fields || {};
+
+          // Populate resolvedAt from known resolved date fields
+          if (!ticket.resolvedAt) {
+            const resolvedFieldNames = [
+              'Microsoft.VSTS.Common.ResolvedDate',
+              'Custom.ResolvedDate',
+              'System.ResolvedDate',
+            ];
+            for (const fieldName of resolvedFieldNames) {
+              const value = fields[fieldName as keyof typeof fields];
+              if (value) {
+                const resolvedDate = new Date(value as string);
+                if (!isNaN(resolvedDate.getTime())) {
+                  ticket.resolvedAt = resolvedDate;
+                  break;
+                }
+              }
+            }
+          }
+
+          // Populate firstResponseAt from known first-response date fields
+          if (!ticket.firstResponseAt) {
+            const firstResponseFieldNames = [
+              'Custom.FirstResponseDate',
+              'Microsoft.VSTS.Common.FirstResponseDate',
+            ];
+            for (const fieldName of firstResponseFieldNames) {
+              const value = fields[fieldName as keyof typeof fields];
+              if (value) {
+                const firstResponseDate = new Date(value as string);
+                if (!isNaN(firstResponseDate.getTime())) {
+                  ticket.firstResponseAt = firstResponseDate;
+                  break;
+                }
+              }
+            }
+          }
+
+          // Calculate SLA info for the ticket using the populated timestamps
+          ticket.slaInfo = calculateTicketSLA(ticket, slaLevel);
+          return ticket;
+        });
         allTickets.push(...tickets);
       } catch (error) {
         console.error(`Failed to fetch tickets from ${project.name}:`, error);
@@ -539,4 +590,83 @@ export async function getProjectFromEmail(email: string): Promise<string | undef
 // Clear cache (useful for testing or when project descriptions change)
 export function clearDomainMapCache(): void {
   domainMapCache = null;
+}
+
+// SLA Level Map - Maps project names to SLA levels
+// Reads from project descriptions in format: "SLA: Gold" or "sla=silver"
+
+interface SLAMapCache {
+  map: Record<string, SLALevel>;
+  timestamp: number;
+}
+
+let slaMapCache: SLAMapCache | null = null;
+
+// Fetch SLA map from DevOps project descriptions
+// SLA levels should be configured in each Azure DevOps project's description
+// using format: "SLA: Gold" or "sla=silver" or "SLA Level: Bronze"
+// Projects without SLA configured will use DEFAULT_SLA_LEVEL (Bronze)
+async function fetchSLAMapFromDevOps(): Promise<Record<string, SLALevel>> {
+  const pat = process.env.AZURE_DEVOPS_PAT;
+  const org = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+
+  if (!pat) {
+    console.warn('AZURE_DEVOPS_PAT not set, SLA levels will use defaults');
+    return {};
+  }
+
+  try {
+    const response = await fetch(
+      `https://dev.azure.com/${org}/_apis/projects?api-version=7.0&$expand=description`,
+      {
+        headers: {
+          Authorization: `Basic ${Buffer.from(':' + pat).toString('base64')}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch projects: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const slaMap: Record<string, SLALevel> = {};
+
+    for (const project of data.value || []) {
+      const slaLevel = parseSLAFromDescription(project.description || '');
+      if (slaLevel) {
+        slaMap[project.name] = slaLevel;
+      }
+    }
+
+    return slaMap;
+  } catch (error) {
+    console.error('Failed to fetch SLA map from DevOps:', error);
+    return {};
+  }
+}
+
+// Get SLA map with caching
+export async function getProjectSLAMap(): Promise<Record<string, SLALevel>> {
+  const now = Date.now();
+
+  if (slaMapCache && now - slaMapCache.timestamp < CACHE_TTL_MS) {
+    return slaMapCache.map;
+  }
+
+  const map = await fetchSLAMapFromDevOps();
+  slaMapCache = { map, timestamp: now };
+  return map;
+}
+
+// Get SLA level for a specific project
+export async function getSLALevelForProject(projectName: string): Promise<SLALevel> {
+  const slaMap = await getProjectSLAMap();
+  return slaMap[projectName] || DEFAULT_SLA_LEVEL;
+}
+
+// Clear SLA cache (useful for testing or when project descriptions change)
+export function clearSLAMapCache(): void {
+  slaMapCache = null;
 }

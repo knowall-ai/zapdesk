@@ -7,6 +7,7 @@ import { Filter, ChevronDown, ChevronUp, Play } from 'lucide-react';
 import type { Ticket } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
+import SLABadge from '../common/SLABadge';
 
 interface TicketListProps {
   tickets: Ticket[];
@@ -203,6 +204,12 @@ export default function TicketList({ tickets, title }: TicketListProps) {
                 </div>
               </th>
               <th
+                className="px-4 py-3 text-left text-xs font-medium uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <div className="flex items-center gap-1">SLA</div>
+              </th>
+              <th
                 className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('updated')}
@@ -230,7 +237,7 @@ export default function TicketList({ tickets, title }: TicketListProps) {
                 {groupBy === 'assignee' && (
                   <tr key={`group-${groupName}`}>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="px-4 py-2 text-sm font-medium"
                       style={{ backgroundColor: 'var(--surface)', color: 'var(--text-secondary)' }}
                     >
@@ -273,6 +280,9 @@ export default function TicketList({ tickets, title }: TicketListProps) {
                     </td>
                     <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
                       {ticket.priority}
+                    </td>
+                    <td className="px-4 py-3">
+                      <SLABadge slaInfo={ticket.slaInfo} variant="compact" />
                     </td>
                     <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
                       {format(ticket.updatedAt, 'dd MMM yyyy')}
