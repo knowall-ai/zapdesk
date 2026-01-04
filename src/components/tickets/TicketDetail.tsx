@@ -8,6 +8,7 @@ import type { Ticket, TicketComment } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
+import SLABadge from '../common/SLABadge';
 
 interface TicketDetailProps {
   ticket: Ticket;
@@ -247,6 +248,19 @@ export default function TicketDetail({
               </label>
               <PriorityIndicator priority={ticket.priority} showLabel />
             </div>
+
+            {/* SLA */}
+            {ticket.slaInfo && (
+              <div>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  SLA Status
+                </label>
+                <SLABadge slaInfo={ticket.slaInfo} variant="full" showLevel />
+              </div>
+            )}
 
             {/* Organization */}
             {ticket.organization && (

@@ -114,6 +114,48 @@ body {
   color: white;
 }
 
+/* SLA Status badge styles */
+.sla-badge {
+  @apply inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium;
+}
+
+.sla-within {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.sla-at-risk {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.sla-breached {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* SLA Level badge styles */
+.sla-level-gold {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.sla-level-silver {
+  background: rgba(156, 163, 175, 0.15);
+  color: #9ca3af;
+  border: 1px solid rgba(156, 163, 175, 0.3);
+}
+
+.sla-level-bronze {
+  background: rgba(180, 83, 9, 0.15);
+  color: #d97706;
+  border: 1px solid rgba(180, 83, 9, 0.3);
+}
+
 /* Priority indicator styles */
 .priority-urgent {
   color: var(--priority-urgent);

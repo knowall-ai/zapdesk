@@ -9,7 +9,9 @@ import type {
   User,
   Organization,
   TicketComment,
+  SLALevel,
 } from '@/types';
+import { parseSLAFromDescription, calculateTicketSLA, DEFAULT_SLA_LEVEL } from './sla';
 
 const DEVOPS_ORG = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
 const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
@@ -368,21 +370,29 @@ export class AzureDevOpsService {
   // Get all tickets from all accessible projects
   async getAllTickets(): Promise<Ticket[]> {
     const projects = await this.getProjects();
+    const slaMap = await getProjectSLAMap();
     const allTickets: Ticket[] = [];
 
     for (const project of projects) {
       try {
         const workItems = await this.getTickets(project.name);
+        const slaLevel = slaMap[project.name] || DEFAULT_SLA_LEVEL;
         const organization: Organization = {
           id: project.id,
           name: project.name,
           devOpsProject: project.name,
           devOpsOrg: this.organization,
-          tags: [],
+          tags: [slaLevel.toLowerCase()],
+          slaLevel,
           createdAt: new Date(),
           updatedAt: new Date(),
         };
-        const tickets = workItems.map((wi) => workItemToTicket(wi, organization));
+        const tickets = workItems.map((wi) => {
+          const ticket = workItemToTicket(wi, organization);
+          // Calculate SLA info for the ticket
+          ticket.slaInfo = calculateTicketSLA(ticket, slaLevel);
+          return ticket;
+        });
         allTickets.push(...tickets);
       } catch (error) {
         console.error(`Failed to fetch tickets from ${project.name}:`, error);
@@ -539,4 +549,88 @@ export async function getProjectFromEmail(email: string): Promise<string | undef
 // Clear cache (useful for testing or when project descriptions change)
 export function clearDomainMapCache(): void {
   domainMapCache = null;
+}
+
+// SLA Level Map - Maps project names to SLA levels
+// Reads from project descriptions in format: "SLA: Gold" or "sla=silver"
+
+interface SLAMapCache {
+  map: Record<string, SLALevel>;
+  timestamp: number;
+}
+
+let slaMapCache: SLAMapCache | null = null;
+
+// Fallback SLA mapping if DevOps query fails
+const FALLBACK_SLA_MAP: Record<string, SLALevel> = {
+  'Cairn Homes': 'Gold',
+  Medite: 'Silver',
+  KnowAll: 'Bronze',
+};
+
+// Fetch SLA map from DevOps project descriptions
+async function fetchSLAMapFromDevOps(): Promise<Record<string, SLALevel>> {
+  const pat = process.env.AZURE_DEVOPS_PAT;
+  const org = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+
+  if (!pat) {
+    console.warn('AZURE_DEVOPS_PAT not set, using fallback SLA map');
+    return FALLBACK_SLA_MAP;
+  }
+
+  try {
+    const response = await fetch(
+      `https://dev.azure.com/${org}/_apis/projects?api-version=7.0&$expand=description`,
+      {
+        headers: {
+          Authorization: `Basic ${Buffer.from(':' + pat).toString('base64')}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch projects: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const slaMap: Record<string, SLALevel> = {};
+
+    for (const project of data.value || []) {
+      const slaLevel = parseSLAFromDescription(project.description || '');
+      if (slaLevel) {
+        slaMap[project.name] = slaLevel;
+      }
+    }
+
+    // Merge with fallback for projects without SLA in description
+    return { ...FALLBACK_SLA_MAP, ...slaMap };
+  } catch (error) {
+    console.error('Failed to fetch SLA map from DevOps:', error);
+    return FALLBACK_SLA_MAP;
+  }
+}
+
+// Get SLA map with caching
+export async function getProjectSLAMap(): Promise<Record<string, SLALevel>> {
+  const now = Date.now();
+
+  if (slaMapCache && now - slaMapCache.timestamp < CACHE_TTL_MS) {
+    return slaMapCache.map;
+  }
+
+  const map = await fetchSLAMapFromDevOps();
+  slaMapCache = { map, timestamp: now };
+  return map;
+}
+
+// Get SLA level for a specific project
+export async function getSLALevelForProject(projectName: string): Promise<SLALevel> {
+  const slaMap = await getProjectSLAMap();
+  return slaMap[projectName] || DEFAULT_SLA_LEVEL;
+}
+
+// Clear SLA cache (useful for testing or when project descriptions change)
+export function clearSLAMapCache(): void {
+  slaMapCache = null;
 }

@@ -14,6 +14,7 @@ export interface Organization {
   devOpsProject: string;
   devOpsOrg: string;
   tags: string[];
+  slaLevel?: SLALevel;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,6 +34,46 @@ export interface Customer {
 export type TicketStatus = 'New' | 'Open' | 'In Progress' | 'Pending' | 'Resolved' | 'Closed';
 export type TicketPriority = 'Low' | 'Normal' | 'High' | 'Urgent';
 export type SLALevel = 'Gold' | 'Silver' | 'Bronze';
+export type SLAStatus = 'within_sla' | 'at_risk' | 'breached';
+
+// SLA target times in minutes
+export interface SLATargets {
+  firstResponseMinutes: number; // Time to first response
+  resolutionMinutes: number; // Time to resolution
+}
+
+// SLA policy with targets per priority
+export interface SLAPolicy {
+  level: SLALevel;
+  name: string;
+  description: string;
+  targets: {
+    urgent: SLATargets;
+    high: SLATargets;
+    normal: SLATargets;
+    low: SLATargets;
+  };
+}
+
+// SLA status information for a ticket
+export interface TicketSLAInfo {
+  level: SLALevel;
+  policy: SLAPolicy;
+  firstResponse: {
+    targetMinutes: number;
+    elapsedMinutes: number;
+    remainingMinutes: number;
+    status: SLAStatus;
+    met?: boolean; // true if first response has been made
+  };
+  resolution: {
+    targetMinutes: number;
+    elapsedMinutes: number;
+    remainingMinutes: number;
+    status: SLAStatus;
+    met?: boolean; // true if ticket is resolved
+  };
+}
 
 export interface Ticket {
   id: number;
@@ -48,6 +89,8 @@ export interface Ticket {
   createdAt: Date;
   updatedAt: Date;
   resolvedAt?: Date;
+  firstResponseAt?: Date;
+  slaInfo?: TicketSLAInfo;
   devOpsUrl: string;
   project: string;
   comments: TicketComment[];
