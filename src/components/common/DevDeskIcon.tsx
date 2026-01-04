@@ -8,12 +8,12 @@ interface DevDeskIconProps {
 /**
  * DevDesk Logo Icon
  *
- * A stylized "D" with an arrow/triangle cutout in the bowl,
- * suggesting forward movement and direction.
+ * A stylized "D" with an arrow/triangle cutout on the left stroke,
+ * pointing into the center - suggesting forward movement and direction.
  *
  * The icon features:
  * - Bold geometric "D" letterform
- * - Arrow pointing right, cut into the curve
+ * - Arrow on left vertical stroke pointing right into the D
  * - Metallic gradient for modern depth
  * - Brand green (#22c55e) as primary color
  */
@@ -47,21 +47,22 @@ export default function DevDeskIcon({ size = 32, className = '' }: DevDeskIconPr
       {/* Subtle shine overlay */}
       <rect x="0" y="0" width="64" height="64" rx="8" ry="8" fill="url(#devdesk-shine)" />
 
-      {/* Stylized "D" with arrow cutout */}
+      {/* Stylized "D" with arrow cutout on left stroke */}
       <path
-        d="M 16 12
-           L 16 52
+        d="M 14 12
+           L 14 26
+           L 22 32
+           L 14 38
+           L 14 52
            L 28 52
-           C 46 52 52 42 52 32
-           C 52 22 46 12 28 12
+           C 48 52 54 42 54 32
+           C 54 22 48 12 28 12
            Z
 
            M 24 20
            L 28 20
-           C 38 20 42 24 42 28
-           L 34 32
-           L 42 36
-           C 42 40 38 44 28 44
+           C 42 20 46 26 46 32
+           C 46 38 42 44 28 44
            L 24 44
            Z"
         fill="#ffffff"

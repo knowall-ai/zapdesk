@@ -35,7 +35,7 @@ const COLORS = {
  * Generates the stylized "D" icon with arrow cutout
  * The design features:
  * - Bold, geometric "D" shape
- * - Arrow/triangle pointing right, cut into the curve
+ * - Arrow/triangle on left stroke pointing right into the D
  * - Subtle gradient for metallic depth
  * - Works well at small sizes (favicon, sidebar)
  */
@@ -64,26 +64,26 @@ function generateIconSVG(size = 64) {
   <!-- Subtle shine overlay -->
   <rect x="0" y="0" width="${size}" height="${size}" rx="${8 * s}" ry="${8 * s}" fill="url(#shineGradient)" />
 
-  <!-- Stylized "D" with arrow cutout -->
+  <!-- Stylized "D" with arrow cutout on left stroke -->
   <!-- The D is constructed as a path with:
-       - Left vertical stroke
+       - Left vertical stroke with arrow pointing right
        - Curved right side forming the bowl
-       - Arrow/triangle cutting into the curve pointing right
   -->
   <path
-    d="M ${16 * s} ${12 * s}
-       L ${16 * s} ${52 * s}
+    d="M ${14 * s} ${12 * s}
+       L ${14 * s} ${26 * s}
+       L ${22 * s} ${32 * s}
+       L ${14 * s} ${38 * s}
+       L ${14 * s} ${52 * s}
        L ${28 * s} ${52 * s}
-       C ${46 * s} ${52 * s} ${52 * s} ${42 * s} ${52 * s} ${32 * s}
-       C ${52 * s} ${22 * s} ${46 * s} ${12 * s} ${28 * s} ${12 * s}
+       C ${48 * s} ${52 * s} ${54 * s} ${42 * s} ${54 * s} ${32 * s}
+       C ${54 * s} ${22 * s} ${48 * s} ${12 * s} ${28 * s} ${12 * s}
        Z
 
        M ${24 * s} ${20 * s}
        L ${28 * s} ${20 * s}
-       C ${38 * s} ${20 * s} ${42 * s} ${24 * s} ${42 * s} ${28 * s}
-       L ${34 * s} ${32 * s}
-       L ${42 * s} ${36 * s}
-       C ${42 * s} ${40 * s} ${38 * s} ${44 * s} ${28 * s} ${44 * s}
+       C ${42 * s} ${20 * s} ${46 * s} ${26 * s} ${46 * s} ${32 * s}
+       C ${46 * s} ${38 * s} ${42 * s} ${44 * s} ${28 * s} ${44 * s}
        L ${24 * s} ${44 * s}
        Z"
     fill="${COLORS.white}"
@@ -116,21 +116,22 @@ function generateFullLogoDark(width = 400, height = 100) {
   <rect x="10" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="8" ry="8" fill="url(#metalGradientFull)" />
   <rect x="10" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="8" ry="8" fill="url(#shineGradientFull)" />
 
-  <!-- Stylized D with arrow cutout (scaled for 60x60 icon) -->
+  <!-- Stylized D with arrow cutout on left stroke (scaled for 60x60 icon) -->
   <path
-    d="M ${10 + 15} ${iconY + 11.25}
-       L ${10 + 15} ${iconY + 48.75}
+    d="M ${10 + 13.125} ${iconY + 11.25}
+       L ${10 + 13.125} ${iconY + 24.375}
+       L ${10 + 20.625} ${iconY + 30}
+       L ${10 + 13.125} ${iconY + 35.625}
+       L ${10 + 13.125} ${iconY + 48.75}
        L ${10 + 26.25} ${iconY + 48.75}
-       C ${10 + 43.125} ${iconY + 48.75} ${10 + 48.75} ${iconY + 39.375} ${10 + 48.75} ${iconY + 30}
-       C ${10 + 48.75} ${iconY + 20.625} ${10 + 43.125} ${iconY + 11.25} ${10 + 26.25} ${iconY + 11.25}
+       C ${10 + 45} ${iconY + 48.75} ${10 + 50.625} ${iconY + 39.375} ${10 + 50.625} ${iconY + 30}
+       C ${10 + 50.625} ${iconY + 20.625} ${10 + 45} ${iconY + 11.25} ${10 + 26.25} ${iconY + 11.25}
        Z
 
        M ${10 + 22.5} ${iconY + 18.75}
        L ${10 + 26.25} ${iconY + 18.75}
-       C ${10 + 35.625} ${iconY + 18.75} ${10 + 39.375} ${iconY + 22.5} ${10 + 39.375} ${iconY + 26.25}
-       L ${10 + 31.875} ${iconY + 30}
-       L ${10 + 39.375} ${iconY + 33.75}
-       C ${10 + 39.375} ${iconY + 37.5} ${10 + 35.625} ${iconY + 41.25} ${10 + 26.25} ${iconY + 41.25}
+       C ${10 + 39.375} ${iconY + 18.75} ${10 + 43.125} ${iconY + 24.375} ${10 + 43.125} ${iconY + 30}
+       C ${10 + 43.125} ${iconY + 35.625} ${10 + 39.375} ${iconY + 41.25} ${10 + 26.25} ${iconY + 41.25}
        L ${10 + 22.5} ${iconY + 41.25}
        Z"
     fill="${COLORS.white}"
@@ -171,21 +172,22 @@ function generateFullLogoLight(width = 400, height = 100) {
   <rect x="10" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="8" ry="8" fill="url(#metalGradientFullLight)" />
   <rect x="10" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="8" ry="8" fill="url(#shineGradientFullLight)" />
 
-  <!-- Stylized D with arrow cutout (scaled for 60x60 icon) -->
+  <!-- Stylized D with arrow cutout on left stroke (scaled for 60x60 icon) -->
   <path
-    d="M ${10 + 15} ${iconY + 11.25}
-       L ${10 + 15} ${iconY + 48.75}
+    d="M ${10 + 13.125} ${iconY + 11.25}
+       L ${10 + 13.125} ${iconY + 24.375}
+       L ${10 + 20.625} ${iconY + 30}
+       L ${10 + 13.125} ${iconY + 35.625}
+       L ${10 + 13.125} ${iconY + 48.75}
        L ${10 + 26.25} ${iconY + 48.75}
-       C ${10 + 43.125} ${iconY + 48.75} ${10 + 48.75} ${iconY + 39.375} ${10 + 48.75} ${iconY + 30}
-       C ${10 + 48.75} ${iconY + 20.625} ${10 + 43.125} ${iconY + 11.25} ${10 + 26.25} ${iconY + 11.25}
+       C ${10 + 45} ${iconY + 48.75} ${10 + 50.625} ${iconY + 39.375} ${10 + 50.625} ${iconY + 30}
+       C ${10 + 50.625} ${iconY + 20.625} ${10 + 45} ${iconY + 11.25} ${10 + 26.25} ${iconY + 11.25}
        Z
 
        M ${10 + 22.5} ${iconY + 18.75}
        L ${10 + 26.25} ${iconY + 18.75}
-       C ${10 + 35.625} ${iconY + 18.75} ${10 + 39.375} ${iconY + 22.5} ${10 + 39.375} ${iconY + 26.25}
-       L ${10 + 31.875} ${iconY + 30}
-       L ${10 + 39.375} ${iconY + 33.75}
-       C ${10 + 39.375} ${iconY + 37.5} ${10 + 35.625} ${iconY + 41.25} ${10 + 26.25} ${iconY + 41.25}
+       C ${10 + 39.375} ${iconY + 18.75} ${10 + 43.125} ${iconY + 24.375} ${10 + 43.125} ${iconY + 30}
+       C ${10 + 43.125} ${iconY + 35.625} ${10 + 39.375} ${iconY + 41.25} ${10 + 26.25} ${iconY + 41.25}
        L ${10 + 22.5} ${iconY + 41.25}
        Z"
     fill="${COLORS.white}"
@@ -240,7 +242,7 @@ function main() {
   console.log('\nAll logo assets generated successfully!');
   console.log('\nDesign features:');
   console.log('  - Stylized "D" with bold geometric form');
-  console.log('  - Arrow/triangle cutout in the bowl suggesting forward movement');
+  console.log('  - Arrow cutout on left stroke pointing into the D');
   console.log('  - Metallic gradient for modern depth');
   console.log('  - Brand green (#22c55e) maintained');
 }
