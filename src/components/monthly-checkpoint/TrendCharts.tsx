@@ -177,7 +177,7 @@ function DualLineChart({
                 fontSize="9"
                 fill="var(--text-muted)"
               >
-                {new Date(label).toLocaleDateString('en-IE', { day: 'numeric', month: 'short' })}
+                {new Date(label).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
               </text>
             );
           })}

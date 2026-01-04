@@ -37,12 +37,15 @@ export function NewTicketModal({
     try {
       const tags = ['ticket', ticketType.toLowerCase()];
 
+      // Strip any existing type prefix to prevent duplicates like "[Feature] [Feature]"
+      const cleanSubject = subject.trim().replace(/^\[(Bug|Feature)\]\s*/i, '');
+
       const response = await fetch('/api/devops/tickets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           project: projectName,
-          title: `[${ticketType}] ${subject.trim()}`,
+          title: `[${ticketType}] ${cleanSubject}`,
           description: description.trim(),
           priority,
           tags,

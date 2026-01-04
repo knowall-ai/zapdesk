@@ -24,6 +24,7 @@ const STATUS_OPTIONS: TicketStatus[] = [
   'Closed',
 ];
 const PRIORITY_OPTIONS: TicketPriority[] = ['Urgent', 'High', 'Normal', 'Low'];
+const PRIORITY_ORDER: Record<TicketPriority, number> = { Urgent: 0, High: 1, Normal: 2, Low: 3 };
 
 function SortIcon({
   field,
@@ -95,8 +96,7 @@ export function CheckpointTicketTable({ tickets }: CheckpointTicketTableProps) {
         case 'createdAt':
           return multiplier * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         case 'priority':
-          const priorityOrder = { Urgent: 0, High: 1, Normal: 2, Low: 3 };
-          return multiplier * (priorityOrder[a.priority] - priorityOrder[b.priority]);
+          return multiplier * (PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
         default:
           return 0;
       }

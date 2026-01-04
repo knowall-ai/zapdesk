@@ -67,21 +67,7 @@ export default function MonthlyCheckpointPage() {
     }
   }, [searchParams]);
 
-  // Fetch projects
-  useEffect(() => {
-    if (session?.accessToken) {
-      fetchProjects();
-    }
-  }, [session]);
-
-  // Fetch stats when project or dates change
-  useEffect(() => {
-    if (selectedProject && startDate && endDate && session?.accessToken) {
-      fetchStats();
-    }
-  }, [selectedProject, startDate, endDate, session]);
-
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     setIsLoadingProjects(true);
     try {
       const response = await fetch('/api/devops/projects');
@@ -98,7 +84,7 @@ export default function MonthlyCheckpointPage() {
     } finally {
       setIsLoadingProjects(false);
     }
-  };
+  }, [selectedProject]);
 
   const fetchStats = useCallback(async () => {
     setIsLoading(true);
@@ -130,6 +116,20 @@ export default function MonthlyCheckpointPage() {
       setIsLoading(false);
     }
   }, [selectedProject, startDate, endDate]);
+
+  // Fetch projects
+  useEffect(() => {
+    if (session?.accessToken) {
+      fetchProjects();
+    }
+  }, [session, fetchProjects]);
+
+  // Fetch stats when project or dates change
+  useEffect(() => {
+    if (selectedProject && startDate && endDate && session?.accessToken) {
+      fetchStats();
+    }
+  }, [selectedProject, startDate, endDate, session, fetchStats]);
 
   const handleExportPDF = () => {
     // Use browser's print functionality with print-specific styles
