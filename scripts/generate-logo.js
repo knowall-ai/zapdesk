@@ -138,11 +138,10 @@ function generateFullLogoDark(width = 400, height = 100) {
     fill-rule="evenodd"
   />
 
-  <!-- "Dev" text in green -->
-  <text x="85" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700" fill="${COLORS.primary}">Dev</text>
-
-  <!-- "Desk" text in light gray -->
-  <text x="168" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700" fill="${COLORS.textLight}">Desk</text>
+  <!-- "DevDesk" text with two-tone coloring -->
+  <text x="85" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700">
+    <tspan fill="${COLORS.primary}">Dev</tspan><tspan fill="${COLORS.textLight}">Desk</tspan>
+  </text>
 
   <!-- Tagline -->
   <text x="85" y="78" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" fill="${COLORS.mutedLight}">Azure DevOps Powered Support Ticketing</text>
@@ -194,11 +193,10 @@ function generateFullLogoLight(width = 400, height = 100) {
     fill-rule="evenodd"
   />
 
-  <!-- "Dev" text in green -->
-  <text x="85" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700" fill="${COLORS.primary}">Dev</text>
-
-  <!-- "Desk" text in dark gray -->
-  <text x="168" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700" fill="${COLORS.textDark}">Desk</text>
+  <!-- "DevDesk" text with two-tone coloring -->
+  <text x="85" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700">
+    <tspan fill="${COLORS.primary}">Dev</tspan><tspan fill="${COLORS.textDark}">Desk</tspan>
+  </text>
 
   <!-- Tagline -->
   <text x="85" y="78" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" fill="${COLORS.mutedDark}">Azure DevOps Powered Support Ticketing</text>
