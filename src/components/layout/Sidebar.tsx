@@ -19,6 +19,7 @@ import {
   CheckCircle,
   Star,
 } from 'lucide-react';
+import DevDeskIcon from '@/components/common/DevDeskIcon';
 
 interface ViewItem {
   id: string;
@@ -142,12 +143,7 @@ export default function Sidebar({ ticketCounts }: SidebarProps) {
       {/* Logo */}
       <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
         <Link href="/" className="flex items-center gap-2">
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-lg"
-            style={{ backgroundColor: 'var(--primary)' }}
-          >
-            <span className="text-lg font-bold text-white">D</span>
-          </div>
+          <DevDeskIcon size={32} />
           <span className="text-xl font-semibold" style={{ color: 'var(--primary)' }}>
             DevDesk
           </span>

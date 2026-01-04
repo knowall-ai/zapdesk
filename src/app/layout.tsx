@@ -5,9 +5,6 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'DevDesk - Support Ticketing by KnowAll',
   description: 'Azure DevOps powered support ticketing system',
-  icons: {
-    icon: '/favicon.ico',
-  },
 };
 
 export default function RootLayout({

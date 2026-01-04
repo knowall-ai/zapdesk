@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <!-- Gradient for metallic effect -->
+    <linearGradient id="metalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4ade80" />
+      <stop offset="50%" stop-color="#22c55e" />
+      <stop offset="100%" stop-color="#16a34a" />
+    </linearGradient>
+    <!-- Subtle shine for 3D effect -->
+    <linearGradient id="shineGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.3" />
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background with rounded corners -->
+  <rect x="0" y="0" width="64" height="64" rx="8" ry="8" fill="url(#metalGradient)" />
+
+  <!-- Subtle shine overlay -->
+  <rect x="0" y="0" width="64" height="64" rx="8" ry="8" fill="url(#shineGradient)" />
+
+  <!-- Stylized "D" with arrow cutout on left stroke -->
+  <!-- The D is constructed as a path with:
+       - Left vertical stroke with arrow pointing right
+       - Curved right side forming the bowl
+  -->
+  <path
+    d="M 14 12
+       L 14 26
+       L 22 32
+       L 14 38
+       L 14 52
+       L 28 52
+       C 48 52 54 42 54 32
+       C 54 22 48 12 28 12
+       Z
+
+       M 24 20
+       L 28 20
+       C 42 20 46 26 46 32
+       C 46 38 42 44 28 44
+       L 24 44
+       Z"
+    fill="#ffffff"
+    fill-rule="evenodd"
+  />
+</svg>
