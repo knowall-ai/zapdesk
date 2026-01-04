@@ -2,6 +2,7 @@
 
 import { signIn } from 'next-auth/react';
 import { Ticket, Users, BarChart3, FolderKanban, CheckCircle } from 'lucide-react';
+import DevDeskIcon from '@/components/common/DevDeskIcon';
 
 const features = [
   {
@@ -45,12 +46,7 @@ export default function LandingPage() {
       <header className="border-b px-4 py-4" style={{ borderColor: 'var(--border)' }}>
         <div className="mx-auto flex max-w-4xl items-center justify-between">
           <div className="flex items-center gap-2">
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-lg"
-              style={{ backgroundColor: 'var(--primary)' }}
-            >
-              <span className="font-bold text-white">D</span>
-            </div>
+            <DevDeskIcon size={32} />
             <span className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
               DevDesk
             </span>
@@ -167,12 +163,7 @@ export default function LandingPage() {
       <footer className="border-t px-4 py-6" style={{ borderColor: 'var(--border)' }}>
         <div className="mx-auto flex max-w-4xl flex-col items-center justify-between gap-4 sm:flex-row">
           <div className="flex items-center gap-2">
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-lg"
-              style={{ backgroundColor: 'var(--primary)' }}
-            >
-              <span className="font-bold text-white">D</span>
-            </div>
+            <DevDeskIcon size={32} />
             <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
               DevDesk
             </span>

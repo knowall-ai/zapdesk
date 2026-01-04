@@ -15,7 +15,8 @@
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:unit": "vitest run",
-    "test:unit:watch": "vitest"
+    "test:unit:watch": "vitest",
+    "generate-icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",
@@ -38,6 +39,7 @@
     "eslint-config-next": "16.1.1",
     "prettier": "3.7.4",
     "prettier-plugin-tailwindcss": "^0.6.9",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.0.16"

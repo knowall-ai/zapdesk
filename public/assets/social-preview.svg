@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0a0a" />
+      <stop offset="100%" stop-color="#1a1a2e" />
+    </linearGradient>
+    <linearGradient id="metalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4ade80" />
+      <stop offset="50%" stop-color="#22c55e" />
+      <stop offset="100%" stop-color="#16a34a" />
+    </linearGradient>
+    <linearGradient id="shineGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.3" />
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="glowGradient" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#22c55e" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#22c55e" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bgGradient)" />
+
+  <!-- Subtle glow effect -->
+  <ellipse cx="600" cy="250" rx="400" ry="200" fill="url(#glowGradient)" />
+
+  <!-- Icon background -->
+  <rect x="425" y="140" width="120" height="120" rx="16" ry="16" fill="url(#metalGradient)" />
+  <rect x="425" y="140" width="120" height="120" rx="16" ry="16" fill="url(#shineGradient)" />
+
+  <!-- Stylized D with arrow cutout (scaled for 120x120 icon) -->
+  <path
+    d="M 451.25 162.5
+       L 451.25 188.75
+       L 466.25 200
+       L 451.25 211.25
+       L 451.25 237.5
+       L 477.5 237.5
+       C 515 237.5 526.25 218.75 526.25 200
+       C 526.25 181.25 515 162.5 477.5 162.5
+       Z
+
+       M 470 177.5
+       L 477.5 177.5
+       C 503.75 177.5 511.25 188.75 511.25 200
+       C 511.25 211.25 503.75 222.5 477.5 222.5
+       L 470 222.5
+       Z"
+    fill="#ffffff"
+    fill-rule="evenodd"
+  />
+
+  <!-- "DevDesk" text -->
+  <text x="600" y="340" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="72" font-weight="700">
+    <tspan fill="#22c55e">Dev</tspan><tspan fill="#f3f4f6">Desk</tspan>
+  </text>
+
+  <!-- Tagline -->
+  <text x="600" y="400" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="28" fill="#9ca3af">Azure DevOps Powered Support Ticketing</text>
+
+  <!-- Built by KnowAll -->
+  <text x="600" y="540" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="18" fill="#6b7280">Built by KnowAll</text>
+</svg>
