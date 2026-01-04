@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://devdesk.knowall.ai">
-    <img alt="DevDesk - Azure DevOps Powered Support Ticketing" src="public/assets/social-preview.svg" width="600">
+    <img alt="DevDesk banner with logo and tagline 'Azure DevOps Powered Support Ticketing'" src="public/assets/social-preview.svg" width="600">
   </a>
 </p>
 
