@@ -144,6 +144,25 @@ export interface DevDeskSession {
   error?: string;
 }
 
+// Search result types
+export type SearchResultType = 'ticket' | 'customer' | 'organization';
+
+export interface SearchResult {
+  id: string;
+  type: SearchResultType;
+  title: string;
+  subtitle?: string;
+  url: string;
+  avatarUrl?: string;
+  priority?: TicketPriority;
+  status?: TicketStatus;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  query: string;
+}
+
 // API Response types
 export interface ApiResponse<T> {
   data?: T;
