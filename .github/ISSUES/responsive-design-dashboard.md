@@ -12,7 +12,9 @@ The DevDesk dashboard (authenticated app experience) lacks responsive design sup
 ## Issues Found
 
 ### 1. Sidebar Fixed Width (Critical)
+
 **File:** `src/components/layout/Sidebar.tsx:141`
+
 ```tsx
 <aside className="flex h-screen w-64 flex-col" ...>
 ```
@@ -24,6 +26,7 @@ The DevDesk dashboard (authenticated app experience) lacks responsive design sup
 ---
 
 ### 2. No Mobile Navigation Toggle (Critical)
+
 **Files:** `MainLayout.tsx`, `Header.tsx`
 
 **Problem:** There is no hamburger menu or mechanism to toggle the sidebar on mobile. Users cannot navigate efficiently on small screens.
@@ -33,16 +36,19 @@ The DevDesk dashboard (authenticated app experience) lacks responsive design sup
 ---
 
 ### 3. Header Not Responsive
+
 **File:** `src/components/layout/Header.tsx`
 
 **Problem:** All header elements (search, Conversations button with text, notification icons, user menu) are visible at all screen sizes. This causes crowding on smaller screens.
 
 **Issues:**
+
 - Line 56: "Conversations" text should hide on mobile (show icon only)
 - Line 29: Search bar could collapse to icon on mobile
 - Multiple icon buttons will crowd together
 
 **Expected:**
+
 - Hide text labels on mobile, show icons only
 - Collapsible search on mobile
 - Responsive spacing between elements
@@ -50,11 +56,13 @@ The DevDesk dashboard (authenticated app experience) lacks responsive design sup
 ---
 
 ### 4. Data Table Not Mobile-Friendly
+
 **File:** `src/components/tickets/TicketList.tsx`
 
 **Problem:** The ticket list uses a table with 8 columns that will require horizontal scrolling on mobile. No alternative mobile view exists.
 
 **Expected:**
+
 - Card-based layout for mobile (< 768px)
 - Or, hide less important columns on smaller screens
 - Consider responsive table patterns (stacked rows, etc.)
@@ -64,6 +72,7 @@ The DevDesk dashboard (authenticated app experience) lacks responsive design sup
 ## Components That ARE Responsive (for reference)
 
 **LandingPage.tsx** - Properly uses:
+
 - `text-3xl sm:text-4xl lg:text-5xl` for responsive typography
 - `grid-cols-1 md:grid-cols-2` for responsive grids
 - `flex-col sm:flex-row` for responsive flex layouts
@@ -71,6 +80,7 @@ The DevDesk dashboard (authenticated app experience) lacks responsive design sup
 ## Recommended Breakpoints
 
 Following Tailwind conventions:
+
 - **sm:** 640px (mobile landscape)
 - **md:** 768px (tablet)
 - **lg:** 1024px (desktop)
@@ -78,6 +88,7 @@ Following Tailwind conventions:
 ## Proposed Fixes
 
 ### 1. Sidebar - Add responsive behavior
+
 ```tsx
 // Sidebar.tsx
 const [isOpen, setIsOpen] = useState(false);
@@ -90,22 +101,22 @@ const [isOpen, setIsOpen] = useState(false);
 ```
 
 ### 2. Add mobile menu toggle in Header
+
 ```tsx
 // Header.tsx
-<button
-  className="md:hidden p-2"
-  onClick={() => setSidebarOpen(!sidebarOpen)}
->
+<button className="p-2 md:hidden" onClick={() => setSidebarOpen(!sidebarOpen)}>
   <Menu size={24} />
 </button>
 ```
 
 ### 3. Header - Use responsive hiding
+
 ```tsx
 <span className="hidden sm:inline">Conversations</span>
 ```
 
 ### 4. TicketList - Add responsive card view or hide columns
+
 ```tsx
 // Hide less important columns on mobile
 <th className="hidden md:table-cell">Requested</th>
@@ -115,10 +126,13 @@ const [isOpen, setIsOpen] = useState(false);
 ## Screenshots
 
 ### Current Desktop Layout
+
 The desktop layout works well with the fixed 256px sidebar.
 
 ### Mobile Issues (simulated)
+
 On screens < 768px:
+
 - Sidebar takes ~40% of viewport width
 - Table requires horizontal scrolling
 - Header elements are crowded
@@ -130,4 +144,5 @@ On screens < 768px:
 - React 19
 
 ---
-*This issue was auto-generated during responsive design verification on 2026-01-04.*
+
+_This issue was auto-generated during responsive design verification on 2026-01-04._
