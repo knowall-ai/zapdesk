@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run lint && npm run format:check",
     "test": "playwright test",
-    "test:ui": "playwright test --ui"
+    "test:ui": "playwright test --ui",
+    "generate-icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",
@@ -34,7 +35,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "prettier": "3.7.4",
-    "prettier-plugin-tailwindcss": "^0.6.14",
+    "prettier-plugin-tailwindcss": "^0.6.9",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
