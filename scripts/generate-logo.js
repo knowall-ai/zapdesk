@@ -237,6 +237,10 @@ function main() {
   fs.writeFileSync(path.join(appDir, 'icon.svg'), icon64);
   console.log('Generated: src/app/icon.svg');
 
+  // Write apple touch icon
+  fs.writeFileSync(path.join(appDir, 'apple-icon.svg'), icon64);
+  console.log('Generated: src/app/apple-icon.svg');
+
   console.log('\nAll logo assets generated successfully!');
   console.log('\nDesign features:');
   console.log('  - Stylized "D" with bold geometric form');

@@ -1,5 +1,7 @@
 'use client';
 
+import { useId } from 'react';
+
 interface DevDeskIconProps {
   size?: number;
   className?: string;
@@ -18,6 +20,10 @@ interface DevDeskIconProps {
  * - Brand green (#22c55e) as primary color
  */
 export default function DevDeskIcon({ size = 32, className = '' }: DevDeskIconProps) {
+  const id = useId();
+  const metalGradientId = `devdesk-metal-${id}`;
+  const shineGradientId = `devdesk-shine-${id}`;
+
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -29,23 +35,23 @@ export default function DevDeskIcon({ size = 32, className = '' }: DevDeskIconPr
     >
       <defs>
         {/* Gradient for metallic effect */}
-        <linearGradient id="devdesk-metal" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id={metalGradientId} x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#4ade80" />
           <stop offset="50%" stopColor="#22c55e" />
           <stop offset="100%" stopColor="#16a34a" />
         </linearGradient>
         {/* Subtle shine for 3D effect */}
-        <linearGradient id="devdesk-shine" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id={shineGradientId} x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#ffffff" stopOpacity="0.3" />
           <stop offset="50%" stopColor="#ffffff" stopOpacity="0" />
         </linearGradient>
       </defs>
 
       {/* Background with rounded corners */}
-      <rect x="0" y="0" width="64" height="64" rx="8" ry="8" fill="url(#devdesk-metal)" />
+      <rect x="0" y="0" width="64" height="64" rx="8" ry="8" fill={`url(#${metalGradientId})`} />
 
       {/* Subtle shine overlay */}
-      <rect x="0" y="0" width="64" height="64" rx="8" ry="8" fill="url(#devdesk-shine)" />
+      <rect x="0" y="0" width="64" height="64" rx="8" ry="8" fill={`url(#${shineGradientId})`} />
 
       {/* Stylized "D" with arrow cutout on left stroke */}
       <path
