@@ -52,7 +52,6 @@ export const metadata: Metadata = {
     description:
       'A modern Zendesk-style support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
     images: ['/og-image.png'],
-    creator: '@knowall_ai',
   },
   robots: {
     index: true,
