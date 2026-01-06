@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { MainLayout } from '@/components/layout';
 import { Avatar } from '@/components/common';
 import { User, Mail, Building2, Clock, Globe, Save, Check } from 'lucide-react';
@@ -55,6 +55,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const [preferences, setPreferences] = useState<ProfilePreferences>(getStoredPreferences);
   const [saved, setSaved] = useState(false);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -62,10 +63,21 @@ export default function ProfilePage() {
     }
   }, [status, router]);
 
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const handleSave = () => {
     savePreferences(preferences);
     setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => setSaved(false), 2000);
   };
 
   if (status === 'loading') {
@@ -205,7 +217,11 @@ export default function ProfilePage() {
             </div>
 
             <div className="pt-4">
-              <button onClick={handleSave} className="btn-primary flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSave}
+                className="btn-primary flex items-center gap-2"
+              >
                 {saved ? (
                   <>
                     <Check size={16} />
