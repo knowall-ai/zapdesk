@@ -429,6 +429,45 @@ export class AzureDevOpsService {
 
     return allMembers;
   }
+
+  // Get current user's profile from Azure DevOps
+  async getUserProfile(): Promise<{
+    id: string;
+    displayName: string;
+    emailAddress: string;
+    coreAttributes?: {
+      TimeZone?: { value: string };
+      Language?: { value: string };
+    };
+  }> {
+    // Use VSSPS API for profile data
+    const response = await fetch(
+      'https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.0',
+      { headers: this.headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch user profile: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // Get user's notification settings (includes timezone)
+  async getUserSettings(): Promise<{
+    timezone: string;
+    locale: string;
+  }> {
+    try {
+      const profile = await this.getUserProfile();
+      return {
+        timezone: profile.coreAttributes?.TimeZone?.value || 'UTC',
+        locale: profile.coreAttributes?.Language?.value || 'en-US',
+      };
+    } catch {
+      return { timezone: 'UTC', locale: 'en-US' };
+    }
+  }
 }
 
 // Email routing: Maps email domains to DevOps projects
