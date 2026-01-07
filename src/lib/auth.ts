@@ -24,6 +24,7 @@ declare module 'next-auth/jwt' {
     accessTokenExpires?: number;
     error?: string;
     id?: string;
+    picture?: string;
   }
 }
 
@@ -59,6 +60,7 @@ export const authOptions: NextAuthOptions = {
           refreshToken: account.refresh_token,
           accessTokenExpires: account.expires_at ? account.expires_at * 1000 : undefined,
           id: user.id,
+          picture: user.image,
         };
       }
 
@@ -75,6 +77,9 @@ export const authOptions: NextAuthOptions = {
       session.error = token.error;
       if (token.id) {
         session.user.id = token.id;
+      }
+      if (token.picture) {
+        session.user.image = token.picture;
       }
       return session;
     },
