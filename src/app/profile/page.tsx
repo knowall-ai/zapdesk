@@ -178,7 +178,7 @@ export default function ProfilePage() {
 
             <div className="pt-4">
               <a
-                href="https://dev.azure.com/_usersSettings/general"
+                href="https://dev.azure.com/KnowAll/_usersSettings/general"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn-primary inline-flex items-center gap-2"

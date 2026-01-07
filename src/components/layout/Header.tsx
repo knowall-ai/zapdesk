@@ -7,13 +7,12 @@ import {
   Search,
   MessageSquare,
   Bell,
-  Grid3X3,
-  HelpCircle,
   ChevronDown,
   LogOut,
   User,
   Settings,
 } from 'lucide-react';
+import { Avatar } from '@/components/common';
 
 export default function Header() {
   const { data: session } = useSession();
@@ -71,34 +70,17 @@ export default function Header() {
           <Bell size={20} />
         </button>
 
-        {/* Apps grid */}
-        <button
-          className="rounded-md p-2 transition-colors hover:bg-[var(--surface-hover)]"
-          style={{ color: 'var(--text-secondary)' }}
-        >
-          <Grid3X3 size={20} />
-        </button>
-
-        {/* Help */}
-        <button
-          className="rounded-md p-2 transition-colors hover:bg-[var(--surface-hover)]"
-          style={{ color: 'var(--text-secondary)' }}
-        >
-          <HelpCircle size={20} />
-        </button>
-
         {/* User menu */}
         <div className="relative">
           <button
             onClick={() => setShowUserMenu(!showUserMenu)}
             className="flex items-center gap-2 rounded-md p-1 transition-colors hover:bg-[var(--surface-hover)]"
           >
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium"
-              style={{ backgroundColor: 'var(--primary)', color: 'white' }}
-            >
-              {session?.user?.name?.[0]?.toUpperCase() || 'U'}
-            </div>
+            <Avatar
+              name={session?.user?.name || 'User'}
+              image={session?.user?.image ?? undefined}
+              size="sm"
+            />
             <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />
           </button>
 
