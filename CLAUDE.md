@@ -113,6 +113,8 @@ npm run test
 
 ### Running Checks Locally
 
+**CRITICAL: ALWAYS run `npm run check` before pushing to ensure CI will pass.** Failing to do so may cause CI/CD pipeline failures.
+
 Before pushing code, run all checks to ensure CI will pass:
 
 ```bash

@@ -256,11 +256,7 @@ export default function Header() {
             onClick={() => setShowUserMenu(!showUserMenu)}
             className="flex items-center gap-2 rounded-md p-1 transition-colors hover:bg-[var(--surface-hover)]"
           >
-            <Avatar
-              name={session?.user?.name || 'User'}
-              image={photoUrl ?? undefined}
-              size="sm"
-            />
+            <Avatar name={session?.user?.name || 'User'} image={photoUrl ?? undefined} size="sm" />
             <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />
           </button>
 

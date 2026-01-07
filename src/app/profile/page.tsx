@@ -160,9 +160,7 @@ export default function ProfilePage() {
                 <p className="text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
                   Country/Region
                 </p>
-                <p style={{ color: 'var(--text-primary)' }}>
-                  {profile?.country || 'Unknown'}
-                </p>
+                <p style={{ color: 'var(--text-primary)' }}>{profile?.country || 'Unknown'}</p>
               </div>
             </div>
           </div>
@@ -181,9 +179,7 @@ export default function ProfilePage() {
                 <p className="text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
                   Preferred Language
                 </p>
-                <p style={{ color: 'var(--text-primary)' }}>
-                  {profile?.locale || 'Unknown'}
-                </p>
+                <p style={{ color: 'var(--text-primary)' }}>{profile?.locale || 'Unknown'}</p>
               </div>
             </div>
 
@@ -193,9 +189,7 @@ export default function ProfilePage() {
                 <p className="text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
                   Date Pattern
                 </p>
-                <p style={{ color: 'var(--text-primary)' }}>
-                  {profile?.datePattern || 'Unknown'}
-                </p>
+                <p style={{ color: 'var(--text-primary)' }}>{profile?.datePattern || 'Unknown'}</p>
               </div>
             </div>
 
@@ -205,9 +199,7 @@ export default function ProfilePage() {
                 <p className="text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
                   Time Pattern
                 </p>
-                <p style={{ color: 'var(--text-primary)' }}>
-                  {profile?.timePattern || 'Unknown'}
-                </p>
+                <p style={{ color: 'var(--text-primary)' }}>{profile?.timePattern || 'Unknown'}</p>
               </div>
             </div>
 
