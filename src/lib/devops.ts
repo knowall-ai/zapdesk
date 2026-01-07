@@ -477,30 +477,30 @@ export class AzureDevOpsService {
         const getValue = (key: string) => prefs.value?.[key]?.value || prefs[key] || '';
 
         return {
-          timezone: getValue('TimeZone') || getValue('timezone') || 'UTC',
-          locale: getValue('Language') || getValue('locale') || 'en-US',
+          timezone: getValue('TimeZone') || getValue('timezone') || '',
+          locale: getValue('Language') || getValue('locale') || '',
           country: getValue('Country') || getValue('country') || '',
-          datePattern: getValue('DatePattern') || getValue('datePattern') || 'dd/MM/yyyy',
-          timePattern: getValue('TimePattern') || getValue('timePattern') || 'HH:mm',
+          datePattern: getValue('DatePattern') || getValue('datePattern') || '',
+          timePattern: getValue('TimePattern') || getValue('timePattern') || '',
         };
       }
 
       // Fallback to profile coreAttributes
       const profile = await this.getUserProfile();
       return {
-        timezone: profile.coreAttributes?.TimeZone?.value || 'UTC',
-        locale: profile.coreAttributes?.Language?.value || 'en-US',
+        timezone: profile.coreAttributes?.TimeZone?.value || '',
+        locale: profile.coreAttributes?.Language?.value || '',
         country: profile.coreAttributes?.Country?.value || '',
-        datePattern: profile.coreAttributes?.DatePattern?.value || 'dd/MM/yyyy',
-        timePattern: profile.coreAttributes?.TimePattern?.value || 'HH:mm',
+        datePattern: profile.coreAttributes?.DatePattern?.value || '',
+        timePattern: profile.coreAttributes?.TimePattern?.value || '',
       };
     } catch {
       return {
-        timezone: 'UTC',
-        locale: 'en-US',
+        timezone: '',
+        locale: '',
         country: '',
-        datePattern: 'dd/MM/yyyy',
-        timePattern: 'HH:mm',
+        datePattern: '',
+        timePattern: '',
       };
     }
   }

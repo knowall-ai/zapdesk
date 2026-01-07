@@ -161,7 +161,7 @@ export default function ProfilePage() {
                   Country/Region
                 </p>
                 <p style={{ color: 'var(--text-primary)' }}>
-                  {profile?.country || 'Not set'}
+                  {profile?.country || 'Unknown'}
                 </p>
               </div>
             </div>
@@ -182,7 +182,7 @@ export default function ProfilePage() {
                   Preferred Language
                 </p>
                 <p style={{ color: 'var(--text-primary)' }}>
-                  {profile?.locale || 'en-US'}
+                  {profile?.locale || 'Unknown'}
                 </p>
               </div>
             </div>
@@ -194,7 +194,7 @@ export default function ProfilePage() {
                   Date Pattern
                 </p>
                 <p style={{ color: 'var(--text-primary)' }}>
-                  {profile?.datePattern || 'dd/MM/yyyy'}
+                  {profile?.datePattern || 'Unknown'}
                 </p>
               </div>
             </div>
@@ -206,7 +206,7 @@ export default function ProfilePage() {
                   Time Pattern
                 </p>
                 <p style={{ color: 'var(--text-primary)' }}>
-                  {profile?.timePattern || 'HH:mm'}
+                  {profile?.timePattern || 'Unknown'}
                 </p>
               </div>
             </div>
@@ -218,7 +218,7 @@ export default function ProfilePage() {
                   Time Zone
                 </p>
                 <p style={{ color: 'var(--text-primary)' }}>
-                  {profile?.timezone?.replace(/_/g, ' ') || 'UTC'}
+                  {profile?.timezone?.replace(/_/g, ' ') || 'Unknown'}
                 </p>
               </div>
             </div>
