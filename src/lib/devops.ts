@@ -465,6 +465,27 @@ export class AzureDevOpsService {
     timePattern: string;
   }> {
     try {
+      // Try to get user preferences from organization settings API
+      const prefsResponse = await fetch(
+        `${DEVOPS_BASE_URL}/_apis/settings/entries/me/UserPreferences?api-version=7.0`,
+        { headers: this.headers }
+      );
+
+      if (prefsResponse.ok) {
+        const prefs = await prefsResponse.json();
+        // Parse the settings from the response
+        const getValue = (key: string) => prefs.value?.[key]?.value || prefs[key] || '';
+
+        return {
+          timezone: getValue('TimeZone') || getValue('timezone') || 'UTC',
+          locale: getValue('Language') || getValue('locale') || 'en-US',
+          country: getValue('Country') || getValue('country') || '',
+          datePattern: getValue('DatePattern') || getValue('datePattern') || 'dd/MM/yyyy',
+          timePattern: getValue('TimePattern') || getValue('timePattern') || 'HH:mm',
+        };
+      }
+
+      // Fallback to profile coreAttributes
       const profile = await this.getUserProfile();
       return {
         timezone: profile.coreAttributes?.TimeZone?.value || 'UTC',
