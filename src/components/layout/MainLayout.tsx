@@ -1,27 +1,47 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import NewTicketDialog from '@/components/tickets/NewTicketDialog';
 
-interface MainLayoutProps {
-  children: React.ReactNode;
-  ticketCounts?: {
-    yourUnsolved: number;
-    ratedLast7Days: number;
-    unassigned: number;
-    allUnsolved: number;
-    recentlyUpdated: number;
-    newInGroups: number;
-    pending: number;
-    recentlySolved: number;
-    unsolvedInGroups: number;
-  };
+interface TicketCounts {
+  yourActive: number;
+  ratedLast7Days: number;
+  unassigned: number;
+  allActive: number;
+  recentlyUpdated: number;
+  pending: number;
+  recentlySolved: number;
 }
 
-export default function MainLayout({ children, ticketCounts }: MainLayoutProps) {
+interface MainLayoutProps {
+  children: React.ReactNode;
+}
+
+export default function MainLayout({ children }: MainLayoutProps) {
+  const { data: session } = useSession();
   const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
+  const [ticketCounts, setTicketCounts] = useState<TicketCounts | undefined>();
+
+  useEffect(() => {
+    if (session?.accessToken) {
+      fetchTicketCounts();
+    }
+  }, [session]);
+
+  const fetchTicketCounts = async () => {
+    try {
+      const response = await fetch('/api/devops/ticket-counts');
+      if (response.ok) {
+        const counts = await response.json();
+        setTicketCounts(counts);
+      }
+    } catch (error) {
+      console.error('Failed to fetch ticket counts:', error);
+    }
+  };
 
   return (
     <div className="flex h-screen overflow-hidden">

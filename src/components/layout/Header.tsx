@@ -38,7 +38,7 @@ export default function Header() {
             placeholder="Search tickets, customers, organizations..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="input w-full py-2 pr-4 pl-10 text-sm"
+            className="input w-full py-2 pr-4 pl-11 text-sm"
           />
         </div>
       </div>

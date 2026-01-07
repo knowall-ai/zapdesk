@@ -127,7 +127,7 @@ export default function HomePage() {
       value: stats.openTickets,
       icon: <AlertCircle size={24} />,
       color: 'var(--status-open)',
-      href: '/tickets?view=all-unsolved',
+      href: '/tickets?view=all-active',
     },
     {
       title: 'Pending',
@@ -204,12 +204,12 @@ export default function HomePage() {
             </div>
             <div className="space-y-3 p-4">
               <Link
-                href="/tickets?view=your-unsolved"
+                href="/tickets?view=your-active"
                 className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
               >
                 <div className="flex items-center gap-3">
                   <Ticket size={20} style={{ color: 'var(--primary)' }} />
-                  <span style={{ color: 'var(--text-primary)' }}>View your unsolved tickets</span>
+                  <span style={{ color: 'var(--text-primary)' }}>View your active tickets</span>
                 </div>
                 <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
               </Link>

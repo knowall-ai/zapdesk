@@ -4,21 +4,19 @@ import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
+import { LoadingSpinner } from '@/components/common';
 import { TicketList } from '@/components/tickets';
 import type { Ticket } from '@/types';
 
 const viewTitles: Record<string, string> = {
-  'your-unsolved': 'Your unsolved tickets',
+  'your-active': 'Your active tickets',
   rated: 'Rated tickets from the last 7 days',
   unassigned: 'Unassigned tickets',
-  'all-unsolved': 'All unsolved tickets',
+  'all-active': 'All active tickets',
   'recently-updated': 'Recently updated tickets',
-  'new-in-groups': 'New tickets in your groups',
   pending: 'Pending tickets',
   'recently-solved': 'Recently solved tickets',
-  'unsolved-in-groups': 'Unsolved tickets in your groups',
-  suspended: 'Suspended tickets',
-  deleted: 'Deleted tickets',
+  removed: 'Removed tickets',
 };
 
 function TicketsPageContent() {
@@ -69,10 +67,7 @@ function TicketsPageContent() {
     return (
       <MainLayout>
         <div className="flex h-full items-center justify-center">
-          <div
-            className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-            style={{ borderColor: 'var(--primary)' }}
-          />
+          <LoadingSpinner size="lg" />
         </div>
       </MainLayout>
     );
@@ -95,10 +90,7 @@ export default function TicketsPage() {
       fallback={
         <MainLayout>
           <div className="flex h-full items-center justify-center">
-            <div
-              className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-              style={{ borderColor: 'var(--primary)' }}
-            />
+            <LoadingSpinner size="lg" />
           </div>
         </MainLayout>
       }

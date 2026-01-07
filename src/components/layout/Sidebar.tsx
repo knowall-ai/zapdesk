@@ -45,15 +45,13 @@ const mainNavItems = [
 
 interface SidebarProps {
   ticketCounts?: {
-    yourUnsolved: number;
+    yourActive: number;
     ratedLast7Days: number;
     unassigned: number;
-    allUnsolved: number;
+    allActive: number;
     recentlyUpdated: number;
-    newInGroups: number;
     pending: number;
     recentlySolved: number;
-    unsolvedInGroups: number;
   };
   onNewTicket?: () => void;
 }
@@ -63,24 +61,22 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
   const searchParams = useSearchParams();
 
   const counts = ticketCounts || {
-    yourUnsolved: 0,
+    yourActive: 0,
     ratedLast7Days: 0,
     unassigned: 0,
-    allUnsolved: 0,
+    allActive: 0,
     recentlyUpdated: 0,
-    newInGroups: 0,
     pending: 0,
     recentlySolved: 0,
-    unsolvedInGroups: 0,
   };
 
   const viewItems: ViewItem[] = [
     {
-      id: 'your-unsolved',
-      name: 'Your unsolved tickets',
+      id: 'your-active',
+      name: 'Your active tickets',
       icon: <Inbox size={16} />,
-      href: '/tickets?view=your-unsolved',
-      count: counts.yourUnsolved,
+      href: '/tickets?view=your-active',
+      count: counts.yourActive,
     },
     {
       id: 'rated-7days',
@@ -97,11 +93,11 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
       count: counts.unassigned,
     },
     {
-      id: 'all-unsolved',
-      name: 'All unsolved tickets',
+      id: 'all-active',
+      name: 'All active tickets',
       icon: <AlertCircle size={16} />,
-      href: '/tickets?view=all-unsolved',
-      count: counts.allUnsolved,
+      href: '/tickets?view=all-active',
+      count: counts.allActive,
     },
     {
       id: 'recently-updated',
@@ -223,25 +219,11 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
         {/* Bottom section */}
         <div className="border-t p-3" style={{ borderColor: 'var(--border)' }}>
           <Link
-            href="/tickets?view=suspended"
+            href="/tickets?view=removed"
             className="flex items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]"
           >
-            <span>Suspended tickets</span>
+            <span>Removed tickets</span>
             <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-xs">0</span>
-          </Link>
-          <Link
-            href="/tickets?view=deleted"
-            className="flex items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]"
-          >
-            <span>Deleted tickets</span>
-            <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-xs">0</span>
-          </Link>
-          <Link
-            href="/admin/views"
-            className="flex items-center gap-1 rounded px-2 py-1.5 text-sm text-[var(--primary)] hover:bg-[var(--surface-hover)]"
-          >
-            Manage views
-            <ChevronDown size={14} className="rotate-[-90deg]" />
           </Link>
         </div>
       </div>
