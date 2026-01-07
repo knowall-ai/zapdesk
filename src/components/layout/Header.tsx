@@ -154,11 +154,21 @@ export default function Header() {
             onFocus={() => searchQuery.length >= 2 && setShowSearchResults(true)}
             className="input w-full py-2 pr-4 text-sm"
             style={{ paddingLeft: '2.75rem' }}
+            role="combobox"
+            aria-expanded={showSearchResults}
+            aria-autocomplete="list"
+            aria-controls="search-results-listbox"
+            aria-activedescendant={
+              selectedIndex >= 0 ? `search-result-${selectedIndex}` : undefined
+            }
           />
 
           {/* Search Results Dropdown */}
           {showSearchResults && (
             <div
+              id="search-results-listbox"
+              role="listbox"
+              aria-label="Search results"
               className="absolute top-full left-0 z-50 mt-1 w-full rounded-lg py-2 shadow-lg"
               style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
             >
@@ -171,6 +181,9 @@ export default function Header() {
                   {searchResults.map((result, index) => (
                     <Link
                       key={`${result.type}-${result.id}`}
+                      id={`search-result-${index}`}
+                      role="option"
+                      aria-selected={index === selectedIndex}
                       href={result.url}
                       onClick={() => {
                         setShowSearchResults(false);
