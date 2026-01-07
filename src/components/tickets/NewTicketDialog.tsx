@@ -225,10 +225,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
       {/* Dialog */}
       <div
@@ -392,9 +389,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                 ) : (
                   <select
                     value={form.workItemType}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, workItemType: e.target.value }))
-                    }
+                    onChange={(e) => setForm((prev) => ({ ...prev, workItemType: e.target.value }))}
                     className="input w-full"
                     disabled={!form.project || workItemTypes.length === 0}
                   >
@@ -441,7 +436,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     <div className="relative">
                       <Search
                         size={14}
-                        className="absolute left-2 top-1/2 -translate-y-1/2"
+                        className="absolute top-1/2 left-2 -translate-y-1/2"
                         style={{ color: 'var(--text-muted)' }}
                       />
                       <input

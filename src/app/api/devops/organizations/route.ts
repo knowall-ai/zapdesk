@@ -30,12 +30,7 @@ export async function GET() {
     const projects = await devopsService.getProjects();
 
     const organizations: Organization[] = projects.map(
-      (project: {
-        id: string;
-        name: string;
-        lastUpdateTime?: string;
-        revision?: number;
-      }) => ({
+      (project: { id: string; name: string; lastUpdateTime?: string; revision?: number }) => ({
         id: project.id,
         name: project.name,
         domain: DOMAIN_MAP[project.name] || undefined,

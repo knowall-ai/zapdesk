@@ -116,8 +116,8 @@ export default function LandingPage() {
                 Open Source by <span style={{ color: 'var(--primary)' }}>KnowAll.ai</span>
               </h2>
               <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>
-                DevDesk provides a seamless experience for managing support tickets against
-                Azure DevOps projects. Free and open source for everyone.
+                DevDesk provides a seamless experience for managing support tickets against Azure
+                DevOps projects. Free and open source for everyone.
               </p>
               <div className="space-y-3">
                 {benefits.map((benefit) => (

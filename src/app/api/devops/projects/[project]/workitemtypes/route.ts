@@ -43,24 +43,37 @@ export async function GET(
     const types = (data.value || [])
       .filter((wit: { name: string }) => {
         // Filter out system/hidden types
-        const excludedTypes = ['Code Review Request', 'Code Review Response', 'Shared Steps', 'Test Case', 'Test Plan', 'Test Suite', 'Shared Parameter'];
+        const excludedTypes = [
+          'Code Review Request',
+          'Code Review Response',
+          'Shared Steps',
+          'Test Case',
+          'Test Plan',
+          'Test Suite',
+          'Shared Parameter',
+        ];
         return !excludedTypes.includes(wit.name);
       })
-      .map((wit: { name: string; referenceName: string; description?: string; color?: string; icon?: { url?: string } }) => ({
-        name: wit.name,
-        referenceName: wit.referenceName,
-        description: wit.description,
-        color: wit.color,
-        icon: wit.icon?.url,
-      }))
+      .map(
+        (wit: {
+          name: string;
+          referenceName: string;
+          description?: string;
+          color?: string;
+          icon?: { url?: string };
+        }) => ({
+          name: wit.name,
+          referenceName: wit.referenceName,
+          description: wit.description,
+          color: wit.color,
+          icon: wit.icon?.url,
+        })
+      )
       .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
 
     return NextResponse.json({ types });
   } catch (error) {
     console.error('Error fetching work item types:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch work item types' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch work item types' }, { status: 500 });
   }
 }

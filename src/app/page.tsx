@@ -269,7 +269,7 @@ export default function HomePage() {
               <div className="relative mb-4">
                 <Search
                   size={18}
-                  className="absolute left-3 top-1/2 -translate-y-1/2"
+                  className="absolute top-1/2 left-3 -translate-y-1/2"
                   style={{ color: 'var(--text-muted)' }}
                 />
                 <input
@@ -316,9 +316,8 @@ export default function HomePage() {
                     ))
                 )}
                 {projects.length > 0 &&
-                  projects.filter((p) =>
-                    p.name.toLowerCase().includes(projectSearch.toLowerCase())
-                  ).length === 0 && (
+                  projects.filter((p) => p.name.toLowerCase().includes(projectSearch.toLowerCase()))
+                    .length === 0 && (
                     <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                       No projects match your search.
                     </p>
