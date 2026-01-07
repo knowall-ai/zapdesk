@@ -3,6 +3,7 @@
 import { useSession } from 'next-auth/react';
 import { useState, useEffect } from 'react';
 import { MainLayout } from '@/components/layout';
+import { LoadingSpinner } from '@/components/common';
 import LandingPage from '@/components/LandingPage';
 import {
   Ticket,
@@ -13,6 +14,8 @@ import {
   Users,
   Building2,
   ArrowRight,
+  Search,
+  ArrowUpDown,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -23,6 +26,32 @@ interface DashboardStats {
   resolvedToday: number;
   avgResponseTime: string;
   customerSatisfaction: number;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  url: string;
+}
+
+const projectColors = [
+  'bg-blue-600',
+  'bg-orange-600',
+  'bg-purple-600',
+  'bg-green-600',
+  'bg-pink-600',
+  'bg-cyan-600',
+  'bg-amber-600',
+  'bg-indigo-600',
+];
+
+function getProjectInitials(name: string): string {
+  return name
+    .split(' ')
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
 }
 
 export default function HomePage() {
@@ -36,10 +65,14 @@ export default function HomePage() {
     customerSatisfaction: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectSearch, setProjectSearch] = useState('');
+  const [projectSort, setProjectSort] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     if (session?.accessToken) {
       fetchDashboardStats();
+      fetchProjects();
     }
   }, [session]);
 
@@ -57,16 +90,28 @@ export default function HomePage() {
     }
   };
 
+  const fetchProjects = async () => {
+    try {
+      const response = await fetch('/api/devops/projects');
+      if (response.ok) {
+        const data = await response.json();
+        const sortedProjects = (data.projects || []).sort((a: Project, b: Project) =>
+          a.name.localeCompare(b.name)
+        );
+        setProjects(sortedProjects);
+      }
+    } catch (error) {
+      console.error('Failed to fetch projects:', error);
+    }
+  };
+
   if (status === 'loading') {
     return (
       <div
         className="flex min-h-screen items-center justify-center"
         style={{ backgroundColor: 'var(--background)' }}
       >
-        <div
-          className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-          style={{ borderColor: 'var(--primary)' }}
-        />
+        <LoadingSpinner size="lg" />
       </div>
     );
   }
@@ -82,7 +127,7 @@ export default function HomePage() {
       value: stats.openTickets,
       icon: <AlertCircle size={24} />,
       color: 'var(--status-open)',
-      href: '/tickets?view=all-unsolved',
+      href: '/tickets?view=all-active',
     },
     {
       title: 'Pending',
@@ -159,12 +204,12 @@ export default function HomePage() {
             </div>
             <div className="space-y-3 p-4">
               <Link
-                href="/tickets?view=your-unsolved"
+                href="/tickets?view=your-active"
                 className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
               >
                 <div className="flex items-center gap-3">
                   <Ticket size={20} style={{ color: 'var(--primary)' }} />
-                  <span style={{ color: 'var(--text-primary)' }}>View your unsolved tickets</span>
+                  <span style={{ color: 'var(--text-primary)' }}>View your active tickets</span>
                 </div>
                 <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
               </Link>
@@ -179,12 +224,12 @@ export default function HomePage() {
                 <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
               </Link>
               <Link
-                href="/customers"
+                href="/users"
                 className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
               >
                 <div className="flex items-center gap-3">
                   <Users size={20} style={{ color: 'var(--status-progress)' }} />
-                  <span style={{ color: 'var(--text-primary)' }}>Browse customers</span>
+                  <span style={{ color: 'var(--text-primary)' }}>Browse users</span>
                 </div>
                 <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
               </Link>
@@ -204,43 +249,79 @@ export default function HomePage() {
           {/* Projects */}
           <div className="card">
             <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
-              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-                Your Projects
-              </h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Your Projects
+                </h2>
+                <button
+                  onClick={() => setProjectSort(projectSort === 'asc' ? 'desc' : 'asc')}
+                  className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-[var(--surface-hover)]"
+                  style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
+                  title={`Sort ${projectSort === 'asc' ? 'Z-A' : 'A-Z'}`}
+                >
+                  <ArrowUpDown size={14} />
+                  {projectSort === 'asc' ? 'A-Z' : 'Z-A'}
+                </button>
+              </div>
             </div>
             <div className="p-4">
-              <p className="mb-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                Tickets are fetched from Azure DevOps projects you have access to.
-              </p>
+              {/* Search */}
+              <div className="relative mb-4">
+                <Search
+                  size={18}
+                  className="absolute top-1/2 left-3 -translate-y-1/2"
+                  style={{ color: 'var(--text-muted)' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Search projects..."
+                  value={projectSearch}
+                  onChange={(e) => setProjectSearch(e.target.value)}
+                  className="input w-full pl-10 text-sm"
+                />
+              </div>
               <div className="space-y-2">
-                <a
-                  href="https://dev.azure.com/KnowAll/Medite"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded bg-blue-600 text-sm font-medium text-white">
-                      M
-                    </div>
-                    <span style={{ color: 'var(--text-primary)' }}>Medite</span>
-                  </div>
-                  <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
-                </a>
-                <a
-                  href="https://dev.azure.com/KnowAll/Cairn%20Homes"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded bg-orange-600 text-sm font-medium text-white">
-                      CH
-                    </div>
-                    <span style={{ color: 'var(--text-primary)' }}>Cairn Homes</span>
-                  </div>
-                  <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
-                </a>
+                {projects.length === 0 ? (
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                    Loading projects...
+                  </p>
+                ) : (
+                  projects
+                    .filter((project) =>
+                      project.name.toLowerCase().includes(projectSearch.toLowerCase())
+                    )
+                    .sort((a, b) =>
+                      projectSort === 'asc'
+                        ? a.name.localeCompare(b.name)
+                        : b.name.localeCompare(a.name)
+                    )
+                    .map((project, index) => (
+                      <a
+                        key={project.id}
+                        href={project.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`flex h-8 w-8 items-center justify-center rounded text-sm font-medium text-white ${projectColors[index % projectColors.length]}`}
+                          >
+                            {getProjectInitials(project.name)}
+                          </div>
+                          <span style={{ color: 'var(--text-primary)' }}>{project.name}</span>
+                        </div>
+                        <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
+                      </a>
+                    ))
+                )}
+                {projects.length > 0 &&
+                  projects.filter((p) => p.name.toLowerCase().includes(projectSearch.toLowerCase()))
+                    .length === 0 && (
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      No projects match your search.
+                    </p>
+                  )}
               </div>
             </div>
           </div>

@@ -5,6 +5,16 @@ export interface User {
   displayName: string;
   email: string;
   avatarUrl?: string;
+  accessLevel?: string;
+  licenseType?: string;
+}
+
+export interface WorkItemType {
+  name: string;
+  referenceName: string;
+  description?: string;
+  color?: string;
+  icon?: string;
 }
 
 export interface Organization {
@@ -27,7 +37,7 @@ export interface Customer {
   timezone: string;
   tags: string[];
   avatarUrl?: string;
-  lastUpdated: Date;
+  lastUpdated?: Date;
 }
 
 export type TicketStatus = 'New' | 'Open' | 'In Progress' | 'Pending' | 'Resolved' | 'Closed';

@@ -4,16 +4,16 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout';
-import { Avatar } from '@/components/common';
+import { Avatar, LoadingSpinner } from '@/components/common';
 import { Search, Plus, Upload, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import type { Customer } from '@/types';
 
-export default function CustomersPage() {
+export default function UsersPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [users, setUsers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeList, setActiveList] = useState<'all' | 'suspended'>('all');
@@ -26,43 +26,40 @@ export default function CustomersPage() {
 
   useEffect(() => {
     if (session?.accessToken) {
-      fetchCustomers();
+      fetchUsers();
     }
   }, [session]);
 
-  const fetchCustomers = async () => {
+  const fetchUsers = async () => {
     try {
-      const response = await fetch('/api/devops/customers');
+      const response = await fetch('/api/devops/users');
       if (response.ok) {
         const data = await response.json();
-        setCustomers(
-          data.customers.map((c: Customer & { lastUpdated: string }) => ({
+        setUsers(
+          data.users.map((c: Customer & { lastUpdated?: string }) => ({
             ...c,
-            lastUpdated: new Date(c.lastUpdated),
+            lastUpdated: c.lastUpdated ? new Date(c.lastUpdated) : undefined,
           }))
         );
       }
     } catch (error) {
-      console.error('Failed to fetch customers:', error);
+      console.error('Failed to fetch users:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredCustomers = customers.filter(
-    (customer) =>
-      customer.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      customer.email.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredUsers = users.filter(
+    (user) =>
+      user.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   if (status === 'loading') {
     return (
       <MainLayout>
         <div className="flex h-full items-center justify-center">
-          <div
-            className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-            style={{ borderColor: 'var(--primary)' }}
-          />
+          <LoadingSpinner size="lg" />
         </div>
       </MainLayout>
     );
@@ -81,7 +78,7 @@ export default function CustomersPage() {
           style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
         >
           <h2 className="mb-4 text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>
-            Customer lists
+            User lists
           </h2>
           <nav className="space-y-1">
             <button
@@ -92,7 +89,7 @@ export default function CustomersPage() {
                   : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
               }`}
             >
-              All customers
+              All users
             </button>
             <button
               onClick={() => setActiveList('suspended')}
@@ -113,10 +110,10 @@ export default function CustomersPage() {
           <div className="mb-6 flex items-start justify-between">
             <div>
               <h1 className="mb-2 text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                Customers
+                Users
               </h1>
               <p style={{ color: 'var(--text-secondary)' }}>
-                Add, search, and manage your customers (end users) all in one place.
+                Search and manage your users all in one place.
               </p>
               <a
                 href="#"
@@ -131,7 +128,7 @@ export default function CustomersPage() {
                 <Upload size={16} /> Bulk import
               </button>
               <button className="btn-primary flex items-center gap-2">
-                <Plus size={16} /> Add customer
+                <Plus size={16} /> Add user
               </button>
             </div>
           </div>
@@ -146,7 +143,7 @@ export default function CustomersPage() {
               />
               <input
                 type="text"
-                placeholder="Search customers"
+                placeholder="Search users"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="input w-full pl-10"
@@ -156,7 +153,7 @@ export default function CustomersPage() {
 
           {/* Count */}
           <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-            {filteredCustomers.length} customer{filteredCustomers.length !== 1 ? 's' : ''}
+            {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}
           </p>
 
           {/* Table */}
@@ -183,12 +180,6 @@ export default function CustomersPage() {
                     className="px-4 py-3 text-left text-xs font-medium uppercase"
                     style={{ color: 'var(--text-muted)' }}
                   >
-                    Tags
-                  </th>
-                  <th
-                    className="px-4 py-3 text-left text-xs font-medium uppercase"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
                     Timezone
                   </th>
                   <th
@@ -202,76 +193,48 @@ export default function CustomersPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td
-                      colSpan={6}
-                      className="px-4 py-8 text-center"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      Loading customers...
+                    <td colSpan={5} className="px-4 py-12">
+                      <LoadingSpinner size="lg" message="Loading users..." />
                     </td>
                   </tr>
-                ) : filteredCustomers.length === 0 ? (
+                ) : filteredUsers.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={5}
                       className="px-4 py-8 text-center"
                       style={{ color: 'var(--text-muted)' }}
                     >
-                      No customers found
+                      No users found
                     </td>
                   </tr>
                 ) : (
-                  filteredCustomers.map((customer) => (
-                    <tr key={customer.id} className="table-row">
+                  filteredUsers.map((user) => (
+                    <tr key={user.id} className="table-row">
                       <td className="px-4 py-3">
                         <input type="checkbox" className="rounded" />
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <Avatar
-                            name={customer.displayName}
-                            image={customer.avatarUrl}
-                            size="sm"
-                          />
+                          <Avatar name={user.displayName} image={user.avatarUrl} size="sm" />
                           <Link
-                            href={`/customers/${customer.id}`}
+                            href={`/users/${user.id}`}
                             className="font-medium hover:underline"
                             style={{ color: 'var(--primary)' }}
                           >
-                            {customer.displayName}
+                            {user.displayName}
                           </Link>
                         </div>
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                          {customer.email}
+                          {user.email}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
-                        {customer.tags.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {customer.tags.map((tag) => (
-                              <span
-                                key={tag}
-                                className="rounded px-2 py-0.5 text-xs"
-                                style={{
-                                  backgroundColor: 'var(--surface-hover)',
-                                  color: 'var(--text-secondary)',
-                                }}
-                              >
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)' }}>-</span>
-                        )}
+                      <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        {user.timezone}
                       </td>
                       <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {customer.timezone}
-                      </td>
-                      <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {format(customer.lastUpdated, 'dd MMM yyyy')}
+                        {user.lastUpdated ? format(user.lastUpdated, 'dd MMM yyyy') : '-'}
                       </td>
                     </tr>
                   ))

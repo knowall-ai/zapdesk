@@ -66,6 +66,7 @@ export default function LoginPage() {
             backgroundColor: 'var(--surface-hover)',
             color: 'var(--text-primary)',
             border: '1px solid var(--border)',
+            cursor: 'pointer',
           }}
         >
           <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">

@@ -7,7 +7,7 @@ import DevDeskIcon from '@/components/common/DevDeskIcon';
 const features = [
   {
     icon: <Ticket size={24} />,
-    title: 'Zendesk-Style Interface',
+    title: 'Modern Support Portal',
     description:
       'A familiar support portal experience for managing tickets, customers, and organizations from Azure DevOps.',
   },
@@ -103,7 +103,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Built for KnowAll.ai Teams */}
+      {/* Open Source by KnowAll.ai */}
       <section className="px-4 py-16" style={{ backgroundColor: 'var(--surface)' }}>
         <div className="mx-auto max-w-4xl">
           <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
@@ -113,11 +113,11 @@ export default function LandingPage() {
                 className="mb-4 text-2xl font-bold sm:text-3xl"
                 style={{ color: 'var(--text-primary)' }}
               >
-                Built for <span style={{ color: 'var(--primary)' }}>KnowAll.ai</span> Teams
+                Open Source by <span style={{ color: 'var(--primary)' }}>KnowAll.ai</span>
               </h2>
               <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>
-                DevDesk is designed exclusively for KnowAll.ai users, providing a seamless
-                experience for managing support tickets against Azure DevOps projects.
+                DevDesk provides a seamless experience for managing support tickets against Azure
+                DevOps projects. Free and open source for everyone.
               </p>
               <div className="space-y-3">
                 {benefits.map((benefit) => (
@@ -146,7 +146,7 @@ export default function LandingPage() {
                 Sign in with Microsoft
               </h3>
               <p className="mb-6 text-sm" style={{ color: 'var(--text-muted)' }}>
-                Use your KnowAll.ai Microsoft account to access DevDesk securely.
+                Use your Microsoft account to access DevDesk securely.
               </p>
               <button
                 onClick={() => signIn('azure-ad', { callbackUrl: '/' })}

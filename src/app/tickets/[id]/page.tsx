@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
+import { LoadingSpinner } from '@/components/common';
 import { TicketDetail } from '@/components/tickets';
 import type { Ticket, TicketComment } from '@/types';
 
@@ -93,10 +94,7 @@ export default function TicketDetailPage() {
     return (
       <MainLayout>
         <div className="flex h-full items-center justify-center">
-          <div
-            className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-            style={{ borderColor: 'var(--primary)' }}
-          />
+          <LoadingSpinner size="lg" />
         </div>
       </MainLayout>
     );
