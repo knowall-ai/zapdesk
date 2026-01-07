@@ -26,22 +26,22 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const [ticketCounts, setTicketCounts] = useState<TicketCounts | undefined>();
 
   useEffect(() => {
+    const fetchTicketCounts = async () => {
+      try {
+        const response = await fetch('/api/devops/ticket-counts');
+        if (response.ok) {
+          const counts = await response.json();
+          setTicketCounts(counts);
+        }
+      } catch (error) {
+        console.error('Failed to fetch ticket counts:', error);
+      }
+    };
+
     if (session?.accessToken) {
       fetchTicketCounts();
     }
   }, [session]);
-
-  const fetchTicketCounts = async () => {
-    try {
-      const response = await fetch('/api/devops/ticket-counts');
-      if (response.ok) {
-        const counts = await response.json();
-        setTicketCounts(counts);
-      }
-    } catch (error) {
-      console.error('Failed to fetch ticket counts:', error);
-    }
-  };
 
   return (
     <div className="flex h-screen overflow-hidden">
