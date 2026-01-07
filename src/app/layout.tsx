@@ -7,7 +7,7 @@ const siteUrl = process.env.NEXTAUTH_URL || 'https://devdesk.knowall.ai';
 export const metadata: Metadata = {
   title: 'DevDesk - Support Ticketing by KnowAll',
   description:
-    'A modern Zendesk-style support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
+    'A modern support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
   keywords: [
     'support ticketing',
     'help desk',
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     siteName: 'DevDesk',
     title: 'DevDesk - Support Ticketing by KnowAll',
     description:
-      'A modern Zendesk-style support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
+      'A modern support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
     images: [
       {
         url: '/og-image.png',
@@ -50,7 +50,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'DevDesk - Support Ticketing by KnowAll',
     description:
-      'A modern Zendesk-style support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
+      'A modern support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
     images: ['/og-image.png'],
   },
   robots: {

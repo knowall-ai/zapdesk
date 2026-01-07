@@ -15,12 +15,12 @@ export async function GET() {
     const devopsService = new AzureDevOpsService(session.accessToken);
     const tickets = await devopsService.getAllTickets();
 
-    // Extract unique customers from ticket requesters
-    const customerMap = new Map<string, Customer>();
+    // Extract unique users from ticket requesters
+    const userMap = new Map<string, Customer>();
 
     for (const ticket of tickets) {
-      if (!customerMap.has(ticket.requester.email)) {
-        customerMap.set(ticket.requester.email, {
+      if (!userMap.has(ticket.requester.email)) {
+        userMap.set(ticket.requester.email, {
           id: ticket.requester.id,
           displayName: ticket.requester.displayName,
           email: ticket.requester.email,
@@ -33,8 +33,8 @@ export async function GET() {
         });
       } else {
         // Update last updated if this ticket is more recent
-        const existing = customerMap.get(ticket.requester.email)!;
-        if (ticket.updatedAt > existing.lastUpdated) {
+        const existing = userMap.get(ticket.requester.email)!;
+        if (!existing.lastUpdated || ticket.updatedAt > existing.lastUpdated) {
           existing.lastUpdated = ticket.updatedAt;
         }
       }
@@ -46,15 +46,15 @@ export async function GET() {
       try {
         const members = await devopsService.getTeamMembers(project.name);
         for (const member of members) {
-          if (!customerMap.has(member.email)) {
-            customerMap.set(member.email, {
+          if (!userMap.has(member.email)) {
+            userMap.set(member.email, {
               id: member.id,
               displayName: member.displayName,
               email: member.email,
               timezone: '(GMT+00:00) Edinburgh',
               tags: [],
               avatarUrl: member.avatarUrl,
-              lastUpdated: new Date(),
+              // No lastUpdated - user has no ticket activity
             });
           }
         }
@@ -63,13 +63,20 @@ export async function GET() {
       }
     }
 
-    const customers = Array.from(customerMap.values()).sort(
-      (a, b) => b.lastUpdated.getTime() - a.lastUpdated.getTime()
-    );
+    const users = Array.from(userMap.values()).sort((a, b) => {
+      // Users with ticket activity first, sorted by most recent
+      if (a.lastUpdated && b.lastUpdated) {
+        return b.lastUpdated.getTime() - a.lastUpdated.getTime();
+      }
+      if (a.lastUpdated) return -1;
+      if (b.lastUpdated) return 1;
+      // Both without activity - sort by name
+      return a.displayName.localeCompare(b.displayName);
+    });
 
-    return NextResponse.json({ customers });
+    return NextResponse.json({ users });
   } catch (error) {
-    console.error('Error fetching customers:', error);
-    return NextResponse.json({ error: 'Failed to fetch customers' }, { status: 500 });
+    console.error('Error fetching users:', error);
+    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 });
   }
 }

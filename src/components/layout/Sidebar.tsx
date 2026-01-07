@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   Home,
   Ticket,
@@ -32,7 +32,7 @@ interface ViewItem {
 const mainNavItems = [
   { id: 'home', name: 'Home', icon: <Home size={20} />, href: '/' },
   { id: 'tickets', name: 'Tickets', icon: <Ticket size={20} />, href: '/tickets' },
-  { id: 'customers', name: 'Customers', icon: <Users size={20} />, href: '/customers' },
+  { id: 'users', name: 'Users', icon: <Users size={20} />, href: '/users' },
   {
     id: 'organizations',
     name: 'Organizations',
@@ -55,10 +55,12 @@ interface SidebarProps {
     recentlySolved: number;
     unsolvedInGroups: number;
   };
+  onNewTicket?: () => void;
 }
 
-export default function Sidebar({ ticketCounts }: SidebarProps) {
+export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const counts = ticketCounts || {
     yourUnsolved: 0,
@@ -109,13 +111,6 @@ export default function Sidebar({ ticketCounts }: SidebarProps) {
       count: counts.recentlyUpdated,
     },
     {
-      id: 'new-in-groups',
-      name: 'New tickets in your groups',
-      icon: <Inbox size={16} />,
-      href: '/tickets?view=new-in-groups',
-      count: counts.newInGroups,
-    },
-    {
       id: 'pending',
       name: 'Pending tickets',
       icon: <Clock size={16} />,
@@ -128,13 +123,6 @@ export default function Sidebar({ ticketCounts }: SidebarProps) {
       icon: <CheckCircle size={16} />,
       href: '/tickets?view=recently-solved',
       count: counts.recentlySolved,
-    },
-    {
-      id: 'unsolved-in-groups',
-      name: 'Unsolved tickets in your groups',
-      icon: <AlertCircle size={16} />,
-      href: '/tickets?view=unsolved-in-groups',
-      count: counts.unsolvedInGroups,
     },
   ];
 
@@ -152,14 +140,14 @@ export default function Sidebar({ ticketCounts }: SidebarProps) {
 
       {/* Add button */}
       <div className="border-b p-3" style={{ borderColor: 'var(--border)' }}>
-        <Link
-          href="/tickets/new"
-          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium"
-          style={{ color: 'var(--text-secondary)' }}
+        <button
+          onClick={onNewTicket}
+          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
+          style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}
         >
           <Plus size={16} />
           Add
-        </Link>
+        </button>
       </div>
 
       {/* Main navigation */}
@@ -201,9 +189,9 @@ export default function Sidebar({ ticketCounts }: SidebarProps) {
 
           <div className="space-y-1">
             {viewItems.map((view) => {
-              const isActive =
-                pathname + (typeof window !== 'undefined' ? window.location.search : '') ===
-                view.href;
+              const currentSearch = searchParams.toString();
+              const currentUrl = pathname + (currentSearch ? `?${currentSearch}` : '');
+              const isActive = currentUrl === view.href;
               return (
                 <Link
                   key={view.id}

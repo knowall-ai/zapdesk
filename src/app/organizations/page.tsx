@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout';
+import { LoadingSpinner } from '@/components/common';
 import { Search, Plus, Upload, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -58,10 +59,7 @@ export default function OrganizationsPage() {
     return (
       <MainLayout>
         <div className="flex h-full items-center justify-center">
-          <div
-            className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-            style={{ borderColor: 'var(--primary)' }}
-          />
+          <LoadingSpinner size="lg" />
         </div>
       </MainLayout>
     );
@@ -159,23 +157,25 @@ export default function OrganizationsPage() {
                 >
                   Last updated
                 </th>
+                <th
+                  className="w-16 px-4 py-3 text-center text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  DevOps
+                </th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td
-                    colSpan={5}
-                    className="px-4 py-8 text-center"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    Loading organizations...
+                  <td colSpan={6} className="px-4 py-12">
+                    <LoadingSpinner size="lg" message="Loading organizations..." />
                   </td>
                 </tr>
               ) : filteredOrganizations.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-4 py-8 text-center"
                     style={{ color: 'var(--text-muted)' }}
                   >
@@ -222,6 +222,18 @@ export default function OrganizationsPage() {
                     </td>
                     <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
                       {format(org.updatedAt, 'dd MMM yyyy')}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <a
+                        href={`https://dev.azure.com/${org.devOpsOrg}/${encodeURIComponent(org.devOpsProject)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center rounded p-1.5 transition-colors hover:bg-[var(--surface-hover)]"
+                        style={{ color: 'var(--text-muted)' }}
+                        title={`Open ${org.devOpsProject} in Azure DevOps`}
+                      >
+                        <ExternalLink size={16} />
+                      </a>
                     </td>
                   </tr>
                 ))
