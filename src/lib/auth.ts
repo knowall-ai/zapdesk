@@ -42,6 +42,7 @@ const AZURE_DEVOPS_SCOPES = [
 // because .default scope can't be combined with resource-specific scopes
 
 export const authOptions: NextAuthOptions = {
+  debug: process.env.NODE_ENV === 'development',
   providers: [
     AzureADProvider({
       clientId: process.env.AZURE_AD_CLIENT_ID!,
@@ -56,25 +57,30 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, account, user }) {
-      // Initial sign in
-      if (account && user) {
-        return {
-          ...token,
-          accessToken: account.access_token,
-          refreshToken: account.refresh_token,
-          accessTokenExpires: account.expires_at ? account.expires_at * 1000 : undefined,
-          id: user.id,
-          picture: user.image ?? undefined,
-        } as JWT;
-      }
+      try {
+        // Initial sign in
+        if (account && user) {
+          return {
+            ...token,
+            accessToken: account.access_token,
+            refreshToken: account.refresh_token,
+            accessTokenExpires: account.expires_at ? account.expires_at * 1000 : undefined,
+            id: user.id,
+            picture: user.image ?? undefined,
+          } as JWT;
+        }
 
-      // Return previous token if the access token has not expired
-      if (token.accessTokenExpires && Date.now() < token.accessTokenExpires) {
-        return token;
-      }
+        // Return previous token if the access token has not expired
+        if (token.accessTokenExpires && Date.now() < token.accessTokenExpires) {
+          return token;
+        }
 
-      // Access token expired, try to refresh
-      return await refreshAccessToken(token);
+        // Access token expired, try to refresh
+        return await refreshAccessToken(token);
+      } catch (error) {
+        console.error('JWT callback error:', error);
+        throw error;
+      }
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken;
@@ -96,6 +102,34 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: 'jwt',
     maxAge: 24 * 60 * 60, // 24 hours
+  },
+  events: {
+    async signIn(message) {
+      console.log('NextAuth signIn event:', message);
+    },
+    async signOut(message) {
+      console.log('NextAuth signOut event:', message);
+    },
+    async createUser(message) {
+      console.log('NextAuth createUser event:', message);
+    },
+    async linkAccount(message) {
+      console.log('NextAuth linkAccount event:', message);
+    },
+    async session(message) {
+      console.log('NextAuth session event:', message);
+    },
+  },
+  logger: {
+    error(code, metadata) {
+      console.error('NextAuth error:', code, metadata);
+    },
+    warn(code) {
+      console.warn('NextAuth warning:', code);
+    },
+    debug(code, metadata) {
+      console.log('NextAuth debug:', code, metadata);
+    },
   },
 };
 
