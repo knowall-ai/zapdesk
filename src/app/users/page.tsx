@@ -99,7 +99,7 @@ export default function UsersPage() {
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
               Please manage users in{' '}
               <a
-                href={`https://dev.azure.com/${process.env.NEXT_PUBLIC_AZURE_DEVOPS_ORG || 'KnowAll'}/_settings/users`}
+                href="https://dev.azure.com/KnowAll/_settings/users"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline"
