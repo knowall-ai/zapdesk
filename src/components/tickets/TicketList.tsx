@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { Filter, ChevronDown, ChevronUp, Play } from 'lucide-react';
@@ -226,9 +226,9 @@ export default function TicketList({ tickets, title }: TicketListProps) {
           </thead>
           <tbody>
             {Object.entries(groupedTickets).map(([groupName, groupTickets]) => (
-              <>
+              <React.Fragment key={groupName}>
                 {groupBy === 'assignee' && (
-                  <tr key={`group-${groupName}`}>
+                  <tr>
                     <td
                       colSpan={8}
                       className="px-4 py-2 text-sm font-medium"
@@ -293,7 +293,7 @@ export default function TicketList({ tickets, title }: TicketListProps) {
                     </td>
                   </tr>
                 ))}
-              </>
+              </React.Fragment>
             ))}
           </tbody>
         </table>
