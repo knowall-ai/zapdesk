@@ -11,7 +11,6 @@ import {
   Settings,
   Plus,
   RefreshCw,
-  ChevronDown,
   Inbox,
   Clock,
   UserCheck,

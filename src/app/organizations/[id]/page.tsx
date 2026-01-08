@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { ArrowLeft, ExternalLink, Ticket, Loader2 } from 'lucide-react';
 import Link from 'next/link';
@@ -25,14 +25,7 @@ export default function OrganizationDetailPage() {
     }
   }, [status, router]);
 
-  useEffect(() => {
-    if (session?.accessToken && orgId) {
-      fetchOrganization();
-      fetchOrgTickets();
-    }
-  }, [session, orgId]);
-
-  const fetchOrganization = async () => {
+  const fetchOrganization = useCallback(async () => {
     try {
       const response = await fetch('/api/devops/organizations');
       if (response.ok) {
@@ -53,9 +46,9 @@ export default function OrganizationDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [orgId]);
 
-  const fetchOrgTickets = async () => {
+  const fetchOrgTickets = useCallback(async () => {
     try {
       const response = await fetch(`/api/devops/tickets?organization=${encodeURIComponent(orgId)}`);
       if (response.ok) {
@@ -65,7 +58,14 @@ export default function OrganizationDetailPage() {
     } catch (error) {
       console.error('Failed to fetch tickets:', error);
     }
-  };
+  }, [orgId]);
+
+  useEffect(() => {
+    if (session?.accessToken && orgId) {
+      fetchOrganization();
+      fetchOrgTickets();
+    }
+  }, [session, orgId, fetchOrganization, fetchOrgTickets]);
 
   if (status === 'loading' || loading) {
     return (

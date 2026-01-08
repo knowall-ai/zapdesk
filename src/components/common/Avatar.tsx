@@ -1,5 +1,7 @@
 'use client';
 
+import Image from 'next/image';
+
 interface AvatarProps {
   name: string;
   image?: string;
@@ -46,13 +48,22 @@ function getColorFromName(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
+const imageSizes = {
+  sm: 24,
+  md: 32,
+  lg: 40,
+};
+
 export default function Avatar({ name, image, size = 'md', className = '' }: AvatarProps) {
   if (image) {
     return (
-      <img
+      <Image
         src={image}
         alt={name}
+        width={imageSizes[size]}
+        height={imageSizes[size]}
         className={`${sizeClasses[size]} rounded-full object-cover ${className}`}
+        unoptimized
       />
     );
   }

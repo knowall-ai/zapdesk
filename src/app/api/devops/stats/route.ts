@@ -40,7 +40,7 @@ export async function GET() {
   }
 }
 
-function calculateAvgResponseTime(tickets: Ticket[]): string {
+function calculateAvgResponseTime(_tickets: Ticket[]): string {
   // This would need actual first response data from DevOps
   // For now, return a placeholder
   return '< 2 hours';

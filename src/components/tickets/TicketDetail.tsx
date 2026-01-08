@@ -20,7 +20,7 @@ export default function TicketDetail({
   ticket,
   comments,
   onAddComment,
-  onStatusChange,
+  onStatusChange: _onStatusChange,
 }: TicketDetailProps) {
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);

@@ -17,6 +17,7 @@ export function useProfilePhoto(isAuthenticated: boolean) {
     }
 
     let isMounted = true;
+    let objectUrl: string | null = null;
 
     async function fetchPhoto() {
       setIsLoading(true);
@@ -25,9 +26,9 @@ export function useProfilePhoto(isAuthenticated: boolean) {
         const response = await fetch('/api/devops/avatar');
         if (response.ok) {
           const blob = await response.blob();
-          const url = URL.createObjectURL(blob);
+          objectUrl = URL.createObjectURL(blob);
           if (isMounted) {
-            setPhotoUrl(url);
+            setPhotoUrl(objectUrl);
           }
         }
       } catch {
@@ -44,8 +45,8 @@ export function useProfilePhoto(isAuthenticated: boolean) {
     return () => {
       isMounted = false;
       // Revoke the object URL to prevent memory leaks
-      if (photoUrl) {
-        URL.revokeObjectURL(photoUrl);
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
       }
     };
   }, [isAuthenticated]);
