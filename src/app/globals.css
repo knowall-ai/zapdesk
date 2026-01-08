@@ -255,3 +255,34 @@ body {
 .animate-slide-in {
   animation: slideIn 0.2s ease-out;
 }
+
+/* Zap (Lightning) styles */
+.zap-btn {
+  background: linear-gradient(135deg, #f7931a 0%, #ff9500 100%);
+  color: white;
+  cursor: pointer;
+}
+
+.zap-btn:hover {
+  background: linear-gradient(135deg, #e8850f 0%, #e88700 100%);
+}
+
+.zap-amount-btn {
+  @apply rounded-md border px-3 py-2 text-sm font-medium transition-colors;
+  cursor: pointer;
+}
+
+.zap-amount-btn:hover {
+  background: rgba(247, 147, 26, 0.1);
+  border-color: #f7931a;
+}
+
+.zap-confirm-btn {
+  background: linear-gradient(135deg, #f7931a 0%, #ff9500 100%);
+  color: white;
+  @apply flex items-center justify-center gap-2 rounded-md px-4 py-3 font-medium transition-colors;
+}
+
+.zap-confirm-btn:hover {
+  background: linear-gradient(135deg, #e8850f 0%, #e88700 100%);
+}

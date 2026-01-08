@@ -13,12 +13,14 @@ import {
   Search,
   Loader2,
   User as UserIcon,
+  Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 import type { Ticket, TicketComment, User, TicketPriority } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
+import ZapDialog from './ZapDialog';
 
 interface TicketDetailProps {
   ticket: Ticket;
@@ -46,6 +48,14 @@ export default function TicketDetail({
 }: TicketDetailProps) {
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
+
+  const handleZapSent = async (amount: number) => {
+    if (onAddComment) {
+      const zapMessage = `Sent a ${amount.toLocaleString()} sat zap to ${ticket.assignee?.displayName || 'the agent'} for great support!`;
+      await onAddComment(zapMessage);
+    }
+  };
 
   // Assignee editing state
   const [isAssigneeDropdownOpen, setIsAssigneeDropdownOpen] = useState(false);
@@ -155,6 +165,16 @@ export default function TicketDetail({
             <h1 className="flex-1 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
               {ticket.title}
             </h1>
+            {ticket.assignee && (
+              <button
+                onClick={() => setIsZapDialogOpen(true)}
+                className="zap-btn flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+                title={`Send a tip to ${ticket.assignee.displayName}`}
+              >
+                <Zap size={16} />
+                Zap
+              </button>
+            )}
             <a
               href={ticket.devOpsUrl}
               target="_blank"
@@ -551,6 +571,17 @@ export default function TicketDetail({
           </div>
         </div>
       </div>
+
+      {/* Zap Dialog */}
+      {ticket.assignee && (
+        <ZapDialog
+          isOpen={isZapDialogOpen}
+          onClose={() => setIsZapDialogOpen(false)}
+          agent={ticket.assignee}
+          ticketId={ticket.workItemId}
+          onZapSent={handleZapSent}
+        />
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { Avatar } from '@/components/common';
 import { useProfilePhoto } from '@/hooks';
@@ -16,6 +16,9 @@ import {
   Languages,
   ExternalLink,
   Loader2,
+  Zap,
+  Save,
+  Check,
 } from 'lucide-react';
 
 interface DevOpsProfile {
@@ -36,6 +39,37 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<DevOpsProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Lightning address state
+  const [lightningAddress, setLightningAddress] = useState('');
+  const [lightningAddressSaved, setLightningAddressSaved] = useState(false);
+  const [isSavingLightning, setIsSavingLightning] = useState(false);
+
+  // Load lightning address from localStorage
+  const loadLightningAddress = useCallback(() => {
+    if (typeof window !== 'undefined' && session?.user?.email) {
+      const stored = localStorage.getItem(`devdesk_lightning_${session.user.email}`);
+      if (stored) {
+        setLightningAddress(stored);
+      }
+    }
+  }, [session?.user?.email]);
+
+  useEffect(() => {
+    loadLightningAddress();
+  }, [loadLightningAddress]);
+
+  const saveLightningAddress = async () => {
+    if (!session?.user?.email) return;
+    setIsSavingLightning(true);
+    try {
+      localStorage.setItem(`devdesk_lightning_${session.user.email}`, lightningAddress);
+      setLightningAddressSaved(true);
+      setTimeout(() => setLightningAddressSaved(false), 2000);
+    } finally {
+      setIsSavingLightning(false);
+    }
+  };
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -162,6 +196,63 @@ export default function ProfilePage() {
                 </p>
                 <p style={{ color: 'var(--text-primary)' }}>{profile?.country || 'Unknown'}</p>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Lightning Payments Card */}
+        <div className="card mb-6 p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <Zap size={20} style={{ color: '#f7931a' }} />
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Lightning Payments
+            </h3>
+          </div>
+          <p className="mb-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
+            Configure your Lightning address to receive tips from satisfied customers.
+          </p>
+
+          <div className="space-y-4">
+            <div>
+              <label
+                htmlFor="lightning-address"
+                className="mb-1 block text-xs uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Lightning Address
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="lightning-address"
+                  type="text"
+                  placeholder="yourname@getalby.com"
+                  value={lightningAddress}
+                  onChange={(e) => setLightningAddress(e.target.value)}
+                  className="input flex-1"
+                />
+                <button
+                  onClick={saveLightningAddress}
+                  disabled={isSavingLightning}
+                  className="btn-primary flex items-center gap-2"
+                >
+                  {lightningAddressSaved ? (
+                    <>
+                      <Check size={16} />
+                      Saved
+                    </>
+                  ) : isSavingLightning ? (
+                    <Loader2 className="animate-spin" size={16} />
+                  ) : (
+                    <>
+                      <Save size={16} />
+                      Save
+                    </>
+                  )}
+                </button>
+              </div>
+              <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                Enter your Lightning address (e.g., name@getalby.com) or LNURL to receive zaps.
+              </p>
             </div>
           </div>
         </div>
