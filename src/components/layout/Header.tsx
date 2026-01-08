@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Avatar } from '@/components/common';
 import { useProfilePhoto } from '@/hooks';
+import OrganizationSwitcher from './OrganizationSwitcher';
 
 interface SearchResult {
   type: 'ticket' | 'user' | 'organization';
@@ -242,6 +243,9 @@ export default function Header() {
 
       {/* Right side actions */}
       <div className="ml-4 flex items-center gap-2">
+        {/* Organization Switcher */}
+        <OrganizationSwitcher />
+
         {/* Notifications */}
         <button
           className="rounded-md p-2 transition-colors hover:bg-[var(--surface-hover)]"

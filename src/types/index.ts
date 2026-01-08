@@ -129,6 +129,13 @@ export interface DevOpsProject {
   state: string;
 }
 
+// Azure DevOps Organization (account-level, contains projects)
+export interface DevOpsOrganization {
+  accountId: string;
+  accountName: string;
+  accountUri: string;
+}
+
 export interface EmailWebhookPayload {
   from: string;
   to: string;

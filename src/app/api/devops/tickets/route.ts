@@ -19,7 +19,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Project and title are required' }, { status: 400 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    // Get organization from header or use default
+    const organization = request.headers.get('x-devops-org') || undefined;
+    const devopsService = new AzureDevOpsService(session.accessToken, organization);
 
     // Create the ticket with 'ticket' tag always included
     const allTags = ['ticket', ...(tags || [])].filter(Boolean);
@@ -53,7 +55,9 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const view = searchParams.get('view') || 'all-unsolved';
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    // Get organization from header or use default
+    const organization = request.headers.get('x-devops-org') || undefined;
+    const devopsService = new AzureDevOpsService(session.accessToken, organization);
     const tickets = await devopsService.getAllTickets();
 
     // Filter tickets based on view

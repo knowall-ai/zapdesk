@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import SessionProvider from '@/components/providers/SessionProvider';
+import OrganizationProvider from '@/components/providers/OrganizationProvider';
 import './globals.css';
 
 const siteUrl = process.env.NEXTAUTH_URL || 'https://devdesk.knowall.ai';
@@ -71,7 +72,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="antialiased">
-        <SessionProvider>{children}</SessionProvider>
+        <SessionProvider>
+          <OrganizationProvider>{children}</OrganizationProvider>
+        </SessionProvider>
       </body>
     </html>
   );
