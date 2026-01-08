@@ -167,3 +167,24 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
   pageSize: number;
   hasMore: boolean;
 }
+
+// Team member with performance metrics
+export type TeamMemberStatus = 'On Track' | 'Behind' | 'Needs Attention';
+
+export interface TeamMember extends User {
+  role?: string;
+  status: TeamMemberStatus;
+  ticketsAssigned: number;
+  ticketsResolved: number;
+  weeklyResolutions: number;
+  avgResponseTime: string;
+  pendingTickets: number;
+}
+
+// Team summary statistics
+export interface TeamStats {
+  totalMembers: number;
+  openTickets: number;
+  inProgressTickets: number;
+  needsAttention: number;
+}
