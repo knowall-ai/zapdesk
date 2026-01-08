@@ -1,7 +1,5 @@
 'use client';
 
-import Image from 'next/image';
-
 interface AvatarProps {
   name: string;
   image?: string;
@@ -48,20 +46,15 @@ function getColorFromName(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-const sizeDimensions = {
-  sm: 24,
-  md: 32,
-  lg: 40,
-};
-
 export default function Avatar({ name, image, size = 'md', className = '' }: AvatarProps) {
   if (image) {
+    // Using <img> instead of next/image because Azure DevOps avatar URLs
+    // require authentication and can't be optimized server-side
     return (
-      <Image
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
         src={image}
         alt={name}
-        width={sizeDimensions[size]}
-        height={sizeDimensions[size]}
         className={`${sizeClasses[size]} rounded-full object-cover ${className}`}
       />
     );

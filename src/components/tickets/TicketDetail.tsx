@@ -235,7 +235,11 @@ export default function TicketDetail({
               style={comment.isInternal ? { borderLeftColor: 'var(--status-pending)' } : {}}
             >
               <div className="flex items-start gap-3">
-                <Avatar name={comment.author.displayName} size="md" />
+                <Avatar
+                  name={comment.author.displayName}
+                  image={comment.author.avatarUrl}
+                  size="md"
+                />
                 <div className="flex-1">
                   <div className="mb-2 flex items-center gap-2">
                     <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
