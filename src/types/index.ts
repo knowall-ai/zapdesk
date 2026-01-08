@@ -43,6 +43,32 @@ export interface Customer {
 export type TicketStatus = 'New' | 'Open' | 'In Progress' | 'Pending' | 'Resolved' | 'Closed';
 export type TicketPriority = 'Low' | 'Normal' | 'High' | 'Urgent';
 export type SLALevel = 'Gold' | 'Silver' | 'Bronze';
+export type SLARiskStatus = 'breached' | 'at-risk' | 'on-track';
+
+// SLA Configuration per priority
+export interface SLATargets {
+  responseTimeHours: number;
+  resolutionTimeHours: number;
+}
+
+export interface SLAConfig {
+  Urgent: SLATargets;
+  High: SLATargets;
+  Normal: SLATargets;
+  Low: SLATargets;
+}
+
+// SLA status for a ticket
+export interface TicketSLAStatus {
+  ticket: Ticket;
+  riskStatus: SLARiskStatus;
+  resolutionTarget: Date;
+  responseTarget: Date;
+  timeRemaining: number; // milliseconds, negative if breached
+  percentageRemaining: number; // 0-100, can be negative if breached
+  isResponseBreached: boolean;
+  isResolutionBreached: boolean;
+}
 
 export interface Ticket {
   id: number;
@@ -166,4 +192,14 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
   page: number;
   pageSize: number;
   hasMore: boolean;
+}
+
+// SLA API response
+export interface SLAStatusResponse {
+  summary: {
+    breached: number;
+    atRisk: number;
+    onTrack: number;
+  };
+  tickets: TicketSLAStatus[];
 }

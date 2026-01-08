@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useState, useEffect } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
+import { SLARiskPanel } from '@/components/dashboard';
 import LandingPage from '@/components/LandingPage';
 import {
   Ticket,
@@ -193,9 +194,12 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* Quick actions */}
-        <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {/* Recent activity */}
+        {/* SLA Risk Panel and Quick actions */}
+        <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {/* SLA Risk Panel */}
+          <SLARiskPanel accessToken={session.accessToken} />
+
+          {/* Quick Actions */}
           <div className="card">
             <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
               <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
