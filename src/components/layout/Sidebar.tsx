@@ -19,6 +19,8 @@ import {
   AlertCircle,
   CheckCircle,
   PlusCircle,
+  Star,
+  LayoutGrid,
 } from 'lucide-react';
 import DevDeskIcon from '@/components/common/DevDeskIcon';
 
@@ -79,6 +81,12 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
   };
 
   const viewItems: ViewItem[] = [
+    {
+      id: 'kanban',
+      name: 'Kanban Board',
+      icon: <LayoutGrid size={16} />,
+      href: '/tickets?view=kanban',
+    },
     {
       id: 'your-active',
       name: 'Your active tickets',
