@@ -178,9 +178,16 @@ export default function HomePage() {
                   <p className="mb-1 text-sm" style={{ color: 'var(--text-muted)' }}>
                     {stat.title}
                   </p>
-                  <p className="text-3xl font-bold" style={{ color: stat.color }}>
-                    {loading ? '-' : stat.value}
-                  </p>
+                  {loading ? (
+                    <div
+                      className="h-9 w-16 animate-pulse rounded"
+                      style={{ backgroundColor: 'var(--surface-hover)' }}
+                    />
+                  ) : (
+                    <p className="text-3xl font-bold" style={{ color: stat.color }}>
+                      {stat.value}
+                    </p>
+                  )}
                 </div>
                 <div
                   className="rounded-lg p-3"

@@ -17,7 +17,6 @@ import {
   UserCheck,
   AlertCircle,
   CheckCircle,
-  Star,
 } from 'lucide-react';
 import DevDeskIcon from '@/components/common/DevDeskIcon';
 
@@ -34,8 +33,8 @@ const mainNavItems = [
   { id: 'tickets', name: 'Tickets', icon: <Ticket size={20} />, href: '/tickets' },
   { id: 'users', name: 'Users', icon: <Users size={20} />, href: '/users' },
   {
-    id: 'organizations',
-    name: 'Organizations',
+    id: 'projects',
+    name: 'Projects',
     icon: <Building2 size={20} />,
     href: '/organizations',
   },
@@ -46,7 +45,6 @@ const mainNavItems = [
 interface SidebarProps {
   ticketCounts?: {
     yourActive: number;
-    ratedLast7Days: number;
     unassigned: number;
     allActive: number;
     recentlyUpdated: number;
@@ -62,7 +60,6 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
 
   const counts = ticketCounts || {
     yourActive: 0,
-    ratedLast7Days: 0,
     unassigned: 0,
     allActive: 0,
     recentlyUpdated: 0,
@@ -77,13 +74,6 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
       icon: <Inbox size={16} />,
       href: '/tickets?view=your-active',
       count: counts.yourActive,
-    },
-    {
-      id: 'rated-7days',
-      name: 'Rated tickets from the last 7 days',
-      icon: <Star size={16} />,
-      href: '/tickets?view=rated',
-      count: counts.ratedLast7Days,
     },
     {
       id: 'unassigned',

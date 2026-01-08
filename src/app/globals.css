@@ -185,7 +185,8 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text-primary);
-  @apply rounded-md px-3 py-2 transition-colors;
+  padding: 0.5rem 0.75rem; /* py-2 px-3, padding-left can be overridden by pl-* utilities */
+  @apply rounded-md transition-colors;
 }
 
 .input:focus {

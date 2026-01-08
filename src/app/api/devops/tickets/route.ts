@@ -70,19 +70,21 @@ export async function GET(request: NextRequest) {
 }
 
 function filterTicketsByView(tickets: Ticket[], view: string, userEmail?: string | null): Ticket[] {
-  const unsolvedStatuses: TicketStatus[] = ['New', 'Open', 'In Progress', 'Pending'];
+  const activeStatuses: TicketStatus[] = ['New', 'Open', 'In Progress', 'Pending'];
 
   switch (view) {
+    case 'your-active':
     case 'your-unsolved':
       return tickets.filter(
-        (t) => unsolvedStatuses.includes(t.status) && t.assignee?.email === userEmail
+        (t) => activeStatuses.includes(t.status) && t.assignee?.email === userEmail
       );
 
     case 'unassigned':
-      return tickets.filter((t) => !t.assignee && unsolvedStatuses.includes(t.status));
+      return tickets.filter((t) => !t.assignee && activeStatuses.includes(t.status));
 
+    case 'all-active':
     case 'all-unsolved':
-      return tickets.filter((t) => unsolvedStatuses.includes(t.status));
+      return tickets.filter((t) => activeStatuses.includes(t.status));
 
     case 'recently-updated':
       const weekAgo = new Date();
