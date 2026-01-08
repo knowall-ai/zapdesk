@@ -84,7 +84,11 @@ export default function TicketDetail({
           {/* Original ticket */}
           <div className="card mb-4 p-4">
             <div className="flex items-start gap-3">
-              <Avatar name={ticket.requester.displayName} size="md" />
+              <Avatar
+                name={ticket.requester.displayName}
+                image={ticket.requester.avatarUrl}
+                size="md"
+              />
               <div className="flex-1">
                 <div className="mb-2 flex items-center gap-2">
                   <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -204,7 +208,11 @@ export default function TicketDetail({
               </label>
               {ticket.assignee ? (
                 <div className="flex items-center gap-2">
-                  <Avatar name={ticket.assignee.displayName} size="sm" />
+                  <Avatar
+                    name={ticket.assignee.displayName}
+                    image={ticket.assignee.avatarUrl}
+                    size="sm"
+                  />
                   <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
                     {ticket.assignee.displayName}
                   </span>
@@ -225,7 +233,11 @@ export default function TicketDetail({
                 Requester
               </label>
               <div className="flex items-center gap-2">
-                <Avatar name={ticket.requester.displayName} size="sm" />
+                <Avatar
+                  name={ticket.requester.displayName}
+                  image={ticket.requester.avatarUrl}
+                  size="sm"
+                />
                 <div>
                   <span className="block text-sm" style={{ color: 'var(--text-primary)' }}>
                     {ticket.requester.displayName}
@@ -248,19 +260,19 @@ export default function TicketDetail({
               <PriorityIndicator priority={ticket.priority} showLabel />
             </div>
 
-            {/* Organization */}
-            {ticket.organization && (
+            {/* Project */}
+            {ticket.project && (
               <div>
                 <label
                   className="mb-1 block text-xs uppercase"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  Organization
+                  Project
                 </label>
                 <div className="flex items-center gap-2">
                   <Building2 size={16} style={{ color: 'var(--text-muted)' }} />
                   <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                    {ticket.organization.name}
+                    {ticket.project}
                   </span>
                 </div>
               </div>
