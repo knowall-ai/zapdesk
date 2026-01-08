@@ -51,9 +51,18 @@ export default function TicketDetail({
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
 
   const handleZapSent = async (amount: number) => {
+    console.log('[TicketDetail] handleZapSent called with amount:', amount);
     if (onAddComment) {
-      const zapMessage = `Sent a ${amount.toLocaleString()} sat zap to ${ticket.assignee?.displayName || 'the agent'} for great support!`;
-      await onAddComment(zapMessage);
+      const zapMessage = `⚡ Sent a ${amount.toLocaleString()} sat zap to ${ticket.assignee?.displayName || 'the agent'} for great support!`;
+      console.log('[TicketDetail] Posting comment:', zapMessage);
+      try {
+        await onAddComment(zapMessage);
+        console.log('[TicketDetail] Comment posted successfully');
+      } catch (err) {
+        console.error('[TicketDetail] Failed to post comment:', err);
+      }
+    } else {
+      console.warn('[TicketDetail] onAddComment not provided');
     }
   };
 
@@ -165,16 +174,7 @@ export default function TicketDetail({
             <h1 className="flex-1 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
               {ticket.title}
             </h1>
-            {ticket.assignee && (
-              <button
-                onClick={() => setIsZapDialogOpen(true)}
-                className="zap-btn flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
-                title={`Send a tip to ${ticket.assignee.displayName}`}
-              >
-                <Zap size={16} />
-                Zap
-              </button>
-            )}
+            {/* Zap button moved to comment area */}
             <a
               href={ticket.devOpsUrl}
               target="_blank"
@@ -290,11 +290,23 @@ export default function TicketDetail({
             />
             <div className="absolute right-3 bottom-3 flex items-center gap-2">
               <button
+                onClick={() => alert('Attachments not yet implemented')}
                 className="rounded p-2 transition-colors hover:bg-[var(--surface-hover)]"
                 style={{ color: 'var(--text-muted)' }}
+                title="Attach file"
               >
                 <Paperclip size={18} />
               </button>
+              {ticket.assignee && (
+                <button
+                  onClick={() => setIsZapDialogOpen(true)}
+                  className="zap-btn flex items-center justify-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+                  title={`Send a tip to ${ticket.assignee.displayName}`}
+                >
+                  <Zap size={16} />
+                  Zap
+                </button>
+              )}
               <button
                 onClick={handleSubmitComment}
                 disabled={!newComment.trim() || isSubmitting}

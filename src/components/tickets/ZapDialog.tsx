@@ -180,9 +180,17 @@ function ZapDialogContent({
 
     setZapConfirmed(true);
 
-    // Call the callback to post a comment
+    // Call the callback to post a comment on the ticket
     if (onZapSent) {
-      await onZapSent(actualAmount);
+      console.log('[ZapDialog] Posting zap comment to ticket:', actualAmount, 'sats');
+      try {
+        await onZapSent(actualAmount);
+        console.log('[ZapDialog] Zap comment posted successfully');
+      } catch (err) {
+        console.error('[ZapDialog] Failed to post zap comment:', err);
+      }
+    } else {
+      console.warn('[ZapDialog] onZapSent callback not provided');
     }
 
     // Close dialog after brief delay
@@ -334,16 +342,16 @@ function ZapDialogContent({
             </p>
 
             {/* Lightning Address */}
-            <div className="mb-2 flex items-center gap-2">
+            <div className="mb-2 flex w-full items-center gap-2">
               <code
-                className="max-w-[200px] truncate rounded px-2 py-1 text-xs"
+                className="flex-1 truncate rounded px-2 py-1 text-xs"
                 style={{ backgroundColor: 'var(--surface-hover)', color: 'var(--text-muted)' }}
               >
                 {lightningAddress}
               </code>
               <button
                 onClick={copyAddressToClipboard}
-                className="rounded p-1.5 transition-colors hover:bg-[var(--surface-hover)]"
+                className="shrink-0 rounded p-1.5 transition-colors hover:bg-[var(--surface-hover)]"
                 style={{ color: copiedAddress ? 'var(--primary)' : 'var(--text-muted)' }}
                 title="Copy address"
               >

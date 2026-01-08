@@ -225,6 +225,11 @@ body {
     background: rgba(34, 197, 94, 0.15);
     color: var(--primary);
   }
+
+  /* Override inline color styles from copy-pasted content (e.g., from Outlook/Word) */
+  .card div[style*='color'] {
+    color: var(--text-secondary) !important;
+  }
 }
 
 /* Animations */
