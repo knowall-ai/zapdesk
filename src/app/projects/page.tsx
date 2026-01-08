@@ -1,0 +1,288 @@
+'use client';
+
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { MainLayout } from '@/components/layout';
+import { LoadingSpinner } from '@/components/common';
+import { Search, Plus, Upload, ExternalLink } from 'lucide-react';
+import Link from 'next/link';
+import { format } from 'date-fns';
+import type { Organization } from '@/types';
+
+export default function OrganizationsPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showNotImplemented, setShowNotImplemented] = useState(false);
+
+  const handleNotImplemented = () => {
+    setShowNotImplemented(true);
+    setTimeout(() => setShowNotImplemented(false), 3000);
+  };
+
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/login');
+    }
+  }, [status, router]);
+
+  useEffect(() => {
+    if (session?.accessToken) {
+      fetchOrganizations();
+    }
+  }, [session]);
+
+  const fetchOrganizations = async () => {
+    try {
+      const response = await fetch('/api/devops/projects');
+      if (response.ok) {
+        const data = await response.json();
+        setOrganizations(
+          (data.projects || []).map((o: Organization & { createdAt: string; updatedAt: string }) => ({
+            ...o,
+            createdAt: new Date(o.createdAt),
+            updatedAt: new Date(o.updatedAt),
+          }))
+        );
+      }
+    } catch (error) {
+      console.error('Failed to fetch organizations:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredOrganizations = organizations.filter(
+    (org) =>
+      org.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      org.domain?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (status === 'loading') {
+    return (
+      <MainLayout>
+        <div className="flex h-full items-center justify-center">
+          <LoadingSpinner size="lg" />
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (!session) {
+    return null;
+  }
+
+  return (
+    <MainLayout>
+      <div className="p-6">
+        {/* Not implemented toast */}
+        {showNotImplemented && (
+          <div
+            className="fixed top-4 right-4 z-50 rounded-lg border px-4 py-3 shadow-lg"
+            style={{
+              backgroundColor: 'var(--surface)',
+              borderColor: 'var(--border)',
+              color: 'var(--text-primary)',
+            }}
+          >
+            <p className="font-medium">Not yet implemented</p>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              Please manage projects in{' '}
+              <a
+                href="https://dev.azure.com/KnowAll"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+                style={{ color: 'var(--primary)' }}
+              >
+                Azure DevOps
+              </a>
+            </p>
+          </div>
+        )}
+
+        {/* Header */}
+        <div className="mb-6 flex items-start justify-between">
+          <div>
+            <h1 className="mb-2 text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+              Projects
+            </h1>
+            <p style={{ color: 'var(--text-secondary)' }}>
+              Add, search, and manage your projects all in one place.
+            </p>
+            <a
+              href="https://dev.azure.com/KnowAll/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 flex items-center gap-1 text-sm"
+              style={{ color: 'var(--primary)' }}
+            >
+              See all projects in Azure DevOps <ExternalLink size={12} />
+            </a>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleNotImplemented}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <Upload size={16} /> Bulk import
+            </button>
+            <button onClick={handleNotImplemented} className="btn-primary flex items-center gap-2">
+              <Plus size={16} /> Add project
+            </button>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="mb-6">
+          <div className="relative max-w-md">
+            <Search
+              size={18}
+              className="absolute top-1/2 left-3 -translate-y-1/2"
+              style={{ color: 'var(--text-muted)' }}
+            />
+            <input
+              type="text"
+              placeholder="Search projects"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input w-full pl-10"
+            />
+          </div>
+        </div>
+
+        {/* Count */}
+        <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+          {filteredOrganizations.length} project{filteredOrganizations.length !== 1 ? 's' : ''}
+        </p>
+
+        {/* Table */}
+        <div className="card overflow-hidden">
+          <table className="w-full">
+            <thead className="table-header">
+              <tr>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Name
+                </th>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Domain
+                </th>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Tags
+                </th>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Created at
+                </th>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Last updated
+                </th>
+                <th
+                  className="w-16 px-4 py-3 text-center text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  DevOps
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12">
+                    <LoadingSpinner size="lg" message="Loading projects..." />
+                  </td>
+                </tr>
+              ) : filteredOrganizations.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 text-center"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    No projects found
+                  </td>
+                </tr>
+              ) : (
+                filteredOrganizations.map((org) => (
+                  <tr key={org.id} className="table-row">
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/projects/${org.id}`}
+                        className="font-medium hover:underline"
+                        style={{ color: 'var(--primary)' }}
+                      >
+                        {org.name}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      {org.domain || '-'}
+                    </td>
+                    <td className="px-4 py-3">
+                      {org.tags?.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {org.tags?.map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded px-2 py-0.5 text-xs"
+                              style={{
+                                backgroundColor: 'var(--surface-hover)',
+                                color: 'var(--text-secondary)',
+                              }}
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)' }}>-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      {org.createdAt && !isNaN(org.createdAt.getTime())
+                        ? format(org.createdAt, 'dd MMM yyyy')
+                        : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      {org.updatedAt && !isNaN(org.updatedAt.getTime())
+                        ? format(org.updatedAt, 'dd MMM yyyy')
+                        : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <a
+                        href={`https://dev.azure.com/${org.devOpsOrg}/${encodeURIComponent(org.devOpsProject)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center rounded p-1.5 transition-colors hover:bg-[var(--surface-hover)]"
+                        style={{ color: 'var(--text-muted)' }}
+                        title={`Open ${org.devOpsProject} in Azure DevOps`}
+                      >
+                        <ExternalLink size={16} />
+                      </a>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </MainLayout>
+  );
+}

@@ -504,6 +504,93 @@ export class AzureDevOpsService {
       };
     }
   }
+
+  // Get user entitlements (license info) from Azure DevOps
+  async getUserEntitlements(): Promise<Map<string, string>> {
+    const licenseMap = new Map<string, string>();
+
+    try {
+      // Use VSAEX API for user entitlements
+      const response = await fetch(
+        `https://vsaex.dev.azure.com/${this.organization}/_apis/userentitlements?api-version=7.0&top=500`,
+        { headers: this.headers }
+      );
+
+      if (!response.ok) {
+        console.error('Failed to fetch user entitlements:', response.statusText);
+        return licenseMap;
+      }
+
+      const data = await response.json();
+      for (const member of data.members || []) {
+        const email = member.user?.principalName?.toLowerCase();
+        const license =
+          member.accessLevel?.licenseDisplayName || member.accessLevel?.accountLicenseType;
+        if (email && license) {
+          licenseMap.set(email, license);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user entitlements:', error);
+    }
+
+    return licenseMap;
+  }
+
+  // Get all users with their entitlement/license info
+  async getAllUsersWithEntitlements(): Promise<
+    Array<{
+      id: string;
+      displayName: string;
+      email: string;
+      license: string;
+      avatarUrl?: string;
+    }>
+  > {
+    const users: Array<{
+      id: string;
+      displayName: string;
+      email: string;
+      license: string;
+      avatarUrl?: string;
+    }> = [];
+
+    try {
+      const response = await fetch(
+        `https://vsaex.dev.azure.com/${this.organization}/_apis/userentitlements?api-version=7.0&top=500`,
+        { headers: this.headers }
+      );
+
+      if (!response.ok) {
+        console.error('Failed to fetch user entitlements:', response.statusText);
+        return users;
+      }
+
+      const data = await response.json();
+      for (const member of data.members || []) {
+        const email = member.user?.principalName;
+        const displayName = member.user?.displayName || email;
+        const id = member.id || member.user?.id || email;
+        const license =
+          member.accessLevel?.licenseDisplayName || member.accessLevel?.accountLicenseType;
+        const avatarUrl = member.user?.imageUrl;
+
+        if (email && license) {
+          users.push({
+            id,
+            displayName,
+            email,
+            license,
+            avatarUrl,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user entitlements:', error);
+    }
+
+    return users;
+  }
 }
 
 // Email routing: Maps email domains to DevOps projects

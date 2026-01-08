@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import type { Organization } from '@/types';
 
 export async function GET() {
   try {
@@ -12,7 +13,19 @@ export async function GET() {
     }
 
     const devopsService = new AzureDevOpsService(session.accessToken);
-    const projects = await devopsService.getProjects();
+    const devopsProjects = await devopsService.getProjects();
+    const devOpsOrg = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+
+    // Transform DevOpsProject[] to Organization[] format
+    const projects: Organization[] = devopsProjects.map((project) => ({
+      id: project.id,
+      name: project.name,
+      devOpsProject: project.name,
+      devOpsOrg,
+      tags: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }));
 
     return NextResponse.json({
       projects,

@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
-import { Filter, ChevronDown, ChevronUp, Play } from 'lucide-react';
-import type { Ticket } from '@/types';
+import { ChevronDown, ChevronUp, X, Play, RotateCcw, UserCheck } from 'lucide-react';
+import type { Ticket, TicketStatus, TicketPriority } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 
@@ -20,11 +20,28 @@ type SortField =
   | 'requested'
   | 'priority'
   | 'updated'
-  | 'assignee';
+  | 'assignee'
+  | 'project';
 type SortDirection = 'asc' | 'desc';
+
+interface Filters {
+  status: TicketStatus | '';
+  priority: TicketPriority | '';
+  assignee: string;
+  requester: string;
+}
 
 interface GroupedTickets {
   [key: string]: Ticket[];
+}
+
+// Bulk action definitions - add new actions here
+interface BulkAction {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  handler: (ticketIds: number[]) => Promise<void>;
+  confirmMessage?: string;
 }
 
 function SortIcon({
@@ -45,6 +62,109 @@ export default function TicketList({ tickets, title }: TicketListProps) {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [selectedTickets, setSelectedTickets] = useState<Set<number>>(new Set());
   const [groupBy] = useState<'assignee' | 'none'>('assignee');
+  const [filters, setFilters] = useState<Filters>({
+    status: '',
+    priority: '',
+    assignee: '',
+    requester: '',
+  });
+  const [showBulkMenu, setShowBulkMenu] = useState(false);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const bulkMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close bulk menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (bulkMenuRef.current && !bulkMenuRef.current.contains(event.target as Node)) {
+        setShowBulkMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Bulk action handler
+  const handleBulkAction = async (action: BulkAction) => {
+    if (selectedTickets.size === 0) return;
+
+    const ticketIds = Array.from(selectedTickets);
+
+    if (action.confirmMessage) {
+      const confirmed = window.confirm(action.confirmMessage);
+      if (!confirmed) return;
+    }
+
+    setBulkActionLoading(true);
+    setShowBulkMenu(false);
+
+    try {
+      await action.handler(ticketIds);
+      setSelectedTickets(new Set()); // Clear selection after action
+      // Trigger a page refresh to show updated data
+      window.location.reload();
+    } catch (error) {
+      console.error(`Bulk action ${action.id} failed:`, error);
+      alert(`Failed to ${action.label.toLowerCase()}. Please try again.`);
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  // Define bulk actions - add new actions here
+  const bulkActions: BulkAction[] = [
+    {
+      id: 'reopen',
+      label: 'Re-open',
+      icon: <RotateCcw size={16} />,
+      handler: async (ticketIds) => {
+        await Promise.all(
+          ticketIds.map((id) =>
+            fetch(`/api/devops/tickets/${id}/status`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: 'Open' }),
+            })
+          )
+        );
+      },
+    },
+    {
+      id: 'assign-to-me',
+      label: 'Assign to me',
+      icon: <UserCheck size={16} />,
+      handler: async (ticketIds) => {
+        await Promise.all(
+          ticketIds.map((id) =>
+            fetch(`/api/devops/tickets/${id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ assignToMe: true }),
+            })
+          )
+        );
+      },
+    },
+  ];
+
+  // Get unique values for filter dropdowns
+  const filterOptions = useMemo(() => {
+    const assignees = new Set<string>();
+    const requesters = new Set<string>();
+
+    tickets.forEach((ticket) => {
+      if (ticket.assignee?.displayName) {
+        assignees.add(ticket.assignee.displayName);
+      }
+      if (ticket.requester?.displayName) {
+        requesters.add(ticket.requester.displayName);
+      }
+    });
+
+    return {
+      assignees: Array.from(assignees).sort(),
+      requesters: Array.from(requesters).sort(),
+    };
+  }, [tickets]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -54,6 +174,24 @@ export default function TicketList({ tickets, title }: TicketListProps) {
       setSortDirection('asc');
     }
   };
+
+  const clearFilters = () => {
+    setFilters({ status: '', priority: '', assignee: '', requester: '' });
+  };
+
+  const hasActiveFilters =
+    filters.status || filters.priority || filters.assignee || filters.requester;
+
+  // Apply filters
+  const filteredTickets = useMemo(() => {
+    return tickets.filter((ticket) => {
+      if (filters.status && ticket.status !== filters.status) return false;
+      if (filters.priority && ticket.priority !== filters.priority) return false;
+      if (filters.assignee && ticket.assignee?.displayName !== filters.assignee) return false;
+      if (filters.requester && ticket.requester.displayName !== filters.requester) return false;
+      return true;
+    });
+  }, [tickets, filters]);
 
   const toggleTicketSelection = (ticketId: number) => {
     const newSelection = new Set(selectedTickets);
@@ -66,14 +204,14 @@ export default function TicketList({ tickets, title }: TicketListProps) {
   };
 
   const toggleAllSelection = () => {
-    if (selectedTickets.size === tickets.length) {
+    if (selectedTickets.size === filteredTickets.length) {
       setSelectedTickets(new Set());
     } else {
-      setSelectedTickets(new Set(tickets.map((t) => t.id)));
+      setSelectedTickets(new Set(filteredTickets.map((t) => t.id)));
     }
   };
 
-  const sortedTickets = [...tickets].sort((a, b) => {
+  const sortedTickets = [...filteredTickets].sort((a, b) => {
     const multiplier = sortDirection === 'asc' ? 1 : -1;
 
     switch (sortField) {
@@ -94,6 +232,10 @@ export default function TicketList({ tickets, title }: TicketListProps) {
         const aName = a.assignee?.displayName || 'zzz';
         const bName = b.assignee?.displayName || 'zzz';
         return multiplier * aName.localeCompare(bName);
+      case 'project':
+        const aProject = a.project || 'zzz';
+        const bProject = b.project || 'zzz';
+        return multiplier * aProject.localeCompare(bProject);
       default:
         return 0;
     }
@@ -119,23 +261,121 @@ export default function TicketList({ tickets, title }: TicketListProps) {
             {title}
           </h1>
           <div className="flex items-center gap-2">
-            <button className="btn-secondary flex items-center gap-2">
-              Actions <ChevronDown size={16} />
-            </button>
-            <button className="btn-secondary flex items-center gap-2">
-              <Play size={16} /> Play
-            </button>
+            {selectedTickets.size > 0 && (
+              <>
+                <div className="relative" ref={bulkMenuRef}>
+                  <button
+                    onClick={() => setShowBulkMenu(!showBulkMenu)}
+                    disabled={bulkActionLoading}
+                    className="btn-secondary flex items-center gap-2"
+                  >
+                    {bulkActionLoading ? 'Processing...' : 'Bulk Action'} <ChevronDown size={16} />
+                  </button>
+                  {showBulkMenu && (
+                    <div
+                      className="absolute top-full right-0 z-50 mt-1 min-w-48 rounded-lg border shadow-lg"
+                      style={{
+                        backgroundColor: 'var(--surface)',
+                        borderColor: 'var(--border)',
+                      }}
+                    >
+                      {bulkActions.map((action) => (
+                        <button
+                          key={action.id}
+                          onClick={() => handleBulkAction(action)}
+                          className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                          style={{ color: 'var(--text-primary)' }}
+                        >
+                          {action.icon}
+                          {action.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button className="btn-secondary flex items-center gap-2">
+                  <Play size={16} /> Play
+                </button>
+              </>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center justify-between">
-          <button className="btn-secondary flex items-center gap-2 text-sm">
-            <Filter size={16} />
-            Filter
-          </button>
+        {/* Filter dropdowns and count */}
+        <div className="flex items-center justify-between gap-4">
           <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            {tickets.length} ticket{tickets.length !== 1 ? 's' : ''}
+            {filteredTickets.length} ticket{filteredTickets.length !== 1 ? 's' : ''}
+            {hasActiveFilters && ` (filtered from ${tickets.length})`}
           </span>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={filters.status}
+              onChange={(e) =>
+                setFilters({ ...filters, status: e.target.value as TicketStatus | '' })
+              }
+              className="input text-sm"
+            >
+              <option value="">All Statuses</option>
+              <option value="New">New</option>
+              <option value="Open">Open</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Pending">Pending</option>
+              <option value="Resolved">Resolved</option>
+              <option value="Closed">Closed</option>
+            </select>
+
+            <select
+              value={filters.priority}
+              onChange={(e) =>
+                setFilters({ ...filters, priority: e.target.value as TicketPriority | '' })
+              }
+              className="input text-sm"
+            >
+              <option value="">All Priorities</option>
+              <option value="Urgent">Urgent</option>
+              <option value="High">High</option>
+              <option value="Normal">Normal</option>
+              <option value="Low">Low</option>
+            </select>
+
+            <select
+              value={filters.assignee}
+              onChange={(e) => setFilters({ ...filters, assignee: e.target.value })}
+              className="input text-sm"
+            >
+              <option value="">All Assignees</option>
+              {filterOptions.assignees.map((assignee) => (
+                <option key={assignee} value={assignee}>
+                  {assignee}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={filters.requester}
+              onChange={(e) => setFilters({ ...filters, requester: e.target.value })}
+              className="input text-sm"
+            >
+              <option value="">All Requesters</option>
+              {filterOptions.requesters.map((requester) => (
+                <option key={requester} value={requester}>
+                  {requester}
+                </option>
+              ))}
+            </select>
+
+            {hasActiveFilters && (
+              <button
+                onClick={clearFilters}
+                className="flex items-center gap-1 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                <X size={14} />
+                Clear filters
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -147,7 +387,9 @@ export default function TicketList({ tickets, title }: TicketListProps) {
               <th className="w-10 px-4 py-3">
                 <input
                   type="checkbox"
-                  checked={selectedTickets.size === tickets.length && tickets.length > 0}
+                  checked={
+                    selectedTickets.size === filteredTickets.length && filteredTickets.length > 0
+                  }
                   onChange={toggleAllSelection}
                   className="rounded"
                 />
@@ -170,6 +412,16 @@ export default function TicketList({ tickets, title }: TicketListProps) {
                 <div className="flex items-center gap-1">
                   Subject{' '}
                   <SortIcon field="subject" sortField={sortField} sortDirection={sortDirection} />
+                </div>
+              </th>
+              <th
+                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase"
+                style={{ color: 'var(--text-muted)' }}
+                onClick={() => handleSort('project')}
+              >
+                <div className="flex items-center gap-1">
+                  Project{' '}
+                  <SortIcon field="project" sortField={sortField} sortDirection={sortDirection} />
                 </div>
               </th>
               <th
@@ -226,11 +478,11 @@ export default function TicketList({ tickets, title }: TicketListProps) {
           </thead>
           <tbody>
             {Object.entries(groupedTickets).map(([groupName, groupTickets]) => (
-              <>
+              <React.Fragment key={groupName}>
                 {groupBy === 'assignee' && (
-                  <tr key={`group-${groupName}`}>
+                  <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="px-4 py-2 text-sm font-medium"
                       style={{ backgroundColor: 'var(--surface)', color: 'var(--text-secondary)' }}
                     >
@@ -261,8 +513,21 @@ export default function TicketList({ tickets, title }: TicketListProps) {
                       </Link>
                     </td>
                     <td className="px-4 py-3">
+                      <Link
+                        href={`/projects/${ticket.organization?.id || ''}`}
+                        className="text-sm hover:underline"
+                        style={{ color: 'var(--primary)' }}
+                      >
+                        {ticket.project || '-'}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <Avatar name={ticket.requester.displayName} size="sm" />
+                        <Avatar
+                          name={ticket.requester.displayName}
+                          image={ticket.requester.avatarUrl}
+                          size="sm"
+                        />
                         <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                           {ticket.requester.displayName}
                         </span>
@@ -280,7 +545,11 @@ export default function TicketList({ tickets, title }: TicketListProps) {
                     <td className="px-4 py-3">
                       {ticket.assignee ? (
                         <div className="flex items-center gap-2">
-                          <Avatar name={ticket.assignee.displayName} size="sm" />
+                          <Avatar
+                            name={ticket.assignee.displayName}
+                            image={ticket.assignee.avatarUrl}
+                            size="sm"
+                          />
                           <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                             {ticket.assignee.displayName}
                           </span>
@@ -293,7 +562,7 @@ export default function TicketList({ tickets, title }: TicketListProps) {
                     </td>
                   </tr>
                 ))}
-              </>
+              </React.Fragment>
             ))}
           </tbody>
         </table>
