@@ -34,8 +34,8 @@ function mapStateToStatus(state: string): TicketStatus {
 }
 
 // Map priority numbers to Zendesk-like priorities
-function mapPriority(priority?: number): TicketPriority {
-  if (!priority) return 'Normal';
+function mapPriority(priority?: number): TicketPriority | undefined {
+  if (!priority) return undefined;
   if (priority === 1) return 'Urgent';
   if (priority === 2) return 'High';
   if (priority === 3) return 'Normal';

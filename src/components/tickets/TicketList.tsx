@@ -224,8 +224,10 @@ export default function TicketList({ tickets, title }: TicketListProps) {
       case 'requested':
         return multiplier * (a.createdAt.getTime() - b.createdAt.getTime());
       case 'priority':
-        const priorityOrder = { Urgent: 0, High: 1, Normal: 2, Low: 3 };
-        return multiplier * (priorityOrder[a.priority] - priorityOrder[b.priority]);
+        const priorityOrder: Record<string, number> = { Urgent: 0, High: 1, Normal: 2, Low: 3 };
+        const aPriority = a.priority ? priorityOrder[a.priority] : 4;
+        const bPriority = b.priority ? priorityOrder[b.priority] : 4;
+        return multiplier * (aPriority - bPriority);
       case 'updated':
         return multiplier * (a.updatedAt.getTime() - b.updatedAt.getTime());
       case 'assignee':
@@ -537,7 +539,7 @@ export default function TicketList({ tickets, title }: TicketListProps) {
                       {format(ticket.createdAt, 'dd MMM yyyy')}
                     </td>
                     <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                      {ticket.priority}
+                      {ticket.priority || '-'}
                     </td>
                     <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
                       {format(ticket.updatedAt, 'dd MMM yyyy')}

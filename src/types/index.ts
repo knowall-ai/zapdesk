@@ -38,6 +38,7 @@ export interface Customer {
   tags: string[];
   avatarUrl?: string;
   lastUpdated?: Date;
+  license?: string;
 }
 
 export type TicketStatus = 'New' | 'Open' | 'In Progress' | 'Pending' | 'Resolved' | 'Closed';
@@ -50,7 +51,7 @@ export interface Ticket {
   title: string;
   description: string;
   status: TicketStatus;
-  priority: TicketPriority;
+  priority?: TicketPriority;
   requester: Customer;
   assignee?: User;
   organization?: Organization;
