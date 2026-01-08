@@ -68,14 +68,19 @@ function ZapDialogContent({
       return;
     }
 
+    // Validate Lightning address format: both name and domain must be non-empty
+    const [name, domain] = lightningAddress.split('@');
+    if (!name || !domain) {
+      setInvoiceError('Invalid Lightning Address format');
+      return;
+    }
+
     setInvoiceLoading(true);
     setInvoiceError(null);
 
     try {
-      const [name, domain] = lightningAddress.split('@');
       const lnurlpUrl = `https://${domain}/.well-known/lnurlp/${encodeURIComponent(name)}`;
 
-      console.log('[ZapDialog] Fetching LNURL-pay metadata from:', lnurlpUrl);
       const metaRes = await fetch(lnurlpUrl);
 
       if (!metaRes.ok) {
@@ -83,10 +88,28 @@ function ZapDialogContent({
       }
 
       const meta = await metaRes.json();
-      console.log('[ZapDialog] LNURL-pay metadata:', meta);
 
       if (!meta.callback) {
         throw new Error('No LNURL callback found in response');
+      }
+
+      // Validate callback URL for security:
+      // - Must use HTTPS
+      // - Should match the original domain to prevent redirect attacks
+      try {
+        const callbackUrlObj = new URL(meta.callback);
+        if (callbackUrlObj.protocol !== 'https:') {
+          throw new Error('Callback URL must use HTTPS');
+        }
+        // Allow same domain or subdomains
+        if (!callbackUrlObj.hostname.endsWith(domain) && callbackUrlObj.hostname !== domain) {
+          throw new Error('Callback URL domain does not match Lightning address domain');
+        }
+      } catch (urlErr) {
+        if (urlErr instanceof Error && urlErr.message.includes('Invalid URL')) {
+          throw new Error('Invalid callback URL format');
+        }
+        throw urlErr;
       }
 
       // Convert sats to millisats
@@ -103,10 +126,7 @@ function ZapDialogContent({
         // Truncate if needed (commentAllowed is max length)
         const truncatedComment = comment.slice(0, meta.commentAllowed);
         callbackUrl += `&comment=${encodeURIComponent(truncatedComment)}`;
-        console.log('[ZapDialog] Adding comment to invoice:', truncatedComment);
       }
-
-      console.log('[ZapDialog] Fetching invoice from:', callbackUrl);
 
       const invRes = await fetch(callbackUrl);
       if (!invRes.ok) {
@@ -114,14 +134,29 @@ function ZapDialogContent({
       }
 
       const invData = await invRes.json();
-      console.log('[ZapDialog] Invoice response:', invData);
 
       if (!invData.pr) {
         throw new Error('No invoice (pr) received from server');
       }
 
-      const invoiceUri = `lightning:${invData.pr}`;
-      console.log('[ZapDialog] Generated invoice URI:', invoiceUri);
+      // Validate BOLT11 invoice format
+      const pr = invData.pr;
+      if (typeof pr !== 'string') {
+        throw new Error('Invalid invoice format received from server');
+      }
+
+      const normalizedPr = pr.toLowerCase();
+      // Basic BOLT11-style validation: must start with "ln" and be alphanumeric
+      const basicBolt11Pattern = /^[0-9a-zA-Z]+$/;
+      if (
+        !normalizedPr.startsWith('ln') ||
+        pr.length < 10 || // too short to be a valid invoice
+        !basicBolt11Pattern.test(pr)
+      ) {
+        throw new Error('Malformed Lightning invoice received from server');
+      }
+
+      const invoiceUri = `lightning:${pr}`;
       setInvoice(invoiceUri);
     } catch (err) {
       console.error('[ZapDialog] Invoice fetch failed:', err);
@@ -182,15 +217,11 @@ function ZapDialogContent({
 
     // Call the callback to post a comment on the ticket
     if (onZapSent) {
-      console.log('[ZapDialog] Posting zap comment to ticket:', actualAmount, 'sats');
       try {
         await onZapSent(actualAmount);
-        console.log('[ZapDialog] Zap comment posted successfully');
       } catch (err) {
         console.error('[ZapDialog] Failed to post zap comment:', err);
       }
-    } else {
-      console.warn('[ZapDialog] onZapSent callback not provided');
     }
 
     // Close dialog after brief delay

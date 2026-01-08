@@ -13,7 +13,6 @@ import {
   Ticket,
   CheckCircle,
   AlertCircle,
-  Calendar,
 } from 'lucide-react';
 
 interface DashboardStats {

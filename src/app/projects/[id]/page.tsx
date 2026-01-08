@@ -36,6 +36,7 @@ export default function ProjectDetailPage() {
       fetchProject();
       fetchProjectTickets();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, projectId]);
 
   const fetchProject = async () => {

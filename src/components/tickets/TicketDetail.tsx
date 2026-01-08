@@ -42,6 +42,7 @@ export default function TicketDetail({
   ticket,
   comments,
   onAddComment,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onStatusChange: _onStatusChange,
   onAssigneeChange,
   onPriorityChange,
@@ -51,18 +52,13 @@ export default function TicketDetail({
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
 
   const handleZapSent = async (amount: number) => {
-    console.log('[TicketDetail] handleZapSent called with amount:', amount);
     if (onAddComment) {
       const zapMessage = `⚡ Sent a ${amount.toLocaleString()} sat zap to ${ticket.assignee?.displayName || 'the agent'} for great support!`;
-      console.log('[TicketDetail] Posting comment:', zapMessage);
       try {
         await onAddComment(zapMessage);
-        console.log('[TicketDetail] Comment posted successfully');
       } catch (err) {
-        console.error('[TicketDetail] Failed to post comment:', err);
+        console.error('[TicketDetail] Failed to post zap comment:', err);
       }
-    } else {
-      console.warn('[TicketDetail] onAddComment not provided');
     }
   };
 
@@ -82,6 +78,7 @@ export default function TicketDetail({
     if (isAssigneeDropdownOpen && teamMembers.length === 0 && ticket.project) {
       fetchTeamMembers();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAssigneeDropdownOpen, ticket.project]);
 
   const fetchTeamMembers = async () => {

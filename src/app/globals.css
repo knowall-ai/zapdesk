@@ -226,8 +226,9 @@ body {
     color: var(--primary);
   }
 
-  /* Override inline color styles from copy-pasted content (e.g., from Outlook/Word) */
-  .card div[style*='color'] {
+  /* Override inline color styles from copy-pasted content (e.g., from Outlook/Word).
+     To preserve inline color for specific elements, add the `preserve-inline-color` class. */
+  .card :not(.preserve-inline-color)[style*='color'] {
     color: var(--text-secondary) !important;
   }
 }
