@@ -7,6 +7,7 @@ import AzureADProvider from 'next-auth/providers/azure-ad';
 declare module 'next-auth' {
   interface Session {
     accessToken?: string;
+    refreshToken?: string;
     error?: string;
     user: {
       id: string;
@@ -36,6 +37,9 @@ const AZURE_DEVOPS_SCOPES = [
   'offline_access',
   '499b84ac-1321-427f-aa17-267ca6975798/.default', // Azure DevOps
 ];
+
+// Note: Graph API uses client credentials flow (application permissions)
+// because .default scope can't be combined with resource-specific scopes
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -74,6 +78,7 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken;
+      session.refreshToken = token.refreshToken;
       session.error = token.error;
       if (token.id) {
         session.user.id = token.id;
@@ -130,6 +135,41 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
       ...token,
       error: 'RefreshAccessTokenError',
     };
+  }
+}
+
+/**
+ * Get a Microsoft Graph access token using client credentials flow
+ * Uses application permissions (not delegated) to read/write user extensions
+ */
+export async function getGraphToken(): Promise<string | null> {
+  try {
+    const url = `https://login.microsoftonline.com/${process.env.AZURE_AD_TENANT_ID}/oauth2/v2.0/token`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        client_id: process.env.AZURE_AD_CLIENT_ID!,
+        client_secret: process.env.AZURE_AD_CLIENT_SECRET!,
+        grant_type: 'client_credentials',
+        scope: 'https://graph.microsoft.com/.default',
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('Failed to get Graph token:', data);
+      return null;
+    }
+
+    return data.access_token;
+  } catch (error) {
+    console.error('Error getting Graph token:', error);
+    return null;
   }
 }
 

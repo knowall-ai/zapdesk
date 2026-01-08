@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { X, Copy, Check, Zap, ExternalLink } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { X, Copy, Check, Zap, ExternalLink, Loader2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { User } from '@/types';
 import { DEFAULT_ZAP_PRESETS } from '@/types';
 import Avatar from '../common/Avatar';
+import { lightningUri } from '@/lib/lnurl';
 
 interface ZapDialogProps {
   isOpen: boolean;
@@ -20,6 +21,7 @@ interface ZapDialogContentProps {
   agent: User;
   ticketId: number;
   lightningAddress: string | null;
+  isLoadingAddress: boolean;
   onZapSent?: (amount: number) => void;
 }
 
@@ -28,37 +30,148 @@ function ZapDialogContent({
   agent,
   ticketId,
   lightningAddress,
+  isLoadingAddress,
   onZapSent,
 }: ZapDialogContentProps) {
   const [selectedAmount, setSelectedAmount] = useState<number>(DEFAULT_ZAP_PRESETS[1]);
   const [customAmount, setCustomAmount] = useState<string>('');
   const [isCustom, setIsCustom] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copiedAddress, setCopiedAddress] = useState(false);
+  const [copiedInvoice, setCopiedInvoice] = useState(false);
   const [zapConfirmed, setZapConfirmed] = useState(false);
+
+  // Invoice fetching state
+  const [invoice, setInvoice] = useState<string | null>(null);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
 
   const actualAmount = isCustom ? parseInt(customAmount) || 0 : selectedAmount;
 
-  // Generate Lightning payment URI
-  const paymentUri = useMemo(() => {
-    if (!lightningAddress) return '';
-
-    // If it's an LNURL, use it directly
-    if (lightningAddress.toLowerCase().startsWith('lnurl')) {
-      return lightningAddress;
+  // Fetch actual BOLT11 invoice from LNURL-pay endpoint
+  const fetchInvoice = useCallback(async () => {
+    if (!lightningAddress || actualAmount <= 0) {
+      setInvoice(null);
+      return;
     }
 
-    // For Lightning addresses (user@domain.com format), create a lightning: URI
-    return `lightning:${lightningAddress}`;
-  }, [lightningAddress]);
+    // If it's already an LNURL or invoice, use it directly
+    if (
+      lightningAddress.toLowerCase().startsWith('lnurl') ||
+      lightningAddress.toLowerCase().startsWith('ln')
+    ) {
+      setInvoice(lightningAddress);
+      return;
+    }
 
-  const copyToClipboard = async () => {
+    if (!lightningAddress.includes('@')) {
+      setInvoiceError('Invalid Lightning Address');
+      return;
+    }
+
+    setInvoiceLoading(true);
+    setInvoiceError(null);
+
+    try {
+      const [name, domain] = lightningAddress.split('@');
+      const lnurlpUrl = `https://${domain}/.well-known/lnurlp/${encodeURIComponent(name)}`;
+
+      console.log('[ZapDialog] Fetching LNURL-pay metadata from:', lnurlpUrl);
+      const metaRes = await fetch(lnurlpUrl);
+
+      if (!metaRes.ok) {
+        throw new Error(`LNURL endpoint returned ${metaRes.status}`);
+      }
+
+      const meta = await metaRes.json();
+      console.log('[ZapDialog] LNURL-pay metadata:', meta);
+
+      if (!meta.callback) {
+        throw new Error('No LNURL callback found in response');
+      }
+
+      // Convert sats to millisats
+      const amountMsat = actualAmount * 1000;
+
+      // Build callback URL with amount
+      // Use & if callback already has query params, otherwise use ?
+      const separator = meta.callback.includes('?') ? '&' : '?';
+      let callbackUrl = `${meta.callback}${separator}amount=${amountMsat}`;
+
+      // Add comment if the service supports it (shows in recipient's wallet)
+      if (meta.commentAllowed && meta.commentAllowed > 0) {
+        const comment = `DevDesk Ticket #${ticketId}`;
+        // Truncate if needed (commentAllowed is max length)
+        const truncatedComment = comment.slice(0, meta.commentAllowed);
+        callbackUrl += `&comment=${encodeURIComponent(truncatedComment)}`;
+        console.log('[ZapDialog] Adding comment to invoice:', truncatedComment);
+      }
+
+      console.log('[ZapDialog] Fetching invoice from:', callbackUrl);
+
+      const invRes = await fetch(callbackUrl);
+      if (!invRes.ok) {
+        throw new Error(`Invoice callback returned ${invRes.status}`);
+      }
+
+      const invData = await invRes.json();
+      console.log('[ZapDialog] Invoice response:', invData);
+
+      if (!invData.pr) {
+        throw new Error('No invoice (pr) received from server');
+      }
+
+      const invoiceUri = `lightning:${invData.pr}`;
+      console.log('[ZapDialog] Generated invoice URI:', invoiceUri);
+      setInvoice(invoiceUri);
+    } catch (err) {
+      console.error('[ZapDialog] Invoice fetch failed:', err);
+      setInvoiceError(err instanceof Error ? err.message : 'Failed to fetch invoice');
+      setInvoice(null);
+    } finally {
+      setInvoiceLoading(false);
+    }
+  }, [lightningAddress, actualAmount, ticketId]);
+
+  // Fetch invoice when address or amount changes
+  useEffect(() => {
+    fetchInvoice();
+  }, [fetchInvoice]);
+
+  // QR code value is the fetched invoice
+  const qrValue = invoice || '';
+
+  // Generate Lightning URI for wallet deep links (Open in Wallet button)
+  const walletUri = useMemo(() => {
+    if (!lightningAddress) return '';
+
+    // If we have an invoice, use it for the wallet link too
+    if (invoice) return invoice;
+
+    // Fallback to lightning: URI
+    return lightningUri(lightningAddress);
+  }, [lightningAddress, invoice]);
+
+  const copyAddressToClipboard = async () => {
     if (!lightningAddress) return;
     try {
       await navigator.clipboard.writeText(lightningAddress);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedAddress(true);
+      setTimeout(() => setCopiedAddress(false), 2000);
     } catch (err) {
-      console.error('Failed to copy:', err);
+      console.error('Failed to copy address:', err);
+    }
+  };
+
+  const copyInvoiceToClipboard = async () => {
+    if (!invoice) return;
+    // Copy just the invoice part (without lightning: prefix)
+    const invoiceStr = invoice.startsWith('lightning:') ? invoice.slice(10) : invoice;
+    try {
+      await navigator.clipboard.writeText(invoiceStr);
+      setCopiedInvoice(true);
+      setTimeout(() => setCopiedInvoice(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy invoice:', err);
     }
   };
 
@@ -93,7 +206,18 @@ function ZapDialogContent({
         </div>
       </div>
 
-      {!lightningAddress ? (
+      {isLoadingAddress ? (
+        <div className="rounded-lg p-6 text-center" style={{ backgroundColor: 'var(--surface)' }}>
+          <Loader2
+            size={32}
+            className="mx-auto mb-2 animate-spin"
+            style={{ color: 'var(--text-muted)' }}
+          />
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            Loading Lightning address...
+          </p>
+        </div>
+      ) : !lightningAddress ? (
         <div className="rounded-lg p-4 text-center" style={{ backgroundColor: 'var(--surface)' }}>
           <Zap size={32} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
@@ -176,13 +300,41 @@ function ZapDialogContent({
             className="mb-6 flex flex-col items-center rounded-lg p-4"
             style={{ backgroundColor: 'var(--surface)' }}
           >
-            <div className="mb-3 rounded-lg bg-white p-3">
-              <QRCodeSVG value={paymentUri} size={160} level="M" />
-            </div>
+            {invoiceLoading ? (
+              <div className="flex h-[160px] w-[160px] items-center justify-center">
+                <Loader2
+                  size={32}
+                  className="animate-spin"
+                  style={{ color: 'var(--text-muted)' }}
+                />
+              </div>
+            ) : invoiceError ? (
+              <div
+                className="flex h-[160px] w-[160px] flex-col items-center justify-center rounded-lg p-4 text-center"
+                style={{ backgroundColor: 'var(--surface-hover)' }}
+              >
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  {invoiceError}
+                </p>
+              </div>
+            ) : qrValue ? (
+              <div className="mb-3 rounded-lg bg-white p-3">
+                <QRCodeSVG value={qrValue} size={160} level="M" />
+              </div>
+            ) : (
+              <div className="flex h-[160px] w-[160px] items-center justify-center">
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  Select an amount
+                </p>
+              </div>
+            )}
+
             <p className="mb-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
               Scan with a Lightning wallet
             </p>
-            <div className="flex items-center gap-2">
+
+            {/* Lightning Address */}
+            <div className="mb-2 flex items-center gap-2">
               <code
                 className="max-w-[200px] truncate rounded px-2 py-1 text-xs"
                 style={{ backgroundColor: 'var(--surface-hover)', color: 'var(--text-muted)' }}
@@ -190,14 +342,35 @@ function ZapDialogContent({
                 {lightningAddress}
               </code>
               <button
-                onClick={copyToClipboard}
+                onClick={copyAddressToClipboard}
                 className="rounded p-1.5 transition-colors hover:bg-[var(--surface-hover)]"
-                style={{ color: copied ? 'var(--primary)' : 'var(--text-muted)' }}
+                style={{ color: copiedAddress ? 'var(--primary)' : 'var(--text-muted)' }}
                 title="Copy address"
               >
-                {copied ? <Check size={16} /> : <Copy size={16} />}
+                {copiedAddress ? <Check size={16} /> : <Copy size={16} />}
               </button>
             </div>
+
+            {/* Invoice String */}
+            {invoice && (
+              <div className="flex w-full items-center gap-2">
+                <code
+                  className="flex-1 truncate rounded px-2 py-1 text-xs"
+                  style={{ backgroundColor: 'var(--surface-hover)', color: 'var(--text-muted)' }}
+                  title={invoice}
+                >
+                  {invoice.startsWith('lightning:') ? invoice.slice(10) : invoice}
+                </code>
+                <button
+                  onClick={copyInvoiceToClipboard}
+                  className="shrink-0 rounded p-1.5 transition-colors hover:bg-[var(--surface-hover)]"
+                  style={{ color: copiedInvoice ? 'var(--primary)' : 'var(--text-muted)' }}
+                  title="Copy invoice"
+                >
+                  {copiedInvoice ? <Check size={16} /> : <Copy size={16} />}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Actions */}
@@ -212,10 +385,11 @@ function ZapDialogContent({
               }}
             >
               <Zap size={18} />
-              I&apos;ve sent {actualAmount > 0 ? actualAmount.toLocaleString() : '...'} sats
+              Let {agent.displayName.split(' ')[0]} know you&apos;ve sent{' '}
+              {actualAmount > 0 ? actualAmount.toLocaleString() : '...'} sats
             </button>
             <a
-              href={`lightning:${lightningAddress}`}
+              href={walletUri}
               className="btn-secondary flex w-full items-center justify-center gap-2"
             >
               <ExternalLink size={16} />
@@ -233,11 +407,32 @@ function ZapDialogContent({
 }
 
 export default function ZapDialog({ isOpen, onClose, agent, ticketId, onZapSent }: ZapDialogProps) {
-  // Load the agent's lightning address synchronously from localStorage
-  const lightningAddress = useMemo(() => {
-    if (typeof window === 'undefined' || !agent.email) return null;
-    return localStorage.getItem(`devdesk_lightning_${agent.email}`);
-  }, [agent.email]);
+  const [lightningAddress, setLightningAddress] = useState<string | null>(null);
+  const [isLoadingAddress, setIsLoadingAddress] = useState(false);
+
+  // Fetch agent's lightning address from API when dialog opens
+  useEffect(() => {
+    if (!isOpen || !agent.email) return;
+
+    const fetchLightningAddress = async () => {
+      setIsLoadingAddress(true);
+      setLightningAddress(null);
+      try {
+        // Use email as the user identifier for Microsoft Graph lookup
+        const response = await fetch(`/api/lightning/user/${encodeURIComponent(agent.email)}`);
+        if (response.ok) {
+          const data = await response.json();
+          setLightningAddress(data.lightningAddress);
+        }
+      } catch (error) {
+        console.error('Failed to fetch lightning address:', error);
+      } finally {
+        setIsLoadingAddress(false);
+      }
+    };
+
+    fetchLightningAddress();
+  }, [isOpen, agent.email]);
 
   if (!isOpen) return null;
 
@@ -278,6 +473,7 @@ export default function ZapDialog({ isOpen, onClose, agent, ticketId, onZapSent 
           agent={agent}
           ticketId={ticketId}
           lightningAddress={lightningAddress}
+          isLoadingAddress={isLoadingAddress}
           onZapSent={onZapSent}
         />
       </div>

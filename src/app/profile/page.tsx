@@ -44,28 +44,56 @@ export default function ProfilePage() {
   const [lightningAddress, setLightningAddress] = useState('');
   const [lightningAddressSaved, setLightningAddressSaved] = useState(false);
   const [isSavingLightning, setIsSavingLightning] = useState(false);
+  const [isLoadingLightning, setIsLoadingLightning] = useState(true);
+  const [lightningError, setLightningError] = useState<string | null>(null);
 
-  // Load lightning address from localStorage
-  const loadLightningAddress = useCallback(() => {
-    if (typeof window !== 'undefined' && session?.user?.email) {
-      const stored = localStorage.getItem(`devdesk_lightning_${session.user.email}`);
-      if (stored) {
-        setLightningAddress(stored);
+  // Load lightning address from Microsoft Graph
+  const loadLightningAddress = useCallback(async () => {
+    setIsLoadingLightning(true);
+    setLightningError(null);
+    try {
+      const response = await fetch('/api/lightning');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.lightningAddress) {
+          setLightningAddress(data.lightningAddress);
+        }
+      } else if (response.status !== 401) {
+        setLightningError('Failed to load Lightning Address');
       }
+    } catch {
+      setLightningError('Failed to connect to server');
+    } finally {
+      setIsLoadingLightning(false);
     }
-  }, [session?.user?.email]);
+  }, []);
 
   useEffect(() => {
-    loadLightningAddress();
-  }, [loadLightningAddress]);
+    if (session?.accessToken) {
+      loadLightningAddress();
+    }
+  }, [session?.accessToken, loadLightningAddress]);
 
   const saveLightningAddress = async () => {
-    if (!session?.user?.email) return;
+    if (!session) return;
     setIsSavingLightning(true);
+    setLightningError(null);
     try {
-      localStorage.setItem(`devdesk_lightning_${session.user.email}`, lightningAddress);
-      setLightningAddressSaved(true);
-      setTimeout(() => setLightningAddressSaved(false), 2000);
+      const response = await fetch('/api/lightning', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lightningAddress }),
+      });
+
+      if (response.ok) {
+        setLightningAddressSaved(true);
+        setTimeout(() => setLightningAddressSaved(false), 2000);
+      } else {
+        const data = await response.json();
+        setLightningError(data.error || 'Failed to save Lightning Address');
+      }
+    } catch {
+      setLightningError('Failed to connect to server');
     } finally {
       setIsSavingLightning(false);
     }
@@ -209,8 +237,18 @@ export default function ProfilePage() {
             </h3>
           </div>
           <p className="mb-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Configure your Lightning address to receive tips from satisfied customers.
+            Configure your Lightning address to receive tips from satisfied customers. This is
+            stored in your Microsoft profile.
           </p>
+
+          {lightningError && (
+            <div
+              className="mb-4 rounded-md p-3 text-sm"
+              style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--priority-urgent)' }}
+            >
+              {lightningError}
+            </div>
+          )}
 
           <div className="space-y-4">
             <div>
@@ -222,17 +260,30 @@ export default function ProfilePage() {
                 Lightning Address
               </label>
               <div className="flex gap-2">
-                <input
-                  id="lightning-address"
-                  type="text"
-                  placeholder="yourname@getalby.com"
-                  value={lightningAddress}
-                  onChange={(e) => setLightningAddress(e.target.value)}
-                  className="input flex-1"
-                />
+                {isLoadingLightning ? (
+                  <div className="input flex flex-1 items-center">
+                    <Loader2
+                      className="animate-spin"
+                      size={16}
+                      style={{ color: 'var(--text-muted)' }}
+                    />
+                    <span className="ml-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+                      Loading...
+                    </span>
+                  </div>
+                ) : (
+                  <input
+                    id="lightning-address"
+                    type="text"
+                    placeholder="yourname@getalby.com"
+                    value={lightningAddress}
+                    onChange={(e) => setLightningAddress(e.target.value)}
+                    className="input flex-1"
+                  />
+                )}
                 <button
                   onClick={saveLightningAddress}
-                  disabled={isSavingLightning}
+                  disabled={isSavingLightning || isLoadingLightning}
                   className="btn-primary flex items-center gap-2"
                 >
                   {lightningAddressSaved ? (
