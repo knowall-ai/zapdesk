@@ -217,7 +217,7 @@ export default function TicketDetail({
                   </span>
                 </div>
                 <div
-                  className="prose prose-sm prose-invert max-w-none"
+                  className="prose prose-sm prose-invert user-content max-w-none"
                   style={{ color: 'var(--text-secondary)' }}
                   dangerouslySetInnerHTML={{
                     __html: ticket.description || '<em>No description provided</em>',
@@ -258,7 +258,7 @@ export default function TicketDetail({
                     </span>
                   </div>
                   <div
-                    className="text-sm"
+                    className="user-content text-sm"
                     style={{ color: 'var(--text-secondary)' }}
                     dangerouslySetInnerHTML={{ __html: comment.content }}
                   />
