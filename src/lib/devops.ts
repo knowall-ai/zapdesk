@@ -854,7 +854,7 @@ export class AzureDevOpsService {
       .map((wi: DevOpsWorkItem) => this.mapToFeature(wi, epicId));
   }
 
-  // Get Work Items under a Feature
+  // Get Tasks under a Feature (handles both direct Tasks and Tasks under User Stories)
   async getWorkItemsByFeature(projectName: string, featureId: number): Promise<WorkItem[]> {
     const response = await fetch(
       `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${featureId}?$expand=relations&api-version=7.0`,
@@ -882,9 +882,9 @@ export class AzureDevOpsService {
       return [];
     }
 
-    // Fetch Work Item details
+    // Fetch direct children with relations (could be User Stories or Tasks)
     const workItemsResponse = await fetch(
-      `${this.baseUrl}/_apis/wit/workitems?ids=${childIds.join(',')}&$expand=all&api-version=7.0`,
+      `${this.baseUrl}/_apis/wit/workitems?ids=${childIds.join(',')}&$expand=relations&api-version=7.0`,
       { headers: this.headers }
     );
 
@@ -893,10 +893,50 @@ export class AzureDevOpsService {
     }
 
     const workItemsData = await workItemsResponse.json();
-    // Filter to Tasks only (ignore User Stories)
-    return workItemsData.value
-      .filter((wi: DevOpsWorkItem) => wi.fields['System.WorkItemType'] === 'Task')
-      .map((wi: DevOpsWorkItem) => this.mapToWorkItem(wi, featureId));
+    const allTasks: WorkItem[] = [];
+    const grandchildIds: number[] = [];
+
+    // Process direct children - collect Tasks and find grandchildren (Tasks under User Stories)
+    for (const wi of workItemsData.value as DevOpsWorkItem[]) {
+      const type = wi.fields['System.WorkItemType'];
+
+      if (type === 'Task') {
+        // Direct Task child of Feature
+        allTasks.push(this.mapToWorkItem(wi, featureId));
+      } else {
+        // User Story or other parent type - look for Task children
+        const wiWithRelations = wi as DevOpsWorkItem & {
+          relations?: Array<{ rel: string; url: string }>;
+        };
+        for (const relation of wiWithRelations.relations || []) {
+          if (relation.rel === 'System.LinkTypes.Hierarchy-Forward' && relation.url) {
+            const idMatch = relation.url.match(/workItems\/(\d+)/);
+            if (idMatch) {
+              grandchildIds.push(parseInt(idMatch[1], 10));
+            }
+          }
+        }
+      }
+    }
+
+    // Fetch grandchildren (Tasks under User Stories)
+    if (grandchildIds.length > 0) {
+      const grandchildResponse = await fetch(
+        `${this.baseUrl}/_apis/wit/workitems?ids=${grandchildIds.join(',')}&$expand=all&api-version=7.0`,
+        { headers: this.headers }
+      );
+
+      if (grandchildResponse.ok) {
+        const grandchildData = await grandchildResponse.json();
+        for (const wi of grandchildData.value as DevOpsWorkItem[]) {
+          if (wi.fields['System.WorkItemType'] === 'Task') {
+            allTasks.push(this.mapToWorkItem(wi, featureId));
+          }
+        }
+      }
+    }
+
+    return allTasks;
   }
 
   // Get full Epic hierarchy with Features and Work Items for treemap
