@@ -19,16 +19,20 @@ export function useDevOpsApi() {
    * @param url - API endpoint URL
    * @param options - Standard fetch options
    * @returns Promise with fetch response
+   * @throws Error if no organization is selected
    */
   const fetchDevOps = useCallback(
     async (url: string, options: FetchOptions = {}): Promise<Response> => {
+      if (!selectedOrganization?.accountName) {
+        throw new Error(
+          'No organization selected. Please select an organization before making API calls.'
+        );
+      }
+
       const headers: Record<string, string> = {
         ...options.headers,
+        'x-devops-org': selectedOrganization.accountName,
       };
-
-      if (selectedOrganization?.accountName) {
-        headers['x-devops-org'] = selectedOrganization.accountName;
-      }
 
       return fetch(url, {
         ...options,

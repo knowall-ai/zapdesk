@@ -43,6 +43,9 @@
   /* Warning colors */
   --warning: #eab308;
   --warning-light: #fbbf24;
+  --warning-bg: rgba(234, 179, 8, 0.08);
+  --warning-bg-hover: rgba(234, 179, 8, 0.1);
+  --warning-border: rgba(234, 179, 8, 0.3);
 
   /* Sidebar */
   --sidebar-bg: #0a0c10;
@@ -374,11 +377,12 @@ body {
 .kanban-card-unrecognized {
   border-color: var(--warning);
   border-width: 2px;
-  background: rgba(234, 179, 8, 0.08);
+  background: var(--warning-bg);
 }
 
 .kanban-card-unrecognized:hover {
   border-color: var(--warning-light);
+  background: var(--warning-bg-hover);
 }
 
 .kanban-card a {

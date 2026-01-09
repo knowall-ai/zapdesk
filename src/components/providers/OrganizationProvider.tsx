@@ -64,10 +64,17 @@ export default function OrganizationProvider({ children }: Props) {
       if (orgs.length > 0) {
         const storedOrgName = localStorage.getItem(STORAGE_KEY);
         const storedOrg = storedOrgName ? orgs.find((o) => o.accountName === storedOrgName) : null;
-        const orgToSelect = storedOrg || orgs[0];
 
-        setSelectedOrgState(orgToSelect);
-        localStorage.setItem(STORAGE_KEY, orgToSelect.accountName);
+        if (storedOrg) {
+          setSelectedOrgState(storedOrg);
+        } else {
+          // Stored org not found (renamed/removed/new user) - use first org and clear stale cache
+          if (storedOrgName) {
+            localStorage.removeItem(STORAGE_KEY);
+          }
+          setSelectedOrgState(orgs[0]);
+          localStorage.setItem(STORAGE_KEY, orgs[0].accountName);
+        }
       }
     } catch (err) {
       // Only update state if this request is still current
