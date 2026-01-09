@@ -18,6 +18,13 @@ export default function TicketDetailPage() {
   const [comments, setComments] = useState<TicketComment[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Reset state when navigating to a different ticket
+  useEffect(() => {
+    setTicket(null);
+    setComments([]);
+    setLoading(true);
+  }, [ticketId]);
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login');
@@ -152,6 +159,7 @@ export default function TicketDetailPage() {
   return (
     <MainLayout>
       <TicketDetail
+        key={ticketId}
         ticket={ticket}
         comments={comments}
         onAddComment={handleAddComment}
