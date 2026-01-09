@@ -13,7 +13,7 @@ export const tMinus15Config: ProcessTemplateConfig = {
 
   workItemTypes: {
     // Ticket types - must be tagged with "ticket" to appear in DevDesk
-    ticketTypes: ['Task', 'Bug', 'Enhancement', 'Issue'],
+    ticketTypes: ['Task', 'Bug', 'Enhancement', 'Issue', 'Risk', 'Question'],
     defaultTicketType: 'Task',
 
     // Feature and Epic types for hierarchy
