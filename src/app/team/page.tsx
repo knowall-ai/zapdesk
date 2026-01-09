@@ -385,7 +385,7 @@ export default function TeamPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full" aria-label="Team members performance metrics">
+              <table className="w-full table-fixed" aria-label="Team members performance metrics">
                 <thead>
                   <tr className="table-header">
                     <th
@@ -396,7 +396,7 @@ export default function TeamPage() {
                       <SortIcon column="name" />
                     </th>
                     <th
-                      className="w-64 cursor-pointer px-4 py-3 text-left text-xs font-medium tracking-wider uppercase hover:bg-[var(--surface-hover)]"
+                      className="hidden w-64 cursor-pointer px-4 py-3 text-left text-xs font-medium tracking-wider uppercase hover:bg-[var(--surface-hover)] md:table-cell"
                       onClick={() => handleSort('resolved')}
                     >
                       <div className="flex items-center gap-2">
@@ -417,21 +417,21 @@ export default function TeamPage() {
                       </div>
                     </th>
                     <th
-                      className="cursor-pointer px-4 py-3 text-center text-xs font-medium tracking-wider uppercase hover:bg-[var(--surface-hover)]"
+                      className="hidden cursor-pointer px-4 py-3 text-center text-xs font-medium tracking-wider uppercase hover:bg-[var(--surface-hover)] md:table-cell"
                       onClick={() => handleSort('weeklyResolved')}
                     >
                       Weekly Resolved
                       <SortIcon column="weeklyResolved" />
                     </th>
                     <th
-                      className="cursor-pointer px-4 py-3 text-center text-xs font-medium tracking-wider uppercase hover:bg-[var(--surface-hover)]"
+                      className="hidden cursor-pointer px-4 py-3 text-center text-xs font-medium tracking-wider uppercase hover:bg-[var(--surface-hover)] md:table-cell"
                       onClick={() => handleSort('avgResponse')}
                     >
                       Avg Response
                       <SortIcon column="avgResponse" />
                     </th>
                     <th
-                      className="cursor-pointer px-4 py-3 text-center text-xs font-medium tracking-wider uppercase hover:bg-[var(--surface-hover)]"
+                      className="hidden cursor-pointer px-4 py-3 text-center text-xs font-medium tracking-wider uppercase hover:bg-[var(--surface-hover)] md:table-cell"
                       onClick={() => handleSort('avgResolution')}
                     >
                       Avg Resolution
@@ -453,19 +453,25 @@ export default function TeamPage() {
                     return (
                       <tr key={member.id} className="table-row">
                         <td className="px-4 py-4">
-                          <div className="flex items-center gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
                             <Avatar name={member.displayName} size="md" image={member.avatarUrl} />
-                            <div>
-                              <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                            <div className="min-w-0 flex-1">
+                              <p
+                                className="truncate font-medium"
+                                style={{ color: 'var(--text-primary)' }}
+                              >
                                 {member.displayName}
                               </p>
-                              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                              <p
+                                className="truncate text-sm"
+                                style={{ color: 'var(--text-muted)' }}
+                              >
                                 {member.email}
                               </p>
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-4">
+                        <td className="hidden px-4 py-4 md:table-cell">
                           <div className="space-y-1">
                             {/* Assigned bar */}
                             <div
@@ -503,7 +509,7 @@ export default function TeamPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-4 text-center">
+                        <td className="hidden px-4 py-4 text-center md:table-cell">
                           <div className="flex items-center justify-center gap-2">
                             <TrendingUp size={16} style={{ color: 'var(--status-resolved)' }} />
                             <span style={{ color: 'var(--text-primary)' }}>
@@ -523,12 +529,12 @@ export default function TeamPage() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-4 text-center">
+                        <td className="hidden px-4 py-4 text-center md:table-cell">
                           <span style={{ color: 'var(--text-secondary)' }}>
                             {member.avgResponseTime}
                           </span>
                         </td>
-                        <td className="px-4 py-4 text-center">
+                        <td className="hidden px-4 py-4 text-center md:table-cell">
                           <span style={{ color: 'var(--text-secondary)' }}>
                             {member.avgResolutionTime}
                           </span>
