@@ -36,10 +36,15 @@ export default function TicketDetailPage() {
           updatedAt: new Date(data.ticket.updatedAt),
         });
         setComments(
-          data.comments.map((c: TicketComment & { createdAt: string }) => ({
-            ...c,
-            createdAt: new Date(c.createdAt),
-          }))
+          data.comments
+            .map((c: TicketComment & { createdAt: string }) => ({
+              ...c,
+              createdAt: new Date(c.createdAt),
+            }))
+            // Sort by date ascending (oldest first, newest at bottom)
+            .sort(
+              (a: TicketComment, b: TicketComment) => a.createdAt.getTime() - b.createdAt.getTime()
+            )
         );
       } else {
         router.push('/tickets');

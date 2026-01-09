@@ -13,12 +13,14 @@ import {
   Search,
   Loader2,
   User as UserIcon,
+  Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 import type { Ticket, TicketComment, User, TicketPriority } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
+import ZapDialog from './ZapDialog';
 
 interface TicketDetailProps {
   ticket: Ticket;
@@ -40,12 +42,25 @@ export default function TicketDetail({
   ticket,
   comments,
   onAddComment,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onStatusChange: _onStatusChange,
   onAssigneeChange,
   onPriorityChange,
 }: TicketDetailProps) {
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
+
+  const handleZapSent = async (amount: number) => {
+    if (onAddComment) {
+      const zapMessage = `⚡ Sent a ${amount.toLocaleString()} sat zap to ${ticket.assignee?.displayName || 'the agent'} for great support!`;
+      try {
+        await onAddComment(zapMessage);
+      } catch (err) {
+        console.error('[TicketDetail] Failed to post zap comment:', err);
+      }
+    }
+  };
 
   // Assignee editing state
   const [isAssigneeDropdownOpen, setIsAssigneeDropdownOpen] = useState(false);
@@ -63,6 +78,7 @@ export default function TicketDetail({
     if (isAssigneeDropdownOpen && teamMembers.length === 0 && ticket.project) {
       fetchTeamMembers();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAssigneeDropdownOpen, ticket.project]);
 
   const fetchTeamMembers = async () => {
@@ -155,6 +171,7 @@ export default function TicketDetail({
             <h1 className="flex-1 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
               {ticket.title}
             </h1>
+            {/* Zap button moved to comment area */}
             <a
               href={ticket.devOpsUrl}
               target="_blank"
@@ -200,7 +217,7 @@ export default function TicketDetail({
                   </span>
                 </div>
                 <div
-                  className="prose prose-sm prose-invert max-w-none"
+                  className="prose prose-sm prose-invert user-content max-w-none"
                   style={{ color: 'var(--text-secondary)' }}
                   dangerouslySetInnerHTML={{
                     __html: ticket.description || '<em>No description provided</em>',
@@ -218,7 +235,11 @@ export default function TicketDetail({
               style={comment.isInternal ? { borderLeftColor: 'var(--status-pending)' } : {}}
             >
               <div className="flex items-start gap-3">
-                <Avatar name={comment.author.displayName} size="md" />
+                <Avatar
+                  name={comment.author.displayName}
+                  image={comment.author.avatarUrl}
+                  size="md"
+                />
                 <div className="flex-1">
                   <div className="mb-2 flex items-center gap-2">
                     <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -237,7 +258,7 @@ export default function TicketDetail({
                     </span>
                   </div>
                   <div
-                    className="text-sm"
+                    className="user-content text-sm"
                     style={{ color: 'var(--text-secondary)' }}
                     dangerouslySetInnerHTML={{ __html: comment.content }}
                   />
@@ -270,11 +291,23 @@ export default function TicketDetail({
             />
             <div className="absolute right-3 bottom-3 flex items-center gap-2">
               <button
+                onClick={() => alert('Attachments not yet implemented')}
                 className="rounded p-2 transition-colors hover:bg-[var(--surface-hover)]"
                 style={{ color: 'var(--text-muted)' }}
+                title="Attach file"
               >
                 <Paperclip size={18} />
               </button>
+              {ticket.assignee && (
+                <button
+                  onClick={() => setIsZapDialogOpen(true)}
+                  className="zap-btn flex items-center justify-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+                  title={`Send a tip to ${ticket.assignee.displayName}`}
+                >
+                  <Zap size={16} />
+                  Zap
+                </button>
+              )}
               <button
                 onClick={handleSubmitComment}
                 disabled={!newComment.trim() || isSubmitting}
@@ -551,6 +584,17 @@ export default function TicketDetail({
           </div>
         </div>
       </div>
+
+      {/* Zap Dialog */}
+      {ticket.assignee && (
+        <ZapDialog
+          isOpen={isZapDialogOpen}
+          onClose={() => setIsZapDialogOpen(false)}
+          agent={ticket.assignee}
+          ticketId={ticket.workItemId}
+          onZapSent={handleZapSent}
+        />
+      )}
     </div>
   );
 }

@@ -41,6 +41,7 @@ export async function GET() {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function calculateAvgResponseTime(_tickets: Ticket[]): string {
   // This would need actual first response data from DevOps
   // For now, return a placeholder

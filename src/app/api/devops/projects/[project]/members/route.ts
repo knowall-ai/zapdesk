@@ -15,8 +15,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { project } = await params;
-    const _projectName = decodeURIComponent(project);
+    await params; // Consume params to satisfy Next.js
 
     const devopsService = new AzureDevOpsService(session.accessToken);
 

@@ -168,3 +168,23 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
   pageSize: number;
   hasMore: boolean;
 }
+
+// Zap (Lightning Network) types
+export interface ZapConfig {
+  lightningAddress: string;
+  presetAmounts: number[]; // in satoshis
+  customAmountsEnabled: boolean;
+}
+
+export interface ZapPayment {
+  id: string;
+  ticketId: number;
+  agentId: string;
+  agentName: string;
+  agentLightningAddress: string;
+  amount: number; // in satoshis
+  timestamp: Date;
+  message?: string;
+}
+
+export const DEFAULT_ZAP_PRESETS = [100, 500, 1000, 5000] as const;

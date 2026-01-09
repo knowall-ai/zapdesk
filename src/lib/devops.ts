@@ -229,7 +229,7 @@ export class AzureDevOpsService {
           id: number;
           text: string;
           createdDate: string;
-          createdBy: { displayName: string; uniqueName: string; id: string };
+          createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string };
         }) => ({
           id: c.id,
           content: c.text,
@@ -238,6 +238,7 @@ export class AzureDevOpsService {
             id: c.createdBy.id,
             displayName: c.createdBy.displayName,
             email: c.createdBy.uniqueName,
+            avatarUrl: c.createdBy.imageUrl,
           },
           isInternal: false,
         })

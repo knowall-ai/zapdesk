@@ -48,7 +48,10 @@ function getColorFromName(name: string): string {
 
 export default function Avatar({ name, image, size = 'md', className = '' }: AvatarProps) {
   if (image) {
+    // Using <img> instead of next/image because Azure DevOps avatar URLs
+    // require authentication and can't be optimized server-side
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={image}
         alt={name}
