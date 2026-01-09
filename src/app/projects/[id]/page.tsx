@@ -9,6 +9,7 @@ import { ArrowLeft, ExternalLink, Ticket, Loader2, Info } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import type { Organization, Ticket as TicketType, SLALevel } from '@/types';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 
 interface ProjectWithSLA extends Organization {
   sla?: SLALevel;
@@ -18,6 +19,7 @@ export default function ProjectDetailPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const params = useParams();
+  const { selectedOrganization } = useOrganization();
   const [project, setProject] = useState<ProjectWithSLA | null>(null);
   const [tickets, setTickets] = useState<TicketType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,55 +34,65 @@ export default function ProjectDetailPage() {
   }, [status, router]);
 
   useEffect(() => {
-    if (session?.accessToken && projectId) {
+    if (session?.accessToken && projectId && selectedOrganization) {
       fetchProject();
       fetchProjectTickets();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, projectId]);
 
-  const fetchProject = async () => {
-    try {
-      const response = await fetch('/api/devops/projects');
-      if (response.ok) {
-        const data = await response.json();
-        // API returns data.projects, not data.organizations
-        const projectsList = data.projects || [];
-        const proj = projectsList.find(
-          (p: ProjectWithSLA) =>
-            p.id === projectId || p.devOpsProject === projectId || p.name === projectId
-        );
-        if (proj) {
-          setProject({
-            ...proj,
-            createdAt: new Date(proj.createdAt),
-            updatedAt: new Date(proj.updatedAt),
-          });
+    async function fetchProject() {
+      try {
+        const headers: HeadersInit = {};
+        if (selectedOrganization?.accountName) {
+          headers['x-devops-org'] = selectedOrganization.accountName;
         }
+        const response = await fetch('/api/devops/projects', { headers });
+        if (response.ok) {
+          const data = await response.json();
+          // API returns data.projects, not data.organizations
+          const projectsList = data.projects || [];
+          const proj = projectsList.find(
+            (p: ProjectWithSLA) =>
+              p.id === projectId || p.devOpsProject === projectId || p.name === projectId
+          );
+          if (proj) {
+            setProject({
+              ...proj,
+              createdAt: new Date(proj.createdAt),
+              updatedAt: new Date(proj.updatedAt),
+            });
+          } else {
+            setProject(null);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch project:', error);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error('Failed to fetch project:', error);
-    } finally {
-      setLoading(false);
     }
-  };
 
-  const fetchProjectTickets = async () => {
-    setLoadingTickets(true);
-    try {
-      const response = await fetch(
-        `/api/devops/tickets?organization=${encodeURIComponent(projectId)}`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setTickets(data.tickets || []);
+    async function fetchProjectTickets() {
+      setLoadingTickets(true);
+      try {
+        const headers: HeadersInit = {};
+        if (selectedOrganization?.accountName) {
+          headers['x-devops-org'] = selectedOrganization.accountName;
+        }
+        const response = await fetch(
+          `/api/devops/tickets?project=${encodeURIComponent(projectId)}`,
+          { headers }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          setTickets(data.tickets || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch tickets:', error);
+      } finally {
+        setLoadingTickets(false);
       }
-    } catch (error) {
-      console.error('Failed to fetch tickets:', error);
-    } finally {
-      setLoadingTickets(false);
     }
-  };
+  }, [session, projectId, selectedOrganization]);
 
   if (status === 'loading' || loading) {
     return (
