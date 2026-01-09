@@ -441,11 +441,4 @@ body {
   .activity-calendar-wrapper svg > text:not(:first-of-type):not(:last-of-type) {
     display: none;
   }
-
-  /* Hide the footer with activity count */
-  .activity-calendar-wrapper footer,
-  .activity-calendar-wrapper > div > footer,
-  .activity-calendar-wrapper article > footer {
-    display: none !important;
-  }
 }
