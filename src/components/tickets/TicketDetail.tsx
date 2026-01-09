@@ -390,10 +390,18 @@ export default function TicketDetail({
           style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
         >
           <div className="mb-3 flex items-center gap-2">
-            <span className="rounded-md bg-[var(--primary)] px-3 py-1.5 text-sm text-white">
-              Public reply
-            </span>
-            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            <label className="flex cursor-not-allowed items-center gap-2">
+              <input
+                type="checkbox"
+                checked
+                disabled
+                className="h-4 w-4 rounded accent-[var(--primary)]"
+              />
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                Public reply
+              </span>
+            </label>
+            <span className="text-xs font-medium" style={{ color: 'var(--primary)' }}>
               All comments are visible to customers in DevOps
             </span>
           </div>
