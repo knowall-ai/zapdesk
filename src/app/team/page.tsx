@@ -275,7 +275,8 @@ export default function TeamPage() {
                   Team Activity
                 </h2>
                 <p className="hidden text-sm sm:block" style={{ color: 'var(--text-muted)' }}>
-                  {filteredActivityData?.totalActivities || 0} activities in the last year
+                  {filteredActivityData?.totalActivities || 0} activities in{' '}
+                  {new Date().getFullYear()}
                 </p>
               </div>
               <div
