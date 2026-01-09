@@ -4,7 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { MainLayout } from '@/components/layout';
-import { LoadingSpinner } from '@/components/common';
+import { LoadingSpinner, AzureDevOpsIcon } from '@/components/common';
 import { Settings, Code2, CheckCircle, XCircle } from 'lucide-react';
 import { getSupportedTemplates, getTemplateConfig } from '@/config/process-templates';
 
@@ -69,9 +69,12 @@ export default function AdminPage() {
               return (
                 <div key={config.id} className="card p-4" style={{ borderColor: 'var(--border)' }}>
                   <div className="mb-3 flex items-center justify-between">
-                    <h3 className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                      {config.name}
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <AzureDevOpsIcon size={20} />
+                      <h3 className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                        {config.name}
+                      </h3>
+                    </div>
                     <CheckCircle size={18} className="text-green-500" />
                   </div>
 
