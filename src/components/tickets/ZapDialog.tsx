@@ -324,6 +324,7 @@ function ZapDialogContent({
                 onFocus={() => setIsCustom(true)}
                 className="input flex-1"
                 min="1"
+                max="1000000"
               />
               <span
                 className="flex items-center px-3 text-sm"
