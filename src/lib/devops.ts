@@ -893,7 +893,10 @@ export class AzureDevOpsService {
     }
 
     const workItemsData = await workItemsResponse.json();
-    return workItemsData.value.map((wi: DevOpsWorkItem) => this.mapToWorkItem(wi, featureId));
+    // Filter to Tasks only (ignore User Stories)
+    return workItemsData.value
+      .filter((wi: DevOpsWorkItem) => wi.fields['System.WorkItemType'] === 'Task')
+      .map((wi: DevOpsWorkItem) => this.mapToWorkItem(wi, featureId));
   }
 
   // Get full Epic hierarchy with Features and Work Items for treemap
@@ -922,6 +925,9 @@ export class AzureDevOpsService {
       feature.remainingWork = feature.workItems.reduce((sum, wi) => sum + wi.remainingWork, 0);
       feature.totalWork = feature.completedWork + feature.remainingWork;
     }
+
+    // Sort features by stackRank (lower = higher priority / earlier in chain)
+    features.sort((a, b) => (a.stackRank || 0) - (b.stackRank || 0));
 
     epic.features = features;
     // Calculate totals for epic
@@ -1018,6 +1024,7 @@ export class AzureDevOpsService {
       updatedAt: new Date(fields['System.ChangedDate']),
       completedWork: (fields['Microsoft.VSTS.Scheduling.CompletedWork'] as number) || 0,
       remainingWork: (fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number) || 0,
+      originalEstimate: (fields['Microsoft.VSTS.Scheduling.OriginalEstimate'] as number) || 0,
       totalWork: 0,
       workItems: [],
       devOpsUrl:
@@ -1029,6 +1036,7 @@ export class AzureDevOpsService {
           .map((t: string) => t.trim())
           .filter(Boolean) || [],
       priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
+      stackRank: (fields['Microsoft.VSTS.Common.StackRank'] as number) || 0,
     };
   }
 

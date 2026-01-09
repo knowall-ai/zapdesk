@@ -315,11 +315,13 @@ export interface Feature {
   updatedAt: Date;
   completedWork: number;
   remainingWork: number;
+  originalEstimate: number;
   totalWork: number;
   workItems: WorkItem[];
   devOpsUrl: string;
   tags: string[];
   priority?: TicketPriority;
+  stackRank?: number; // For ordering features
 }
 
 export interface WorkItem {
