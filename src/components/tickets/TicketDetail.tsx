@@ -221,6 +221,7 @@ export default function TicketDetail({
               onClick={() => setIsDetailsSidebarOpen(true)}
               className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)] lg:hidden"
               style={{ color: 'var(--text-secondary)' }}
+              aria-label="Show ticket details"
             >
               <Info size={16} />
               Details
@@ -447,10 +448,7 @@ export default function TicketDetail({
         <div
           className="fixed inset-0 z-40 bg-black/50 lg:hidden"
           onClick={() => setIsDetailsSidebarOpen(false)}
-          onKeyDown={(e) => e.key === 'Escape' && setIsDetailsSidebarOpen(false)}
-          role="button"
-          tabIndex={0}
-          aria-label="Close details sidebar"
+          aria-hidden="true"
         />
       )}
 

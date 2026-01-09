@@ -303,7 +303,10 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                       </div>
                     )}
                   </div>
-                  <button className="btn-secondary flex items-center gap-1 text-sm sm:gap-2">
+                  <button
+                    className="btn-secondary flex items-center gap-1 text-sm sm:gap-2"
+                    aria-label="Play tickets"
+                  >
                     <Play size={16} />
                     <span className="hidden sm:inline">Play</span>
                   </button>

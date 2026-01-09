@@ -30,12 +30,16 @@ const projectColors = [
 ];
 
 function getProjectInitials(name: string): string {
-  return name
-    .split(' ')
-    .map((word) => word[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
+  if (!name?.trim()) return '?';
+  return (
+    name
+      .split(' ')
+      .filter((word) => word.length > 0)
+      .map((word) => word[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2) || '?'
+  );
 }
 
 export default function ProjectList({
@@ -69,6 +73,7 @@ export default function ProjectList({
               className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-[var(--surface-hover)]"
               style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
               title={`Sort ${sortOrder === 'asc' ? 'Z-A' : 'A-Z'}`}
+              aria-label={`Sort projects ${sortOrder === 'asc' ? 'Z to A' : 'A to Z'}`}
             >
               <ArrowUpDown size={14} />
               {sortOrder === 'asc' ? 'A-Z' : 'Z-A'}
