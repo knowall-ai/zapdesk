@@ -48,6 +48,15 @@ export default function TeamPage() {
   const [error, setError] = useState<string | null>(null);
   const [sortColumn, setSortColumn] = useState<SortColumn>('resolved');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile screen size
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 640);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -105,6 +114,28 @@ export default function TeamPage() {
   const maxResolved = React.useMemo(() => {
     return teamData?.members ? Math.max(...teamData.members.map((m) => m.ticketsResolved), 1) : 1;
   }, [teamData?.members]);
+
+  // Filter activity data - show only last 3 months on mobile
+  const filteredActivityData = React.useMemo(() => {
+    if (!activityData?.activities) return null;
+
+    if (isMobile) {
+      const threeMonthsAgo = new Date();
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      const cutoffDate = threeMonthsAgo.toISOString().split('T')[0];
+
+      const filteredActivities = activityData.activities.filter(
+        (activity) => activity.date >= cutoffDate
+      );
+
+      return {
+        activities: filteredActivities,
+        totalActivities: filteredActivities.reduce((sum, a) => sum + a.count, 0),
+      };
+    }
+
+    return activityData;
+  }, [activityData, isMobile]);
 
   // Sort members (must be before conditional returns)
   const sortedMembers = React.useMemo(() => {
@@ -244,7 +275,7 @@ export default function TeamPage() {
                   Team Activity
                 </h2>
                 <p className="hidden text-sm sm:block" style={{ color: 'var(--text-muted)' }}>
-                  {activityData?.totalActivities || 0} activities in the last year
+                  {filteredActivityData?.totalActivities || 0} activities in the last year
                 </p>
               </div>
               <div
@@ -260,11 +291,11 @@ export default function TeamPage() {
               <div className="flex h-32 items-center justify-center">
                 <LoadingSpinner size="md" message="Loading activity data..." />
               </div>
-            ) : activityData?.activities && activityData.activities.length > 0 ? (
-              <div className="activity-calendar-wrapper w-full overflow-hidden">
-                <div className="flex min-w-0 justify-center overflow-x-auto">
+            ) : filteredActivityData?.activities && filteredActivityData.activities.length > 0 ? (
+              <div className="activity-calendar-wrapper w-full">
+                <div className="flex min-w-0 justify-center">
                   <ActivityCalendar
-                    data={activityData.activities}
+                    data={filteredActivityData.activities}
                     blockSize={12}
                     blockMargin={4}
                     blockRadius={3}
