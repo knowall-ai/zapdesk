@@ -9,6 +9,11 @@ import type {
   User,
   Organization,
   TicketComment,
+  Epic,
+  Feature,
+  WorkItem,
+  EpicType,
+  TreemapNode,
 } from '@/types';
 
 const DEVOPS_ORG = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
@@ -751,6 +756,310 @@ export class AzureDevOpsService {
     }
 
     return users;
+  }
+
+  // Get all Epics from a project
+  async getEpics(projectName: string): Promise<Epic[]> {
+    const wiql = {
+      query: `
+        SELECT [System.Id], [System.Title], [System.State], [System.CreatedDate],
+               [System.ChangedDate], [System.Description], [System.Tags],
+               [System.AreaPath], [System.TeamProject],
+               [Microsoft.VSTS.Scheduling.CompletedWork],
+               [Microsoft.VSTS.Scheduling.RemainingWork],
+               [Microsoft.VSTS.Scheduling.OriginalEstimate]
+        FROM WorkItems
+        WHERE [System.TeamProject] = '${projectName}'
+          AND [System.WorkItemType] = 'Epic'
+        ORDER BY [System.ChangedDate] DESC
+      `,
+    };
+
+    const queryResponse = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/wiql?api-version=7.0`,
+      {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify(wiql),
+      }
+    );
+
+    if (!queryResponse.ok) {
+      throw new Error(`Failed to query epics: ${queryResponse.statusText}`);
+    }
+
+    const queryData = await queryResponse.json();
+    const workItemIds = queryData.workItems?.map((wi: { id: number }) => wi.id) || [];
+
+    if (workItemIds.length === 0) {
+      return [];
+    }
+
+    // Fetch work item details
+    const workItemsResponse = await fetch(
+      `${this.baseUrl}/_apis/wit/workitems?ids=${workItemIds.join(',')}&$expand=all&api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!workItemsResponse.ok) {
+      throw new Error(`Failed to fetch epics: ${workItemsResponse.statusText}`);
+    }
+
+    const workItemsData = await workItemsResponse.json();
+    return workItemsData.value.map((wi: DevOpsWorkItem) => this.mapToEpic(wi));
+  }
+
+  // Get Features under an Epic
+  async getFeaturesByEpic(projectName: string, epicId: number): Promise<Feature[]> {
+    // Use work item links to get children
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${epicId}?$expand=relations&api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch epic relations: ${response.statusText}`);
+    }
+
+    const epicData = await response.json();
+    const childIds: number[] = [];
+
+    // Find child links (Features)
+    for (const relation of epicData.relations || []) {
+      if (relation.rel === 'System.LinkTypes.Hierarchy-Forward' && relation.url) {
+        const idMatch = relation.url.match(/workItems\/(\d+)/);
+        if (idMatch) {
+          childIds.push(parseInt(idMatch[1], 10));
+        }
+      }
+    }
+
+    if (childIds.length === 0) {
+      return [];
+    }
+
+    // Fetch Feature details
+    const featuresResponse = await fetch(
+      `${this.baseUrl}/_apis/wit/workitems?ids=${childIds.join(',')}&$expand=all&api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!featuresResponse.ok) {
+      throw new Error(`Failed to fetch features: ${featuresResponse.statusText}`);
+    }
+
+    const featuresData = await featuresResponse.json();
+    return featuresData.value
+      .filter((wi: DevOpsWorkItem) => wi.fields['System.WorkItemType'] === 'Feature')
+      .map((wi: DevOpsWorkItem) => this.mapToFeature(wi, epicId));
+  }
+
+  // Get Work Items under a Feature
+  async getWorkItemsByFeature(projectName: string, featureId: number): Promise<WorkItem[]> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${featureId}?$expand=relations&api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch feature relations: ${response.statusText}`);
+    }
+
+    const featureData = await response.json();
+    const childIds: number[] = [];
+
+    // Find child links (Work Items: User Story, Task, Bug, etc.)
+    for (const relation of featureData.relations || []) {
+      if (relation.rel === 'System.LinkTypes.Hierarchy-Forward' && relation.url) {
+        const idMatch = relation.url.match(/workItems\/(\d+)/);
+        if (idMatch) {
+          childIds.push(parseInt(idMatch[1], 10));
+        }
+      }
+    }
+
+    if (childIds.length === 0) {
+      return [];
+    }
+
+    // Fetch Work Item details
+    const workItemsResponse = await fetch(
+      `${this.baseUrl}/_apis/wit/workitems?ids=${childIds.join(',')}&$expand=all&api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!workItemsResponse.ok) {
+      throw new Error(`Failed to fetch work items: ${workItemsResponse.statusText}`);
+    }
+
+    const workItemsData = await workItemsResponse.json();
+    return workItemsData.value.map((wi: DevOpsWorkItem) => this.mapToWorkItem(wi, featureId));
+  }
+
+  // Get full Epic hierarchy with Features and Work Items for treemap
+  async getEpicHierarchy(projectName: string, epicId: number): Promise<Epic> {
+    // Get epic details
+    const epicResponse = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${epicId}?$expand=all&api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!epicResponse.ok) {
+      throw new Error(`Failed to fetch epic: ${epicResponse.statusText}`);
+    }
+
+    const epicData = await epicResponse.json();
+    const epic = this.mapToEpic(epicData);
+
+    // Get features
+    const features = await this.getFeaturesByEpic(projectName, epicId);
+
+    // Get work items for each feature
+    for (const feature of features) {
+      feature.workItems = await this.getWorkItemsByFeature(projectName, feature.id);
+      // Calculate totals
+      feature.completedWork = feature.workItems.reduce((sum, wi) => sum + wi.completedWork, 0);
+      feature.remainingWork = feature.workItems.reduce((sum, wi) => sum + wi.remainingWork, 0);
+      feature.totalWork = feature.completedWork + feature.remainingWork;
+    }
+
+    epic.features = features;
+    // Calculate totals for epic
+    epic.completedWork = features.reduce((sum, f) => sum + f.completedWork, 0);
+    epic.remainingWork = features.reduce((sum, f) => sum + f.remainingWork, 0);
+    epic.totalWork = epic.completedWork + epic.remainingWork;
+
+    return epic;
+  }
+
+  // Convert Epic hierarchy to Treemap data structure
+  epicToTreemap(epic: Epic): TreemapNode {
+    return {
+      name: epic.title,
+      id: epic.id,
+      value: epic.totalWork || 1, // Use 1 as minimum to ensure visibility
+      state: epic.state,
+      type: 'epic',
+      devOpsUrl: epic.devOpsUrl,
+      children: epic.features.map((feature) => ({
+        name: feature.title,
+        id: feature.id,
+        value: feature.totalWork || 1,
+        state: feature.state,
+        type: 'feature' as const,
+        priority: feature.priority,
+        devOpsUrl: feature.devOpsUrl,
+        children: feature.workItems.map((wi) => ({
+          name: wi.title,
+          id: wi.id,
+          value: wi.completedWork || wi.originalEstimate || 1,
+          state: wi.state,
+          type: 'workitem' as const,
+          priority: wi.priority,
+          workItemType: wi.workItemType,
+          devOpsUrl: wi.devOpsUrl,
+        })),
+      })),
+    };
+  }
+
+  // Helper: Map DevOps work item to Epic
+  private mapToEpic(wi: DevOpsWorkItem): Epic {
+    const fields = wi.fields;
+    const tags =
+      fields['System.Tags']
+        ?.split(';')
+        .map((t: string) => t.trim())
+        .filter(Boolean) || [];
+
+    // Determine Epic type from tags or area path
+    let epicType: EpicType = 'Agile';
+    if (
+      tags.includes('CISP') ||
+      tags.includes('cisp') ||
+      fields['System.AreaPath']?.toLowerCase().includes('cisp')
+    ) {
+      epicType = 'CISP';
+    }
+
+    return {
+      id: wi.id,
+      title: fields['System.Title'],
+      description: fields['System.Description'] || '',
+      state: fields['System.State'],
+      epicType,
+      areaPath: fields['System.AreaPath'],
+      project: fields['System.TeamProject'],
+      createdAt: new Date(fields['System.CreatedDate']),
+      updatedAt: new Date(fields['System.ChangedDate']),
+      completedWork: (fields['Microsoft.VSTS.Scheduling.CompletedWork'] as number) || 0,
+      remainingWork: (fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number) || 0,
+      totalWork: 0, // Will be calculated from features
+      features: [],
+      devOpsUrl:
+        wi._links?.html?.href ||
+        `${DEVOPS_BASE_URL}/${fields['System.TeamProject']}/_workitems/edit/${wi.id}`,
+      tags,
+    };
+  }
+
+  // Helper: Map DevOps work item to Feature
+  private mapToFeature(wi: DevOpsWorkItem, parentId?: number): Feature {
+    const fields = wi.fields;
+    return {
+      id: wi.id,
+      title: fields['System.Title'],
+      description: fields['System.Description'] || '',
+      state: fields['System.State'],
+      parentId,
+      areaPath: fields['System.AreaPath'],
+      project: fields['System.TeamProject'],
+      createdAt: new Date(fields['System.CreatedDate']),
+      updatedAt: new Date(fields['System.ChangedDate']),
+      completedWork: (fields['Microsoft.VSTS.Scheduling.CompletedWork'] as number) || 0,
+      remainingWork: (fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number) || 0,
+      totalWork: 0,
+      workItems: [],
+      devOpsUrl:
+        wi._links?.html?.href ||
+        `${DEVOPS_BASE_URL}/${fields['System.TeamProject']}/_workitems/edit/${wi.id}`,
+      tags:
+        fields['System.Tags']
+          ?.split(';')
+          .map((t: string) => t.trim())
+          .filter(Boolean) || [],
+      priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
+    };
+  }
+
+  // Helper: Map DevOps work item to WorkItem
+  private mapToWorkItem(wi: DevOpsWorkItem, parentId?: number): WorkItem {
+    const fields = wi.fields;
+    return {
+      id: wi.id,
+      title: fields['System.Title'],
+      description: fields['System.Description'] || '',
+      state: fields['System.State'],
+      workItemType: fields['System.WorkItemType'],
+      parentId,
+      areaPath: fields['System.AreaPath'],
+      project: fields['System.TeamProject'],
+      createdAt: new Date(fields['System.CreatedDate']),
+      updatedAt: new Date(fields['System.ChangedDate']),
+      completedWork: (fields['Microsoft.VSTS.Scheduling.CompletedWork'] as number) || 0,
+      remainingWork: (fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number) || 0,
+      originalEstimate: (fields['Microsoft.VSTS.Scheduling.OriginalEstimate'] as number) || 0,
+      assignee: identityToUser(fields['System.AssignedTo']),
+      devOpsUrl:
+        wi._links?.html?.href ||
+        `${DEVOPS_BASE_URL}/${fields['System.TeamProject']}/_workitems/edit/${wi.id}`,
+      tags:
+        fields['System.Tags']
+          ?.split(';')
+          .map((t: string) => t.trim())
+          .filter(Boolean) || [],
+      priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
+    };
   }
 }
 

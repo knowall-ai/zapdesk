@@ -5,10 +5,10 @@ import { useRouter, useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
-import { ArrowLeft, ExternalLink, Ticket, Loader2, Info, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Loader2, Info, LayoutGrid } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
-import type { Organization, Ticket as TicketType, SLALevel } from '@/types';
+import type { Organization, SLALevel, Epic } from '@/types';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 
 interface ProjectWithSLA extends Organization {
@@ -23,9 +23,9 @@ export default function ProjectDetailPage() {
   const params = useParams();
   const { selectedOrganization } = useOrganization();
   const [project, setProject] = useState<ProjectWithSLA | null>(null);
-  const [tickets, setTickets] = useState<TicketType[]>([]);
+  const [epics, setEpics] = useState<Epic[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingTickets, setLoadingTickets] = useState(true);
+  const [loadingEpics, setLoadingEpics] = useState(true);
 
   const projectId = params.id as string;
 
@@ -38,7 +38,6 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     if (session?.accessToken && projectId && selectedOrganization) {
       fetchProject();
-      fetchProjectTickets();
     }
 
     async function fetchProject() {
@@ -72,29 +71,38 @@ export default function ProjectDetailPage() {
         setLoading(false);
       }
     }
+  }, [session, projectId, selectedOrganization]);
 
-    async function fetchProjectTickets() {
-      setLoadingTickets(true);
+  // Fetch epics once we have the project name
+  useEffect(() => {
+    const projectName = project?.devOpsProject;
+    if (!session?.accessToken || !projectName || !selectedOrganization) {
+      return;
+    }
+
+    async function fetchProjectEpics(name: string) {
+      setLoadingEpics(true);
       try {
         const headers: HeadersInit = {};
         if (selectedOrganization?.accountName) {
           headers['x-devops-org'] = selectedOrganization.accountName;
         }
-        const response = await fetch(
-          `/api/devops/tickets?project=${encodeURIComponent(projectId)}`,
-          { headers }
-        );
+        const response = await fetch(`/api/devops/epics?project=${encodeURIComponent(name)}`, {
+          headers,
+        });
         if (response.ok) {
           const data = await response.json();
-          setTickets(data.tickets || []);
+          setEpics(data.epics || []);
         }
       } catch (error) {
-        console.error('Failed to fetch tickets:', error);
+        console.error('Failed to fetch epics:', error);
       } finally {
-        setLoadingTickets(false);
+        setLoadingEpics(false);
       }
     }
-  }, [session, projectId, selectedOrganization]);
+
+    fetchProjectEpics(projectName);
+  }, [session, project, selectedOrganization]);
 
   if (status === 'loading' || loading) {
     return (
@@ -300,85 +308,94 @@ export default function ProjectDetailPage() {
             </div>
           </div>
 
-          {/* Tickets card */}
+          {/* Epics card */}
           <div className="card lg:col-span-2">
             <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
               <div className="flex items-center gap-2">
-                <Ticket size={18} style={{ color: 'var(--primary)' }} />
+                <LayoutGrid size={18} style={{ color: 'var(--primary)' }} />
                 <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  Tickets ({tickets.length})
+                  Epics ({epics.length})
                 </h2>
               </div>
             </div>
             <div className="p-4">
-              {/* Unsupported template warning - GitHub link disabled until OAuth integration (see #186) */}
-              {project.isTemplateSupported === false && (
-                <div
-                  className="mb-4 rounded-md p-3"
-                  style={{
-                    backgroundColor: 'var(--warning-bg-hover)',
-                    border: '1px solid var(--warning-border)',
-                  }}
-                >
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle
-                      size={16}
-                      className="mt-0.5 shrink-0"
-                      style={{ color: 'var(--warning)' }}
-                    />
-                    <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                      <p className="mb-1 font-medium" style={{ color: 'var(--text-primary)' }}>
-                        Unsupported Process Template
-                      </p>
-                      <p>
-                        This project uses the &quot;{project.processTemplate}&quot; process template
-                        which is not yet supported. Ticket display and creation may not work
-                        correctly.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {loadingTickets ? (
-                <LoadingSpinner size="md" message="Loading tickets..." />
-              ) : tickets.length === 0 ? (
+              {loadingEpics ? (
+                <LoadingSpinner size="md" message="Loading epics..." />
+              ) : epics.length === 0 ? (
                 <p className="text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-                  No tickets for this project
+                  No epics for this project
                 </p>
               ) : (
-                <div className="space-y-2">
-                  {tickets.slice(0, 10).map((ticket) => (
+                <div className="space-y-3">
+                  {epics.map((epic) => (
                     <Link
-                      key={ticket.id}
-                      href={`/tickets/${ticket.id}`}
-                      className="block rounded p-3 transition-colors hover:bg-[var(--surface-hover)]"
+                      key={epic.id}
+                      href={`/projects/${projectId}/epics/${epic.id}`}
+                      className="block rounded-lg p-4 transition-colors hover:bg-[var(--surface)]"
+                      style={{ backgroundColor: 'var(--surface-hover)' }}
                     >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                            {ticket.title}
-                          </p>
-                          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            #{ticket.id} - {ticket.status}
-                          </p>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1 flex items-center gap-2">
+                            <h3
+                              className="truncate font-medium"
+                              style={{ color: 'var(--text-primary)' }}
+                            >
+                              {epic.title}
+                            </h3>
+                            <span
+                              className="shrink-0 rounded px-2 py-0.5 text-xs font-medium"
+                              style={{
+                                backgroundColor: 'var(--surface)',
+                                color: 'var(--text-secondary)',
+                              }}
+                            >
+                              {epic.state}
+                            </span>
+                          </div>
+                          {epic.description && (
+                            <p
+                              className="line-clamp-2 text-sm"
+                              style={{ color: 'var(--text-muted)' }}
+                              dangerouslySetInnerHTML={{
+                                __html:
+                                  epic.description.replace(/<[^>]*>/g, '').slice(0, 200) +
+                                  (epic.description.length > 200 ? '...' : ''),
+                              }}
+                            />
+                          )}
+                          <div
+                            className="mt-2 flex items-center gap-4 text-xs"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            <span>#{epic.id}</span>
+                            {epic.tags?.length > 0 && (
+                              <div className="flex gap-1">
+                                {epic.tags.slice(0, 3).map((tag) => (
+                                  <span
+                                    key={tag}
+                                    className="rounded px-1.5 py-0.5"
+                                    style={{
+                                      backgroundColor: 'var(--surface)',
+                                      color: 'var(--text-secondary)',
+                                    }}
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                                {epic.tags.length > 3 && <span>+{epic.tags.length - 3}</span>}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <span
-                          className={`status-badge status-${ticket.status.toLowerCase().replace(' ', '-')}`}
-                        >
-                          {ticket.status}
-                        </span>
+                        <ExternalLink
+                          size={16}
+                          className="shrink-0"
+                          style={{ color: 'var(--text-muted)' }}
+                        />
                       </div>
                     </Link>
                   ))}
-                  {tickets.length > 10 && (
-                    <Link
-                      href={`/tickets?organization=${projectId}`}
-                      className="block pt-2 text-center text-sm"
-                      style={{ color: 'var(--primary)' }}
-                    >
-                      View all {tickets.length} tickets
-                    </Link>
-                  )}
                 </div>
               )}
             </div>
