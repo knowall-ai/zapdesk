@@ -169,6 +169,29 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
   hasMore: boolean;
 }
 
+// Team member with performance metrics
+export type TeamMemberStatus = 'On Track' | 'Behind' | 'Needs Attention';
+
+export interface TeamMember extends User {
+  role?: string;
+  status: TeamMemberStatus;
+  ticketsAssigned: number;
+  ticketsResolved: number;
+  weeklyResolutions: number;
+  weeklyTrend?: string; // "+N" or "-N" compared to previous week
+  avgResponseTime: string;
+  avgResolutionTime: string;
+  pendingTickets: number;
+}
+
+// Team summary statistics
+export interface TeamStats {
+  totalMembers: number;
+  openTickets: number;
+  inProgressTickets: number;
+  needsAttention: number;
+}
+
 // Zap (Lightning Network) types
 export interface ZapConfig {
   lightningAddress: string;

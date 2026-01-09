@@ -447,6 +447,48 @@ export class AzureDevOpsService {
     return allTickets.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
   }
 
+  // Get all users from the organization (from User Entitlements API)
+  async getOrganizationUsers(): Promise<User[]> {
+    const users: User[] = [];
+    let continuationToken: string | null = null;
+
+    do {
+      const url = new URL(`https://vsaex.dev.azure.com/${DEVOPS_ORG}/_apis/userentitlements`);
+      url.searchParams.set('api-version', '7.0');
+      if (continuationToken) {
+        url.searchParams.set('continuationToken', continuationToken);
+      }
+
+      const response = await fetch(url.toString(), { headers: this.headers });
+
+      if (!response.ok) {
+        console.error('Failed to fetch organization users:', response.status, response.statusText);
+        break;
+      }
+
+      const data = await response.json();
+
+      for (const item of data.members || []) {
+        const user = item.user;
+        if (user) {
+          users.push({
+            id: user.originId || user.descriptor,
+            displayName: user.displayName,
+            email: user.mailAddress || user.principalName,
+            avatarUrl: user.imageUrl,
+            accessLevel: item.accessLevel?.accountLicenseType,
+            licenseType: item.accessLevel?.licensingSource,
+          });
+        }
+      }
+
+      // Check for continuation token in response headers
+      continuationToken = response.headers.get('x-ms-continuationtoken');
+    } while (continuationToken);
+
+    return users;
+  }
+
   // Get team members from a project
   async getTeamMembers(projectName: string): Promise<User[]> {
     const response = await fetch(
