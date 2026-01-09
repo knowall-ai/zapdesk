@@ -11,6 +11,7 @@ import Avatar from '../common/Avatar';
 interface TicketListProps {
   tickets: Ticket[];
   title: string;
+  hideFilters?: boolean;
 }
 
 type SortField =
@@ -57,7 +58,7 @@ function SortIcon({
   return sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
 }
 
-export default function TicketList({ tickets, title }: TicketListProps) {
+export default function TicketList({ tickets, title, hideFilters = false }: TicketListProps) {
   const [sortField, setSortField] = useState<SortField>('updated');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [selectedTickets, setSelectedTickets] = useState<Set<number>>(new Set());
@@ -211,7 +212,9 @@ export default function TicketList({ tickets, title }: TicketListProps) {
     }
   };
 
-  const sortedTickets = [...filteredTickets].sort((a, b) => {
+  // Use tickets directly when hideFilters is true (already filtered by parent)
+  const ticketsToSort = hideFilters ? tickets : filteredTickets;
+  const sortedTickets = [...ticketsToSort].sort((a, b) => {
     const multiplier = sortDirection === 'asc' ? 1 : -1;
 
     switch (sortField) {
@@ -256,130 +259,135 @@ export default function TicketList({ tickets, title }: TicketListProps) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {title}
-          </h1>
-          <div className="flex items-center gap-2">
-            {selectedTickets.size > 0 && (
-              <>
-                <div className="relative" ref={bulkMenuRef}>
-                  <button
-                    onClick={() => setShowBulkMenu(!showBulkMenu)}
-                    disabled={bulkActionLoading}
-                    className="btn-secondary flex items-center gap-2"
-                  >
-                    {bulkActionLoading ? 'Processing...' : 'Bulk Action'} <ChevronDown size={16} />
-                  </button>
-                  {showBulkMenu && (
-                    <div
-                      className="absolute top-full right-0 z-50 mt-1 min-w-48 rounded-lg border shadow-lg"
-                      style={{
-                        backgroundColor: 'var(--surface)',
-                        borderColor: 'var(--border)',
-                      }}
+      {/* Header - only show if not hiding filters or has title/bulk actions */}
+      {(!hideFilters || title || selectedTickets.size > 0) && (
+        <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
+          <div className="mb-4 flex items-center justify-between">
+            <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
+              {title}
+            </h1>
+            <div className="flex items-center gap-2">
+              {selectedTickets.size > 0 && (
+                <>
+                  <div className="relative" ref={bulkMenuRef}>
+                    <button
+                      onClick={() => setShowBulkMenu(!showBulkMenu)}
+                      disabled={bulkActionLoading}
+                      className="btn-secondary flex items-center gap-2"
                     >
-                      {bulkActions.map((action) => (
-                        <button
-                          key={action.id}
-                          onClick={() => handleBulkAction(action)}
-                          className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                          style={{ color: 'var(--text-primary)' }}
-                        >
-                          {action.icon}
-                          {action.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <button className="btn-secondary flex items-center gap-2">
-                  <Play size={16} /> Play
-                </button>
-              </>
-            )}
+                      {bulkActionLoading ? 'Processing...' : 'Bulk Action'}{' '}
+                      <ChevronDown size={16} />
+                    </button>
+                    {showBulkMenu && (
+                      <div
+                        className="absolute top-full right-0 z-50 mt-1 min-w-48 rounded-lg border shadow-lg"
+                        style={{
+                          backgroundColor: 'var(--surface)',
+                          borderColor: 'var(--border)',
+                        }}
+                      >
+                        {bulkActions.map((action) => (
+                          <button
+                            key={action.id}
+                            onClick={() => handleBulkAction(action)}
+                            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                            style={{ color: 'var(--text-primary)' }}
+                          >
+                            {action.icon}
+                            {action.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button className="btn-secondary flex items-center gap-2">
+                    <Play size={16} /> Play
+                  </button>
+                </>
+              )}
+            </div>
           </div>
+
+          {/* Filter dropdowns and count - only if not hiding filters */}
+          {!hideFilters && (
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                {filteredTickets.length} ticket{filteredTickets.length !== 1 ? 's' : ''}
+                {hasActiveFilters && ` (filtered from ${tickets.length})`}
+              </span>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <select
+                  value={filters.status}
+                  onChange={(e) =>
+                    setFilters({ ...filters, status: e.target.value as TicketStatus | '' })
+                  }
+                  className="input text-sm"
+                >
+                  <option value="">All Statuses</option>
+                  <option value="New">New</option>
+                  <option value="Open">Open</option>
+                  <option value="In Progress">In Progress</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Resolved">Resolved</option>
+                  <option value="Closed">Closed</option>
+                </select>
+
+                <select
+                  value={filters.priority}
+                  onChange={(e) =>
+                    setFilters({ ...filters, priority: e.target.value as TicketPriority | '' })
+                  }
+                  className="input text-sm"
+                >
+                  <option value="">All Priorities</option>
+                  <option value="Urgent">Urgent</option>
+                  <option value="High">High</option>
+                  <option value="Normal">Normal</option>
+                  <option value="Low">Low</option>
+                </select>
+
+                <select
+                  value={filters.assignee}
+                  onChange={(e) => setFilters({ ...filters, assignee: e.target.value })}
+                  className="input text-sm"
+                >
+                  <option value="">All Assignees</option>
+                  {filterOptions.assignees.map((assignee) => (
+                    <option key={assignee} value={assignee}>
+                      {assignee}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={filters.requester}
+                  onChange={(e) => setFilters({ ...filters, requester: e.target.value })}
+                  className="input text-sm"
+                >
+                  <option value="">All Requesters</option>
+                  {filterOptions.requesters.map((requester) => (
+                    <option key={requester} value={requester}>
+                      {requester}
+                    </option>
+                  ))}
+                </select>
+
+                {hasActiveFilters && (
+                  <button
+                    onClick={clearFilters}
+                    className="flex items-center gap-1 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    <X size={14} />
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
-
-        {/* Filter dropdowns and count */}
-        <div className="flex items-center justify-between gap-4">
-          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            {filteredTickets.length} ticket{filteredTickets.length !== 1 ? 's' : ''}
-            {hasActiveFilters && ` (filtered from ${tickets.length})`}
-          </span>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <select
-              value={filters.status}
-              onChange={(e) =>
-                setFilters({ ...filters, status: e.target.value as TicketStatus | '' })
-              }
-              className="input text-sm"
-            >
-              <option value="">All Statuses</option>
-              <option value="New">New</option>
-              <option value="Open">Open</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Pending">Pending</option>
-              <option value="Resolved">Resolved</option>
-              <option value="Closed">Closed</option>
-            </select>
-
-            <select
-              value={filters.priority}
-              onChange={(e) =>
-                setFilters({ ...filters, priority: e.target.value as TicketPriority | '' })
-              }
-              className="input text-sm"
-            >
-              <option value="">All Priorities</option>
-              <option value="Urgent">Urgent</option>
-              <option value="High">High</option>
-              <option value="Normal">Normal</option>
-              <option value="Low">Low</option>
-            </select>
-
-            <select
-              value={filters.assignee}
-              onChange={(e) => setFilters({ ...filters, assignee: e.target.value })}
-              className="input text-sm"
-            >
-              <option value="">All Assignees</option>
-              {filterOptions.assignees.map((assignee) => (
-                <option key={assignee} value={assignee}>
-                  {assignee}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={filters.requester}
-              onChange={(e) => setFilters({ ...filters, requester: e.target.value })}
-              className="input text-sm"
-            >
-              <option value="">All Requesters</option>
-              {filterOptions.requesters.map((requester) => (
-                <option key={requester} value={requester}>
-                  {requester}
-                </option>
-              ))}
-            </select>
-
-            {hasActiveFilters && (
-              <button
-                onClick={clearFilters}
-                className="flex items-center gap-1 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                <X size={14} />
-                Clear filters
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Table */}
       <div className="flex-1 overflow-auto">

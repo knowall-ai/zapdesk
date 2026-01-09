@@ -14,23 +14,51 @@ import type {
 const DEVOPS_ORG = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
 const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
 
-// Map Azure DevOps states to Zendesk-like statuses
+// Map Azure DevOps state category to Zendesk-like status
+// Categories are consistent across all process templates (Basic, Agile, Scrum, CMMI)
+function mapCategoryToStatus(category: string): TicketStatus {
+  const categoryMap: Record<string, TicketStatus> = {
+    Proposed: 'New',
+    InProgress: 'In Progress',
+    Resolved: 'Resolved',
+    Completed: 'Closed',
+    Removed: 'Closed',
+  };
+  return categoryMap[category] || 'Open';
+}
+
+// Cache for state-to-category mapping (populated by fetchStateCategories)
+let stateCategoryCache: Record<string, string> = {};
+
+// Set the state category cache (called from API routes after fetching states)
+export function setStateCategoryCache(stateCategories: Record<string, string>) {
+  stateCategoryCache = stateCategories;
+}
+
+// Map Azure DevOps state to Zendesk-like status using cached categories
 function mapStateToStatus(state: string): TicketStatus {
-  const stateMap: Record<string, TicketStatus> = {
+  const category = stateCategoryCache[state];
+  if (category) {
+    return mapCategoryToStatus(category);
+  }
+  // Fallback for common states if cache not populated
+  if (state === 'New') return 'New';
+  if (state === 'Closed' || state === 'Done' || state === 'Removed') return 'Closed';
+  if (state === 'Resolved') return 'Resolved';
+  return 'Open';
+}
+
+// Map Zendesk-like statuses back to Azure DevOps states
+export function mapStatusToState(status: TicketStatus): string {
+  const statusMap: Record<TicketStatus, string> = {
     New: 'New',
-    Active: 'Open',
-    'In Progress': 'In Progress',
-    Doing: 'In Progress',
+    Open: 'Active',
+    'In Progress': 'Active',
+    Pending: 'Blocked',
     Resolved: 'Resolved',
     Closed: 'Closed',
-    Done: 'Closed',
-    Removed: 'Closed',
-    // Custom states for support
-    Pending: 'Pending',
-    'Waiting for Customer': 'Pending',
-    'On Hold': 'Pending',
   };
-  return stateMap[state] || 'Open';
+  return statusMap[status] || 'Active';
 }
 
 // Map priority numbers to Zendesk-like priorities
@@ -85,6 +113,7 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     title: fields['System.Title'],
     description: fields['System.Description'] || '',
     status: mapStateToStatus(fields['System.State']),
+    devOpsState: fields['System.State'], // Preserve original DevOps state
     priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
     requester: identityToCustomer(fields['System.CreatedBy']),
     assignee: identityToUser(fields['System.AssignedTo']),

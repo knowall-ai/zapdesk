@@ -1,8 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { AzureDevOpsService, workItemToTicket } from '@/lib/devops';
+import { AzureDevOpsService, workItemToTicket, setStateCategoryCache } from '@/lib/devops';
 import type { Ticket, TicketStatus } from '@/types';
+
+// Fetch work item states and build state-to-category mapping
+async function fetchAndCacheStateCategories(accessToken: string, organization: string) {
+  try {
+    // Get first project
+    const projectsResponse = await fetch(
+      `https://dev.azure.com/${organization}/_apis/projects?api-version=7.0`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!projectsResponse.ok) return;
+
+    const projectsData = await projectsResponse.json();
+    const firstProject = projectsData.value?.[0]?.name;
+    if (!firstProject) return;
+
+    const stateCategories: Record<string, string> = {};
+    const workItemTypes = ['Bug', 'Task', 'Enhancement'];
+
+    for (const witType of workItemTypes) {
+      try {
+        const statesResponse = await fetch(
+          `https://dev.azure.com/${organization}/${encodeURIComponent(firstProject)}/_apis/wit/workitemtypes/${encodeURIComponent(witType)}/states?api-version=7.0`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        if (statesResponse.ok) {
+          const statesData = await statesResponse.json();
+          for (const state of statesData.value || []) {
+            stateCategories[state.name] = state.category;
+          }
+        }
+      } catch {
+        // Continue if one work item type fails
+      }
+    }
+
+    setStateCategoryCache(stateCategories);
+  } catch (error) {
+    console.error('Failed to fetch state categories:', error);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -52,6 +104,11 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
     const view = searchParams.get('view') || 'all-unsolved';
+
+    const organization = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+
+    // Fetch and cache state categories before getting tickets
+    await fetchAndCacheStateCategories(session.accessToken, organization);
 
     const devopsService = new AzureDevOpsService(session.accessToken);
     const tickets = await devopsService.getAllTickets();

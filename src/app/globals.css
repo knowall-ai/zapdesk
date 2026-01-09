@@ -312,8 +312,8 @@ body {
 .kanban-column {
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
-  width: 280px;
+  flex: 1;
+  min-width: 200px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 0.5rem;
@@ -383,7 +383,7 @@ body {
   }
 
   .kanban-column {
-    width: 260px;
+    min-width: 180px;
   }
 
   .kanban-card {

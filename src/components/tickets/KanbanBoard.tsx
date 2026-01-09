@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -16,26 +16,45 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import KanbanColumn from './KanbanColumn';
 import KanbanCard from './KanbanCard';
-import type { Ticket, TicketStatus } from '@/types';
+import type { Ticket } from '@/types';
 
 interface KanbanBoardProps {
   tickets: Ticket[];
-  onTicketStatusChange?: (ticketId: number, newStatus: TicketStatus) => Promise<void>;
+  onTicketStateChange?: (ticketId: number, newState: string) => Promise<void>;
 }
 
-const KANBAN_STATUSES: TicketStatus[] = [
-  'New',
-  'Open',
-  'In Progress',
-  'Pending',
-  'Resolved',
-  'Closed',
-];
+interface WorkItemState {
+  name: string;
+  color: string;
+  category: string;
+}
 
-export default function KanbanBoard({ tickets, onTicketStatusChange }: KanbanBoardProps) {
+export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoardProps) {
   const [localTickets, setLocalTickets] = useState<Ticket[]>(tickets);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [kanbanStates, setKanbanStates] = useState<WorkItemState[]>([]);
+  const [isLoadingStates, setIsLoadingStates] = useState(true);
+
+  // Fetch work item states from API
+  useEffect(() => {
+    async function fetchStates() {
+      try {
+        const response = await fetch('/api/devops/workitem-states');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.allStates && data.allStates.length > 0) {
+            setKanbanStates(data.allStates);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch work item states:', error);
+      } finally {
+        setIsLoadingStates(false);
+      }
+    }
+    fetchStates();
+  }, []);
 
   // Update local tickets when props change
   useMemo(() => {
@@ -53,24 +72,26 @@ export default function KanbanBoard({ tickets, onTicketStatusChange }: KanbanBoa
     })
   );
 
-  const ticketsByStatus = useMemo(() => {
-    const grouped: Record<TicketStatus, Ticket[]> = {
-      New: [],
-      Open: [],
-      'In Progress': [],
-      Pending: [],
-      Resolved: [],
-      Closed: [],
-    };
+  // Group tickets by their original DevOps state
+  const ticketsByState = useMemo(() => {
+    const grouped: Record<string, Ticket[]> = {};
 
+    // Initialize all state columns
+    kanbanStates.forEach((state) => {
+      grouped[state.name] = [];
+    });
+
+    // Group tickets by their DevOps state
     localTickets.forEach((ticket) => {
-      if (grouped[ticket.status]) {
-        grouped[ticket.status].push(ticket);
+      const state = ticket.devOpsState;
+      if (grouped[state]) {
+        grouped[state].push(ticket);
       }
+      // If state doesn't exist in columns, ticket won't be shown (intentional)
     });
 
     return grouped;
-  }, [localTickets]);
+  }, [localTickets, kanbanStates]);
 
   const activeTicket = useMemo(() => {
     if (!activeId) return null;
@@ -81,40 +102,43 @@ export default function KanbanBoard({ tickets, onTicketStatusChange }: KanbanBoa
     setActiveId(event.active.id as number);
   }, []);
 
+  // Get list of state names for checking if dropping on a column
+  const stateNames = useMemo(() => kanbanStates.map((s) => s.name), [kanbanStates]);
+
   const handleDragOver = useCallback(
     (event: DragOverEvent) => {
       const { active, over } = event;
       if (!over) return;
 
       const activeTicketId = active.id as number;
-      const overId = over.id;
+      const overId = over.id as string;
 
       // Find the ticket being dragged
       const ticket = localTickets.find((t) => t.id === activeTicketId);
       if (!ticket) return;
 
-      // Determine the target status
-      let targetStatus: TicketStatus | null = null;
+      // Determine the target state (DevOps state name)
+      let targetState: string | null = null;
 
-      // Check if we're over a column (status)
-      if (KANBAN_STATUSES.includes(overId as TicketStatus)) {
-        targetStatus = overId as TicketStatus;
+      // Check if we're over a column (state name)
+      if (stateNames.includes(overId)) {
+        targetState = overId;
       } else {
-        // We're over another ticket - find its status
-        const overTicket = localTickets.find((t) => t.id === overId);
+        // We're over another ticket - find its DevOps state
+        const overTicket = localTickets.find((t) => t.id === Number(overId));
         if (overTicket) {
-          targetStatus = overTicket.status;
+          targetState = overTicket.devOpsState;
         }
       }
 
-      // If moving to a different status, update locally for visual feedback
-      if (targetStatus && ticket.status !== targetStatus) {
+      // If moving to a different state, update locally for visual feedback
+      if (targetState && ticket.devOpsState !== targetState) {
         setLocalTickets((prev) =>
-          prev.map((t) => (t.id === activeTicketId ? { ...t, status: targetStatus } : t))
+          prev.map((t) => (t.id === activeTicketId ? { ...t, devOpsState: targetState } : t))
         );
       }
     },
-    [localTickets]
+    [localTickets, stateNames]
   );
 
   const handleDragEnd = useCallback(
@@ -125,37 +149,37 @@ export default function KanbanBoard({ tickets, onTicketStatusChange }: KanbanBoa
       if (!over) return;
 
       const activeTicketId = active.id as number;
-      const overId = over.id;
+      const overId = over.id as string;
 
       // Find the original ticket (from props, not local state)
       const originalTicket = tickets.find((t) => t.id === activeTicketId);
       if (!originalTicket) return;
 
-      // Determine the target status
-      let targetStatus: TicketStatus | null = null;
+      // Determine the target state (DevOps state name)
+      let targetState: string | null = null;
 
-      if (KANBAN_STATUSES.includes(overId as TicketStatus)) {
-        targetStatus = overId as TicketStatus;
+      if (stateNames.includes(overId)) {
+        targetState = overId;
       } else {
-        const overTicket = localTickets.find((t) => t.id === overId);
+        const overTicket = localTickets.find((t) => t.id === Number(overId));
         if (overTicket) {
-          targetStatus = overTicket.status;
+          targetState = overTicket.devOpsState;
         }
       }
 
-      // If status hasn't changed, reset to original
-      if (!targetStatus || originalTicket.status === targetStatus) {
+      // If state hasn't changed, reset to original
+      if (!targetState || originalTicket.devOpsState === targetState) {
         setLocalTickets(tickets);
         return;
       }
 
-      // Persist the status change
-      if (onTicketStatusChange) {
+      // Persist the state change
+      if (onTicketStateChange) {
         setIsUpdating(true);
         try {
-          await onTicketStatusChange(activeTicketId, targetStatus);
+          await onTicketStateChange(activeTicketId, targetState);
         } catch (error) {
-          console.error('Failed to update ticket status:', error);
+          console.error('Failed to update ticket state:', error);
           // Rollback on failure
           setLocalTickets(tickets);
         } finally {
@@ -163,13 +187,21 @@ export default function KanbanBoard({ tickets, onTicketStatusChange }: KanbanBoa
         }
       }
     },
-    [tickets, localTickets, onTicketStatusChange]
+    [tickets, localTickets, onTicketStateChange, stateNames]
   );
 
   const handleDragCancel = useCallback(() => {
     setActiveId(null);
     setLocalTickets(tickets);
   }, [tickets]);
+
+  if (isLoadingStates) {
+    return (
+      <div className="kanban-board flex items-center justify-center p-8">
+        <div className="text-[var(--text-muted)]">Loading board...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="kanban-board">
@@ -188,11 +220,12 @@ export default function KanbanBoard({ tickets, onTicketStatusChange }: KanbanBoa
         onDragCancel={handleDragCancel}
       >
         <div className="kanban-columns">
-          {KANBAN_STATUSES.map((status) => (
+          {kanbanStates.map((state) => (
             <KanbanColumn
-              key={status}
-              status={status}
-              tickets={ticketsByStatus[status]}
+              key={state.name}
+              stateName={state.name}
+              stateColor={state.color}
+              tickets={ticketsByState[state.name] || []}
               activeId={activeId}
             />
           ))}
