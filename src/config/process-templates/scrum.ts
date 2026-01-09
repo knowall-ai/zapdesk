@@ -13,8 +13,13 @@ export const scrumConfig: ProcessTemplateConfig = {
   id: 'scrum',
 
   workItemTypes: {
-    ticket: 'Product Backlog Item', // Scrum uses PBIs for backlog items
-    supportedTypes: ['Product Backlog Item', 'Bug', 'Task', 'Feature', 'Epic', 'Impediment'],
+    // Ticket types - must be tagged with "ticket" to appear in DevDesk
+    ticketTypes: ['Product Backlog Item', 'Bug', 'Task', 'Impediment'],
+    defaultTicketType: 'Product Backlog Item',
+
+    // Feature and Epic types for hierarchy
+    featureType: 'Feature',
+    epicType: 'Epic',
   },
 
   fields: {
@@ -28,10 +33,10 @@ export const scrumConfig: ProcessTemplateConfig = {
   },
 
   states: {
-    proposed: ['New'],
-    inProgress: ['Approved', 'Committed', 'In Progress'],
-    resolved: ['Done'],
-    closed: ['Done', 'Removed'],
+    new: ['New'],
+    active: ['Approved', 'Committed', 'In Progress'],
+    resolved: [], // Scrum doesn't have a Resolved state
+    closed: ['Done'],
     removed: ['Removed'],
   },
 

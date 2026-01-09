@@ -3,10 +3,11 @@
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, Suspense, useCallback, useMemo } from 'react';
-import { List, LayoutGrid, X } from 'lucide-react';
+import { List, LayoutGrid, X, Tag } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { TicketList, KanbanBoard } from '@/components/tickets';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 import type { Ticket, TicketStatus, TicketPriority } from '@/types';
 
 interface Filters {
@@ -33,14 +34,17 @@ function TicketsPageContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { selectedOrganization } = useOrganization();
   const view = searchParams.get('view') || 'all-unsolved';
+  const displayParam = searchParams.get('display');
   const isKanbanView = view === 'kanban';
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [displayMode, setDisplayMode] = useState<'list' | 'kanban'>(
-    isKanbanView ? 'kanban' : 'list'
+    displayParam === 'kanban' ? 'kanban' : isKanbanView ? 'kanban' : 'list'
   );
+  const [ticketsOnly, setTicketsOnly] = useState(true); // Filter by "ticket" tag
   const [filters, setFilters] = useState<Filters>({
     status: '',
     priority: '',
@@ -62,11 +66,18 @@ function TicketsPageContent() {
   }, [isKanbanView]);
 
   const fetchTickets = useCallback(async () => {
+    if (!selectedOrganization) return;
     setLoading(true);
     try {
       // For kanban view, fetch all active tickets
       const fetchView = isKanbanView ? 'all-active' : view;
-      const response = await fetch(`/api/devops/tickets?view=${fetchView}`);
+      const params = new URLSearchParams({ view: fetchView });
+      if (!ticketsOnly) {
+        params.set('ticketsOnly', 'false');
+      }
+      const response = await fetch(`/api/devops/tickets?${params.toString()}`, {
+        headers: { 'x-devops-org': selectedOrganization.accountName },
+      });
       if (response.ok) {
         const data = await response.json();
         // Convert date strings to Date objects
@@ -84,7 +95,7 @@ function TicketsPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [view, isKanbanView]);
+  }, [view, isKanbanView, ticketsOnly, selectedOrganization]);
 
   useEffect(() => {
     if (session?.accessToken) {
@@ -92,27 +103,35 @@ function TicketsPageContent() {
     }
   }, [session, fetchTickets]);
 
-  const handleTicketStateChange = useCallback(async (ticketId: number, newState: string) => {
-    try {
-      const response = await fetch(`/api/devops/tickets/${ticketId}/state`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ state: newState }),
-      });
+  const handleTicketStateChange = useCallback(
+    async (ticketId: number, newState: string) => {
+      try {
+        const response = await fetch(`/api/devops/tickets/${ticketId}/state`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(selectedOrganization && {
+              'x-devops-org': selectedOrganization.accountName,
+            }),
+          },
+          body: JSON.stringify({ state: newState }),
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to update state');
+        if (!response.ok) {
+          throw new Error('Failed to update state');
+        }
+
+        // Update local state with the new DevOps state
+        setTickets((prev) =>
+          prev.map((t) => (t.id === ticketId ? { ...t, devOpsState: newState } : t))
+        );
+      } catch (error) {
+        console.error('Failed to update ticket state:', error);
+        throw error; // Re-throw so KanbanBoard can handle rollback
       }
-
-      // Update local state with the new DevOps state
-      setTickets((prev) =>
-        prev.map((t) => (t.id === ticketId ? { ...t, devOpsState: newState } : t))
-      );
-    } catch (error) {
-      console.error('Failed to update ticket state:', error);
-      throw error; // Re-throw so KanbanBoard can handle rollback
-    }
-  }, []);
+    },
+    [selectedOrganization]
+  );
 
   // Get unique values for filter dropdowns
   const filterOptions = useMemo(() => {
@@ -148,6 +167,21 @@ function TicketsPageContent() {
   const clearFilters = () => {
     setFilters({ status: '', priority: '', assignee: '', requester: '' });
   };
+
+  // Update URL when display mode changes to preserve view on navigation
+  const handleDisplayModeChange = useCallback(
+    (mode: 'list' | 'kanban') => {
+      setDisplayMode(mode);
+      const params = new URLSearchParams(searchParams.toString());
+      if (mode === 'kanban') {
+        params.set('display', 'kanban');
+      } else {
+        params.delete('display');
+      }
+      router.replace(`/tickets?${params.toString()}`, { scroll: false });
+    },
+    [router, searchParams]
+  );
 
   const hasActiveFilters =
     filters.status || filters.priority || filters.assignee || filters.requester;
@@ -252,11 +286,27 @@ function TicketsPageContent() {
                 </button>
               )}
 
+              {/* Tickets only toggle */}
+              <button
+                onClick={() => setTicketsOnly(!ticketsOnly)}
+                className={`flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  ticketsOnly
+                    ? 'bg-[var(--primary)] text-white'
+                    : 'bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+                title={
+                  ticketsOnly ? 'Showing only items tagged "ticket"' : 'Showing all work items'
+                }
+              >
+                <Tag size={14} />
+                <span className="hidden sm:inline">Tickets Only</span>
+              </button>
+
               {/* View toggle */}
               <div className="flex items-center gap-1 rounded-lg bg-[var(--surface)] p-1">
                 <button
-                  onClick={() => setDisplayMode('list')}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  onClick={() => handleDisplayModeChange('list')}
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                     displayMode === 'list'
                       ? 'bg-[var(--primary)] text-white'
                       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -267,8 +317,8 @@ function TicketsPageContent() {
                   <span className="hidden sm:inline">List</span>
                 </button>
                 <button
-                  onClick={() => setDisplayMode('kanban')}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  onClick={() => handleDisplayModeChange('kanban')}
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                     displayMode === 'kanban'
                       ? 'bg-[var(--primary)] text-white'
                       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'

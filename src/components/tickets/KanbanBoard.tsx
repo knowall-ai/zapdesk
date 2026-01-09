@@ -69,9 +69,10 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
     })
   );
 
-  // Group tickets by their original DevOps state
-  const ticketsByState = useMemo(() => {
+  // Group tickets by their original DevOps state and track unrecognized states
+  const { ticketsByState, ticketsWithUnrecognizedState } = useMemo(() => {
     const grouped: Record<string, Ticket[]> = {};
+    const unrecognizedTicketIds = new Set<number>();
 
     // Initialize all state columns
     kanbanStates.forEach((state) => {
@@ -89,6 +90,7 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
       } else {
         // Track tickets with states not in our columns
         unmatchedStates.add(state);
+        unrecognizedTicketIds.add(ticket.id);
         // Put them in the first column (usually "New") as fallback
         const firstColumn = kanbanStates[0]?.name;
         if (firstColumn && grouped[firstColumn]) {
@@ -105,7 +107,7 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
       );
     }
 
-    return grouped;
+    return { ticketsByState: grouped, ticketsWithUnrecognizedState: unrecognizedTicketIds };
   }, [localTickets, kanbanStates]);
 
   const activeTicket = useMemo(() => {
@@ -242,6 +244,7 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
               stateColor={state.color}
               tickets={ticketsByState[state.name] || []}
               activeId={activeId}
+              ticketsWithUnrecognizedState={ticketsWithUnrecognizedState}
             />
           ))}
         </div>

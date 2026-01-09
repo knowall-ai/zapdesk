@@ -106,6 +106,8 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
     const view = searchParams.get('view') || 'all-unsolved';
+    // ticketsOnly defaults to true - only show work items tagged with "ticket"
+    const ticketsOnly = searchParams.get('ticketsOnly') !== 'false';
 
     // Get organization from header (client sends from localStorage selection)
     const organization = request.headers.get('x-devops-org');
@@ -118,7 +120,7 @@ export async function GET(request: NextRequest) {
     await fetchAndCacheStateCategories(session.accessToken, organization);
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
-    const tickets = await devopsService.getAllTickets();
+    const tickets = await devopsService.getAllTickets(ticketsOnly);
 
     // Filter tickets based on view
     const filteredTickets = filterTicketsByView(tickets, view, session.user?.email);

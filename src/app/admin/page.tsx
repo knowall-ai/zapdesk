@@ -78,19 +78,78 @@ export default function AdminPage() {
                     <CheckCircle size={18} className="text-green-500" />
                   </div>
 
-                  {/* Work Item Types */}
+                  {/* Ticket Types */}
                   <div className="mb-3">
                     <p
                       className="mb-1 text-xs font-medium uppercase"
                       style={{ color: 'var(--text-muted)' }}
                     >
-                      Default Ticket Type
+                      Ticket Work Item Types
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {config.workItemTypes.ticketTypes.map((type) => (
+                        <span
+                          key={type}
+                          className={`rounded px-1.5 py-0.5 text-xs ${
+                            type === config.workItemTypes.defaultTicketType
+                              ? 'bg-[rgba(34,197,94,0.15)] font-medium'
+                              : 'bg-[var(--surface-hover)]'
+                          }`}
+                          style={{
+                            color:
+                              type === config.workItemTypes.defaultTicketType
+                                ? 'var(--primary)'
+                                : 'var(--text-muted)',
+                          }}
+                        >
+                          {type}
+                          {type === config.workItemTypes.defaultTicketType && ' (default)'}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-xs italic" style={{ color: 'var(--text-muted)' }}>
+                      Must be tagged with &quot;ticket&quot; tag
+                    </p>
+                  </div>
+
+                  {/* Feature Type */}
+                  <div className="mb-3">
+                    <p
+                      className="mb-1 text-xs font-medium uppercase"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      Feature Work Item Type
+                    </p>
+                    {config.workItemTypes.featureType ? (
+                      <span
+                        className="rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-xs"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        {config.workItemTypes.featureType}
+                      </span>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <XCircle size={14} className="text-red-400" />
+                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                          Not available
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Epic Type */}
+                  <div className="mb-3">
+                    <p
+                      className="mb-1 text-xs font-medium uppercase"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      Epic Work Item Type
                     </p>
                     <span
-                      className="rounded bg-[var(--surface-hover)] px-2 py-1 text-sm"
+                      className="rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-xs"
                       style={{ color: 'var(--text-secondary)' }}
                     >
-                      {config.workItemTypes.ticket}
+                      {config.workItemTypes.epicType}
                     </span>
                   </div>
 
@@ -120,7 +179,7 @@ export default function AdminPage() {
                   </div>
 
                   {/* States */}
-                  <div className="mb-3">
+                  <div>
                     <p
                       className="mb-1 text-xs font-medium uppercase"
                       style={{ color: 'var(--text-muted)' }}
@@ -128,30 +187,30 @@ export default function AdminPage() {
                       State Mappings
                     </p>
                     <div className="space-y-1 text-xs">
-                      {config.states.proposed.length > 0 && (
+                      {config.states.new.length > 0 && (
                         <div className="flex gap-2">
-                          <span style={{ color: 'var(--text-muted)' }}>Proposed:</span>
+                          <span style={{ color: 'var(--text-muted)' }}>New:</span>
                           <span style={{ color: 'var(--text-secondary)' }}>
-                            {config.states.proposed.join(', ')}
+                            {config.states.new.join(', ')}
                           </span>
                         </div>
                       )}
-                      {config.states.inProgress.length > 0 && (
+                      {config.states.active.length > 0 && (
                         <div className="flex gap-2">
-                          <span style={{ color: 'var(--text-muted)' }}>In Progress:</span>
+                          <span style={{ color: 'var(--text-muted)' }}>Active:</span>
                           <span style={{ color: 'var(--text-secondary)' }}>
-                            {config.states.inProgress.join(', ')}
+                            {config.states.active.join(', ')}
                           </span>
                         </div>
                       )}
-                      {config.states.resolved.length > 0 && (
-                        <div className="flex gap-2">
-                          <span style={{ color: 'var(--text-muted)' }}>Resolved:</span>
-                          <span style={{ color: 'var(--text-secondary)' }}>
-                            {config.states.resolved.join(', ')}
-                          </span>
-                        </div>
-                      )}
+                      <div className="flex gap-2">
+                        <span style={{ color: 'var(--text-muted)' }}>Resolved:</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>
+                          {config.states.resolved.length > 0
+                            ? config.states.resolved.join(', ')
+                            : 'N/A'}
+                        </span>
+                      </div>
                       {config.states.closed.length > 0 && (
                         <div className="flex gap-2">
                           <span style={{ color: 'var(--text-muted)' }}>Closed:</span>
@@ -160,27 +219,6 @@ export default function AdminPage() {
                           </span>
                         </div>
                       )}
-                    </div>
-                  </div>
-
-                  {/* Supported Types */}
-                  <div>
-                    <p
-                      className="mb-1 text-xs font-medium uppercase"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      Supported Work Item Types
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {config.workItemTypes.supportedTypes.map((type) => (
-                        <span
-                          key={type}
-                          className="rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-xs"
-                          style={{ color: 'var(--text-muted)' }}
-                        >
-                          {type}
-                        </span>
-                      ))}
                     </div>
                   </div>
                 </div>

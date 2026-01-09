@@ -10,6 +10,7 @@ interface KanbanColumnProps {
   stateColor?: string; // Hex color from DevOps (without #)
   tickets: Ticket[];
   activeId?: number | null;
+  ticketsWithUnrecognizedState?: Set<number>;
 }
 
 export default function KanbanColumn({
@@ -17,6 +18,7 @@ export default function KanbanColumn({
   stateColor,
   tickets,
   activeId,
+  ticketsWithUnrecognizedState,
 }: KanbanColumnProps) {
   const color = stateColor ? `#${stateColor}` : 'var(--text-muted)';
 
@@ -42,7 +44,12 @@ export default function KanbanColumn({
       >
         <SortableContext items={tickets.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           {tickets.map((ticket) => (
-            <KanbanCard key={ticket.id} ticket={ticket} isDragging={activeId === ticket.id} />
+            <KanbanCard
+              key={ticket.id}
+              ticket={ticket}
+              isDragging={activeId === ticket.id}
+              hasUnrecognizedState={ticketsWithUnrecognizedState?.has(ticket.id)}
+            />
           ))}
         </SortableContext>
 

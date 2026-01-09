@@ -10,9 +10,10 @@ import type { Ticket } from '@/types';
 interface KanbanCardProps {
   ticket: Ticket;
   isDragging?: boolean;
+  hasUnrecognizedState?: boolean;
 }
 
-export default function KanbanCard({ ticket, isDragging }: KanbanCardProps) {
+export default function KanbanCard({ ticket, isDragging, hasUnrecognizedState }: KanbanCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
     id: ticket.id,
   });
@@ -28,7 +29,12 @@ export default function KanbanCard({ ticket, isDragging }: KanbanCardProps) {
       style={style}
       {...attributes}
       {...listeners}
-      className={`kanban-card ${isDragging ? 'kanban-card-dragging' : ''}`}
+      className={`kanban-card ${isDragging ? 'kanban-card-dragging' : ''} ${hasUnrecognizedState ? 'kanban-card-unrecognized' : ''}`}
+      title={
+        hasUnrecognizedState
+          ? `State "${ticket.devOpsState}" is not a recognized Kanban column`
+          : undefined
+      }
     >
       <Link href={`/tickets/${ticket.id}`} className="block">
         <div className="mb-2 flex items-start justify-between gap-2">

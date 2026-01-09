@@ -11,9 +11,17 @@ export interface ProcessTemplateConfig {
   id: string; // Unique identifier for matching
 
   // Work item types
+  // Note: Tickets are work items tagged with "ticket" tag
   workItemTypes: {
-    ticket: string; // Default type for creating tickets (e.g., "Task", "Issue")
-    supportedTypes: string[]; // All types we can display
+    // Ticket types - work items that can be tagged as "ticket" for support tracking
+    ticketTypes: string[]; // Supported types for tickets (e.g., ["Task", "Bug", "Issue"])
+    defaultTicketType: string; // Default type when creating new tickets
+
+    // Feature type - for feature-level planning (undefined if not available)
+    featureType?: string;
+
+    // Epic type - for epic-level planning
+    epicType: string;
   };
 
   // Field mappings
@@ -24,10 +32,10 @@ export interface ProcessTemplateConfig {
 
   // State mappings - map actual DevOps states to our UI categories
   states: {
-    proposed: string[]; // States that mean "new/to do"
-    inProgress: string[]; // States that mean "in progress/active"
-    resolved: string[]; // States that mean "resolved/done"
-    closed: string[]; // States that mean "closed/completed"
+    new: string[]; // States that mean "new/to do"
+    active: string[]; // States that mean "in progress/active"
+    resolved: string[]; // States that mean "resolved" (not all templates have this)
+    closed: string[]; // States that mean "closed/done/completed"
     removed: string[]; // States that mean "removed/cancelled"
   };
 
@@ -36,7 +44,7 @@ export interface ProcessTemplateConfig {
 }
 
 // State categories used internally
-export type StateCategory = 'Proposed' | 'InProgress' | 'Resolved' | 'Completed' | 'Removed';
+export type StateCategory = 'New' | 'Active' | 'Resolved' | 'Closed' | 'Removed';
 
 // Import template configs
 import { tMinus15Config } from './t-minus-15';
@@ -92,12 +100,12 @@ export function getSupportedTemplates(): string[] {
  * Map a DevOps state to our internal category
  */
 export function getStateCategory(state: string, config: ProcessTemplateConfig): StateCategory {
-  if (config.states.proposed.includes(state)) return 'Proposed';
-  if (config.states.inProgress.includes(state)) return 'InProgress';
+  if (config.states.new.includes(state)) return 'New';
+  if (config.states.active.includes(state)) return 'Active';
   if (config.states.resolved.includes(state)) return 'Resolved';
-  if (config.states.closed.includes(state)) return 'Completed';
+  if (config.states.closed.includes(state)) return 'Closed';
   if (config.states.removed.includes(state)) return 'Removed';
-  return 'InProgress'; // Default fallback for unknown states
+  return 'Active'; // Default fallback for unknown states
 }
 
 /**

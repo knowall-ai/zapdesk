@@ -167,9 +167,17 @@ export class AzureDevOpsService {
     return data.value;
   }
 
-  // Get work items with "ticket" tag from a specific project
-  async getTickets(projectName: string, additionalFilters?: string): Promise<DevOpsWorkItem[]> {
-    // WIQL query to get work items tagged as "ticket"
+  // Get work items from a specific project
+  // By default, filters to work items with "ticket" tag
+  // Set ticketsOnly=false to get all work items regardless of tags
+  async getTickets(
+    projectName: string,
+    options?: { additionalFilters?: string; ticketsOnly?: boolean }
+  ): Promise<DevOpsWorkItem[]> {
+    const { additionalFilters, ticketsOnly = true } = options || {};
+
+    // WIQL query - optionally filter by "ticket" tag
+    const tagFilter = ticketsOnly ? "AND [System.Tags] CONTAINS 'ticket'" : '';
     const wiql = {
       query: `
         SELECT [System.Id], [System.Title], [System.State], [System.CreatedDate],
@@ -178,7 +186,7 @@ export class AzureDevOpsService {
                [System.WorkItemType], [System.AreaPath], [System.TeamProject]
         FROM WorkItems
         WHERE [System.TeamProject] = '${projectName}'
-          AND [System.Tags] CONTAINS 'ticket'
+          ${tagFilter}
           ${additionalFilters || ''}
         ORDER BY [System.ChangedDate] DESC
       `,
@@ -474,13 +482,14 @@ export class AzureDevOpsService {
   }
 
   // Get all tickets from all accessible projects
-  async getAllTickets(): Promise<Ticket[]> {
+  // Set ticketsOnly=false to get all work items (not just those tagged as "ticket")
+  async getAllTickets(ticketsOnly: boolean = true): Promise<Ticket[]> {
     const projects = await this.getProjects();
     const allTickets: Ticket[] = [];
 
     for (const project of projects) {
       try {
-        const workItems = await this.getTickets(project.name);
+        const workItems = await this.getTickets(project.name, { ticketsOnly });
         const organization: Organization = {
           id: project.id,
           name: project.name,

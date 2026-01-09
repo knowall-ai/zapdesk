@@ -12,8 +12,13 @@ export const tMinus15Config: ProcessTemplateConfig = {
   id: 't-minus-15',
 
   workItemTypes: {
-    ticket: 'Task', // Default type for creating support tickets
-    supportedTypes: ['Task', 'Bug', 'Enhancement', 'Issue', 'User Story', 'Feature', 'Epic'],
+    // Ticket types - must be tagged with "ticket" to appear in DevDesk
+    ticketTypes: ['Task', 'Bug', 'Enhancement', 'Issue'],
+    defaultTicketType: 'Task',
+
+    // Feature and Epic types for hierarchy
+    featureType: 'Feature',
+    epicType: 'Epic',
   },
 
   fields: {
@@ -27,10 +32,10 @@ export const tMinus15Config: ProcessTemplateConfig = {
   },
 
   states: {
-    proposed: ['New', 'To Do'],
-    inProgress: ['Active', 'In Progress', 'Committed', 'Approved'],
-    resolved: ['Resolved', 'Done'],
-    closed: ['Closed'],
+    new: ['New', 'To Do'],
+    active: ['Active', 'In Progress', 'Committed', 'Approved'],
+    resolved: ['Resolved'],
+    closed: ['Closed', 'Done'],
     removed: ['Removed'],
   },
 

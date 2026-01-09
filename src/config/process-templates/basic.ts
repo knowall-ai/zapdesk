@@ -13,8 +13,15 @@ export const basicConfig: ProcessTemplateConfig = {
   id: 'basic',
 
   workItemTypes: {
-    ticket: 'Issue', // Basic uses Issue for general items (no Task type by default)
-    supportedTypes: ['Issue', 'Task', 'Epic'],
+    // Ticket types - must be tagged with "ticket" to appear in DevDesk
+    ticketTypes: ['Issue', 'Task'],
+    defaultTicketType: 'Issue',
+
+    // Feature type - Basic template does NOT have Feature type
+    featureType: undefined,
+
+    // Epic type
+    epicType: 'Epic',
   },
 
   fields: {
@@ -24,10 +31,10 @@ export const basicConfig: ProcessTemplateConfig = {
   },
 
   states: {
-    proposed: ['To Do'],
-    inProgress: ['Doing'],
-    resolved: ['Done'],
-    closed: ['Done'], // Basic doesn't have separate Closed state
+    new: ['To Do'],
+    active: ['Doing'],
+    resolved: [], // Basic doesn't have a Resolved state
+    closed: ['Done'],
     removed: [], // Basic doesn't have Removed state
   },
 
