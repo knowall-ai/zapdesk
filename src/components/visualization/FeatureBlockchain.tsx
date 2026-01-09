@@ -384,7 +384,7 @@ export default function FeatureTimechain({
                           className="ml-1 text-sm"
                           style={{ color: isSelected ? '#4ade80' : colors.subtext }}
                         >
-                          tasks
+                          items
                         </span>
                       </div>
 
@@ -508,7 +508,7 @@ export default function FeatureTimechain({
             >
               <div>
                 <p className="text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-                  Tasks
+                  Items
                 </p>
                 <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
                   {extractTasks(selectedFeature.workItems).length}
@@ -547,7 +547,7 @@ export default function FeatureTimechain({
                   }}
                 >
                   <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                    No tasks in this feature
+                    No work items in this feature
                   </p>
                 </div>
               ) : (
@@ -684,7 +684,7 @@ export default function FeatureTimechain({
             style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
           >
             <h4 className="mb-3 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-              Tasks ({extractTasks(selectedFeature.workItems).length})
+              Work Items ({extractTasks(selectedFeature.workItems).length})
             </h4>
             <div className="max-h-[400px] space-y-2 overflow-y-auto">
               {extractTasks(selectedFeature.workItems).map((workItem) => {
@@ -817,13 +817,6 @@ const workItemTypeColors: Record<string, WorkItemTypeColor> = {
     textColor: '#fecaca',
     label: 'Bug',
   },
-  'user story': {
-    fill: '#7c3aed',
-    fillLight: '#8b5cf6',
-    stroke: '#a78bfa',
-    textColor: '#ddd6fe',
-    label: 'User Story',
-  },
   issue: {
     fill: '#ea580c',
     fillLight: '#f97316',
@@ -837,6 +830,20 @@ const workItemTypeColors: Record<string, WorkItemTypeColor> = {
     stroke: '#38bdf8',
     textColor: '#bae6fd',
     label: 'Enhancement',
+  },
+  risk: {
+    fill: '#b91c1c',
+    fillLight: '#dc2626',
+    stroke: '#ef4444',
+    textColor: '#fecaca',
+    label: 'Risk',
+  },
+  question: {
+    fill: '#7c2d12',
+    fillLight: '#9a3412',
+    stroke: '#ea580c',
+    textColor: '#fed7aa',
+    label: 'Question',
   },
   default: {
     fill: '#4d7c0f',
