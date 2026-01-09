@@ -551,96 +551,129 @@ export default function FeatureTimechain({
                   </p>
                 </div>
               ) : (
-                <div
-                  className="relative overflow-hidden"
-                  style={{
-                    width: treemapSize,
-                    height: treemapSize,
-                    backgroundColor: '#0f1419',
-                  }}
-                >
-                  <svg width="100%" height="100%" viewBox={`0 0 ${treemapSize} ${treemapSize}`}>
-                    {/* Gradient definitions */}
-                    <defs>
-                      <linearGradient id="grad-done" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#14b8a6" />
-                        <stop offset="100%" stopColor="#0d9488" />
-                      </linearGradient>
-                      <linearGradient id="grad-progress" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#84cc16" />
-                        <stop offset="100%" stopColor="#65a30d" />
-                      </linearGradient>
-                      <linearGradient id="grad-new" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#a3e635" />
-                        <stop offset="100%" stopColor="#4d7c0f" />
-                      </linearGradient>
-                    </defs>
-                    {treemapRects.map((rect) => {
-                      const colors = getWorkItemColors(rect.item.state);
-                      const totalWork =
-                        (rect.item.completedWork || 0) + (rect.item.remainingWork || 0);
-                      const gradientId =
-                        colors.fill === '#0d9488'
-                          ? 'url(#grad-done)'
-                          : colors.fill === '#65a30d'
-                            ? 'url(#grad-progress)'
-                            : 'url(#grad-new)';
-
-                      return (
-                        <g key={rect.item.id}>
-                          {/* Main rectangle with gradient */}
-                          <rect
-                            x={rect.x + 1}
-                            y={rect.y + 1}
-                            width={Math.max(rect.width - 2, 0)}
-                            height={Math.max(rect.height - 2, 0)}
-                            fill={gradientId}
-                            stroke={colors.stroke}
-                            strokeWidth="1"
-                            className="cursor-pointer transition-opacity hover:opacity-80"
+                <>
+                  <div
+                    className="relative overflow-hidden"
+                    style={{
+                      width: treemapSize,
+                      height: treemapSize,
+                      backgroundColor: '#0f1419',
+                    }}
+                  >
+                    <svg width="100%" height="100%" viewBox={`0 0 ${treemapSize} ${treemapSize}`}>
+                      {/* Gradient definitions for each work item type */}
+                      <defs>
+                        {Object.entries(workItemTypeColors).map(([key, color]) => (
+                          <linearGradient
+                            key={key}
+                            id={`grad-type-${key.replace(/\s+/g, '-')}`}
+                            x1="0%"
+                            y1="0%"
+                            x2="100%"
+                            y2="100%"
                           >
-                            <title>
-                              {rect.item.title}
-                              {'\n'}#{rect.item.id} • {rect.item.state}
-                              {'\n'}
-                              {totalWork}h total
-                            </title>
-                          </rect>
-                          {/* Label - only show if block is big enough */}
-                          {rect.width > 40 && rect.height > 30 && (
-                            <text
-                              x={rect.x + rect.width / 2}
-                              y={rect.y + rect.height / 2}
-                              textAnchor="middle"
-                              dominantBaseline="middle"
-                              fill={colors.textColor}
-                              fontSize={rect.width > 60 ? '11' : '9'}
-                              fontFamily="monospace"
-                              fontWeight="500"
+                            <stop offset="0%" stopColor={color.fillLight} />
+                            <stop offset="100%" stopColor={color.fill} />
+                          </linearGradient>
+                        ))}
+                      </defs>
+                      {treemapRects.map((rect) => {
+                        const typeColor = getWorkItemTypeColor(rect.item.workItemType);
+                        const totalWork =
+                          (rect.item.completedWork || 0) + (rect.item.remainingWork || 0);
+                        const typeKey = (rect.item.workItemType || 'default')
+                          .toLowerCase()
+                          .replace(/\s+/g, '-');
+                        const gradientId = workItemTypeColors[
+                          rect.item.workItemType?.toLowerCase() || ''
+                        ]
+                          ? `url(#grad-type-${typeKey})`
+                          : 'url(#grad-type-default)';
+
+                        return (
+                          <g key={rect.item.id}>
+                            {/* Main rectangle with gradient */}
+                            <rect
+                              x={rect.x + 1}
+                              y={rect.y + 1}
+                              width={Math.max(rect.width - 2, 0)}
+                              height={Math.max(rect.height - 2, 0)}
+                              fill={gradientId}
+                              stroke={typeColor.stroke}
+                              strokeWidth="1"
+                              className="cursor-pointer transition-opacity hover:opacity-80"
                             >
-                              {rect.item.id}
-                            </text>
-                          )}
-                          {/* Show hours if really big */}
-                          {rect.width > 60 && rect.height > 50 && (
-                            <text
-                              x={rect.x + rect.width / 2}
-                              y={rect.y + rect.height / 2 + 14}
-                              textAnchor="middle"
-                              dominantBaseline="middle"
-                              fill={colors.textColor}
-                              fontSize="9"
-                              fontFamily="sans-serif"
-                              opacity="0.7"
-                            >
-                              {totalWork}h
-                            </text>
-                          )}
-                        </g>
-                      );
-                    })}
-                  </svg>
-                </div>
+                              <title>
+                                {rect.item.title}
+                                {'\n'}#{rect.item.id} • {rect.item.workItemType || 'Task'} •{' '}
+                                {rect.item.state}
+                                {'\n'}
+                                {totalWork}h total
+                              </title>
+                            </rect>
+                            {/* Label - only show if block is big enough */}
+                            {rect.width > 40 && rect.height > 30 && (
+                              <text
+                                x={rect.x + rect.width / 2}
+                                y={rect.y + rect.height / 2}
+                                textAnchor="middle"
+                                dominantBaseline="middle"
+                                fill={typeColor.textColor}
+                                fontSize={rect.width > 60 ? '11' : '9'}
+                                fontFamily="monospace"
+                                fontWeight="500"
+                              >
+                                {rect.item.id}
+                              </text>
+                            )}
+                            {/* Show hours if really big */}
+                            {rect.width > 60 && rect.height > 50 && (
+                              <text
+                                x={rect.x + rect.width / 2}
+                                y={rect.y + rect.height / 2 + 14}
+                                textAnchor="middle"
+                                dominantBaseline="middle"
+                                fill={typeColor.textColor}
+                                fontSize="9"
+                                fontFamily="sans-serif"
+                                opacity="0.7"
+                              >
+                                {totalWork}h
+                              </text>
+                            )}
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                  {/* Legend showing work item types present */}
+                  <div className="mt-3 flex flex-wrap justify-center gap-3">
+                    {(() => {
+                      // Get unique work item types in this feature
+                      const types = new Set<string>();
+                      extractTasks(selectedFeature.workItems).forEach((item) => {
+                        types.add(item.workItemType?.toLowerCase() || 'task');
+                      });
+                      return Array.from(types).map((type) => {
+                        const color = getWorkItemTypeColor(type);
+                        return (
+                          <div key={type} className="flex items-center gap-1.5">
+                            <div
+                              className="h-3 w-3 rounded-sm"
+                              style={{
+                                background: `linear-gradient(135deg, ${color.fillLight} 0%, ${color.fill} 100%)`,
+                                border: `1px solid ${color.stroke}`,
+                              }}
+                            />
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                              {color.label}
+                            </span>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -758,4 +791,64 @@ function getWorkItemColors(state: string) {
     stroke: '#84cc16',
     textColor: '#d9f99d',
   };
+}
+
+// Work item type colors for Explorer treemap
+interface WorkItemTypeColor {
+  fill: string;
+  fillLight: string;
+  stroke: string;
+  textColor: string;
+  label: string;
+}
+
+const workItemTypeColors: Record<string, WorkItemTypeColor> = {
+  task: {
+    fill: '#0d9488',
+    fillLight: '#14b8a6',
+    stroke: '#2dd4bf',
+    textColor: '#99f6e4',
+    label: 'Task',
+  },
+  bug: {
+    fill: '#dc2626',
+    fillLight: '#ef4444',
+    stroke: '#f87171',
+    textColor: '#fecaca',
+    label: 'Bug',
+  },
+  'user story': {
+    fill: '#7c3aed',
+    fillLight: '#8b5cf6',
+    stroke: '#a78bfa',
+    textColor: '#ddd6fe',
+    label: 'User Story',
+  },
+  issue: {
+    fill: '#ea580c',
+    fillLight: '#f97316',
+    stroke: '#fb923c',
+    textColor: '#fed7aa',
+    label: 'Issue',
+  },
+  enhancement: {
+    fill: '#0284c7',
+    fillLight: '#0ea5e9',
+    stroke: '#38bdf8',
+    textColor: '#bae6fd',
+    label: 'Enhancement',
+  },
+  default: {
+    fill: '#4d7c0f',
+    fillLight: '#65a30d',
+    stroke: '#84cc16',
+    textColor: '#d9f99d',
+    label: 'Other',
+  },
+};
+
+function getWorkItemTypeColor(workItemType?: string): WorkItemTypeColor {
+  if (!workItemType) return workItemTypeColors.default;
+  const normalized = workItemType.toLowerCase();
+  return workItemTypeColors[normalized] || workItemTypeColors.default;
 }
