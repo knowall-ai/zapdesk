@@ -157,7 +157,7 @@ export default function ProjectDetailPage() {
           {project.domain && <p style={{ color: 'var(--text-secondary)' }}>{project.domain}</p>}
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
           {/* Details card */}
           <div className="card p-6">
             <h2 className="mb-4 font-semibold" style={{ color: 'var(--text-primary)' }}>
