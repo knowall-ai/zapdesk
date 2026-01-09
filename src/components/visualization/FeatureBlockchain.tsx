@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { ExternalLink, User, Clock } from 'lucide-react';
+import Link from 'next/link';
 import type { Feature, WorkItem } from '@/types';
 
 // Treemap layout algorithm - shows Tasks (works with or without User Story layer)
@@ -688,22 +689,20 @@ export default function FeatureTimechain({
             </h4>
             <div className="max-h-[400px] space-y-2 overflow-y-auto">
               {extractTasks(selectedFeature.workItems).map((workItem) => {
-                const colors = getWorkItemColors(workItem.state);
+                const typeColor = getWorkItemTypeColor(workItem.workItemType);
                 const totalWork = (workItem.completedWork || 0) + (workItem.remainingWork || 0);
 
                 return (
-                  <a
+                  <Link
                     key={workItem.id}
-                    href={workItem.devOpsUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href={`/tickets/${workItem.id}`}
                     className="flex items-center justify-between rounded p-2 transition-colors hover:bg-[var(--surface-hover)]"
-                    style={{ border: `1px solid ${colors.stroke}` }}
+                    style={{ border: `1px solid ${typeColor.stroke}` }}
                   >
                     <div className="flex items-center gap-3">
                       <span
                         className="flex h-8 w-8 items-center justify-center rounded font-mono text-xs font-medium"
-                        style={{ backgroundColor: colors.fill, color: colors.textColor }}
+                        style={{ backgroundColor: typeColor.fill, color: typeColor.textColor }}
                       >
                         {workItem.id}
                       </span>
@@ -720,7 +719,7 @@ export default function FeatureTimechain({
                         >
                           <span
                             className="rounded px-1.5 py-0.5"
-                            style={{ backgroundColor: colors.fill, color: colors.textColor }}
+                            style={{ backgroundColor: typeColor.fill, color: typeColor.textColor }}
                           >
                             {workItem.state}
                           </span>
@@ -742,7 +741,7 @@ export default function FeatureTimechain({
                         <span>{totalWork}h</span>
                       </div>
                     </div>
-                  </a>
+                  </Link>
                 );
               })}
             </div>
@@ -760,37 +759,6 @@ export default function FeatureTimechain({
       )}
     </div>
   );
-}
-
-function getWorkItemColors(state: string) {
-  const normalizedState = state.toLowerCase();
-  // Done/Closed - Cyan/teal like mempool confirmed transactions
-  if (normalizedState === 'done' || normalizedState === 'closed' || normalizedState === 'removed') {
-    return {
-      fill: '#0d9488',
-      stroke: '#2dd4bf',
-      textColor: '#99f6e4',
-    };
-  }
-  // Active/In Progress - Bright lime green like mempool high priority
-  if (
-    normalizedState === 'active' ||
-    normalizedState === 'in progress' ||
-    normalizedState === 'doing' ||
-    normalizedState === 'resolved'
-  ) {
-    return {
-      fill: '#65a30d',
-      stroke: '#a3e635',
-      textColor: '#ecfccb',
-    };
-  }
-  // New/To Do - Olive/yellow-green like mempool standard
-  return {
-    fill: '#4d7c0f',
-    stroke: '#84cc16',
-    textColor: '#d9f99d',
-  };
 }
 
 // Work item type colors for Explorer treemap
