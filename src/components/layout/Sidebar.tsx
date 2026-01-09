@@ -241,10 +241,12 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
                   <span className="truncate">{view.name}</span>
                   {view.count !== undefined && (
                     <span
-                      className={`rounded px-1.5 py-0.5 text-xs ${
+                      className={`rounded px-1.5 py-0.5 text-xs font-medium ${
                         isActive
                           ? 'bg-[var(--primary)] text-white'
-                          : 'bg-[var(--surface)] text-[var(--text-muted)]'
+                          : view.count > 0
+                            ? 'bg-[rgba(34,197,94,0.15)] text-[var(--primary)]'
+                            : 'bg-[var(--surface)] text-[var(--text-muted)]'
                       }`}
                     >
                       {view.count}
