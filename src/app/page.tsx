@@ -329,13 +329,15 @@ export default function HomePage() {
                         href={`/projects/${project.id}`}
                         className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex min-w-0 flex-1 items-center gap-3">
                           <div
-                            className={`flex h-8 w-8 items-center justify-center rounded text-sm font-medium text-white ${projectColors[index % projectColors.length]}`}
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded text-sm font-medium text-white ${projectColors[index % projectColors.length]}`}
                           >
                             {getProjectInitials(project.name)}
                           </div>
-                          <span style={{ color: 'var(--text-primary)' }}>{project.name}</span>
+                          <span className="truncate" style={{ color: 'var(--text-primary)' }}>
+                            {project.name}
+                          </span>
                         </div>
                         <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
                       </Link>
