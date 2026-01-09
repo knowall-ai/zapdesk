@@ -53,8 +53,9 @@ async function fetchProjectProcess(
 ): Promise<ProjectProcess> {
   try {
     // Get project properties which includes process template info
+    // Using api-version=7.1-preview.1 as recommended by Azure DevOps docs
     const propsResponse = await fetch(
-      `${baseUrl}/_apis/projects/${projectId}/properties?api-version=7.0`,
+      `${baseUrl}/_apis/projects/${projectId}/properties?api-version=7.1-preview.1`,
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -75,16 +76,14 @@ async function fetchProjectProcess(
     const propsData = await propsResponse.json();
     const properties = propsData.value || [];
 
-    // Look for process template property
-    // The property name varies: "System.ProcessTemplateType" or "System.Process Template"
-    const templateProp = properties.find(
-      (p: { name: string; value: string }) =>
-        p.name === 'System.ProcessTemplateType' ||
-        p.name === 'System.Process Template' ||
-        p.name.includes('ProcessTemplate')
+    // Look for process template name property
+    // Azure DevOps uses "System.Process Template" for the human-readable name (e.g., "Scrum", "Basic")
+    // and "System.ProcessTemplateType" for the GUID - we want the name, not the GUID
+    const templateNameProp = properties.find(
+      (p: { name: string; value: string }) => p.name === 'System.Process Template'
     );
 
-    const processTemplate = templateProp?.value || 'Unknown';
+    const processTemplate = templateNameProp?.value || 'Unknown';
     const supported = isTemplateSupported(processTemplate);
 
     return {

@@ -41,12 +41,14 @@ export type StateCategory = 'Proposed' | 'InProgress' | 'Resolved' | 'Completed'
 // Import template configs
 import { tMinus15Config } from './t-minus-15';
 import { basicConfig } from './basic';
+import { scrumConfig } from './scrum';
 
 // Registry of all supported templates
 // Key is normalized template name (lowercase, hyphens)
 const templates: Record<string, ProcessTemplateConfig> = {
   't-minus-15': tMinus15Config,
   basic: basicConfig,
+  scrum: scrumConfig,
 };
 
 // Default template for backward compatibility
@@ -115,3 +117,4 @@ export function getPriorityLabel(value: number, config: ProcessTemplateConfig): 
 // Re-export template configs for direct access if needed
 export { tMinus15Config } from './t-minus-15';
 export { basicConfig } from './basic';
+export { scrumConfig } from './scrum';
