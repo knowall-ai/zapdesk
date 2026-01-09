@@ -1,6 +1,14 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import { useSession } from 'next-auth/react';
 import type { DevOpsOrganization } from '@/types';
 
@@ -27,15 +35,23 @@ export default function OrganizationProvider({ children }: Props) {
   const [selectedOrganization, setSelectedOrgState] = useState<DevOpsOrganization | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   const fetchOrganizations = useCallback(async () => {
     if (status !== 'authenticated') return;
 
+    const currentRequestId = ++requestIdRef.current;
     setIsLoading(true);
     setError(null);
 
     try {
       const response = await fetch('/api/devops/accounts');
+
+      // Check if this request is still current (prevents race conditions)
+      if (currentRequestId !== requestIdRef.current) {
+        return;
+      }
+
       if (!response.ok) {
         throw new Error('Failed to fetch organizations');
       }
@@ -57,15 +73,21 @@ export default function OrganizationProvider({ children }: Props) {
             localStorage.removeItem(STORAGE_KEY);
           }
           setSelectedOrgState(orgs[0]);
-          // Save the new selection to localStorage
           localStorage.setItem(STORAGE_KEY, orgs[0].accountName);
         }
       }
     } catch (err) {
+      // Only update state if this request is still current
+      if (currentRequestId !== requestIdRef.current) {
+        return;
+      }
       console.error('Error fetching organizations:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch organizations');
     } finally {
-      setIsLoading(false);
+      // Only update loading state if this request is still current
+      if (currentRequestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [status]);
 

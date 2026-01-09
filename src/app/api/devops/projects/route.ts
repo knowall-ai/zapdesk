@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { validateOrganizationAccess } from '@/lib/devops-auth';
 import type { Organization, SLALevel } from '@/types';
 import { isTemplateSupported, getTemplateConfig } from '@/config/process-templates';
 import type { ProcessTemplateConfig } from '@/config/process-templates';
@@ -45,15 +46,48 @@ function parseSLA(description?: string): SLALevel | undefined {
   return undefined;
 }
 
-// Cache for process ID to name mapping (per organization)
-const processNameCache = new Map<string, Map<string, string>>();
+// Cache for process ID to name mapping (per organization) with TTL
+interface CacheEntry {
+  data: Map<string, string>;
+  timestamp: number;
+}
+const processNameCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes TTL
+const MAX_CACHE_SIZE = 50; // Maximum number of organizations to cache
+
+// Clean up expired cache entries
+function cleanupCache(): void {
+  const now = Date.now();
+  for (const [key, entry] of processNameCache) {
+    if (now - entry.timestamp > CACHE_TTL_MS) {
+      processNameCache.delete(key);
+    }
+  }
+  // If still over limit, remove oldest entries
+  if (processNameCache.size > MAX_CACHE_SIZE) {
+    const entries = Array.from(processNameCache.entries()).sort(
+      (a, b) => a[1].timestamp - b[1].timestamp
+    );
+    const toRemove = entries.slice(0, processNameCache.size - MAX_CACHE_SIZE);
+    for (const [key] of toRemove) {
+      processNameCache.delete(key);
+    }
+  }
+}
 
 // Fetch all processes for an organization and cache the ID->name mapping
 async function fetchProcesses(baseUrl: string, accessToken: string): Promise<Map<string, string>> {
   const cacheKey = baseUrl;
-  if (processNameCache.has(cacheKey)) {
-    return processNameCache.get(cacheKey)!;
+  const now = Date.now();
+
+  // Check cache with TTL
+  const cached = processNameCache.get(cacheKey);
+  if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+    return cached.data;
   }
+
+  // Clean up old entries periodically
+  cleanupCache();
 
   const processMap = new Map<string, string>();
   try {
@@ -77,7 +111,7 @@ async function fetchProcesses(baseUrl: string, accessToken: string): Promise<Map
     console.error('Failed to fetch processes:', error);
   }
 
-  processNameCache.set(cacheKey, processMap);
+  processNameCache.set(cacheKey, { data: processMap, timestamp: now });
   return processMap;
 }
 
@@ -139,7 +173,8 @@ async function fetchProjectProcess(
       isSupported: supported,
       config: supported ? getTemplateConfig(processTemplate) : undefined,
     };
-  } catch {
+  } catch (error) {
+    console.error(`[fetchProjectProcess] Failed to fetch process for project ${projectId}:`, error);
     return {
       projectId,
       processTemplate: 'Unknown',
@@ -161,6 +196,15 @@ export async function GET(request: NextRequest) {
 
     if (!devOpsOrg) {
       return NextResponse.json({ error: 'No organization specified' }, { status: 400 });
+    }
+
+    // Validate user has access to the requested organization
+    const hasAccess = await validateOrganizationAccess(session.accessToken, devOpsOrg);
+    if (!hasAccess) {
+      return NextResponse.json(
+        { error: 'Access denied to the specified organization' },
+        { status: 403 }
+      );
     }
 
     const baseUrl = `https://dev.azure.com/${devOpsOrg}`;

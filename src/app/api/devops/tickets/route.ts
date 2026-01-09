@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService, workItemToTicket, setStateCategoryCache } from '@/lib/devops';
 import type { Ticket, TicketStatus } from '@/types';
 
@@ -71,8 +72,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Project and title are required' }, { status: 400 });
     }
 
-    // Get organization from header or use default
-    const organization = request.headers.get('x-devops-org') || undefined;
+    // Get organization from header
+    const organization = request.headers.get('x-devops-org');
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization specified' }, { status: 400 });
+    }
+
+    // Validate user has access to the requested organization
+    const hasAccess = await validateOrganizationAccess(session.accessToken, organization);
+    if (!hasAccess) {
+      return NextResponse.json(
+        { error: 'Access denied to the specified organization' },
+        { status: 403 }
+      );
+    }
+
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
 
     // Create the ticket with 'ticket' tag always included
@@ -114,6 +128,15 @@ export async function GET(request: NextRequest) {
 
     if (!organization) {
       return NextResponse.json({ error: 'No organization specified' }, { status: 400 });
+    }
+
+    // Validate user has access to the requested organization
+    const hasAccess = await validateOrganizationAccess(session.accessToken, organization);
+    if (!hasAccess) {
+      return NextResponse.json(
+        { error: 'Access denied to the specified organization' },
+        { status: 403 }
+      );
     }
 
     // Fetch and cache state categories before getting tickets

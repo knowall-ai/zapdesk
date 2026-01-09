@@ -60,6 +60,10 @@ export async function GET() {
     return NextResponse.json({ organizations });
   } catch (error) {
     console.error('Error fetching Azure DevOps organizations:', error);
-    return NextResponse.json({ error: 'Failed to fetch organizations' }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json(
+      { error: 'Failed to fetch organizations', details: errorMessage },
+      { status: 500 }
+    );
   }
 }

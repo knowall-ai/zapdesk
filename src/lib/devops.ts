@@ -177,7 +177,7 @@ export class AzureDevOpsService {
     const { additionalFilters, ticketsOnly = true } = options || {};
 
     // WIQL query - optionally filter by "ticket" tag
-    const tagFilter = ticketsOnly ? "AND [System.Tags] CONTAINS 'ticket'" : '';
+    const ticketTagClause = ticketsOnly ? "AND [System.Tags] CONTAINS 'ticket'" : '';
     const wiql = {
       query: `
         SELECT [System.Id], [System.Title], [System.State], [System.CreatedDate],
@@ -186,7 +186,7 @@ export class AzureDevOpsService {
                [System.WorkItemType], [System.AreaPath], [System.TeamProject]
         FROM WorkItems
         WHERE [System.TeamProject] = '${projectName}'
-          ${tagFilter}
+          ${ticketTagClause}
           ${additionalFilters || ''}
         ORDER BY [System.ChangedDate] DESC
       `,

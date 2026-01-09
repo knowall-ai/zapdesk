@@ -27,7 +27,7 @@ export const scrumConfig: ProcessTemplateConfig = {
     priorityValues: {
       1: 'Urgent',
       2: 'High',
-      3: 'Medium',
+      3: 'Normal', // Consistent with T-Minus-15 template
       4: 'Low',
     },
   },

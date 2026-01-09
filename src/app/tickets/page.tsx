@@ -289,7 +289,7 @@ function TicketsPageContent() {
               {/* Tickets only toggle */}
               <button
                 onClick={() => setTicketsOnly(!ticketsOnly)}
-                className={`flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                   ticketsOnly
                     ? 'bg-[var(--primary)] text-white'
                     : 'bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -306,7 +306,7 @@ function TicketsPageContent() {
               <div className="flex items-center gap-1 rounded-lg bg-[var(--surface)] p-1">
                 <button
                   onClick={() => handleDisplayModeChange('list')}
-                  className={`flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                     displayMode === 'list'
                       ? 'bg-[var(--primary)] text-white'
                       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -318,7 +318,7 @@ function TicketsPageContent() {
                 </button>
                 <button
                   onClick={() => handleDisplayModeChange('kanban')}
-                  className={`flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                     displayMode === 'kanban'
                       ? 'bg-[var(--primary)] text-white'
                       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
