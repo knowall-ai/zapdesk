@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useRef, useCallback, useMemo } from 'react';
-import { ExternalLink, User, Clock } from 'lucide-react';
-import Link from 'next/link';
+import { ExternalLink } from 'lucide-react';
 import type { Feature, WorkItem } from '@/types';
+import { WorkItemList, WORKITEM_COLUMNS } from '@/components/tickets';
 
 // Treemap layout algorithm - shows Tasks (works with or without User Story layer)
 interface TreemapRect {
@@ -441,12 +441,12 @@ export default function FeatureTimechain({
         </div>
       </div>
 
-      {/* Two-column layout: Feature details panel on left, task list on right */}
+      {/* Two-column layout: Feature details panel (narrow) on left, work items list (wide) on right */}
       {selectedFeature ? (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {/* Left column: Feature Details panel */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {/* Left column: Feature Details panel (1/3 width) */}
           <div
-            className="rounded-lg p-4"
+            className="rounded-lg p-4 lg:col-span-1"
             style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
           >
             {/* Feature header */}
@@ -679,72 +679,19 @@ export default function FeatureTimechain({
             </div>
           </div>
 
-          {/* Right column: Task list */}
+          {/* Right column: Work Items list (2/3 width) */}
           <div
-            className="rounded-lg p-4"
+            className="overflow-hidden rounded-lg lg:col-span-2"
             style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
           >
-            <h4 className="mb-3 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-              Work Items ({extractTasks(selectedFeature.workItems).length})
-            </h4>
-            <div className="max-h-[400px] space-y-2 overflow-y-auto">
-              {extractTasks(selectedFeature.workItems).map((workItem) => {
-                const typeColor = getWorkItemTypeColor(workItem.workItemType);
-                const totalWork = (workItem.completedWork || 0) + (workItem.remainingWork || 0);
-
-                return (
-                  <Link
-                    key={workItem.id}
-                    href={`/tickets/${workItem.id}`}
-                    className="flex items-center justify-between rounded p-2 transition-colors hover:bg-[var(--surface-hover)]"
-                    style={{ border: `1px solid ${typeColor.stroke}` }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span
-                        className="flex h-8 w-8 items-center justify-center rounded font-mono text-xs font-medium"
-                        style={{ backgroundColor: typeColor.fill, color: typeColor.textColor }}
-                      >
-                        {workItem.id}
-                      </span>
-                      <div>
-                        <p
-                          className="line-clamp-1 text-sm font-medium"
-                          style={{ color: 'var(--text-primary)' }}
-                        >
-                          {workItem.title}
-                        </p>
-                        <div
-                          className="flex items-center gap-2 text-xs"
-                          style={{ color: 'var(--text-muted)' }}
-                        >
-                          <span
-                            className="rounded px-1.5 py-0.5"
-                            style={{ backgroundColor: typeColor.fill, color: typeColor.textColor }}
-                          >
-                            {workItem.state}
-                          </span>
-                          {workItem.assignee && (
-                            <span className="flex items-center gap-1">
-                              <User size={10} />
-                              {workItem.assignee.displayName.split(' ')[0]}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div
-                        className="flex items-center gap-1 text-xs"
-                        style={{ color: 'var(--text-muted)' }}
-                      >
-                        <Clock size={10} />
-                        <span>{totalWork}h</span>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
+            <WorkItemList
+              items={extractTasks(selectedFeature.workItems)}
+              title="Work Items"
+              columns={WORKITEM_COLUMNS}
+              groupBy="none"
+              compact
+              maxHeight="500px"
+            />
           </div>
         </div>
       ) : (

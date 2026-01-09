@@ -307,6 +307,9 @@ export interface WorkItem {
   devOpsUrl: string;
   tags: string[];
   priority?: TicketPriority;
+  // Optional ticket-specific fields (populated when item is a ticket)
+  requester?: Customer;
+  organization?: Organization;
 }
 
 // Treemap data structure for visualization
