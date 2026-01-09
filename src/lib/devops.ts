@@ -14,28 +14,56 @@ import type {
 const DEVOPS_ORG = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
 const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
 
-// Map Azure DevOps states to Zendesk-like statuses
+// Map Azure DevOps state category to Zendesk-like status
+// Categories are consistent across all process templates (Basic, Agile, Scrum, CMMI)
+function mapCategoryToStatus(category: string): TicketStatus {
+  const categoryMap: Record<string, TicketStatus> = {
+    Proposed: 'New',
+    InProgress: 'In Progress',
+    Resolved: 'Resolved',
+    Completed: 'Closed',
+    Removed: 'Closed',
+  };
+  return categoryMap[category] || 'Open';
+}
+
+// Cache for state-to-category mapping (populated by fetchStateCategories)
+let stateCategoryCache: Record<string, string> = {};
+
+// Set the state category cache (called from API routes after fetching states)
+export function setStateCategoryCache(stateCategories: Record<string, string>) {
+  stateCategoryCache = stateCategories;
+}
+
+// Map Azure DevOps state to Zendesk-like status using cached categories
 function mapStateToStatus(state: string): TicketStatus {
-  const stateMap: Record<string, TicketStatus> = {
+  const category = stateCategoryCache[state];
+  if (category) {
+    return mapCategoryToStatus(category);
+  }
+  // Fallback for common states if cache not populated
+  if (state === 'New') return 'New';
+  if (state === 'Closed' || state === 'Done' || state === 'Removed') return 'Closed';
+  if (state === 'Resolved') return 'Resolved';
+  return 'Open';
+}
+
+// Map Zendesk-like statuses back to Azure DevOps states
+export function mapStatusToState(status: TicketStatus): string {
+  const statusMap: Record<TicketStatus, string> = {
     New: 'New',
-    Active: 'Open',
-    'In Progress': 'In Progress',
-    Doing: 'In Progress',
+    Open: 'Active',
+    'In Progress': 'Active',
+    Pending: 'Blocked',
     Resolved: 'Resolved',
     Closed: 'Closed',
-    Done: 'Closed',
-    Removed: 'Closed',
-    // Custom states for support
-    Pending: 'Pending',
-    'Waiting for Customer': 'Pending',
-    'On Hold': 'Pending',
   };
-  return stateMap[state] || 'Open';
+  return statusMap[status] || 'Active';
 }
 
 // Map priority numbers to Zendesk-like priorities
-function mapPriority(priority?: number): TicketPriority {
-  if (!priority) return 'Normal';
+function mapPriority(priority?: number): TicketPriority | undefined {
+  if (!priority) return undefined;
   if (priority === 1) return 'Urgent';
   if (priority === 2) return 'High';
   if (priority === 3) return 'Normal';
@@ -85,6 +113,7 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     title: fields['System.Title'],
     description: fields['System.Description'] || '',
     status: mapStateToStatus(fields['System.State']),
+    devOpsState: fields['System.State'], // Preserve original DevOps state
     priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
     requester: identityToCustomer(fields['System.CreatedBy']),
     assignee: identityToUser(fields['System.AssignedTo']),
@@ -229,7 +258,7 @@ export class AzureDevOpsService {
           id: number;
           text: string;
           createdDate: string;
-          createdBy: { displayName: string; uniqueName: string; id: string };
+          createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string };
         }) => ({
           id: c.id,
           content: c.text,
@@ -238,6 +267,7 @@ export class AzureDevOpsService {
             id: c.createdBy.id,
             displayName: c.createdBy.displayName,
             email: c.createdBy.uniqueName,
+            avatarUrl: c.createdBy.imageUrl,
           },
           isInternal: false,
         })
@@ -250,7 +280,7 @@ export class AzureDevOpsService {
     projectName: string,
     title: string,
     description: string,
-    requesterEmail: string,
+    _requesterEmail: string,
     priority: number = 3
   ): Promise<DevOpsWorkItem> {
     const patchDocument = [
@@ -258,7 +288,6 @@ export class AzureDevOpsService {
       { op: 'add', path: '/fields/System.Description', value: description },
       { op: 'add', path: '/fields/System.Tags', value: 'ticket' },
       { op: 'add', path: '/fields/Microsoft.VSTS.Common.Priority', value: priority },
-      { op: 'add', path: '/fields/System.History', value: `Ticket created by ${requesterEmail}` },
     ];
 
     const response = await fetch(
@@ -285,7 +314,7 @@ export class AzureDevOpsService {
     projectName: string,
     title: string,
     description: string,
-    requesterEmail: string,
+    _requesterEmail: string,
     priority: number = 3,
     tags: string[] = ['ticket'],
     assigneeId?: string
@@ -295,7 +324,6 @@ export class AzureDevOpsService {
       { op: 'add', path: '/fields/System.Description', value: description },
       { op: 'add', path: '/fields/System.Tags', value: tags.join('; ') },
       { op: 'add', path: '/fields/Microsoft.VSTS.Common.Priority', value: priority },
-      { op: 'add', path: '/fields/System.History', value: `Ticket created by ${requesterEmail}` },
     ];
 
     if (assigneeId) {
@@ -365,6 +393,62 @@ export class AzureDevOpsService {
     return response.json();
   }
 
+  // Update work item fields (assignee, priority)
+  async updateTicketFields(
+    projectName: string,
+    workItemId: number,
+    updates: {
+      assignee?: string | null;
+      priority?: number;
+    }
+  ): Promise<DevOpsWorkItem> {
+    const patchDocument: Array<{ op: string; path: string; value: string | number | null }> = [];
+
+    if (updates.assignee !== undefined) {
+      if (updates.assignee === null) {
+        // Remove assignee
+        patchDocument.push({ op: 'remove', path: '/fields/System.AssignedTo', value: null });
+      } else {
+        patchDocument.push({
+          op: 'add',
+          path: '/fields/System.AssignedTo',
+          value: updates.assignee,
+        });
+      }
+    }
+
+    if (updates.priority !== undefined) {
+      patchDocument.push({
+        op: 'add',
+        path: '/fields/Microsoft.VSTS.Common.Priority',
+        value: updates.priority,
+      });
+    }
+
+    if (patchDocument.length === 0) {
+      throw new Error('No updates provided');
+    }
+
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?api-version=7.0`,
+      {
+        method: 'PATCH',
+        headers: {
+          ...this.headers,
+          'Content-Type': 'application/json-patch+json',
+        },
+        body: JSON.stringify(patchDocument),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to update work item: ${response.statusText} - ${errorText}`);
+    }
+
+    return response.json();
+  }
+
   // Get all tickets from all accessible projects
   async getAllTickets(): Promise<Ticket[]> {
     const projects = await this.getProjects();
@@ -390,6 +474,48 @@ export class AzureDevOpsService {
     }
 
     return allTickets.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  }
+
+  // Get all users from the organization (from User Entitlements API)
+  async getOrganizationUsers(): Promise<User[]> {
+    const users: User[] = [];
+    let continuationToken: string | null = null;
+
+    do {
+      const url = new URL(`https://vsaex.dev.azure.com/${DEVOPS_ORG}/_apis/userentitlements`);
+      url.searchParams.set('api-version', '7.0');
+      if (continuationToken) {
+        url.searchParams.set('continuationToken', continuationToken);
+      }
+
+      const response = await fetch(url.toString(), { headers: this.headers });
+
+      if (!response.ok) {
+        console.error('Failed to fetch organization users:', response.status, response.statusText);
+        break;
+      }
+
+      const data = await response.json();
+
+      for (const item of data.members || []) {
+        const user = item.user;
+        if (user) {
+          users.push({
+            id: user.originId || user.descriptor,
+            displayName: user.displayName,
+            email: user.mailAddress || user.principalName,
+            avatarUrl: user.imageUrl,
+            accessLevel: item.accessLevel?.accountLicenseType,
+            licenseType: item.accessLevel?.licensingSource,
+          });
+        }
+      }
+
+      // Check for continuation token in response headers
+      continuationToken = response.headers.get('x-ms-continuationtoken');
+    } while (continuationToken);
+
+    return users;
   }
 
   // Get team members from a project
@@ -503,6 +629,93 @@ export class AzureDevOpsService {
         timePattern: '',
       };
     }
+  }
+
+  // Get user entitlements (license info) from Azure DevOps
+  async getUserEntitlements(): Promise<Map<string, string>> {
+    const licenseMap = new Map<string, string>();
+
+    try {
+      // Use VSAEX API for user entitlements
+      const response = await fetch(
+        `https://vsaex.dev.azure.com/${this.organization}/_apis/userentitlements?api-version=7.0&top=500`,
+        { headers: this.headers }
+      );
+
+      if (!response.ok) {
+        console.error('Failed to fetch user entitlements:', response.statusText);
+        return licenseMap;
+      }
+
+      const data = await response.json();
+      for (const member of data.members || []) {
+        const email = member.user?.principalName?.toLowerCase();
+        const license =
+          member.accessLevel?.licenseDisplayName || member.accessLevel?.accountLicenseType;
+        if (email && license) {
+          licenseMap.set(email, license);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user entitlements:', error);
+    }
+
+    return licenseMap;
+  }
+
+  // Get all users with their entitlement/license info
+  async getAllUsersWithEntitlements(): Promise<
+    Array<{
+      id: string;
+      displayName: string;
+      email: string;
+      license: string;
+      avatarUrl?: string;
+    }>
+  > {
+    const users: Array<{
+      id: string;
+      displayName: string;
+      email: string;
+      license: string;
+      avatarUrl?: string;
+    }> = [];
+
+    try {
+      const response = await fetch(
+        `https://vsaex.dev.azure.com/${this.organization}/_apis/userentitlements?api-version=7.0&top=500`,
+        { headers: this.headers }
+      );
+
+      if (!response.ok) {
+        console.error('Failed to fetch user entitlements:', response.statusText);
+        return users;
+      }
+
+      const data = await response.json();
+      for (const member of data.members || []) {
+        const email = member.user?.principalName;
+        const displayName = member.user?.displayName || email;
+        const id = member.id || member.user?.id || email;
+        const license =
+          member.accessLevel?.licenseDisplayName || member.accessLevel?.accountLicenseType;
+        const avatarUrl = member.user?.imageUrl;
+
+        if (email && license) {
+          users.push({
+            id,
+            displayName,
+            email,
+            license,
+            avatarUrl,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user entitlements:', error);
+    }
+
+    return users;
   }
 }
 

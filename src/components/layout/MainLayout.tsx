@@ -12,6 +12,7 @@ interface TicketCounts {
   unassigned: number;
   allActive: number;
   recentlyUpdated: number;
+  createdToday: number;
   pending: number;
   recentlySolved: number;
 }

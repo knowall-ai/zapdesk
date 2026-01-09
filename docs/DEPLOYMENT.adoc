@@ -153,6 +153,45 @@ az webapp deployment source config-zip \
   --src deploy.zip
 ----
 
+== Release Process
+
+DevDesk uses `npm version` to manage releases, which keeps `package.json` and git tags in sync.
+
+=== Creating a Release
+
+[source,bash]
+----
+# 1. Ensure you're on main with latest changes
+git checkout main
+git pull
+
+# 2. Bump version (choose one based on changes)
+npm version patch   # Bug fixes (0.3.1 -> 0.3.2)
+npm version minor   # New features (0.3.2 -> 0.4.0)
+npm version major   # Breaking changes (0.4.0 -> 1.0.0)
+
+# 3. Push with tags to trigger deployment
+git push --follow-tags
+----
+
+The `npm version` command automatically:
+
+* Updates `package.json` version
+* Creates a git commit with message "v0.3.2"
+* Creates a git tag `v0.3.2`
+
+=== Version Display
+
+The app version is displayed in the sidebar footer and is read from `package.json` at build time via `next.config.ts`.
+
+=== Manual Workflow Dispatch
+
+You can also trigger a release via GitHub Actions:
+
+1. Go to Actions > Deploy to Azure
+2. Click "Run workflow"
+3. Select branch and run
+
 == Post-Deployment Checklist
 
 * [ ] Verify NEXTAUTH_URL matches custom domain

@@ -200,6 +200,24 @@ When making changes:
 3. Deploy via GitHub Actions (see `.github/workflows/deploy.yml`)
 4. Ensure Azure AD redirect URI includes production URL
 
+### Release Process
+
+Use `npm version` to create releases - it syncs `package.json` and git tags automatically:
+
+```bash
+# On main branch, after merging PRs
+npm version patch   # Bug fixes (0.3.1 -> 0.3.2)
+npm version minor   # New features (0.3.2 -> 0.4.0)
+npm version major   # Breaking changes (0.4.0 -> 1.0.0)
+
+# Push with tags to trigger deployment
+git push --follow-tags
+```
+
+The version is displayed in the sidebar footer, read from `package.json` at build time.
+
+See `/docs/DEPLOYMENT.adoc` for full release documentation.
+
 ### Pre-deployment Checklist
 
 - [ ] All environment variables configured

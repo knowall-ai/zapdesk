@@ -39,7 +39,7 @@ test.describe('Protected routes redirect', () => {
   });
 
   test('organizations page redirects to login', async ({ page }) => {
-    await page.goto('/organizations');
+    await page.goto('/projects');
     await expect(page).toHaveURL(/\/login/);
   });
 });

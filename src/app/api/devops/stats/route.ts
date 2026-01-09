@@ -29,6 +29,7 @@ export async function GET() {
         const updatedToday = t.updatedAt >= today;
         return resolved && updatedToday;
       }).length,
+      createdToday: tickets.filter((t) => t.createdAt >= today).length,
       avgResponseTime: calculateAvgResponseTime(tickets),
       customerSatisfaction: 0, // Would need CSAT integration
     };
@@ -40,7 +41,8 @@ export async function GET() {
   }
 }
 
-function calculateAvgResponseTime(tickets: Ticket[]): string {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function calculateAvgResponseTime(_tickets: Ticket[]): string {
   // This would need actual first response data from DevOps
   // For now, return a placeholder
   return '< 2 hours';

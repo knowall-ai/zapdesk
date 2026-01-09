@@ -1,23 +1,24 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
   Home,
   Ticket,
   Users,
+  Users2,
   Building2,
   BarChart3,
   Settings,
   Plus,
   RefreshCw,
-  ChevronDown,
   Inbox,
   Clock,
   UserCheck,
   AlertCircle,
   CheckCircle,
-  Star,
+  PlusCircle,
 } from 'lucide-react';
 import DevDeskIcon from '@/components/common/DevDeskIcon';
 
@@ -34,11 +35,12 @@ const mainNavItems = [
   { id: 'tickets', name: 'Tickets', icon: <Ticket size={20} />, href: '/tickets' },
   { id: 'users', name: 'Users', icon: <Users size={20} />, href: '/users' },
   {
-    id: 'organizations',
-    name: 'Organizations',
+    id: 'projects',
+    name: 'Projects',
     icon: <Building2 size={20} />,
-    href: '/organizations',
+    href: '/projects',
   },
+  { id: 'team', name: 'Team', icon: <Users2 size={20} />, href: '/team' },
   { id: 'reporting', name: 'Reporting', icon: <BarChart3 size={20} />, href: '/reporting' },
   { id: 'admin', name: 'Admin', icon: <Settings size={20} />, href: '/admin' },
 ];
@@ -46,12 +48,12 @@ const mainNavItems = [
 interface SidebarProps {
   ticketCounts?: {
     yourActive: number;
-    ratedLast7Days: number;
     unassigned: number;
     allActive: number;
     recentlyUpdated: number;
     pending: number;
     recentlySolved: number;
+    createdToday: number;
   };
   onNewTicket?: () => void;
 }
@@ -59,15 +61,21 @@ interface SidebarProps {
 export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [showNotImplemented, setShowNotImplemented] = useState(false);
+
+  const handleNotImplemented = () => {
+    setShowNotImplemented(true);
+    setTimeout(() => setShowNotImplemented(false), 3000);
+  };
 
   const counts = ticketCounts || {
     yourActive: 0,
-    ratedLast7Days: 0,
     unassigned: 0,
     allActive: 0,
     recentlyUpdated: 0,
     pending: 0,
     recentlySolved: 0,
+    createdToday: 0,
   };
 
   const viewItems: ViewItem[] = [
@@ -77,13 +85,6 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
       icon: <Inbox size={16} />,
       href: '/tickets?view=your-active',
       count: counts.yourActive,
-    },
-    {
-      id: 'rated-7days',
-      name: 'Rated tickets from the last 7 days',
-      icon: <Star size={16} />,
-      href: '/tickets?view=rated',
-      count: counts.ratedLast7Days,
     },
     {
       id: 'unassigned',
@@ -107,6 +108,13 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
       count: counts.recentlyUpdated,
     },
     {
+      id: 'created-today',
+      name: 'Created today',
+      icon: <PlusCircle size={16} />,
+      href: '/tickets?view=created-today',
+      count: counts.createdToday,
+    },
+    {
       id: 'pending',
       name: 'Pending tickets',
       icon: <Clock size={16} />,
@@ -124,6 +132,23 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
 
   return (
     <aside className="flex h-screen w-64 flex-col" style={{ backgroundColor: 'var(--sidebar-bg)' }}>
+      {/* Not implemented toast */}
+      {showNotImplemented && (
+        <div
+          className="fixed top-4 right-4 z-50 rounded-lg border px-4 py-3 shadow-lg"
+          style={{
+            backgroundColor: 'var(--surface)',
+            borderColor: 'var(--border)',
+            color: 'var(--text-primary)',
+          }}
+        >
+          <p className="font-medium">Not yet implemented</p>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            Admin settings coming soon
+          </p>
+        </div>
+      )}
+
       {/* Logo */}
       <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
         <Link href="/" className="flex items-center gap-2">
@@ -150,6 +175,21 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
       <nav className="py-2">
         {mainNavItems.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+
+          // Admin link shows "Not implemented" toast instead of navigating
+          if (item.id === 'admin') {
+            return (
+              <button
+                key={item.id}
+                onClick={handleNotImplemented}
+                className={`nav-item mx-2 w-[calc(100%-1rem)] ${isActive ? 'active' : ''}`}
+              >
+                {item.icon}
+                <span className="text-sm">{item.name}</span>
+              </button>
+            );
+          }
+
           return (
             <Link
               key={item.id}
@@ -225,6 +265,26 @@ export default function Sidebar({ ticketCounts, onNewTicket }: SidebarProps) {
             <span>Removed tickets</span>
             <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-xs">0</span>
           </Link>
+        </div>
+      </div>
+
+      {/* Branding footer */}
+      <div className="border-t p-3 text-center" style={{ borderColor: 'var(--border)' }}>
+        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          <div>v{process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0'}</div>
+          <div className="mt-1">
+            Built by{' '}
+            <a
+              href="https://knowall.ai"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-[var(--primary)]"
+              aria-label="KnowAll AI (opens in new tab)"
+            >
+              KnowAll AI
+            </a>
+          </div>
+          <div className="mt-0.5">Powered by Bitcoin Lightning ⚡</div>
         </div>
       </div>
     </aside>

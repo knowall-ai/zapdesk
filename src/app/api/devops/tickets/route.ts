@@ -1,8 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { AzureDevOpsService, workItemToTicket } from '@/lib/devops';
+import { AzureDevOpsService, workItemToTicket, setStateCategoryCache } from '@/lib/devops';
 import type { Ticket, TicketStatus } from '@/types';
+
+// Fetch work item states and build state-to-category mapping
+async function fetchAndCacheStateCategories(accessToken: string, organization: string) {
+  try {
+    // Get first project
+    const projectsResponse = await fetch(
+      `https://dev.azure.com/${organization}/_apis/projects?api-version=7.0`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!projectsResponse.ok) return;
+
+    const projectsData = await projectsResponse.json();
+    const firstProject = projectsData.value?.[0]?.name;
+    if (!firstProject) return;
+
+    const stateCategories: Record<string, string> = {};
+    const workItemTypes = ['Bug', 'Task', 'Enhancement', 'Issue'];
+
+    for (const witType of workItemTypes) {
+      try {
+        const statesResponse = await fetch(
+          `https://dev.azure.com/${organization}/${encodeURIComponent(firstProject)}/_apis/wit/workitemtypes/${encodeURIComponent(witType)}/states?api-version=7.0`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        if (statesResponse.ok) {
+          const statesData = await statesResponse.json();
+          for (const state of statesData.value || []) {
+            stateCategories[state.name] = state.category;
+          }
+        }
+      } catch {
+        // Continue if one work item type fails
+      }
+    }
+
+    setStateCategoryCache(stateCategories);
+  } catch (error) {
+    console.error('Failed to fetch state categories:', error);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -56,7 +108,12 @@ export async function GET(request: NextRequest) {
     const view = searchParams.get('view') || 'all-unsolved';
 
     // Get organization from header or use default
-    const organization = request.headers.get('x-devops-org') || undefined;
+    const organization =
+      request.headers.get('x-devops-org') || process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+
+    // Fetch and cache state categories before getting tickets
+    await fetchAndCacheStateCategories(session.accessToken, organization);
+
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
     const tickets = await devopsService.getAllTickets();
 
@@ -74,24 +131,31 @@ export async function GET(request: NextRequest) {
 }
 
 function filterTicketsByView(tickets: Ticket[], view: string, userEmail?: string | null): Ticket[] {
-  const unsolvedStatuses: TicketStatus[] = ['New', 'Open', 'In Progress', 'Pending'];
+  const activeStatuses: TicketStatus[] = ['New', 'Open', 'In Progress', 'Pending'];
 
   switch (view) {
+    case 'your-active':
     case 'your-unsolved':
       return tickets.filter(
-        (t) => unsolvedStatuses.includes(t.status) && t.assignee?.email === userEmail
+        (t) => activeStatuses.includes(t.status) && t.assignee?.email === userEmail
       );
 
     case 'unassigned':
-      return tickets.filter((t) => !t.assignee && unsolvedStatuses.includes(t.status));
+      return tickets.filter((t) => !t.assignee && activeStatuses.includes(t.status));
 
+    case 'all-active':
     case 'all-unsolved':
-      return tickets.filter((t) => unsolvedStatuses.includes(t.status));
+      return tickets.filter((t) => activeStatuses.includes(t.status));
 
     case 'recently-updated':
       const weekAgo = new Date();
       weekAgo.setDate(weekAgo.getDate() - 7);
       return tickets.filter((t) => t.updatedAt >= weekAgo);
+
+    case 'created-today':
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return tickets.filter((t) => t.createdAt >= today);
 
     case 'pending':
       return tickets.filter((t) => t.status === 'Pending');

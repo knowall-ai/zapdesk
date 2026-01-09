@@ -19,6 +19,7 @@ interface NewTicketForm {
 interface NewTicketDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  onTicketCreated?: (ticketId: number, title: string) => void;
 }
 
 export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProps) {

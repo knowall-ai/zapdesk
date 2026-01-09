@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { AzureDevOpsService, workItemToTicket, mapStatusToState } from '@/lib/devops';
-import type { TicketStatus } from '@/types';
+import { AzureDevOpsService, workItemToTicket } from '@/lib/devops';
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -20,14 +19,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     const body = await request.json();
-    const { status } = body;
+    const { state } = body;
 
-    if (!status) {
-      return NextResponse.json({ error: 'Status is required' }, { status: 400 });
+    if (!state) {
+      return NextResponse.json({ error: 'State is required' }, { status: 400 });
     }
-
-    // Map frontend status to Azure DevOps state
-    const devOpsState = mapStatusToState(status as TicketStatus);
 
     const devopsService = new AzureDevOpsService(session.accessToken);
 
@@ -38,10 +34,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       try {
         const workItem = await devopsService.getWorkItem(project.name, ticketId);
         if (workItem) {
+          // Use the state directly without mapping
           const updatedWorkItem = await devopsService.updateTicketState(
             project.name,
             ticketId,
-            devOpsState
+            state
           );
 
           const ticket = workItemToTicket(updatedWorkItem, {
@@ -64,7 +61,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
   } catch (error) {
-    console.error('Error updating ticket status:', error);
-    return NextResponse.json({ error: 'Failed to update ticket status' }, { status: 500 });
+    console.error('Error updating ticket state:', error);
+    return NextResponse.json({ error: 'Failed to update ticket state' }, { status: 500 });
   }
 }

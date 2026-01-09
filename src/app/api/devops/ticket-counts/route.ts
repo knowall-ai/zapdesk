@@ -33,6 +33,7 @@ export async function GET() {
       unassigned: tickets.filter((t) => activeStatuses.includes(t.status) && !t.assignee).length,
       allActive: tickets.filter((t) => activeStatuses.includes(t.status)).length,
       recentlyUpdated: tickets.filter((t) => t.updatedAt >= sevenDaysAgo).length,
+      createdToday: tickets.filter((t) => t.createdAt >= today).length,
       pending: tickets.filter((t) => t.status === 'Pending').length,
       recentlySolved: tickets.filter((t) => {
         const solved = t.status === 'Resolved' || t.status === 'Closed';

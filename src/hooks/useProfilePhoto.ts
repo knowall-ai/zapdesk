@@ -48,6 +48,7 @@ export function useProfilePhoto(isAuthenticated: boolean) {
         URL.revokeObjectURL(photoUrl);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   return { photoUrl, isLoading };
