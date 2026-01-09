@@ -45,8 +45,8 @@ export async function GET() {
       return NextResponse.json({ error: 'No projects found' }, { status: 404 });
     }
 
-    // Work item types we care about for tickets
-    const workItemTypes = ['Bug', 'Task', 'Enhancement'];
+    // Work item types we care about for tickets (includes Issue for "Active" state)
+    const workItemTypes = ['Bug', 'Task', 'Enhancement', 'Issue'];
     const allStates: WorkItemTypeStates[] = [];
     const uniqueStates = new Map<string, WorkItemState>();
 

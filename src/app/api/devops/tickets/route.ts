@@ -25,7 +25,7 @@ async function fetchAndCacheStateCategories(accessToken: string, organization: s
     if (!firstProject) return;
 
     const stateCategories: Record<string, string> = {};
-    const workItemTypes = ['Bug', 'Task', 'Enhancement'];
+    const workItemTypes = ['Bug', 'Task', 'Enhancement', 'Issue'];
 
     for (const witType of workItemTypes) {
       try {

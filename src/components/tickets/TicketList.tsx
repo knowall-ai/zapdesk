@@ -511,7 +511,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                       />
                     </td>
                     <td className="px-4 py-3">
-                      <StatusBadge status={ticket.status} />
+                      <StatusBadge status={ticket.devOpsState} />
                     </td>
                     <td className="px-4 py-3">
                       <Link

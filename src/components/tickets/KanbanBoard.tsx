@@ -44,7 +44,27 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
         if (response.ok) {
           const data = await response.json();
           if (data.allStates && data.allStates.length > 0) {
-            setKanbanStates(data.allStates);
+            let states = data.allStates;
+            // Ensure "Active" state exists (common in Agile process, may not be in all work item types)
+            if (!states.some((s: WorkItemState) => s.name === 'Active')) {
+              // Insert "Active" after "New" (or first InProgress state)
+              const newIndex = states.findIndex((s: WorkItemState) => s.name === 'New');
+              const activeState: WorkItemState = {
+                name: 'Active',
+                color: '007acc',
+                category: 'InProgress',
+              };
+              if (newIndex >= 0) {
+                states = [
+                  ...states.slice(0, newIndex + 1),
+                  activeState,
+                  ...states.slice(newIndex + 1),
+                ];
+              } else {
+                states = [activeState, ...states];
+              }
+            }
+            setKanbanStates(states);
           }
         }
       } catch (error) {
@@ -81,14 +101,32 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
       grouped[state.name] = [];
     });
 
+    // Track unmatched states
+    const unmatchedStates = new Set<string>();
+
     // Group tickets by their DevOps state
     localTickets.forEach((ticket) => {
       const state = ticket.devOpsState;
       if (grouped[state]) {
         grouped[state].push(ticket);
+      } else {
+        // Track tickets with states not in our columns
+        unmatchedStates.add(state);
+        // Put them in the first column (usually "New") as fallback
+        const firstColumn = kanbanStates[0]?.name;
+        if (firstColumn && grouped[firstColumn]) {
+          grouped[firstColumn].push(ticket);
+        }
       }
-      // If state doesn't exist in columns, ticket won't be shown (intentional)
     });
+
+    // Log any unmatched states for debugging
+    if (unmatchedStates.size > 0) {
+      console.warn(
+        '[KanbanBoard] Tickets with unrecognized states placed in first column:',
+        Array.from(unmatchedStates)
+      );
+    }
 
     return grouped;
   }, [localTickets, kanbanStates]);
