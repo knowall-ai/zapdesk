@@ -246,3 +246,87 @@ export interface ZapPayment {
 }
 
 export const DEFAULT_ZAP_PRESETS = [100, 500, 1000, 5000] as const;
+
+// Epic types for Epic/Feature visualization
+export type EpicType = 'Agile' | 'CISP'; // Agile Epic or Continuous Improvement Service Plan
+
+export interface Epic {
+  id: number;
+  title: string;
+  description: string;
+  state: string;
+  epicType: EpicType;
+  areaPath: string;
+  project: string;
+  createdAt: Date;
+  updatedAt: Date;
+  completedWork: number;
+  remainingWork: number;
+  totalWork: number;
+  features: Feature[];
+  devOpsUrl: string;
+  tags: string[];
+}
+
+export interface Feature {
+  id: number;
+  title: string;
+  description: string;
+  state: string;
+  parentId?: number;
+  areaPath: string;
+  project: string;
+  createdAt: Date;
+  updatedAt: Date;
+  completedWork: number;
+  remainingWork: number;
+  originalEstimate: number;
+  totalWork: number;
+  workItems: WorkItem[];
+  devOpsUrl: string;
+  tags: string[];
+  priority?: TicketPriority;
+  stackRank?: number; // For ordering features
+}
+
+export interface WorkItem {
+  id: number;
+  title: string;
+  description: string;
+  state: string;
+  workItemType: string;
+  parentId?: number;
+  areaPath: string;
+  project: string;
+  createdAt: Date;
+  updatedAt: Date;
+  completedWork: number;
+  remainingWork: number;
+  originalEstimate: number;
+  assignee?: User;
+  devOpsUrl: string;
+  tags: string[];
+  priority?: TicketPriority;
+}
+
+// Treemap data structure for visualization
+export interface TreemapNode {
+  name: string;
+  id: number;
+  value: number; // Size based on effort/completed work
+  state: string;
+  type: 'epic' | 'feature' | 'workitem';
+  priority?: TicketPriority;
+  workItemType?: string;
+  children?: TreemapNode[];
+  devOpsUrl: string;
+}
+
+// Color scheme for treemap visualization
+export type TreemapColorScheme = 'status' | 'priority' | 'type';
+
+export interface TreemapConfig {
+  colorScheme: TreemapColorScheme;
+  showLabels: boolean;
+  minBlockSize: number;
+}
