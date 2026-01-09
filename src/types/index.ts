@@ -26,6 +26,8 @@ export interface Organization {
   tags: string[];
   createdAt: Date;
   updatedAt: Date;
+  processTemplate?: string; // Azure DevOps process template (e.g., "T-Minus-15", "Basic")
+  isTemplateSupported?: boolean; // Whether this template has a config in DevDesk
 }
 
 export interface Customer {

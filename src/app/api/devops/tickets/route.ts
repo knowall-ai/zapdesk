@@ -107,9 +107,12 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const view = searchParams.get('view') || 'all-unsolved';
 
-    // Get organization from header or use default
-    const organization =
-      request.headers.get('x-devops-org') || process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+    // Get organization from header (client sends from localStorage selection)
+    const organization = request.headers.get('x-devops-org');
+
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization specified' }, { status: 400 });
+    }
 
     // Fetch and cache state categories before getting tickets
     await fetchAndCacheStateCategories(session.accessToken, organization);

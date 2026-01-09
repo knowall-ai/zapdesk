@@ -47,8 +47,19 @@ export default function OrganizationProvider({ children }: Props) {
       // Restore selected org from localStorage or use first one
       if (orgs.length > 0) {
         const storedOrgName = localStorage.getItem(STORAGE_KEY);
-        const storedOrg = orgs.find((o) => o.accountName === storedOrgName);
-        setSelectedOrgState(storedOrg || orgs[0]);
+        const storedOrg = storedOrgName ? orgs.find((o) => o.accountName === storedOrgName) : null;
+
+        if (storedOrg) {
+          setSelectedOrgState(storedOrg);
+        } else {
+          // Stored org not found (renamed/removed/new user) - use first org and clear stale cache
+          if (storedOrgName) {
+            localStorage.removeItem(STORAGE_KEY);
+          }
+          setSelectedOrgState(orgs[0]);
+          // Save the new selection to localStorage
+          localStorage.setItem(STORAGE_KEY, orgs[0].accountName);
+        }
       }
     } catch (err) {
       console.error('Error fetching organizations:', err);

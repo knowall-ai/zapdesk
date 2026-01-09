@@ -9,14 +9,19 @@ import { Search, Plus, Upload, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import type { Organization, SLALevel } from '@/types';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
+import { AlertTriangle } from 'lucide-react';
 
 interface ProjectWithSLA extends Organization {
   sla?: SLALevel;
+  processTemplate?: string;
+  isTemplateSupported?: boolean;
 }
 
 export default function ProjectsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { selectedOrganization } = useOrganization();
   const [projects, setProjects] = useState<ProjectWithSLA[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -34,32 +39,36 @@ export default function ProjectsPage() {
   }, [status, router]);
 
   useEffect(() => {
-    if (session?.accessToken) {
-      fetchProjects();
-    }
-  }, [session]);
+    if (!session?.accessToken || !selectedOrganization) return;
 
-  const fetchProjects = async () => {
-    try {
-      const response = await fetch('/api/devops/projects');
-      if (response.ok) {
-        const data = await response.json();
-        setProjects(
-          (data.projects || []).map(
-            (p: ProjectWithSLA & { createdAt: string; updatedAt: string }) => ({
-              ...p,
-              createdAt: new Date(p.createdAt),
-              updatedAt: new Date(p.updatedAt),
-            })
-          )
-        );
+    const fetchProjects = async () => {
+      try {
+        const headers: HeadersInit = {};
+        if (selectedOrganization?.accountName) {
+          headers['x-devops-org'] = selectedOrganization.accountName;
+        }
+        const response = await fetch('/api/devops/projects', { headers });
+        if (response.ok) {
+          const data = await response.json();
+          setProjects(
+            (data.projects || []).map(
+              (p: ProjectWithSLA & { createdAt: string; updatedAt: string }) => ({
+                ...p,
+                createdAt: new Date(p.createdAt),
+                updatedAt: new Date(p.updatedAt),
+              })
+            )
+          );
+        }
+      } catch (error) {
+        console.error('Failed to fetch projects:', error);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error('Failed to fetch projects:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+
+    fetchProjects();
+  }, [session, selectedOrganization]);
 
   const filteredProjects = projects
     .filter(
@@ -194,6 +203,12 @@ export default function ProjectsPage() {
                   className="px-4 py-3 text-left text-xs font-medium uppercase"
                   style={{ color: 'var(--text-muted)' }}
                 >
+                  Process Template
+                </th>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
                   Last updated
                 </th>
                 <th
@@ -207,14 +222,14 @@ export default function ProjectsPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12">
+                  <td colSpan={6} className="px-4 py-12">
                     <LoadingSpinner size="lg" message="Loading projects..." />
                   </td>
                 </tr>
               ) : filteredProjects.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-4 py-8 text-center"
                     style={{ color: 'var(--text-muted)' }}
                   >
@@ -257,6 +272,29 @@ export default function ProjectsPage() {
                         >
                           {project.sla}
                         </span>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)' }}>-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {project.processTemplate ? (
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="text-sm"
+                            style={{
+                              color: project.isTemplateSupported
+                                ? 'var(--text-secondary)'
+                                : 'var(--text-muted)',
+                            }}
+                          >
+                            {project.processTemplate}
+                          </span>
+                          {!project.isTemplateSupported && (
+                            <span title="Template not yet supported">
+                              <AlertTriangle size={14} className="text-yellow-500" />
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <span style={{ color: 'var(--text-muted)' }}>-</span>
                       )}

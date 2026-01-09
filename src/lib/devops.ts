@@ -276,22 +276,34 @@ export class AzureDevOpsService {
   }
 
   // Create a new work item (ticket)
+  // workItemType: the type to create (e.g., "Task", "Issue") - depends on process template
+  // hasPriority: whether the process template supports Priority field
   async createTicket(
     projectName: string,
     title: string,
     description: string,
     _requesterEmail: string,
-    priority: number = 3
+    priority: number = 3,
+    workItemType: string = 'Task',
+    hasPriority: boolean = true
   ): Promise<DevOpsWorkItem> {
-    const patchDocument = [
+    const patchDocument: Array<{ op: string; path: string; value: string | number }> = [
       { op: 'add', path: '/fields/System.Title', value: title },
       { op: 'add', path: '/fields/System.Description', value: description },
       { op: 'add', path: '/fields/System.Tags', value: 'ticket' },
-      { op: 'add', path: '/fields/Microsoft.VSTS.Common.Priority', value: priority },
     ];
 
+    // Only add Priority if the template supports it
+    if (hasPriority) {
+      patchDocument.push({
+        op: 'add',
+        path: '/fields/Microsoft.VSTS.Common.Priority',
+        value: priority,
+      });
+    }
+
     const response = await fetch(
-      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$Task?api-version=7.0`,
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`,
       {
         method: 'POST',
         headers: {
@@ -310,6 +322,8 @@ export class AzureDevOpsService {
   }
 
   // Create a new work item (ticket) with assignee and custom tags
+  // workItemType: the type to create (e.g., "Task", "Issue") - depends on process template
+  // hasPriority: whether the process template supports Priority field
   async createTicketWithAssignee(
     projectName: string,
     title: string,
@@ -317,21 +331,31 @@ export class AzureDevOpsService {
     _requesterEmail: string,
     priority: number = 3,
     tags: string[] = ['ticket'],
-    assigneeId?: string
+    assigneeId?: string,
+    workItemType: string = 'Task',
+    hasPriority: boolean = true
   ): Promise<DevOpsWorkItem> {
     const patchDocument: Array<{ op: string; path: string; value: string | number }> = [
       { op: 'add', path: '/fields/System.Title', value: title },
       { op: 'add', path: '/fields/System.Description', value: description },
       { op: 'add', path: '/fields/System.Tags', value: tags.join('; ') },
-      { op: 'add', path: '/fields/Microsoft.VSTS.Common.Priority', value: priority },
     ];
+
+    // Only add Priority if the template supports it
+    if (hasPriority) {
+      patchDocument.push({
+        op: 'add',
+        path: '/fields/Microsoft.VSTS.Common.Priority',
+        value: priority,
+      });
+    }
 
     if (assigneeId) {
       patchDocument.push({ op: 'add', path: '/fields/System.AssignedTo', value: assigneeId });
     }
 
     const response = await fetch(
-      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$Task?api-version=7.0`,
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`,
       {
         method: 'POST',
         headers: {
@@ -482,7 +506,9 @@ export class AzureDevOpsService {
     let continuationToken: string | null = null;
 
     do {
-      const url = new URL(`https://vsaex.dev.azure.com/${DEVOPS_ORG}/_apis/userentitlements`);
+      const url = new URL(
+        `https://vsaex.dev.azure.com/${this.organization}/_apis/userentitlements`
+      );
       url.searchParams.set('api-version', '7.0');
       if (continuationToken) {
         url.searchParams.set('continuationToken', continuationToken);
@@ -593,7 +619,7 @@ export class AzureDevOpsService {
     try {
       // Try to get user preferences from organization settings API
       const prefsResponse = await fetch(
-        `${DEVOPS_BASE_URL}/_apis/settings/entries/me/UserPreferences?api-version=7.0`,
+        `${this.baseUrl}/_apis/settings/entries/me/UserPreferences?api-version=7.0`,
         { headers: this.headers }
       );
 

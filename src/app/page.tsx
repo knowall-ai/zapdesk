@@ -1,9 +1,10 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 import LandingPage from '@/components/LandingPage';
 import {
   Ticket,
@@ -58,6 +59,7 @@ function getProjectInitials(name: string): string {
 
 export default function HomePage() {
   const { data: session, status } = useSession();
+  const { selectedOrganization } = useOrganization();
   const [stats, setStats] = useState<DashboardStats>({
     totalTickets: 0,
     openTickets: 0,
@@ -72,16 +74,14 @@ export default function HomePage() {
   const [projectSearch, setProjectSearch] = useState('');
   const [projectSort, setProjectSort] = useState<'asc' | 'desc'>('asc');
 
-  useEffect(() => {
-    if (session?.accessToken) {
-      fetchDashboardStats();
-      fetchProjects();
-    }
-  }, [session]);
-
-  const fetchDashboardStats = async () => {
+  const fetchDashboardStats = useCallback(async () => {
     try {
-      const response = await fetch('/api/devops/stats');
+      setLoading(true);
+      const headers: HeadersInit = {};
+      if (selectedOrganization?.accountName) {
+        headers['x-devops-org'] = selectedOrganization.accountName;
+      }
+      const response = await fetch('/api/devops/stats', { headers });
       if (response.ok) {
         const data = await response.json();
         setStats(data);
@@ -91,11 +91,15 @@ export default function HomePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedOrganization]);
 
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     try {
-      const response = await fetch('/api/devops/projects');
+      const headers: HeadersInit = {};
+      if (selectedOrganization?.accountName) {
+        headers['x-devops-org'] = selectedOrganization.accountName;
+      }
+      const response = await fetch('/api/devops/projects', { headers });
       if (response.ok) {
         const data = await response.json();
         const sortedProjects = (data.projects || []).sort((a: Project, b: Project) =>
@@ -106,7 +110,15 @@ export default function HomePage() {
     } catch (error) {
       console.error('Failed to fetch projects:', error);
     }
-  };
+  }, [selectedOrganization]);
+
+  // Fetch data when session or organization changes
+  useEffect(() => {
+    if (session?.accessToken) {
+      fetchDashboardStats();
+      fetchProjects();
+    }
+  }, [session, selectedOrganization, fetchDashboardStats, fetchProjects]);
 
   if (status === 'loading') {
     return (
