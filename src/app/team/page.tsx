@@ -97,56 +97,16 @@ export default function TeamPage() {
     }
   }, [session, fetchTeamData, fetchActivityData]);
 
-  if (status === 'loading') {
-    return (
-      <MainLayout>
-        <div className="flex h-full items-center justify-center">
-          <LoadingSpinner size="lg" />
-        </div>
-      </MainLayout>
-    );
-  }
+  // Pre-calculate max values once for workload distribution (must be before conditional returns)
+  const maxAssigned = React.useMemo(() => {
+    return teamData?.members ? Math.max(...teamData.members.map((m) => m.ticketsAssigned), 1) : 1;
+  }, [teamData?.members]);
 
-  if (!session) {
-    return null;
-  }
+  const maxResolved = React.useMemo(() => {
+    return teamData?.members ? Math.max(...teamData.members.map((m) => m.ticketsResolved), 1) : 1;
+  }, [teamData?.members]);
 
-  const statCards = [
-    {
-      title: 'Team Members',
-      value: teamData?.stats.totalMembers ?? '-',
-      icon: <Users2 size={24} />,
-      color: 'var(--primary)',
-    },
-    {
-      title: 'Open Tickets',
-      value: teamData?.stats.openTickets ?? '-',
-      icon: <Ticket size={24} />,
-      color: 'var(--status-open)',
-    },
-    {
-      title: 'In Progress',
-      value: teamData?.stats.inProgressTickets ?? '-',
-      icon: <Clock size={24} />,
-      color: 'var(--status-in-progress)',
-    },
-    {
-      title: 'Needs Attention',
-      value: teamData?.stats.needsAttention ?? '-',
-      icon: <AlertCircle size={24} />,
-      color: 'var(--priority-urgent)',
-    },
-  ];
-
-  // Pre-calculate max values once for workload distribution
-  const maxAssigned = teamData?.members
-    ? Math.max(...teamData.members.map((m) => m.ticketsAssigned), 1)
-    : 1;
-  const maxResolved = teamData?.members
-    ? Math.max(...teamData.members.map((m) => m.ticketsResolved), 1)
-    : 1;
-
-  // Sort members
+  // Sort members (must be before conditional returns)
   const sortedMembers = React.useMemo(() => {
     if (!teamData?.members) return [];
     const members = [...teamData.members];
@@ -209,6 +169,34 @@ export default function TeamPage() {
       <ChevronDown size={14} className="ml-1 inline" />
     );
   };
+
+  // Stats cards configuration using team data
+  const statCards = [
+    {
+      title: 'Team Members',
+      value: teamData?.stats.totalMembers ?? 0,
+      icon: <Users2 size={24} />,
+      color: 'var(--primary)',
+    },
+    {
+      title: 'Open Tickets',
+      value: teamData?.stats.openTickets ?? 0,
+      icon: <Ticket size={24} />,
+      color: 'var(--status-open)',
+    },
+    {
+      title: 'In Progress',
+      value: teamData?.stats.inProgressTickets ?? 0,
+      icon: <Clock size={24} />,
+      color: 'var(--status-in-progress)',
+    },
+    {
+      title: 'Needs Attention',
+      value: teamData?.stats.needsAttention ?? 0,
+      icon: <AlertCircle size={24} />,
+      color: 'var(--priority-urgent)',
+    },
+  ];
 
   return (
     <MainLayout>
