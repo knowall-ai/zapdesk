@@ -312,7 +312,7 @@ export default function TeamPage() {
                       ],
                     }}
                     labels={{
-                      totalCount: '{{count}} activities in {{year}}',
+                      totalCount: isMobile ? ' ' : '{{count}} activities in {{year}}',
                     }}
                     showWeekdayLabels
                     renderBlock={(block, activity) =>
