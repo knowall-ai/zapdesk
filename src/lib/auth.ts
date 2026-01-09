@@ -3,6 +3,33 @@ import type { NextAuthOptions } from 'next-auth';
 import type { JWT } from 'next-auth/jwt';
 import AzureADProvider from 'next-auth/providers/azure-ad';
 
+const isDev = process.env.NODE_ENV === 'development';
+
+// Redact sensitive data from objects before logging
+function redactSensitive(obj: unknown): unknown {
+  if (!obj || typeof obj !== 'object') return obj;
+
+  const sensitiveKeys = [
+    'accesstoken',
+    'refreshtoken',
+    'access_token',
+    'refresh_token',
+    'secret',
+    'password',
+    'client_secret',
+  ];
+  const redacted = { ...obj } as Record<string, unknown>;
+
+  for (const key of Object.keys(redacted)) {
+    if (sensitiveKeys.some((sk) => key.toLowerCase().includes(sk))) {
+      redacted[key] = '[REDACTED]';
+    } else if (typeof redacted[key] === 'object' && redacted[key] !== null) {
+      redacted[key] = redactSensitive(redacted[key]);
+    }
+  }
+  return redacted;
+}
+
 // Extend the built-in session types
 declare module 'next-auth' {
   interface Session {
@@ -103,32 +130,41 @@ export const authOptions: NextAuthOptions = {
     strategy: 'jwt',
     maxAge: 24 * 60 * 60, // 24 hours
   },
+  // Event logging - only in development to avoid production log noise
+  // Note: Basic auth functionality already works in main; these events help debug OAuth issues
   events: {
     async signIn(message) {
-      console.log('NextAuth signIn event:', message);
+      if (isDev) {
+        console.log('NextAuth signIn event:', redactSensitive(message));
+      }
     },
     async signOut(message) {
-      console.log('NextAuth signOut event:', message);
-    },
-    async createUser(message) {
-      console.log('NextAuth createUser event:', message);
+      if (isDev) {
+        console.log('NextAuth signOut event:', redactSensitive(message));
+      }
     },
     async linkAccount(message) {
-      console.log('NextAuth linkAccount event:', message);
+      if (isDev) {
+        console.log('NextAuth linkAccount event:', redactSensitive(message));
+      }
     },
-    async session(message) {
-      console.log('NextAuth session event:', message);
-    },
+    // Removed: createUser (not used with OAuth) and session (too noisy - fires on every request)
   },
+  // Custom logger with sensitive data redaction
+  // Errors always logged (needed for production debugging), debug/warn only in dev
   logger: {
     error(code, metadata) {
-      console.error('NextAuth error:', code, metadata);
+      console.error('NextAuth error:', code, redactSensitive(metadata));
     },
     warn(code) {
-      console.warn('NextAuth warning:', code);
+      if (isDev) {
+        console.warn('NextAuth warning:', code);
+      }
     },
     debug(code, metadata) {
-      console.log('NextAuth debug:', code, metadata);
+      if (isDev) {
+        console.log('NextAuth debug:', code, redactSensitive(metadata));
+      }
     },
   },
 };
