@@ -3,3 +3,4 @@ export { default as StatusBadge } from './StatusBadge';
 export { default as PriorityIndicator } from './PriorityIndicator';
 export { default as LoadingSpinner } from './LoadingSpinner';
 export { default as AzureDevOpsIcon } from './AzureDevOpsIcon';
+export { default as ProjectList } from './ProjectList';

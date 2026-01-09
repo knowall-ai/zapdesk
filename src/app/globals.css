@@ -413,3 +413,31 @@ body {
     padding: 0.625rem;
   }
 }
+
+/* Activity Calendar responsive styles */
+.activity-calendar-wrapper {
+  max-width: 100%;
+}
+
+.activity-calendar-wrapper svg {
+  max-width: 100%;
+  height: auto;
+}
+
+@media (max-width: 640px) {
+  /* Hide weekday labels (Mon, Wed, Fri) on mobile */
+  .activity-calendar-wrapper svg g[transform] > text {
+    display: none;
+  }
+
+  /* Show only first and last month labels - hide middle ones */
+  .activity-calendar-wrapper svg > text:not(:first-of-type):not(:last-of-type) {
+    display: none;
+  }
+
+  /* Hide the footer with activity count */
+  .activity-calendar-wrapper svg ~ footer,
+  .activity-calendar-wrapper > div > footer {
+    display: none;
+  }
+}

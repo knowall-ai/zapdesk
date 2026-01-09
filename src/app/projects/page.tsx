@@ -5,12 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
-import { Search, Plus, Upload, ExternalLink } from 'lucide-react';
+import { ExternalLink, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import type { Organization, SLALevel } from '@/types';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
-import { AlertTriangle } from 'lucide-react';
 
 interface ProjectWithSLA extends Organization {
   sla?: SLALevel;
@@ -24,13 +23,6 @@ export default function ProjectsPage() {
   const { selectedOrganization } = useOrganization();
   const [projects, setProjects] = useState<ProjectWithSLA[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showNotImplemented, setShowNotImplemented] = useState(false);
-
-  const handleNotImplemented = () => {
-    setShowNotImplemented(true);
-    setTimeout(() => setShowNotImplemented(false), 3000);
-  };
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -70,14 +62,6 @@ export default function ProjectsPage() {
     fetchProjects();
   }, [session, selectedOrganization]);
 
-  const filteredProjects = projects
-    .filter(
-      (project) =>
-        project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        project.domain?.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-    .sort((a, b) => a.name.localeCompare(b.name));
-
   if (status === 'loading') {
     return (
       <MainLayout>
@@ -95,85 +79,26 @@ export default function ProjectsPage() {
   return (
     <MainLayout>
       <div className="p-6">
-        {/* Not implemented toast */}
-        {showNotImplemented && (
-          <div
-            className="fixed top-4 right-4 z-50 rounded-lg border px-4 py-3 shadow-lg"
-            style={{
-              backgroundColor: 'var(--surface)',
-              borderColor: 'var(--border)',
-              color: 'var(--text-primary)',
-            }}
-          >
-            <p className="font-medium">Not yet implemented</p>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Please manage projects in{' '}
-              <a
-                href="https://dev.azure.com/KnowAll"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline"
-                style={{ color: 'var(--primary)' }}
-              >
-                Azure DevOps
-              </a>
-            </p>
-          </div>
-        )}
-
         {/* Header */}
-        <div className="mb-6 flex items-start justify-between">
-          <div>
-            <h1 className="mb-2 text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-              Projects
-            </h1>
-            <p style={{ color: 'var(--text-secondary)' }}>
-              Add, search, and manage your projects all in one place.
-            </p>
-            <a
-              href="https://dev.azure.com/KnowAll/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1 flex items-center gap-1 text-sm"
-              style={{ color: 'var(--primary)' }}
-            >
-              See all projects in Azure DevOps <ExternalLink size={12} />
-            </a>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleNotImplemented}
-              className="btn-secondary flex items-center gap-2"
-            >
-              <Upload size={16} /> Bulk import
-            </button>
-            <button onClick={handleNotImplemented} className="btn-primary flex items-center gap-2">
-              <Plus size={16} /> Add project
-            </button>
-          </div>
-        </div>
-
-        {/* Search */}
         <div className="mb-6">
-          <div className="relative max-w-md">
-            <Search
-              size={18}
-              className="absolute top-1/2 left-3 -translate-y-1/2"
-              style={{ color: 'var(--text-muted)' }}
-            />
-            <input
-              type="text"
-              placeholder="Search projects"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="input w-full pl-10"
-            />
-          </div>
+          <h1 className="mb-2 text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+            Projects
+          </h1>
+          <p style={{ color: 'var(--text-secondary)' }}>Browse and manage your projects.</p>
+          <a
+            href="https://dev.azure.com/KnowAll/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 flex items-center gap-1 text-sm"
+            style={{ color: 'var(--primary)' }}
+          >
+            See all projects in Azure DevOps <ExternalLink size={12} />
+          </a>
         </div>
 
         {/* Count */}
         <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-          {filteredProjects.length} project{filteredProjects.length !== 1 ? 's' : ''}
+          {projects.length} project{projects.length !== 1 ? 's' : ''}
         </p>
 
         {/* Table */}
@@ -188,25 +113,25 @@ export default function ProjectsPage() {
                   Name
                 </th>
                 <th
-                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  className="hidden px-4 py-3 text-left text-xs font-medium uppercase md:table-cell"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   Domain
                 </th>
                 <th
-                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  className="hidden px-4 py-3 text-left text-xs font-medium uppercase sm:table-cell"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   SLA
                 </th>
                 <th
-                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  className="hidden px-4 py-3 text-left text-xs font-medium uppercase lg:table-cell"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   Process Template
                 </th>
                 <th
-                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  className="hidden px-4 py-3 text-left text-xs font-medium uppercase md:table-cell"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   Last updated
@@ -226,7 +151,7 @@ export default function ProjectsPage() {
                     <LoadingSpinner size="lg" message="Loading projects..." />
                   </td>
                 </tr>
-              ) : filteredProjects.length === 0 ? (
+              ) : projects.length === 0 ? (
                 <tr>
                   <td
                     colSpan={6}
@@ -237,7 +162,7 @@ export default function ProjectsPage() {
                   </td>
                 </tr>
               ) : (
-                filteredProjects.map((project) => (
+                projects.map((project) => (
                   <tr key={project.id} className="table-row">
                     <td className="px-4 py-3">
                       <Link
@@ -248,10 +173,13 @@ export default function ProjectsPage() {
                         {project.name}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    <td
+                      className="hidden px-4 py-3 text-sm md:table-cell"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
                       {project.domain || '-'}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="hidden px-4 py-3 sm:table-cell">
                       {project.sla ? (
                         <span
                           className="rounded px-2 py-0.5 text-xs font-medium"
@@ -276,7 +204,7 @@ export default function ProjectsPage() {
                         <span style={{ color: 'var(--text-muted)' }}>-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="hidden px-4 py-3 lg:table-cell">
                       {project.processTemplate ? (
                         <div className="flex items-center gap-1.5">
                           <span
@@ -299,7 +227,10 @@ export default function ProjectsPage() {
                         <span style={{ color: 'var(--text-muted)' }}>-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    <td
+                      className="hidden px-4 py-3 text-sm md:table-cell"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
                       {project.updatedAt && !isNaN(project.updatedAt.getTime())
                         ? format(project.updatedAt, 'dd MMM yyyy')
                         : '-'}

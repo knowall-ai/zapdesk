@@ -243,7 +243,7 @@ export default function TeamPage() {
                 <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                   Team Activity
                 </h2>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                <p className="hidden text-sm sm:block" style={{ color: 'var(--text-muted)' }}>
                   {activityData?.totalActivities || 0} activities in the last year
                 </p>
               </div>
@@ -261,44 +261,37 @@ export default function TeamPage() {
                 <LoadingSpinner size="md" message="Loading activity data..." />
               </div>
             ) : activityData?.activities && activityData.activities.length > 0 ? (
-              <div
-                className="activity-calendar-wrapper"
-                style={{
-                  display: 'flex',
-                  justifyContent: 'center',
-                  width: '100%',
-                  transform: 'scaleX(1.15)',
-                  transformOrigin: 'center',
-                }}
-              >
-                <ActivityCalendar
-                  data={activityData.activities}
-                  blockSize={12}
-                  blockMargin={4}
-                  blockRadius={3}
-                  fontSize={12}
-                  colorScheme="dark"
-                  theme={{
-                    dark: [
-                      'var(--surface)',
-                      'var(--primary-dark)',
-                      'var(--primary-hover)',
-                      'var(--primary)',
-                      'var(--primary-light)',
-                    ],
-                  }}
-                  labels={{
-                    totalCount: '{{count}} activities in {{year}}',
-                  }}
-                  showWeekdayLabels
-                  renderBlock={(block, activity) =>
-                    React.cloneElement(block, {
-                      'data-tooltip-id': 'activity-tooltip',
-                      'data-tooltip-content': `${activity.count} activities on ${activity.date}`,
-                    })
-                  }
-                />
-                <Tooltip id="activity-tooltip" />
+              <div className="activity-calendar-wrapper w-full overflow-hidden">
+                <div className="flex min-w-0 justify-center overflow-x-auto">
+                  <ActivityCalendar
+                    data={activityData.activities}
+                    blockSize={12}
+                    blockMargin={4}
+                    blockRadius={3}
+                    fontSize={12}
+                    colorScheme="dark"
+                    theme={{
+                      dark: [
+                        'var(--surface)',
+                        'var(--primary-dark)',
+                        'var(--primary-hover)',
+                        'var(--primary)',
+                        'var(--primary-light)',
+                      ],
+                    }}
+                    labels={{
+                      totalCount: '{{count}} activities in {{year}}',
+                    }}
+                    showWeekdayLabels
+                    renderBlock={(block, activity) =>
+                      React.cloneElement(block, {
+                        'data-tooltip-id': 'activity-tooltip',
+                        'data-tooltip-content': `${activity.count} activities on ${activity.date}`,
+                      })
+                    }
+                  />
+                  <Tooltip id="activity-tooltip" />
+                </div>
               </div>
             ) : (
               <div
