@@ -16,7 +16,8 @@ import {
   Zap,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { Ticket, TicketComment, User, TicketPriority } from '@/types';
+import type { Ticket, TicketComment, User, TicketPriority, WorkItemState } from '@/types';
+import { ensureActiveState } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
@@ -26,7 +27,7 @@ interface TicketDetailProps {
   ticket: Ticket;
   comments: TicketComment[];
   onAddComment?: (comment: string) => Promise<void>;
-  onStatusChange?: (status: string) => Promise<void>;
+  onStateChange?: (state: string) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
 }
@@ -42,14 +43,19 @@ export default function TicketDetail({
   ticket,
   comments,
   onAddComment,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onStatusChange: _onStatusChange,
+  onStateChange,
   onAssigneeChange,
   onPriorityChange,
 }: TicketDetailProps) {
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
+
+  // State editing
+  const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
+  const [availableStates, setAvailableStates] = useState<WorkItemState[]>([]);
+  const [isLoadingStates, setIsLoadingStates] = useState(false);
+  const [isUpdatingState, setIsUpdatingState] = useState(false);
 
   const handleZapSent = async (amount: number) => {
     if (onAddComment) {
@@ -72,6 +78,42 @@ export default function TicketDetail({
   // Priority editing state
   const [isPriorityDropdownOpen, setIsPriorityDropdownOpen] = useState(false);
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
+
+  // Fetch available states when state dropdown opens
+  useEffect(() => {
+    if (isStateDropdownOpen && availableStates.length === 0) {
+      fetchAvailableStates();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStateDropdownOpen]);
+
+  const fetchAvailableStates = async () => {
+    setIsLoadingStates(true);
+    try {
+      const response = await fetch('/api/devops/workitem-states');
+      if (response.ok) {
+        const data = await response.json();
+        // Use shared utility to ensure "Active" state exists
+        const states = ensureActiveState(data.allStates || []);
+        setAvailableStates(states);
+      }
+    } catch (err) {
+      console.error('Failed to fetch work item states:', err);
+    } finally {
+      setIsLoadingStates(false);
+    }
+  };
+
+  const handleStateSelect = async (state: string) => {
+    if (!onStateChange) return;
+    setIsUpdatingState(true);
+    try {
+      await onStateChange(state);
+      setIsStateDropdownOpen(false);
+    } finally {
+      setIsUpdatingState(false);
+    }
+  };
 
   // Fetch team members when assignee dropdown opens
   useEffect(() => {
@@ -184,7 +226,69 @@ export default function TicketDetail({
           </div>
 
           <div className="flex items-center gap-4">
-            <StatusBadge status={ticket.status} />
+            {/* State dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setIsStateDropdownOpen(!isStateDropdownOpen)}
+                disabled={!onStateChange || isUpdatingState}
+                className="flex items-center gap-1 rounded transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ cursor: onStateChange ? 'pointer' : 'default' }}
+              >
+                {isUpdatingState ? (
+                  <span
+                    className="flex items-center gap-1 text-sm"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <Loader2 size={14} className="animate-spin" />
+                    Updating...
+                  </span>
+                ) : (
+                  <>
+                    <StatusBadge status={ticket.devOpsState} />
+                    {onStateChange && (
+                      <ChevronDown size={14} style={{ color: 'var(--text-muted)' }} />
+                    )}
+                  </>
+                )}
+              </button>
+
+              {/* State dropdown menu */}
+              {isStateDropdownOpen && (
+                <div
+                  className="absolute top-full left-0 z-50 mt-1 min-w-[160px] rounded-md shadow-lg"
+                  style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+                >
+                  {isLoadingStates ? (
+                    <div
+                      className="flex items-center justify-center gap-2 p-3"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <Loader2 size={14} className="animate-spin" />
+                      Loading...
+                    </div>
+                  ) : (
+                    <div className="max-h-64 overflow-auto py-1">
+                      {availableStates.map((state) => (
+                        <button
+                          key={state.name}
+                          onClick={() => handleStateSelect(state.name)}
+                          className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)] ${
+                            state.name === ticket.devOpsState ? 'bg-[var(--surface-hover)]' : ''
+                          }`}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <span
+                            className="h-2 w-2 rounded-full"
+                            style={{ backgroundColor: `#${state.color}` }}
+                          />
+                          <span style={{ color: 'var(--text-primary)' }}>{state.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
               #{ticket.workItemId}
             </span>

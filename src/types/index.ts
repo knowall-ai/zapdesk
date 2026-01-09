@@ -45,12 +45,38 @@ export type TicketStatus = 'New' | 'Open' | 'In Progress' | 'Pending' | 'Resolve
 export type TicketPriority = 'Low' | 'Normal' | 'High' | 'Urgent';
 export type SLALevel = 'Gold' | 'Silver' | 'Bronze';
 
+// Azure DevOps work item state
+export interface WorkItemState {
+  name: string;
+  color: string;
+  category: string;
+}
+
+// Utility function to ensure "Active" state exists in states array
+export function ensureActiveState(states: WorkItemState[]): WorkItemState[] {
+  if (states.some((s) => s.name === 'Active')) {
+    return states;
+  }
+  // Insert "Active" after "New" (or at beginning if no "New" state)
+  const newIndex = states.findIndex((s) => s.name === 'New');
+  const activeState: WorkItemState = {
+    name: 'Active',
+    color: '007acc',
+    category: 'InProgress',
+  };
+  if (newIndex >= 0) {
+    return [...states.slice(0, newIndex + 1), activeState, ...states.slice(newIndex + 1)];
+  }
+  return [activeState, ...states];
+}
+
 export interface Ticket {
   id: number;
   workItemId: number;
   title: string;
   description: string;
   status: TicketStatus;
+  devOpsState: string; // Original Azure DevOps state (e.g., 'New', 'Approved', 'To Do', etc.)
   priority?: TicketPriority;
   requester: Customer;
   assignee?: User;

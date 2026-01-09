@@ -79,19 +79,19 @@ export default function TicketDetailPage() {
     }
   };
 
-  const handleStatusChange = async (newStatus: string) => {
+  const handleStateChange = async (newState: string) => {
     try {
-      const response = await fetch(`/api/devops/tickets/${ticketId}/status`, {
+      const response = await fetch(`/api/devops/tickets/${ticketId}/state`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ state: newState }),
       });
 
       if (response.ok) {
         await fetchTicket(); // Refresh ticket
       }
     } catch (error) {
-      console.error('Failed to update status:', error);
+      console.error('Failed to update state:', error);
     }
   };
 
@@ -155,7 +155,7 @@ export default function TicketDetailPage() {
         ticket={ticket}
         comments={comments}
         onAddComment={handleAddComment}
-        onStatusChange={handleStatusChange}
+        onStateChange={handleStateChange}
         onAssigneeChange={handleAssigneeChange}
         onPriorityChange={handlePriorityChange}
       />
