@@ -76,6 +76,7 @@ function mapPriority(priority?: number): TicketPriority | undefined {
 }
 
 // Convert DevOps identity to User
+// Uses avatar API as fallback when imageUrl is not provided
 function identityToUser(identity?: {
   displayName: string;
   uniqueName: string;
@@ -87,11 +88,13 @@ function identityToUser(identity?: {
     id: identity.id,
     displayName: identity.displayName,
     email: identity.uniqueName,
-    avatarUrl: identity.imageUrl,
+    // Use imageUrl if available, otherwise fall back to avatar API
+    avatarUrl: identity.imageUrl || `/api/devops/avatar/${identity.id}`,
   };
 }
 
 // Convert DevOps identity to Customer
+// Uses avatar API as fallback when imageUrl is not provided
 function identityToCustomer(identity: {
   displayName: string;
   uniqueName: string;
@@ -104,7 +107,8 @@ function identityToCustomer(identity: {
     email: identity.uniqueName,
     timezone: 'Europe/Dublin',
     tags: [],
-    avatarUrl: identity.imageUrl,
+    // Use imageUrl if available, otherwise fall back to avatar API
+    avatarUrl: identity.imageUrl || `/api/devops/avatar/${identity.id}`,
     lastUpdated: new Date(),
   };
 }
