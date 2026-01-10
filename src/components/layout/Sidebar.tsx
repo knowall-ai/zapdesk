@@ -17,7 +17,6 @@ import {
   UserCheck,
   AlertCircle,
   CheckCircle,
-  Star,
   CalendarCheck,
   PlusCircle,
   X,

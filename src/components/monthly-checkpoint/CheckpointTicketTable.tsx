@@ -96,7 +96,9 @@ export function CheckpointTicketTable({ tickets }: CheckpointTicketTableProps) {
         case 'createdAt':
           return multiplier * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         case 'priority':
-          return multiplier * (PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
+          const aPriority = a.priority ?? 'Normal';
+          const bPriority = b.priority ?? 'Normal';
+          return multiplier * (PRIORITY_ORDER[aPriority] - PRIORITY_ORDER[bPriority]);
         default:
           return 0;
       }
@@ -301,8 +303,8 @@ export function CheckpointTicketTable({ tickets }: CheckpointTicketTableProps) {
                   {format(new Date(ticket.createdAt), 'dd MMM yyyy')}
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`priority-${ticket.priority.toLowerCase()}`}>
-                    {ticket.priority}
+                  <span className={`priority-${(ticket.priority ?? 'Normal').toLowerCase()}`}>
+                    {ticket.priority ?? 'Normal'}
                   </span>
                 </td>
               </tr>
