@@ -157,11 +157,7 @@ export default function LiveDashboardPage() {
     return (
       <MainLayout>
         <div className="flex h-full items-center justify-center">
-<<<<<<< HEAD
-          <Loader2 className="animate-spin" size={32} style={{ color: 'var(--primary)' }} />
-=======
           <LoadingSpinner size="lg" />
->>>>>>> origin/main
         </div>
       </MainLayout>
     );
