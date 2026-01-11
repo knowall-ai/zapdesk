@@ -192,6 +192,100 @@ You can also trigger a release via GitHub Actions:
 2. Click "Run workflow"
 3. Select branch and run
 
+== Demo Data Setup
+
+For testing and demonstration purposes, DevDesk includes scripts to populate an Azure DevOps project with realistic dummy data.
+
+=== Prerequisites
+
+1. An Azure DevOps project using the Agile process template
+2. A Personal Access Token (PAT) with Work Items (Read & Write) permissions
+3. PAT configured in `.env.local` or exported:
+
+[source,bash]
+----
+# Personal Access Token with Work Items Read & Write scope
+AZURE_DEVOPS_PAT=your-pat-here
+----
+
+Organization and project are passed as command-line arguments (`-o` and `-p`).
+
+=== Scripts Overview
+
+The dummy data system consists of two files:
+
+* `scripts/create-backlog.mjs` - CLI tool that creates/updates work items in Azure DevOps
+* `scripts/dummy-agile-backlog.mjs` - Defines the backlog structure and content
+
+=== Backlog Structure
+
+The dummy backlog creates the following hierarchy:
+
+----
+Website Support (Epic)
+├── Support Setup (Feature) - Enabler
+│   └── User Story with setup tasks
+├── Block 1: Month 1 Support (Feature) - Closed
+│   └── "As a user, I want to be supported" (User Story)
+│       └── 35-40 support tickets (Tasks, Bugs, User Stories)
+├── Block 2: Month 2 Support (Feature) - Closed
+│   └── ... (similar structure)
+├── Block 3: Month 3 Support (Feature) - Closed
+│   └── ... (similar structure)
+├── Block 4: Month 4 Support (Feature) - Active
+│   └── ... (5 active tickets)
+└── Blocks 5-12: Future months (Features) - New
+    └── Monthly checkpoint tasks only
+----
+
+Key characteristics:
+
+* **Support tickets** are tagged with `ticket` and appear in DevDesk
+* **All items** are tagged with `dummy` for identification
+* **GUID markers** in descriptions enable upsert functionality
+* **Blocks 1-3** simulate completed support periods (Closed state)
+* **Block 4** simulates current active support work
+* **Blocks 5-12** represent planned future work
+
+=== Running the Script
+
+[source,bash]
+----
+# Preview what would be created (dry run)
+node scripts/create-backlog.mjs -o KnowAllTest -p "ABC Inc (Agile)" -t agile --dry-run
+
+# Create/update work items
+node scripts/create-backlog.mjs -o KnowAllTest -p "ABC Inc (Agile)" -t agile
+
+# Delete all existing dummy items and recreate fresh
+node scripts/create-backlog.mjs -o KnowAllTest -p "ABC Inc (Agile)" -t agile --delete-existing
+----
+
+=== GUID-Based Matching
+
+The scripts use GUID markers embedded in work item descriptions to enable reliable upsert (update or insert) functionality:
+
+[source,html]
+----
+<!-- BACKLOG-GUID:abc123-def456-... -->
+----
+
+This allows the script to:
+
+* Find existing items by GUID rather than title
+* Update existing items instead of creating duplicates
+* Track which items were created by the script
+
+=== Cleanup
+
+To remove all dummy data from a project, run the delete command then interrupt before recreation:
+
+[source,bash]
+----
+# Delete all items tagged with "dummy" (Ctrl+C after deletion completes)
+node scripts/create-backlog.mjs -o KnowAllTest -p "ABC Inc (Agile)" -t agile --delete-existing
+----
+
 == Post-Deployment Checklist
 
 * [ ] Verify NEXTAUTH_URL matches custom domain

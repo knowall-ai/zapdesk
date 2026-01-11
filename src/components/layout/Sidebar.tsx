@@ -8,7 +8,7 @@ import {
   Users,
   Users2,
   Building2,
-  BarChart3,
+  Activity,
   Settings,
   Plus,
   RefreshCw,
@@ -17,6 +17,7 @@ import {
   UserCheck,
   AlertCircle,
   CheckCircle,
+  CalendarCheck,
   PlusCircle,
   X,
 } from 'lucide-react';
@@ -41,7 +42,18 @@ const mainNavItems = [
     href: '/projects',
   },
   { id: 'team', name: 'Team', icon: <Users2 size={20} />, href: '/team' },
-  { id: 'reporting', name: 'Reporting', icon: <BarChart3 size={20} />, href: '/reporting' },
+  {
+    id: 'live-dashboard',
+    name: 'Live Dashboard',
+    icon: <Activity size={20} />,
+    href: '/reporting',
+  },
+  {
+    id: 'monthly-checkpoint',
+    name: 'Monthly Checkpoint',
+    icon: <CalendarCheck size={20} />,
+    href: '/monthly-checkpoint',
+  },
   { id: 'admin', name: 'Admin', icon: <Settings size={20} />, href: '/admin' },
 ];
 

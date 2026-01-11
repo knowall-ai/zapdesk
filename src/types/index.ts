@@ -204,6 +204,41 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
   hasMore: boolean;
 }
 
+// Monthly Checkpoint Dashboard Types
+export interface SLAMetrics {
+  avgResponseTimeHours: number;
+  avgResolutionTimeHours: number;
+  slaCompliancePercent: number;
+}
+
+export interface TicketTrendPoint {
+  date: string;
+  ticketsCreated: number;
+  ticketsResolved: number;
+  avgResponseTimeHours: number;
+  avgResolutionTimeHours: number;
+}
+
+export interface MonthlyCheckpointStats {
+  period: {
+    startDate: string;
+    endDate: string;
+  };
+  kpis: {
+    totalTicketsCreated: number;
+    totalTicketsResolved: number;
+    totalTicketsPending: number;
+    totalTicketsOpen: number;
+    avgResponseTimeHours: number;
+    avgResolutionTimeHours: number;
+    slaCompliancePercent: number;
+  };
+  trends: TicketTrendPoint[];
+  tickets: Ticket[];
+}
+
+export type TicketType = 'Bug' | 'Feature';
+
 // Team member with performance metrics
 export type TeamMemberStatus = 'On Track' | 'Behind' | 'Needs Attention';
 
