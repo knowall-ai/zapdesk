@@ -173,8 +173,8 @@ function validateConfig() {
 // Dynamically load backlog data for selected template
 async function loadBacklogData() {
   try {
-    const module = await import(templateConfig.backlogFile);
-    return module.backlogData;
+    const backlogModule = await import(templateConfig.backlogFile);
+    return backlogModule.backlogData;
   } catch (error) {
     if (error.code === 'ERR_MODULE_NOT_FOUND') {
       console.error(`❌ Backlog file not found: ${templateConfig.backlogFile}`);
@@ -228,7 +228,7 @@ async function fetchTeamMembers() {
         for (const member of membersData.value || []) {
           // Avoid duplicates (user might be in multiple teams)
           const identity = member.identity;
-          if (identity && !allMembers.find(m => m.uniqueName === identity.uniqueName)) {
+          if (identity && !allMembers.find((m) => m.uniqueName === identity.uniqueName)) {
             allMembers.push({
               displayName: identity.displayName,
               uniqueName: identity.uniqueName,
@@ -240,7 +240,9 @@ async function fetchTeamMembers() {
     }
 
     teamMembersCache = allMembers;
-    console.log(`   Found ${allMembers.length} team members: ${allMembers.map(m => m.displayName).join(', ')}`);
+    console.log(
+      `   Found ${allMembers.length} team members: ${allMembers.map((m) => m.displayName).join(', ')}`
+    );
     return allMembers;
   } catch (error) {
     console.warn(`⚠️  Error fetching team members: ${error.message}`);
@@ -295,7 +297,7 @@ async function fetchExistingWorkItems() {
     const response = await fetch(wiqlUrl, {
       method: 'POST',
       headers: {
-        'Authorization': getAuthHeader(),
+        Authorization: getAuthHeader(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(wiqlQuery),
@@ -308,7 +310,7 @@ async function fetchExistingWorkItems() {
     }
 
     const data = await response.json();
-    const workItemIds = data.workItems?.map(wi => wi.id) || [];
+    const workItemIds = data.workItems?.map((wi) => wi.id) || [];
 
     if (workItemIds.length === 0) {
       console.log('   No existing work items found with backlog GUIDs');
@@ -332,12 +334,14 @@ async function fetchExistingWorkItems() {
       }
     }
 
-    existingWorkItemsCache = allWorkItems.map(wi => ({
-      id: wi.id,
-      title: wi.fields['System.Title'],
-      type: wi.fields['System.WorkItemType'],
-      guid: extractGuidFromDescription(wi.fields['System.Description']),
-    })).filter(wi => wi.guid); // Only keep items with valid GUIDs
+    existingWorkItemsCache = allWorkItems
+      .map((wi) => ({
+        id: wi.id,
+        title: wi.fields['System.Title'],
+        type: wi.fields['System.WorkItemType'],
+        guid: extractGuidFromDescription(wi.fields['System.Description']),
+      }))
+      .filter((wi) => wi.guid); // Only keep items with valid GUIDs
 
     console.log(`   Found ${existingWorkItemsCache.length} existing work items with backlog GUIDs`);
     return existingWorkItemsCache;
@@ -351,11 +355,22 @@ async function fetchExistingWorkItems() {
 // Find an existing work item by GUID
 function findExistingWorkItem(guid, existingItems) {
   if (!guid) return null;
-  return existingItems.find(item => item.guid === guid);
+  return existingItems.find((item) => item.guid === guid);
 }
 
 // Update an existing work item
-async function updateWorkItem(workItemId, workItemType, title, description, priority, tags, remainingWork, storyPoints, parentId = null, assignee = null) {
+async function updateWorkItem(
+  workItemId,
+  workItemType,
+  title,
+  description,
+  priority,
+  tags,
+  remainingWork,
+  storyPoints,
+  _parentId = null,
+  assignee = null
+) {
   const patchDocument = [
     { op: 'replace', path: '/fields/System.Title', value: title },
     { op: 'replace', path: '/fields/System.Description', value: description },
@@ -421,7 +436,7 @@ async function updateWorkItem(workItemId, workItemType, title, description, prio
   const response = await fetch(url, {
     method: 'PATCH',
     headers: {
-      'Authorization': getAuthHeader(),
+      Authorization: getAuthHeader(),
       'Content-Type': 'application/json-patch+json',
     },
     body: JSON.stringify(patchDocument),
@@ -429,7 +444,9 @@ async function updateWorkItem(workItemId, workItemType, title, description, prio
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Failed to update ${workItemType} #${workItemId} "${title}": ${response.statusText} - ${errorText}`);
+    throw new Error(
+      `Failed to update ${workItemType} #${workItemId} "${title}": ${response.statusText} - ${errorText}`
+    );
   }
 
   return response.json();
@@ -437,16 +454,14 @@ async function updateWorkItem(workItemId, workItemType, title, description, prio
 
 // Update work item state (for transitioning to Closed/Resolved after creation)
 async function updateWorkItemState(workItemId, state) {
-  const patchDocument = [
-    { op: 'add', path: '/fields/System.State', value: state },
-  ];
+  const patchDocument = [{ op: 'add', path: '/fields/System.State', value: state }];
 
   const url = `${BASE_URL}/${encodeURIComponent(PROJECT)}/_apis/wit/workitems/${workItemId}?api-version=${API_VERSION}`;
 
   const response = await fetch(url, {
     method: 'PATCH',
     headers: {
-      'Authorization': getAuthHeader(),
+      Authorization: getAuthHeader(),
       'Content-Type': 'application/json-patch+json',
     },
     body: JSON.stringify(patchDocument),
@@ -454,7 +469,9 @@ async function updateWorkItemState(workItemId, state) {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Failed to update state for #${workItemId}: ${response.statusText} - ${errorText}`);
+    throw new Error(
+      `Failed to update state for #${workItemId}: ${response.statusText} - ${errorText}`
+    );
   }
 
   return response.json();
@@ -467,13 +484,15 @@ async function deleteWorkItem(workItemId) {
   const response = await fetch(url, {
     method: 'DELETE',
     headers: {
-      'Authorization': getAuthHeader(),
+      Authorization: getAuthHeader(),
     },
   });
 
   if (!response.ok && response.status !== 204) {
     const errorText = await response.text();
-    throw new Error(`Failed to delete work item #${workItemId}: ${response.statusText} - ${errorText}`);
+    throw new Error(
+      `Failed to delete work item #${workItemId}: ${response.statusText} - ${errorText}`
+    );
   }
 
   return true;
@@ -506,7 +525,19 @@ async function deleteExistingWorkItems(existingItems) {
 }
 
 // Create a work item in Azure DevOps
-async function createWorkItem(workItemType, title, description, priority, tags, remainingWork, storyPoints, state, guid, parentId = null, assignee = null) {
+async function createWorkItem(
+  workItemType,
+  title,
+  description,
+  priority,
+  tags,
+  remainingWork,
+  storyPoints,
+  state,
+  guid,
+  parentId = null,
+  assignee = null
+) {
   // Ensure "dummy" tag is always included, and add GUID to description
   const allTags = [...new Set([...tags, 'dummy'])];
   const descriptionWithGuid = addGuidToDescription(description, guid);
@@ -594,7 +625,7 @@ async function createWorkItem(workItemType, title, description, priority, tags, 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      'Authorization': getAuthHeader(),
+      Authorization: getAuthHeader(),
       'Content-Type': 'application/json-patch+json',
     },
     body: JSON.stringify(patchDocument),
@@ -602,14 +633,22 @@ async function createWorkItem(workItemType, title, description, priority, tags, 
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Failed to create ${workItemType} "${title}": ${response.statusText} - ${errorText}`);
+    throw new Error(
+      `Failed to create ${workItemType} "${title}": ${response.statusText} - ${errorText}`
+    );
   }
 
   return response.json();
 }
 
 // Process a work item and its children recursively
-async function processWorkItem(item, parentId = null, depth = 0, teamMembers = [], existingItems = []) {
+async function processWorkItem(
+  item,
+  parentId = null,
+  depth = 0,
+  teamMembers = [],
+  existingItems = []
+) {
   const indent = '  '.repeat(depth);
 
   // Generate GUID if not present
@@ -629,11 +668,15 @@ async function processWorkItem(item, parentId = null, depth = 0, teamMembers = [
     if (existingItem) {
       // Update existing work item
       if (isDryRun) {
-        console.log(`${indent}[DRY RUN] Would update ${item.type} #${existingItem.id}: ${item.title}${assigneeInfo}`);
+        console.log(
+          `${indent}[DRY RUN] Would update ${item.type} #${existingItem.id}: ${item.title}${assigneeInfo}`
+        );
         workItemId = existingItem.id;
         workItem = { id: workItemId };
       } else {
-        console.log(`${indent}Updating ${item.type} #${existingItem.id}: ${item.title}${assigneeInfo}`);
+        console.log(
+          `${indent}Updating ${item.type} #${existingItem.id}: ${item.title}${assigneeInfo}`
+        );
         workItem = await updateWorkItem(
           existingItem.id,
           item.type,
@@ -682,7 +725,9 @@ async function processWorkItem(item, parentId = null, depth = 0, teamMembers = [
             await updateWorkItemState(workItemId, item.state);
             console.log(`${indent}  → State: ${item.state}`);
           } catch (stateError) {
-            console.log(`${indent}  ⚠ Could not set state to ${item.state}: ${stateError.message.substring(0, 50)}...`);
+            console.log(
+              `${indent}  ⚠ Could not set state to ${item.state}: ${stateError.message.substring(0, 50)}...`
+            );
           }
         }
       }
@@ -819,7 +864,7 @@ async function main() {
 }
 
 // Run the script
-main().catch(error => {
+main().catch((error) => {
   console.error('\n❌ Fatal error:', error.message);
   process.exit(1);
 });

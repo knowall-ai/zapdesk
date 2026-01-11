@@ -25,41 +25,47 @@ Creates a realistic backlog of work items in Azure DevOps for demo/testing purpo
    ```
 
    Or add to `.env.local` in the project root:
+
    ```bash
    AZURE_DEVOPS_PAT=your_personal_access_token_here
    ```
 
 ### Supported Templates
 
-| Template | Work Item Hierarchy | File |
-|----------|---------------------|------|
-| **Agile** | Epic → Feature → User Story → Task/Bug | `dummy-agile-backlog.mjs` |
-| **Scrum** | Epic → Feature → PBI → Task/Bug/Impediment | `dummy-scrum-backlog.mjs` |
+| Template       | Work Item Hierarchy                         | File                         |
+| -------------- | ------------------------------------------- | ---------------------------- |
+| **Agile**      | Epic → Feature → User Story → Task/Bug      | `dummy-agile-backlog.mjs`    |
+| **Scrum**      | Epic → Feature → PBI → Task/Bug/Impediment  | `dummy-scrum-backlog.mjs`    |
 | **T-Minus-15** | Epic → Feature → Task/Bug/Enhancement/Issue | `dummy-tminus15-backlog.mjs` |
 
 ### Usage
 
 **Set up PAT** (in `.env.local` or export directly):
+
 ```bash
 export AZURE_DEVOPS_PAT="your_token_here"
 ```
 
 **Dry Run (Preview)** - See what would be created:
+
 ```bash
 node scripts/create-backlog.mjs -o KnowAllTest -p "ABC Inc (Agile)" -t agile --dry-run
 ```
 
 **Create Backlog** - Actually create the work items:
+
 ```bash
 node scripts/create-backlog.mjs -o KnowAllTest -p "ABC Inc (Agile)" -t agile
 ```
 
 **Delete and Recreate** - Remove all existing dummy items and recreate fresh:
+
 ```bash
 node scripts/create-backlog.mjs -o KnowAllTest -p "ABC Inc (Agile)" -t agile --delete-existing
 ```
 
 **Show Help:**
+
 ```bash
 node scripts/create-backlog.mjs --help
 ```
@@ -78,6 +84,7 @@ The script uses GUID markers embedded in work item descriptions for reliable mat
 - **State**: Items are created in "New" state, then transitioned to target state (Azure DevOps doesn't allow creating directly in Closed/Active state)
 
 This allows you to safely re-run the script to:
+
 - Add new work items to an existing backlog
 - Update descriptions, priorities, or effort estimates
 - Maintain consistent item identity across runs
@@ -100,11 +107,13 @@ Website Support (Epic)
 ```
 
 **Tagging:**
+
 - All items tagged with `dummy` for identification
 - Only support tickets tagged with `ticket` (appear in DevDesk)
 - Website build items are NOT tagged with `ticket`
 
 **States:**
+
 - Blocks 1-3: Closed (completed work)
 - Block 4: Active (current work)
 - Blocks 5-12: New (future work)
@@ -136,6 +145,7 @@ Creating Epic: Corporate Website Launch
 ```
 
 After completion, you can view the backlog at:
+
 ```
 https://dev.azure.com/{your-org}/{your-project}/_workitems
 ```
@@ -143,28 +153,33 @@ https://dev.azure.com/{your-org}/{your-project}/_workitems
 ### Troubleshooting
 
 **Authentication Error**
+
 - Verify your PAT is correct and not expired
 - Ensure the PAT has "Work Items (Read, Write)" scope
 - Check that the organization name is correct
 
 **Project Not Found**
+
 - Verify the project name exactly matches (case-sensitive)
 - Ensure your PAT has access to the project
 - Check that you have permissions to create work items in the project
 
 **Work Item Type Not Found**
+
 - Ensure your project uses the correct process template for the backlog you're creating
 - Agile backlog requires Agile template
 - Scrum backlog requires Scrum template
 - T-Minus-15 backlog requires T-Minus-15 template
 
 **Backlog File Not Found**
+
 - Ensure the corresponding backlog file exists (e.g., `dummy-agile-backlog.mjs`)
 - Some templates may not have backlog data created yet
 
 ### Customization
 
 To modify the backlog content, edit the corresponding backlog file:
+
 - `scripts/dummy-agile-backlog.mjs` - Agile template
 - `scripts/dummy-scrum-backlog.mjs` - Scrum template
 - `scripts/dummy-tminus15-backlog.mjs` - T-Minus-15 template
@@ -193,11 +208,11 @@ The data structure is:
 
 ## Backlog Files
 
-| File | Description | Status |
-|------|-------------|--------|
-| `dummy-agile-backlog.mjs` | Corporate marketing website backlog (Agile template) | ✅ Complete |
-| `dummy-scrum-backlog.mjs` | Software development backlog (Scrum template) | 📝 Planned |
-| `dummy-tminus15-backlog.mjs` | Software development backlog (T-Minus-15 template) | 📝 Planned |
+| File                         | Description                                          | Status      |
+| ---------------------------- | ---------------------------------------------------- | ----------- |
+| `dummy-agile-backlog.mjs`    | Corporate marketing website backlog (Agile template) | ✅ Complete |
+| `dummy-scrum-backlog.mjs`    | Software development backlog (Scrum template)        | 📝 Planned  |
+| `dummy-tminus15-backlog.mjs` | Software development backlog (T-Minus-15 template)   | 📝 Planned  |
 
 ## Other Scripts
 
