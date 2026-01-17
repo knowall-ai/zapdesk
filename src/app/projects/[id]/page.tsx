@@ -13,6 +13,7 @@ import { useOrganization } from '@/components/providers/OrganizationProvider';
 
 interface ProjectWithSLA extends Organization {
   sla?: SLALevel;
+  description?: string;
   processTemplate?: string;
   isTemplateSupported?: boolean;
 }
@@ -164,6 +165,12 @@ export default function ProjectDetailPage() {
               Details
             </h2>
             <div className="space-y-3 text-sm">
+              {project.description && (
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>Description:</span>
+                  <p style={{ color: 'var(--text-primary)' }}>{project.description}</p>
+                </div>
+              )}
               <div>
                 <span style={{ color: 'var(--text-muted)' }}>Domain:</span>
                 <p style={{ color: 'var(--text-primary)' }}>{project.domain || '-'}</p>
@@ -353,14 +360,16 @@ export default function ProjectDetailPage() {
               ) : (
                 <div className="space-y-3">
                   {epics.map((epic) => (
-                    <Link
+                    <div
                       key={epic.id}
-                      href={`/projects/${projectId}/epics/${epic.id}`}
-                      className="block rounded-lg p-4 transition-colors hover:bg-[var(--surface)]"
+                      className="rounded-lg p-4 transition-colors hover:bg-[var(--surface)]"
                       style={{ backgroundColor: 'var(--surface-hover)' }}
                     >
                       <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0 flex-1">
+                        <Link
+                          href={`/projects/${projectId}/epics/${epic.id}`}
+                          className="min-w-0 flex-1"
+                        >
                           <div className="mb-1 flex items-center gap-2">
                             <h3
                               className="truncate font-medium"
@@ -412,14 +421,19 @@ export default function ProjectDetailPage() {
                               </div>
                             )}
                           </div>
-                        </div>
-                        <ExternalLink
-                          size={16}
-                          className="shrink-0"
-                          style={{ color: 'var(--text-muted)' }}
-                        />
+                        </Link>
+                        <a
+                          href={`https://dev.azure.com/${project.devOpsOrg}/${encodeURIComponent(project.devOpsProject)}/_workitems/edit/${epic.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 rounded p-1 transition-colors hover:bg-[var(--surface)]"
+                          title="Open in Azure DevOps"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <ExternalLink size={16} style={{ color: 'var(--text-muted)' }} />
+                        </a>
                       </div>
-                    </Link>
+                    </div>
                   ))}
                 </div>
               )}

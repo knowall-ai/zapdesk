@@ -300,6 +300,7 @@ export async function GET(request: NextRequest) {
       return {
         id: project.id,
         name: project.name,
+        description: project.description,
         domain: parseEmailDomains(project.description),
         devOpsProject: project.name,
         devOpsOrg,
