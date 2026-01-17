@@ -199,13 +199,13 @@ function getStateColors(state: string): BlockColors {
 
 // Calculate fill percentage based on completedWork vs effort
 // Returns null if effort is not set (can't calculate percentage)
+// Can exceed 100% if more work completed than estimated
 function calculateFillPercentage(feature: Feature): number | null {
   // Effort is required to calculate percentage
   if (!feature.effort || feature.effort === 0) {
     return null;
   }
-  const percentage = (feature.completedWork / feature.effort) * 100;
-  return Math.min(percentage, 100);
+  return (feature.completedWork / feature.effort) * 100;
 }
 
 export default function FeatureTimechain({
@@ -444,7 +444,7 @@ export default function FeatureTimechain({
                         <div
                           className="h-full rounded-full transition-all duration-500"
                           style={{
-                            width: `${fillPercentage ?? 0}%`,
+                            width: `${Math.min(fillPercentage ?? 0, 100)}%`,
                             backgroundColor: isSelected ? '#22c55e' : colors.accent,
                           }}
                         />
