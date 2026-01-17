@@ -197,6 +197,56 @@ function getStateColors(state: string): BlockColors {
   }
 }
 
+// Selected state colors - glow color based on category
+interface SelectedColors {
+  topFace: string;
+  leftFace: string;
+  gradient: string;
+  border: string;
+  glow: string;
+  accent: string;
+  text: string;
+}
+
+function getSelectedColors(category: 'new' | 'inProgress' | 'done'): SelectedColors {
+  switch (category) {
+    case 'done':
+      // Purple glow for Done blocks
+      return {
+        topFace: '#c084fc', // purple-400
+        leftFace: '#7c3aed', // purple-600
+        gradient: 'linear-gradient(180deg, #4c1d95 0%, #2e1065 100%)',
+        border: '#a855f7', // purple-500
+        glow: '0 0 30px rgba(168, 85, 247, 0.5)',
+        accent: '#c084fc',
+        text: '#e9d5ff',
+      };
+    case 'inProgress':
+      // Green glow for Active blocks
+      return {
+        topFace: '#4ade80', // green-400
+        leftFace: '#15803d', // green-700
+        gradient: 'linear-gradient(180deg, #14532d 0%, #052e16 100%)',
+        border: '#22c55e', // green-500
+        glow: '0 0 30px rgba(34, 197, 94, 0.5)',
+        accent: '#4ade80',
+        text: '#bbf7d0',
+      };
+    case 'new':
+    default:
+      // Grey glow for New blocks
+      return {
+        topFace: '#9ca3af', // gray-400
+        leftFace: '#4b5563', // gray-600
+        gradient: 'linear-gradient(180deg, #374151 0%, #1f2937 100%)',
+        border: '#6b7280', // gray-500
+        glow: '0 0 30px rgba(107, 114, 128, 0.5)',
+        accent: '#9ca3af',
+        text: '#e5e7eb',
+      };
+  }
+}
+
 // Calculate fill percentage based on completedWork vs effort
 // Returns null if effort is not set (can't calculate percentage)
 // Can exceed 100% if more work completed than estimated
@@ -324,6 +374,7 @@ export default function FeatureTimechain({
             const isSelected = selectedFeature?.id === feature.id;
             const colors = getStateColors(feature.state);
             const category = getStateCategory(feature.state);
+            const selectedColors = getSelectedColors(category);
 
             return (
               <div
@@ -335,7 +386,7 @@ export default function FeatureTimechain({
               >
                 <div
                   className="mb-3 font-mono text-base font-semibold tracking-wide"
-                  style={{ color: isSelected ? '#22c55e' : '#e5e7eb' }}
+                  style={{ color: isSelected ? selectedColors.border : '#e5e7eb' }}
                 >
                   {feature.id}
                 </div>
@@ -358,7 +409,7 @@ export default function FeatureTimechain({
                       height: depth,
                       top: 0,
                       left: depth,
-                      background: isSelected ? '#4ade80' : colors.topFace,
+                      background: isSelected ? selectedColors.topFace : colors.topFace,
                       transform: 'skewX(45deg)',
                       transformOrigin: 'bottom left',
                     }}
@@ -372,7 +423,7 @@ export default function FeatureTimechain({
                       height: blockHeight,
                       top: depth,
                       left: 0,
-                      background: isSelected ? '#15803d' : colors.rightFace,
+                      background: isSelected ? selectedColors.leftFace : colors.rightFace,
                       transform: 'skewY(45deg)',
                       transformOrigin: 'top right',
                     }}
@@ -386,19 +437,17 @@ export default function FeatureTimechain({
                       height: blockHeight,
                       top: depth,
                       left: depth,
-                      background: isSelected
-                        ? 'linear-gradient(180deg, #14532d 0%, #052e16 100%)'
-                        : colors.gradient,
-                      border: isSelected ? '2px solid #22c55e' : `1px solid ${colors.border}`,
-                      boxShadow: isSelected
-                        ? '0 0 30px rgba(34, 197, 94, 0.5)'
-                        : '0 8px 24px rgba(0,0,0,0.5)',
+                      background: isSelected ? selectedColors.gradient : colors.gradient,
+                      border: isSelected
+                        ? `2px solid ${selectedColors.border}`
+                        : `1px solid ${colors.border}`,
+                      boxShadow: isSelected ? selectedColors.glow : '0 8px 24px rgba(0,0,0,0.5)',
                     }}
                   >
                     <div className="flex h-full flex-col p-3">
                       <div
                         className="mb-2 text-xs font-medium tracking-wider uppercase"
-                        style={{ color: isSelected ? '#4ade80' : colors.accent }}
+                        style={{ color: isSelected ? selectedColors.accent : colors.accent }}
                       >
                         {category === 'done'
                           ? 'Done'
@@ -410,13 +459,13 @@ export default function FeatureTimechain({
                       <div className="mb-1">
                         <span
                           className="text-2xl font-bold"
-                          style={{ color: isSelected ? '#bbf7d0' : colors.text }}
+                          style={{ color: isSelected ? selectedColors.text : colors.text }}
                         >
                           {extractTasks(feature.workItems).length}
                         </span>
                         <span
                           className="ml-1 text-sm"
-                          style={{ color: isSelected ? '#4ade80' : colors.subtext }}
+                          style={{ color: isSelected ? selectedColors.accent : colors.subtext }}
                         >
                           items
                         </span>
@@ -424,7 +473,7 @@ export default function FeatureTimechain({
 
                       <div
                         className="text-sm"
-                        style={{ color: isSelected ? '#4ade80' : colors.subtext }}
+                        style={{ color: isSelected ? selectedColors.accent : colors.subtext }}
                       >
                         {formatHours(feature.completedWork)}h
                         {feature.effort ? ` / ${formatHours(feature.effort)}h` : ' completed'}
@@ -432,7 +481,7 @@ export default function FeatureTimechain({
 
                       <div
                         className="mt-auto text-lg font-semibold"
-                        style={{ color: isSelected ? '#4ade80' : colors.accent }}
+                        style={{ color: isSelected ? selectedColors.accent : colors.accent }}
                       >
                         {fillPercentage !== null ? `${fillPercentage.toFixed(0)}%` : '—'}
                       </div>
@@ -445,7 +494,7 @@ export default function FeatureTimechain({
                           className="h-full rounded-full transition-all duration-500"
                           style={{
                             width: `${Math.min(fillPercentage ?? 0, 100)}%`,
-                            backgroundColor: isSelected ? '#22c55e' : colors.accent,
+                            backgroundColor: isSelected ? selectedColors.border : colors.accent,
                           }}
                         />
                       </div>
@@ -460,11 +509,11 @@ export default function FeatureTimechain({
                 >
                   <span
                     className="h-2 w-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: isSelected ? '#22c55e' : colors.accent }}
+                    style={{ backgroundColor: isSelected ? selectedColors.border : colors.accent }}
                   />
                   <span
                     className="truncate text-xs font-medium"
-                    style={{ color: isSelected ? '#22c55e' : '#9ca3af' }}
+                    style={{ color: isSelected ? selectedColors.border : '#9ca3af' }}
                   >
                     {feature.title}
                   </span>
