@@ -66,11 +66,14 @@ interface WorkItemBoardProps {
   hideFilters?: boolean;
   hideHeader?: boolean;
   hideViewToggle?: boolean; // Hide the List/Kanban toggle
+  hideTicketsOnlyToggle?: boolean; // Hide the "Tickets only" toggle
   readOnlyKanban?: boolean; // Disable drag-and-drop in Kanban view
   columns?: ColumnConfig[];
   groupBy?: 'assignee' | 'none';
   compact?: boolean;
   maxHeight?: string;
+  availableTypes?: string[]; // Work item types from process template (e.g., ['User Story', 'Task', 'Bug'])
+  defaultTicketsOnly?: boolean; // Default state of "Tickets only" toggle (default: true)
   onStatusChange?: (itemId: number, newState: string) => Promise<void>; // For drag-and-drop
 }
 
@@ -126,11 +129,14 @@ export default function WorkItemBoard({
   hideFilters = false,
   hideHeader = false,
   hideViewToggle = false,
+  hideTicketsOnlyToggle = false,
   readOnlyKanban = false,
   columns = TICKET_COLUMNS,
   groupBy: initialGroupBy = 'assignee',
   compact = false,
   maxHeight,
+  availableTypes,
+  defaultTicketsOnly = true,
   onStatusChange,
 }: WorkItemBoardProps) {
   const [sortField, setSortField] = useState<SortField>('updated');
@@ -138,6 +144,7 @@ export default function WorkItemBoard({
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
   const [groupBy] = useState<'assignee' | 'none'>(initialGroupBy);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+  const [ticketsOnly, setTicketsOnly] = useState(defaultTicketsOnly);
   const [filters, setFilters] = useState<Filters>({
     status: '',
     priority: '',
@@ -244,13 +251,16 @@ export default function WorkItemBoard({
       }
     });
 
+    // Use availableTypes from props if provided, otherwise use types from items
+    const typeOptions = availableTypes || Array.from(types).sort();
+
     return {
       assignees: Array.from(assignees).sort(),
       requesters: Array.from(requesters).sort(),
       statuses: Array.from(statuses).sort(),
-      types: Array.from(types).sort(),
+      types: typeOptions,
     };
-  }, [items]);
+  }, [items, availableTypes]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -271,6 +281,11 @@ export default function WorkItemBoard({
   // Apply filters
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
+      // Tickets only filter - check for "ticket" tag (case-insensitive)
+      if (ticketsOnly) {
+        const hasTicketTag = item.tags?.some((tag) => tag.toLowerCase() === 'ticket');
+        if (!hasTicketTag) return false;
+      }
       if (filters.status && item.state !== filters.status) return false;
       if (filters.priority && item.priority !== filters.priority) return false;
       if (filters.assignee && item.assignee?.displayName !== filters.assignee) return false;
@@ -278,7 +293,7 @@ export default function WorkItemBoard({
       if (filters.type && item.workItemType !== filters.type) return false;
       return true;
     });
-  }, [items, filters]);
+  }, [items, filters, ticketsOnly]);
 
   const toggleItemSelection = (itemId: number) => {
     const newSelection = new Set(selectedItems);
@@ -443,6 +458,31 @@ export default function WorkItemBoard({
           {/* Filter dropdowns */}
           {!hideFilters && (
             <div className="flex flex-wrap items-center gap-3">
+              {/* Tickets only toggle */}
+              {!hideTicketsOnlyToggle && (
+                <label className="flex cursor-pointer items-center gap-2">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      checked={ticketsOnly}
+                      onChange={(e) => setTicketsOnly(e.target.checked)}
+                      className="peer sr-only"
+                    />
+                    <div
+                      className="h-5 w-9 rounded-full transition-colors peer-checked:bg-[var(--primary)]"
+                      style={{ backgroundColor: ticketsOnly ? undefined : 'var(--surface-hover)' }}
+                    />
+                    <div
+                      className="absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4"
+                      style={{ transform: ticketsOnly ? 'translateX(16px)' : 'translateX(0)' }}
+                    />
+                  </div>
+                  <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    Tickets only
+                  </span>
+                </label>
+              )}
+
               <select
                 value={filters.status}
                 onChange={(e) => setFilters({ ...filters, status: e.target.value })}
@@ -456,7 +496,7 @@ export default function WorkItemBoard({
                 ))}
               </select>
 
-              {filterOptions.types.length > 1 && (
+              {filterOptions.types.length > 0 && (
                 <select
                   value={filters.type}
                   onChange={(e) => setFilters({ ...filters, type: e.target.value })}
