@@ -12,6 +12,7 @@ import {
   UserCheck,
   List,
   LayoutGrid,
+  Tag,
 } from 'lucide-react';
 import type { WorkItem, TicketPriority } from '@/types';
 import StatusBadge from '../common/StatusBadge';
@@ -21,6 +22,7 @@ import KanbanBoard from './KanbanBoard';
 // Column configuration
 export type ColumnId =
   | 'checkbox'
+  | 'id'
   | 'type'
   | 'status'
   | 'subject'
@@ -54,6 +56,7 @@ export const TICKET_COLUMNS: ColumnConfig[] = [
 // Columns for work items view (Feature Explorer)
 export const WORKITEM_COLUMNS: ColumnConfig[] = [
   { id: 'checkbox', label: '', width: 'w-10' },
+  { id: 'id', label: 'ID', sortField: 'id', width: 'w-16' },
   { id: 'type', label: 'Type', sortField: 'type' },
   { id: 'status', label: 'State', sortField: 'status' },
   { id: 'subject', label: 'Subject', sortField: 'subject' },
@@ -78,6 +81,7 @@ interface WorkItemBoardProps {
 }
 
 type SortField =
+  | 'id'
   | 'type'
   | 'status'
   | 'subject'
@@ -319,6 +323,8 @@ export default function WorkItemBoard({
     const multiplier = sortDirection === 'asc' ? 1 : -1;
 
     switch (sortField) {
+      case 'id':
+        return multiplier * (a.id - b.id);
       case 'type':
         return multiplier * (a.workItemType || '').localeCompare(b.workItemType || '');
       case 'status':
@@ -375,23 +381,28 @@ export default function WorkItemBoard({
     <div className="flex h-full flex-col">
       {/* Header */}
       {!hideHeader && (title || selectedItems.size > 0 || !hideFilters) && (
-        <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {title && (
-                <h1
-                  className={compact ? 'text-base font-semibold' : 'text-xl font-semibold'}
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  {title}
-                </h1>
-              )}
-              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
-                {hasActiveFilters && ` (filtered from ${items.length})`}
-              </span>
+        <div className="border-b px-6 py-4" style={{ borderColor: 'var(--border)' }}>
+          {/* Title row */}
+          {title && (
+            <div className="mb-3 flex items-center justify-between">
+              <h1
+                className={compact ? 'text-base font-semibold' : 'text-xl font-semibold'}
+                style={{ color: 'var(--text-primary)' }}
+              >
+                {title}
+              </h1>
             </div>
-            <div className="flex items-center gap-2">
+          )}
+
+          {/* Filters and view toggle row */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+              {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
+              {hasActiveFilters && ` (filtered from ${items.length})`}
+            </span>
+
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Bulk actions (when items selected) */}
               {selectedItems.size > 0 && (
                 <>
                   <div className="relative" ref={bulkMenuRef}>
@@ -430,141 +441,144 @@ export default function WorkItemBoard({
                   </button>
                 </>
               )}
-              {/* View mode toggle */}
-              {!hideFilters && !hideViewToggle && (
-                <div
-                  className="flex rounded-lg border"
-                  style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
-                >
-                  <button
-                    onClick={() => setViewMode('list')}
-                    className={`flex items-center gap-1 rounded-l-lg px-3 py-1.5 text-sm ${viewMode === 'list' ? 'bg-[var(--primary)] text-white' : ''}`}
-                    style={viewMode !== 'list' ? { color: 'var(--text-secondary)' } : {}}
+
+              {/* Filter dropdowns */}
+              {!hideFilters && (
+                <>
+                  <select
+                    value={filters.status}
+                    onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+                    className="input text-sm"
                   >
-                    <List size={14} /> List
-                  </button>
-                  <button
-                    onClick={() => setViewMode('kanban')}
-                    className={`flex items-center gap-1 rounded-r-lg px-3 py-1.5 text-sm ${viewMode === 'kanban' ? 'bg-[var(--primary)] text-white' : ''}`}
-                    style={viewMode !== 'kanban' ? { color: 'var(--text-secondary)' } : {}}
+                    <option value="">All Statuses</option>
+                    {filterOptions.statuses.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+
+                  {filterOptions.types.length > 0 && (
+                    <select
+                      value={filters.type}
+                      onChange={(e) => setFilters({ ...filters, type: e.target.value })}
+                      className="input text-sm"
+                    >
+                      <option value="">All Types</option>
+                      {filterOptions.types.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  <select
+                    value={filters.priority}
+                    onChange={(e) =>
+                      setFilters({ ...filters, priority: e.target.value as TicketPriority | '' })
+                    }
+                    className="input text-sm"
                   >
-                    <LayoutGrid size={14} /> Kanban
-                  </button>
-                </div>
+                    <option value="">All Priorities</option>
+                    <option value="Urgent">Urgent</option>
+                    <option value="High">High</option>
+                    <option value="Normal">Normal</option>
+                    <option value="Low">Low</option>
+                  </select>
+
+                  <select
+                    value={filters.assignee}
+                    onChange={(e) => setFilters({ ...filters, assignee: e.target.value })}
+                    className="input text-sm"
+                  >
+                    <option value="">All Assignees</option>
+                    {filterOptions.assignees.map((assignee) => (
+                      <option key={assignee} value={assignee}>
+                        {assignee}
+                      </option>
+                    ))}
+                  </select>
+
+                  {filterOptions.requesters.length > 0 && (
+                    <select
+                      value={filters.requester}
+                      onChange={(e) => setFilters({ ...filters, requester: e.target.value })}
+                      className="input text-sm"
+                    >
+                      <option value="">All Requesters</option>
+                      {filterOptions.requesters.map((requester) => (
+                        <option key={requester} value={requester}>
+                          {requester}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {hasActiveFilters && (
+                    <button
+                      onClick={clearFilters}
+                      className="flex items-center gap-1 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      <X size={14} />
+                      Clear
+                    </button>
+                  )}
+
+                  {/* Tickets only toggle */}
+                  {!hideTicketsOnlyToggle && (
+                    <button
+                      onClick={() => setTicketsOnly(!ticketsOnly)}
+                      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                        ticketsOnly
+                          ? 'bg-[var(--primary)] text-white'
+                          : 'bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                      }`}
+                      title={
+                        ticketsOnly
+                          ? 'Showing only items tagged "ticket"'
+                          : 'Showing all work items'
+                      }
+                    >
+                      <Tag size={14} />
+                      Tickets Only
+                    </button>
+                  )}
+
+                  {/* View toggle */}
+                  {!hideViewToggle && (
+                    <div className="flex items-center gap-1 rounded-lg bg-[var(--surface)] p-1">
+                      <button
+                        onClick={() => setViewMode('list')}
+                        className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                          viewMode === 'list'
+                            ? 'bg-[var(--primary)] text-white'
+                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                        }`}
+                        title="List view"
+                      >
+                        <List size={16} />
+                        List
+                      </button>
+                      <button
+                        onClick={() => setViewMode('kanban')}
+                        className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                          viewMode === 'kanban'
+                            ? 'bg-[var(--primary)] text-white'
+                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                        }`}
+                        title="Kanban view"
+                      >
+                        <LayoutGrid size={16} />
+                        Kanban
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
-
-          {/* Filter dropdowns */}
-          {!hideFilters && (
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Tickets only toggle */}
-              {!hideTicketsOnlyToggle && (
-                <label className="flex cursor-pointer items-center gap-2">
-                  <div className="relative">
-                    <input
-                      type="checkbox"
-                      checked={ticketsOnly}
-                      onChange={(e) => setTicketsOnly(e.target.checked)}
-                      className="peer sr-only"
-                    />
-                    <div
-                      className="h-5 w-9 rounded-full transition-colors peer-checked:bg-[var(--primary)]"
-                      style={{ backgroundColor: ticketsOnly ? undefined : 'var(--surface-hover)' }}
-                    />
-                    <div
-                      className="absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4"
-                      style={{ transform: ticketsOnly ? 'translateX(16px)' : 'translateX(0)' }}
-                    />
-                  </div>
-                  <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    Tickets only
-                  </span>
-                </label>
-              )}
-
-              <select
-                value={filters.status}
-                onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                className="input text-sm"
-              >
-                <option value="">All Statuses</option>
-                {filterOptions.statuses.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-
-              {filterOptions.types.length > 0 && (
-                <select
-                  value={filters.type}
-                  onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-                  className="input text-sm"
-                >
-                  <option value="">All Types</option>
-                  {filterOptions.types.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              <select
-                value={filters.priority}
-                onChange={(e) =>
-                  setFilters({ ...filters, priority: e.target.value as TicketPriority | '' })
-                }
-                className="input text-sm"
-              >
-                <option value="">All Priorities</option>
-                <option value="Urgent">Urgent</option>
-                <option value="High">High</option>
-                <option value="Normal">Normal</option>
-                <option value="Low">Low</option>
-              </select>
-
-              <select
-                value={filters.assignee}
-                onChange={(e) => setFilters({ ...filters, assignee: e.target.value })}
-                className="input text-sm"
-              >
-                <option value="">All Assignees</option>
-                {filterOptions.assignees.map((assignee) => (
-                  <option key={assignee} value={assignee}>
-                    {assignee}
-                  </option>
-                ))}
-              </select>
-
-              {filterOptions.requesters.length > 0 && (
-                <select
-                  value={filters.requester}
-                  onChange={(e) => setFilters({ ...filters, requester: e.target.value })}
-                  className="input text-sm"
-                >
-                  <option value="">All Requesters</option>
-                  {filterOptions.requesters.map((requester) => (
-                    <option key={requester} value={requester}>
-                      {requester}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              {hasActiveFilters && (
-                <button
-                  onClick={clearFilters}
-                  className="flex items-center gap-1 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  <X size={14} />
-                  Clear filters
-                </button>
-              )}
-            </div>
-          )}
         </div>
       )}
 
@@ -647,6 +661,14 @@ export default function WorkItemBoard({
                             onChange={() => toggleItemSelection(item.id)}
                             className="rounded"
                           />
+                        </td>
+                      )}
+                      {hasColumn('id') && (
+                        <td
+                          className={`${cellPadding} text-sm`}
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          {item.id}
                         </td>
                       )}
                       {hasColumn('type') && (

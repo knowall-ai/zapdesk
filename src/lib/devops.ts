@@ -113,6 +113,30 @@ function identityToCustomer(identity: {
   };
 }
 
+// Convert Ticket to WorkItem (for WorkItemBoard compatibility)
+export function ticketToWorkItem(ticket: Ticket): WorkItem {
+  return {
+    id: ticket.id,
+    title: ticket.title,
+    description: ticket.description,
+    state: ticket.devOpsState,
+    workItemType: ticket.workItemType,
+    areaPath: '',
+    project: ticket.project,
+    createdAt: ticket.createdAt,
+    updatedAt: ticket.updatedAt,
+    completedWork: 0,
+    remainingWork: 0,
+    originalEstimate: 0,
+    assignee: ticket.assignee,
+    devOpsUrl: ticket.devOpsUrl,
+    tags: ticket.tags,
+    priority: ticket.priority,
+    requester: ticket.requester,
+    organization: ticket.organization,
+  };
+}
+
 // Convert DevOps work item to Ticket
 export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organization): Ticket {
   const fields = workItem.fields;
@@ -123,6 +147,7 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     description: fields['System.Description'] || '',
     status: mapStateToStatus(fields['System.State']),
     devOpsState: fields['System.State'], // Preserve original DevOps state
+    workItemType: fields['System.WorkItemType'], // Azure DevOps work item type
     priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
     requester: identityToCustomer(fields['System.CreatedBy']),
     assignee: identityToUser(fields['System.AssignedTo']),

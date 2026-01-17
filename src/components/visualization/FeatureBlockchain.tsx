@@ -768,12 +768,13 @@ export default function FeatureTimechain({
             style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
           >
             <WorkItemBoard
-              items={extractTasks(selectedFeature.workItems)}
+              items={selectedFeature.workItems}
               title="Work Items"
               columns={WORKITEM_COLUMNS}
               groupBy="none"
               compact
               readOnlyKanban
+              hideTicketsOnlyToggle
               maxHeight="500px"
             />
           </div>

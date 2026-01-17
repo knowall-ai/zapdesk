@@ -79,6 +79,7 @@ export interface Ticket {
   description: string;
   status: TicketStatus;
   devOpsState: string; // Original Azure DevOps state (e.g., 'New', 'Approved', 'To Do', etc.)
+  workItemType: string; // Azure DevOps work item type (e.g., 'Task', 'Bug', 'User Story')
   priority?: TicketPriority;
   requester: Customer;
   assignee?: User;

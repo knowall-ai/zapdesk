@@ -16,6 +16,7 @@ interface Filters {
   assignee: string;
   requester: string;
   project: string;
+  type: string; // Work item type filter
 }
 
 const viewTitles: Record<string, string> = {
@@ -52,6 +53,7 @@ function TicketsPageContent() {
     assignee: '',
     requester: '',
     project: '',
+    type: '',
   });
 
   useEffect(() => {
@@ -140,6 +142,7 @@ function TicketsPageContent() {
     const assignees = new Set<string>();
     const requesters = new Set<string>();
     const projects = new Set<string>();
+    const types = new Set<string>();
 
     tickets.forEach((ticket) => {
       if (ticket.assignee?.displayName) {
@@ -151,12 +154,16 @@ function TicketsPageContent() {
       if (ticket.project) {
         projects.add(ticket.project);
       }
+      if (ticket.workItemType) {
+        types.add(ticket.workItemType);
+      }
     });
 
     return {
       assignees: Array.from(assignees).sort(),
       requesters: Array.from(requesters).sort(),
       projects: Array.from(projects).sort(),
+      types: Array.from(types).sort(),
     };
   }, [tickets]);
 
@@ -173,7 +180,7 @@ function TicketsPageContent() {
   }, [tickets, filters]);
 
   const clearFilters = () => {
-    setFilters({ status: '', priority: '', assignee: '', requester: '', project: '' });
+    setFilters({ status: '', priority: '', assignee: '', requester: '', project: '', type: '' });
   };
 
   // Update URL when display mode changes to preserve view on navigation
@@ -192,7 +199,7 @@ function TicketsPageContent() {
   );
 
   const hasActiveFilters =
-    filters.status || filters.priority || filters.assignee || filters.requester || filters.project;
+    filters.status || filters.priority || filters.assignee || filters.requester || filters.project || filters.type;
 
   if (status === 'loading' || loading) {
     return (
