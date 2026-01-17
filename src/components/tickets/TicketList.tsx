@@ -1,7 +1,7 @@
 'use client';
 
 import type { Ticket } from '@/types';
-import WorkItemList, { TICKET_COLUMNS } from './WorkItemList';
+import WorkItemBoard, { TICKET_COLUMNS } from './WorkItemBoard';
 
 interface TicketListProps {
   tickets: Ticket[];
@@ -39,7 +39,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
   }));
 
   return (
-    <WorkItemList
+    <WorkItemBoard
       items={workItems}
       title={title}
       hideFilters={hideFilters}

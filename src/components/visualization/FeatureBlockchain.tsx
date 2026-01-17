@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { ExternalLink } from 'lucide-react';
 import type { Feature, WorkItem } from '@/types';
-import { WorkItemList, WORKITEM_COLUMNS } from '@/components/tickets';
+import { WorkItemBoard, WORKITEM_COLUMNS } from '@/components/tickets';
 
 // Treemap layout algorithm - shows Tasks (works with or without User Story layer)
 interface TreemapRect {
@@ -254,8 +254,9 @@ export default function FeatureTimechain({
     setIsDragging(false);
   }, []);
 
-  const blockWidth = 130;
-  const blockHeight = 160;
+  const blockSize = 130; // Cube dimensions (equal width and height)
+  const blockWidth = blockSize;
+  const blockHeight = blockSize;
   const depth = 18; // 3D depth like mempool
 
   return (
@@ -684,12 +685,13 @@ export default function FeatureTimechain({
             className="overflow-hidden rounded-lg lg:col-span-2"
             style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
           >
-            <WorkItemList
+            <WorkItemBoard
               items={extractTasks(selectedFeature.workItems)}
               title="Work Items"
               columns={WORKITEM_COLUMNS}
               groupBy="none"
               compact
+              readOnlyKanban
               maxHeight="500px"
             />
           </div>

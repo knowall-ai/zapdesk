@@ -3,8 +3,12 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
 // Convert UUID string to base64 for Azure DevOps descriptor
+// Azure DevOps expects the UUID bytes (not string) to be base64 encoded
 function uuidToBase64(uuid: string): string {
-  const base64 = Buffer.from(uuid).toString('base64');
+  // Remove hyphens and convert hex string to bytes
+  const hex = uuid.replace(/-/g, '');
+  const bytes = Buffer.from(hex, 'hex');
+  const base64 = bytes.toString('base64');
   return base64.replace(/=+$/, '');
 }
 

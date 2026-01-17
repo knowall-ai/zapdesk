@@ -16,6 +16,7 @@ import {
 import type { WorkItem, TicketPriority } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
+import KanbanBoard from './KanbanBoard';
 
 // Column configuration
 export type ColumnId =
@@ -59,15 +60,18 @@ export const WORKITEM_COLUMNS: ColumnConfig[] = [
   { id: 'assignee', label: 'Assignee', sortField: 'assignee' },
 ];
 
-interface WorkItemListProps {
+interface WorkItemBoardProps {
   items: WorkItem[];
   title?: string;
   hideFilters?: boolean;
   hideHeader?: boolean;
+  hideViewToggle?: boolean; // Hide the List/Kanban toggle
+  readOnlyKanban?: boolean; // Disable drag-and-drop in Kanban view
   columns?: ColumnConfig[];
   groupBy?: 'assignee' | 'none';
   compact?: boolean;
   maxHeight?: string;
+  onStatusChange?: (itemId: number, newState: string) => Promise<void>; // For drag-and-drop
 }
 
 type SortField =
@@ -116,16 +120,19 @@ function SortIcon({
   return sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
 }
 
-export default function WorkItemList({
+export default function WorkItemBoard({
   items,
   title,
   hideFilters = false,
   hideHeader = false,
+  hideViewToggle = false,
+  readOnlyKanban = false,
   columns = TICKET_COLUMNS,
   groupBy: initialGroupBy = 'assignee',
   compact = false,
   maxHeight,
-}: WorkItemListProps) {
+  onStatusChange,
+}: WorkItemBoardProps) {
   const [sortField, setSortField] = useState<SortField>('updated');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
@@ -409,7 +416,7 @@ export default function WorkItemList({
                 </>
               )}
               {/* View mode toggle */}
-              {!hideFilters && (
+              {!hideFilters && !hideViewToggle && (
                 <div
                   className="flex rounded-lg border"
                   style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
@@ -521,201 +528,217 @@ export default function WorkItemList({
         </div>
       )}
 
-      {/* Table */}
-      <div className="flex-1 overflow-auto" style={maxHeight ? { maxHeight } : {}}>
-        <table className="w-full">
-          <thead className="table-header sticky top-0">
-            <tr>
-              {hasColumn('checkbox') && (
-                <th className="w-10 px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={
-                      selectedItems.size === filteredItems.length && filteredItems.length > 0
-                    }
-                    onChange={toggleAllSelection}
-                    className="rounded"
-                  />
-                </th>
-              )}
-              {columns
-                .filter((col) => col.id !== 'checkbox')
-                .map((col) => (
-                  <th
-                    key={col.id}
-                    className={`${col.sortField ? 'cursor-pointer' : ''} ${cellPadding} text-left text-xs font-medium uppercase`}
-                    style={{ color: 'var(--text-muted)' }}
-                    onClick={() => col.sortField && handleSort(col.sortField)}
-                  >
-                    <div className="flex items-center gap-1">
-                      {col.label}
-                      {col.sortField && (
-                        <SortIcon
-                          field={col.sortField}
-                          sortField={sortField}
-                          sortDirection={sortDirection}
-                        />
-                      )}
-                    </div>
-                  </th>
-                ))}
-            </tr>
-          </thead>
-          <tbody>
-            {Object.entries(groupedItems).map(([groupName, groupItems]) => (
-              <React.Fragment key={groupName}>
-                {groupBy === 'assignee' && (
-                  <tr>
-                    <td
-                      colSpan={columnCount}
-                      className="px-4 py-2 text-sm font-medium"
-                      style={{ backgroundColor: 'var(--surface)', color: 'var(--text-secondary)' }}
-                    >
-                      Assignee: {groupName}
-                    </td>
-                  </tr>
-                )}
-                {groupItems.map((item) => (
-                  <tr key={item.id} className="table-row">
-                    {hasColumn('checkbox') && (
-                      <td className={cellPadding}>
-                        <input
-                          type="checkbox"
-                          checked={selectedItems.has(item.id)}
-                          onChange={() => toggleItemSelection(item.id)}
-                          className="rounded"
-                        />
-                      </td>
-                    )}
-                    {hasColumn('type') && (
-                      <td className={cellPadding}>
-                        <span
-                          className="rounded px-2 py-0.5 text-xs font-medium"
-                          style={{
-                            backgroundColor: 'var(--surface)',
-                            color: 'var(--text-secondary)',
-                          }}
-                        >
-                          {item.workItemType}
-                        </span>
-                      </td>
-                    )}
-                    {hasColumn('status') && (
-                      <td className={cellPadding}>
-                        <StatusBadge status={item.state} />
-                      </td>
-                    )}
-                    {hasColumn('subject') && (
-                      <td className={cellPadding}>
-                        <Link
-                          href={`/tickets/${item.id}`}
-                          className="text-sm hover:underline"
-                          style={{ color: 'var(--text-primary)' }}
-                        >
-                          {item.title}
-                        </Link>
-                      </td>
-                    )}
-                    {hasColumn('project') && (
-                      <td className={cellPadding}>
-                        <Link
-                          href={`/projects/${item.organization?.id || ''}`}
-                          className="text-sm hover:underline"
-                          style={{ color: 'var(--primary)' }}
-                        >
-                          {item.project || '-'}
-                        </Link>
-                      </td>
-                    )}
-                    {hasColumn('requester') && (
-                      <td className={cellPadding}>
-                        {item.requester ? (
-                          <div className="flex items-center gap-2">
-                            <Avatar
-                              name={item.requester.displayName}
-                              image={item.requester.avatarUrl}
-                              size="sm"
-                            />
-                            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                              {item.requester.displayName}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            -
-                          </span>
-                        )}
-                      </td>
-                    )}
-                    {hasColumn('requested') && (
-                      <td
-                        className={`${cellPadding} text-sm`}
-                        style={{ color: 'var(--text-secondary)' }}
-                      >
-                        {format(
-                          item.createdAt instanceof Date
-                            ? item.createdAt
-                            : new Date(item.createdAt),
-                          'dd MMM yyyy'
-                        )}
-                      </td>
-                    )}
-                    {hasColumn('priority') && (
-                      <td
-                        className={`${cellPadding} text-sm`}
-                        style={{ color: 'var(--text-secondary)' }}
-                      >
-                        {item.priority || '-'}
-                      </td>
-                    )}
-                    {hasColumn('updated') && (
-                      <td
-                        className={`${cellPadding} text-sm`}
-                        style={{ color: 'var(--text-secondary)' }}
-                      >
-                        {format(
-                          item.updatedAt instanceof Date
-                            ? item.updatedAt
-                            : new Date(item.updatedAt),
-                          'dd MMM yyyy'
-                        )}
-                      </td>
-                    )}
-                    {hasColumn('assignee') && (
-                      <td className={cellPadding}>
-                        {item.assignee ? (
-                          <div className="flex items-center gap-2">
-                            <Avatar
-                              name={item.assignee.displayName}
-                              image={item.assignee.avatarUrl}
-                              size="sm"
-                            />
-                            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                              {item.assignee.displayName}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Unassigned
-                          </span>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </React.Fragment>
-            ))}
-          </tbody>
-        </table>
+      {/* Kanban View */}
+      {viewMode === 'kanban' && (
+        <div className="flex-1 overflow-auto" style={maxHeight ? { maxHeight } : {}}>
+          <KanbanBoard
+            items={filteredItems}
+            readOnly={readOnlyKanban}
+            onTicketStateChange={onStatusChange}
+          />
+        </div>
+      )}
 
-        {items.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16">
-            <p className="mb-2 text-lg" style={{ color: 'var(--text-muted)' }}>
-              No items found
-            </p>
-          </div>
-        )}
-      </div>
+      {/* List View (Table) */}
+      {viewMode === 'list' && (
+        <div className="flex-1 overflow-auto" style={maxHeight ? { maxHeight } : {}}>
+          <table className="w-full">
+            <thead className="table-header sticky top-0">
+              <tr>
+                {hasColumn('checkbox') && (
+                  <th className="w-10 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={
+                        selectedItems.size === filteredItems.length && filteredItems.length > 0
+                      }
+                      onChange={toggleAllSelection}
+                      className="rounded"
+                    />
+                  </th>
+                )}
+                {columns
+                  .filter((col) => col.id !== 'checkbox')
+                  .map((col) => (
+                    <th
+                      key={col.id}
+                      className={`${col.sortField ? 'cursor-pointer' : ''} ${cellPadding} text-left text-xs font-medium uppercase`}
+                      style={{ color: 'var(--text-muted)' }}
+                      onClick={() => col.sortField && handleSort(col.sortField)}
+                    >
+                      <div className="flex items-center gap-1">
+                        {col.label}
+                        {col.sortField && (
+                          <SortIcon
+                            field={col.sortField}
+                            sortField={sortField}
+                            sortDirection={sortDirection}
+                          />
+                        )}
+                      </div>
+                    </th>
+                  ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(groupedItems).map(([groupName, groupItems]) => (
+                <React.Fragment key={groupName}>
+                  {groupBy === 'assignee' && (
+                    <tr>
+                      <td
+                        colSpan={columnCount}
+                        className="px-4 py-2 text-sm font-medium"
+                        style={{
+                          backgroundColor: 'var(--surface)',
+                          color: 'var(--text-secondary)',
+                        }}
+                      >
+                        Assignee: {groupName}
+                      </td>
+                    </tr>
+                  )}
+                  {groupItems.map((item) => (
+                    <tr key={item.id} className="table-row">
+                      {hasColumn('checkbox') && (
+                        <td className={cellPadding}>
+                          <input
+                            type="checkbox"
+                            checked={selectedItems.has(item.id)}
+                            onChange={() => toggleItemSelection(item.id)}
+                            className="rounded"
+                          />
+                        </td>
+                      )}
+                      {hasColumn('type') && (
+                        <td className={cellPadding}>
+                          <span
+                            className="rounded px-2 py-0.5 text-xs font-medium"
+                            style={{
+                              backgroundColor: 'var(--surface)',
+                              color: 'var(--text-secondary)',
+                            }}
+                          >
+                            {item.workItemType}
+                          </span>
+                        </td>
+                      )}
+                      {hasColumn('status') && (
+                        <td className={cellPadding}>
+                          <StatusBadge status={item.state} />
+                        </td>
+                      )}
+                      {hasColumn('subject') && (
+                        <td className={cellPadding}>
+                          <Link
+                            href={`/tickets/${item.id}`}
+                            className="text-sm hover:underline"
+                            style={{ color: 'var(--text-primary)' }}
+                          >
+                            {item.title}
+                          </Link>
+                        </td>
+                      )}
+                      {hasColumn('project') && (
+                        <td className={cellPadding}>
+                          <Link
+                            href={`/projects/${item.organization?.id || ''}`}
+                            className="text-sm hover:underline"
+                            style={{ color: 'var(--primary)' }}
+                          >
+                            {item.project || '-'}
+                          </Link>
+                        </td>
+                      )}
+                      {hasColumn('requester') && (
+                        <td className={cellPadding}>
+                          {item.requester ? (
+                            <div className="flex items-center gap-2">
+                              <Avatar
+                                name={item.requester.displayName}
+                                image={item.requester.avatarUrl}
+                                size="sm"
+                              />
+                              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                                {item.requester.displayName}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                              -
+                            </span>
+                          )}
+                        </td>
+                      )}
+                      {hasColumn('requested') && (
+                        <td
+                          className={`${cellPadding} text-sm`}
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          {format(
+                            item.createdAt instanceof Date
+                              ? item.createdAt
+                              : new Date(item.createdAt),
+                            'dd MMM yyyy'
+                          )}
+                        </td>
+                      )}
+                      {hasColumn('priority') && (
+                        <td
+                          className={`${cellPadding} text-sm`}
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          {item.priority || '-'}
+                        </td>
+                      )}
+                      {hasColumn('updated') && (
+                        <td
+                          className={`${cellPadding} text-sm`}
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          {format(
+                            item.updatedAt instanceof Date
+                              ? item.updatedAt
+                              : new Date(item.updatedAt),
+                            'dd MMM yyyy'
+                          )}
+                        </td>
+                      )}
+                      {hasColumn('assignee') && (
+                        <td className={cellPadding}>
+                          {item.assignee ? (
+                            <div className="flex items-center gap-2">
+                              <Avatar
+                                name={item.assignee.displayName}
+                                image={item.assignee.avatarUrl}
+                                size="sm"
+                              />
+                              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                                {item.assignee.displayName}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                              Unassigned
+                            </span>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+
+          {filteredItems.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-16">
+              <p className="mb-2 text-lg" style={{ color: 'var(--text-muted)' }}>
+                No items found
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
