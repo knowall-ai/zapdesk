@@ -1,9 +1,14 @@
 'use client';
 
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { ExternalLink } from 'lucide-react';
 import type { Feature, WorkItem } from '@/types';
 import { WorkItemBoard, WORKITEM_COLUMNS } from '@/components/tickets';
+
+// Format hours to avoid floating-point precision issues (e.g., 3.199999999 -> "3.2")
+function formatHours(value: number): string {
+  return Number(value.toFixed(1)).toString();
+}
 
 // Treemap layout algorithm - shows Tasks (works with or without User Story layer)
 interface TreemapRect {
@@ -192,11 +197,14 @@ function getStateColors(state: string): BlockColors {
   }
 }
 
-function calculateFillPercentage(feature: Feature): number {
-  if (!feature.originalEstimate || feature.originalEstimate === 0) {
-    return feature.completedWork > 0 ? 100 : 0;
+// Calculate fill percentage based on completedWork vs effort
+// Returns null if effort is not set (can't calculate percentage)
+function calculateFillPercentage(feature: Feature): number | null {
+  // Effort is required to calculate percentage
+  if (!feature.effort || feature.effort === 0) {
+    return null;
   }
-  const percentage = (feature.completedWork / feature.originalEstimate) * 100;
+  const percentage = (feature.completedWork / feature.effort) * 100;
   return Math.min(percentage, 100);
 }
 
@@ -205,12 +213,30 @@ export default function FeatureTimechain({
   epic,
   onFeatureClick,
 }: FeatureTimechainProps) {
-  // Initialize with first feature selected
-  const [selectedFeature, setSelectedFeature] = useState<Feature | null>(() => features[0] || null);
+  // Initialize with first Active feature, or fall back to first feature
+  const [selectedFeature, setSelectedFeature] = useState<Feature | null>(() => {
+    const firstActive = features.find((f) => f.state === 'Active');
+    return firstActive || features[0] || null;
+  });
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const blockRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
+
+  // Scroll to selected feature on initial load (with small delay to ensure refs are populated)
+  useEffect(() => {
+    const featureId = selectedFeature?.id;
+    if (!featureId) return;
+
+    const timer = setTimeout(() => {
+      const blockEl = blockRefs.current.get(featureId);
+      blockEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }, 100);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   // Treemap dimensions (square)
   const treemapSize = 400;
@@ -300,7 +326,13 @@ export default function FeatureTimechain({
             const category = getStateCategory(feature.state);
 
             return (
-              <div key={feature.id} className="flex flex-col items-center">
+              <div
+                key={feature.id}
+                ref={(el) => {
+                  if (el) blockRefs.current.set(feature.id, el);
+                }}
+                className="flex flex-col items-center"
+              >
                 <div
                   className="mb-3 font-mono text-base font-semibold tracking-wide"
                   style={{ color: isSelected ? '#22c55e' : '#e5e7eb' }}
@@ -394,14 +426,15 @@ export default function FeatureTimechain({
                         className="text-sm"
                         style={{ color: isSelected ? '#4ade80' : colors.subtext }}
                       >
-                        {feature.completedWork}h completed
+                        {formatHours(feature.completedWork)}h
+                        {feature.effort ? ` / ${formatHours(feature.effort)}h` : ' completed'}
                       </div>
 
                       <div
                         className="mt-auto text-lg font-semibold"
                         style={{ color: isSelected ? '#4ade80' : colors.accent }}
                       >
-                        {fillPercentage.toFixed(0)}%
+                        {fillPercentage !== null ? `${fillPercentage.toFixed(0)}%` : '—'}
                       </div>
 
                       <div
@@ -411,7 +444,7 @@ export default function FeatureTimechain({
                         <div
                           className="h-full rounded-full transition-all duration-500"
                           style={{
-                            width: `${fillPercentage}%`,
+                            width: `${fillPercentage ?? 0}%`,
                             backgroundColor: isSelected ? '#22c55e' : colors.accent,
                           }}
                         />
@@ -521,15 +554,15 @@ export default function FeatureTimechain({
                   Completed
                 </p>
                 <p className="text-lg font-bold" style={{ color: 'var(--primary)' }}>
-                  {selectedFeature.completedWork}h
+                  {formatHours(selectedFeature.completedWork)}h
                 </p>
               </div>
               <div>
                 <p className="text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-                  Estimate
+                  Effort
                 </p>
                 <p className="text-lg font-bold" style={{ color: 'var(--text-secondary)' }}>
-                  {selectedFeature.originalEstimate || '-'}h
+                  {selectedFeature.effort ? `${formatHours(selectedFeature.effort)}h` : '—'}
                 </p>
               </div>
             </div>

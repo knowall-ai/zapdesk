@@ -316,12 +316,14 @@ export interface Feature {
   completedWork: number;
   remainingWork: number;
   originalEstimate: number;
+  effort?: number; // Original effort estimate for the Feature (Microsoft.VSTS.Scheduling.Effort)
   totalWork: number;
   workItems: WorkItem[];
   devOpsUrl: string;
   tags: string[];
   priority?: TicketPriority;
-  stackRank?: number; // For ordering features
+  stackRank?: number; // For ordering features (some templates)
+  backlogPriority?: number; // For ordering features (Agile/Scrum templates)
 }
 
 export interface WorkItem {

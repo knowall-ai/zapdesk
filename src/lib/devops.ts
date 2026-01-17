@@ -970,8 +970,15 @@ export class AzureDevOpsService {
       feature.totalWork = feature.completedWork + feature.remainingWork;
     }
 
-    // Sort features by stackRank (lower = higher priority / earlier in chain)
-    features.sort((a, b) => (a.stackRank || 0) - (b.stackRank || 0));
+    // Sort features by backlog order (lower = higher priority / earlier in chain)
+    // Agile/CMMI use StackRank, Scrum uses BacklogPriority
+    features.sort((a, b) => {
+      const aOrder = a.backlogPriority ?? a.stackRank ?? Number.MAX_SAFE_INTEGER;
+      const bOrder = b.backlogPriority ?? b.stackRank ?? Number.MAX_SAFE_INTEGER;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      // Fall back to ID for stable sorting if order values are equal
+      return a.id - b.id;
+    });
 
     epic.features = features;
     // Calculate totals for epic
@@ -1069,6 +1076,7 @@ export class AzureDevOpsService {
       completedWork: (fields['Microsoft.VSTS.Scheduling.CompletedWork'] as number) || 0,
       remainingWork: (fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number) || 0,
       originalEstimate: (fields['Microsoft.VSTS.Scheduling.OriginalEstimate'] as number) || 0,
+      effort: fields['Microsoft.VSTS.Scheduling.Effort'] as number | undefined,
       totalWork: 0,
       workItems: [],
       devOpsUrl:
@@ -1080,7 +1088,8 @@ export class AzureDevOpsService {
           .map((t: string) => t.trim())
           .filter(Boolean) || [],
       priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
-      stackRank: (fields['Microsoft.VSTS.Common.StackRank'] as number) || 0,
+      stackRank: fields['Microsoft.VSTS.Common.StackRank'] as number | undefined,
+      backlogPriority: fields['Microsoft.VSTS.Common.BacklogPriority'] as number | undefined,
     };
   }
 
