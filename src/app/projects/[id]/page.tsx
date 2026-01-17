@@ -314,12 +314,37 @@ export default function ProjectDetailPage() {
               <div className="flex items-center gap-2">
                 <LayoutGrid size={18} style={{ color: 'var(--primary)' }} />
                 <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  Epics ({epics.length})
+                  Epics {project.isTemplateSupported && `(${epics.length})`}
                 </h2>
               </div>
             </div>
             <div className="p-4">
-              {loadingEpics ? (
+              {!project.isTemplateSupported ? (
+                <div className="py-8 text-center">
+                  <div
+                    className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full"
+                    style={{ backgroundColor: 'rgba(234, 179, 8, 0.15)' }}
+                  >
+                    <Info size={24} style={{ color: '#eab308' }} />
+                  </div>
+                  <p className="mb-2 font-medium" style={{ color: 'var(--text-primary)' }}>
+                    Unsupported Process Template
+                  </p>
+                  <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+                    The &ldquo;{project.processTemplate}&rdquo; template is not yet supported by
+                    DevDesk. Epic navigation is not available for this project.
+                  </p>
+                  <a
+                    href="https://github.com/knowall-ai/devdesk/issues/new?title=Support%20for%20new%20process%20template&labels=enhancement"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm hover:underline"
+                    style={{ color: 'var(--primary)' }}
+                  >
+                    Request support for a new process template &rarr;
+                  </a>
+                </div>
+              ) : loadingEpics ? (
                 <LoadingSpinner size="md" message="Loading epics..." />
               ) : epics.length === 0 ? (
                 <p className="text-center text-sm" style={{ color: 'var(--text-muted)' }}>
