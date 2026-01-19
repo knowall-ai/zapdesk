@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { X, Send, Loader2, Search } from 'lucide-react';
@@ -47,6 +47,67 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     workItemType: 'Task',
   });
 
+  // Fetch functions defined first (before useEffects that use them)
+  const fetchProjects = useCallback(async () => {
+    setIsLoadingProjects(true);
+    setError(null);
+    try {
+      const response = await get('/api/devops/projects');
+      if (!response.ok) throw new Error('Failed to fetch projects');
+      const data = await response.json();
+      const sortedProjects = (data.projects || []).sort((a: DevOpsProject, b: DevOpsProject) =>
+        a.name.localeCompare(b.name)
+      );
+      setProjects(sortedProjects);
+    } catch (err) {
+      setError('Failed to load projects. Please try again.');
+      console.error('Failed to fetch projects:', err);
+    } finally {
+      setIsLoadingProjects(false);
+    }
+  }, [get]);
+
+  const fetchTeamMembers = useCallback(async (projectName: string) => {
+    setIsLoadingMembers(true);
+    setAssigneeSearch('');
+    try {
+      const response = await get(
+        `/api/devops/projects/${encodeURIComponent(projectName)}/members`
+      );
+      if (!response.ok) throw new Error('Failed to fetch team members');
+      const data = await response.json();
+      setTeamMembers(data.members || []);
+    } catch (err) {
+      console.error('Failed to fetch team members:', err);
+      setTeamMembers([]);
+    } finally {
+      setIsLoadingMembers(false);
+    }
+  }, [get]);
+
+  const fetchWorkItemTypes = useCallback(async (projectName: string) => {
+    setIsLoadingTypes(true);
+    try {
+      const response = await get(
+        `/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`
+      );
+      if (!response.ok) throw new Error('Failed to fetch work item types');
+      const data = await response.json();
+      const types = data.types || [];
+      setWorkItemTypes(types);
+      // Set default to Task if available, otherwise first type
+      if (types.length > 0) {
+        const taskType = types.find((t: WorkItemType) => t.name === 'Task');
+        setForm((prev) => ({ ...prev, workItemType: taskType?.name || types[0].name }));
+      }
+    } catch (err) {
+      console.error('Failed to fetch work item types:', err);
+      setWorkItemTypes([]);
+    } finally {
+      setIsLoadingTypes(false);
+    }
+  }, [get]);
+
   // Reset form when dialog opens
   useEffect(() => {
     if (isOpen) {
@@ -70,7 +131,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     if (isOpen && session?.accessToken && hasOrganization) {
       fetchProjects();
     }
-  }, [isOpen, session, hasOrganization]);
+  }, [isOpen, session, hasOrganization, fetchProjects]);
 
   // Fetch team members and work item types when project changes
   useEffect(() => {
@@ -81,7 +142,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       setTeamMembers([]);
       setWorkItemTypes([]);
     }
-  }, [form.project, session]);
+  }, [form.project, session, fetchTeamMembers, fetchWorkItemTypes]);
 
   // Filter out Stakeholders and apply search
   const filteredMembers = useMemo(() => {
@@ -103,66 +164,6 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       })
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
   }, [teamMembers, assigneeSearch]);
-
-  const fetchProjects = async () => {
-    setIsLoadingProjects(true);
-    setError(null);
-    try {
-      const response = await get('/api/devops/projects');
-      if (!response.ok) throw new Error('Failed to fetch projects');
-      const data = await response.json();
-      const sortedProjects = (data.projects || []).sort((a: DevOpsProject, b: DevOpsProject) =>
-        a.name.localeCompare(b.name)
-      );
-      setProjects(sortedProjects);
-    } catch (err) {
-      setError('Failed to load projects. Please try again.');
-      console.error('Failed to fetch projects:', err);
-    } finally {
-      setIsLoadingProjects(false);
-    }
-  };
-
-  const fetchTeamMembers = async (projectName: string) => {
-    setIsLoadingMembers(true);
-    setAssigneeSearch('');
-    try {
-      const response = await get(
-        `/api/devops/projects/${encodeURIComponent(projectName)}/members`
-      );
-      if (!response.ok) throw new Error('Failed to fetch team members');
-      const data = await response.json();
-      setTeamMembers(data.members || []);
-    } catch (err) {
-      console.error('Failed to fetch team members:', err);
-      setTeamMembers([]);
-    } finally {
-      setIsLoadingMembers(false);
-    }
-  };
-
-  const fetchWorkItemTypes = async (projectName: string) => {
-    setIsLoadingTypes(true);
-    try {
-      const response = await get(
-        `/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`
-      );
-      if (!response.ok) throw new Error('Failed to fetch work item types');
-      const data = await response.json();
-      const types = data.types || [];
-      setWorkItemTypes(types);
-      // Set default to Task if available, otherwise first type
-      if (types.length > 0) {
-        const taskType = types.find((t: WorkItemType) => t.name === 'Task');
-        setForm((prev) => ({ ...prev, workItemType: taskType?.name || types[0].name }));
-      }
-    } catch (err) {
-      console.error('Failed to fetch work item types:', err);
-      setWorkItemTypes([]);
-    } finally {
-      setIsLoadingTypes(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -209,6 +210,14 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       return `${member.displayName} <${member.email}>`;
     }
     return member.displayName;
+  };
+
+  // Extract display name from identity string "DisplayName <email>"
+  const getDisplayNameFromIdentity = (identity: string): string => {
+    if (identity.includes('<')) {
+      return identity.split('<')[0].trim();
+    }
+    return identity;
   };
 
   const handleTakeIt = () => {
@@ -462,10 +471,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                         style={{ backgroundColor: 'var(--surface-hover)' }}
                       >
                         <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                          {/* Extract display name from identity string "Name <email>" */}
-                          {form.assignee.includes('<')
-                            ? form.assignee.split('<')[0].trim()
-                            : form.assignee}
+                          {getDisplayNameFromIdentity(form.assignee)}
                         </span>
                         <button
                           type="button"
