@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { X, Send, Loader2, Search } from 'lucide-react';
+import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import type { DevOpsProject, User, WorkItemType } from '@/types';
 
 interface NewTicketForm {
@@ -25,6 +26,7 @@ interface NewTicketDialogProps {
 export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProps) {
   const { data: session } = useSession();
   const router = useRouter();
+  const { get, post, hasOrganization } = useDevOpsApi();
   const [projects, setProjects] = useState<DevOpsProject[]>([]);
   const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const [workItemTypes, setWorkItemTypes] = useState<WorkItemType[]>([]);
@@ -65,10 +67,10 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
 
   // Fetch projects on load
   useEffect(() => {
-    if (isOpen && session?.accessToken) {
+    if (isOpen && session?.accessToken && hasOrganization) {
       fetchProjects();
     }
-  }, [isOpen, session]);
+  }, [isOpen, session, hasOrganization]);
 
   // Fetch team members and work item types when project changes
   useEffect(() => {
@@ -106,7 +108,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     setIsLoadingProjects(true);
     setError(null);
     try {
-      const response = await fetch('/api/devops/projects');
+      const response = await get('/api/devops/projects');
       if (!response.ok) throw new Error('Failed to fetch projects');
       const data = await response.json();
       const sortedProjects = (data.projects || []).sort((a: DevOpsProject, b: DevOpsProject) =>
@@ -125,7 +127,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     setIsLoadingMembers(true);
     setAssigneeSearch('');
     try {
-      const response = await fetch(
+      const response = await get(
         `/api/devops/projects/${encodeURIComponent(projectName)}/members`
       );
       if (!response.ok) throw new Error('Failed to fetch team members');
@@ -142,7 +144,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   const fetchWorkItemTypes = async (projectName: string) => {
     setIsLoadingTypes(true);
     try {
-      const response = await fetch(
+      const response = await get(
         `/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`
       );
       if (!response.ok) throw new Error('Failed to fetch work item types');
@@ -173,21 +175,17 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     setError(null);
 
     try {
-      const response = await fetch('/api/devops/tickets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project: form.project,
-          title: form.title.trim(),
-          description: form.description.trim(),
-          priority: form.priority,
-          assignee: form.assignee || undefined,
-          workItemType: form.workItemType,
-          tags: form.tags
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean),
-        }),
+      const response = await post('/api/devops/tickets', {
+        project: form.project,
+        title: form.title.trim(),
+        description: form.description.trim(),
+        priority: form.priority,
+        assignee: form.assignee || undefined,
+        workItemType: form.workItemType,
+        tags: form.tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
       });
 
       if (!response.ok) {
@@ -205,19 +203,27 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     }
   };
 
+  // Build full identity string for Azure DevOps: "DisplayName <email>"
+  const buildIdentityString = (member: User): string => {
+    if (member.email) {
+      return `${member.displayName} <${member.email}>`;
+    }
+    return member.displayName;
+  };
+
   const handleTakeIt = () => {
     if (session?.user?.email) {
       const currentUser = filteredMembers.find(
         (m) => m.email?.toLowerCase() === session.user?.email?.toLowerCase()
       );
-      if (currentUser) {
-        setForm((prev) => ({ ...prev, assignee: currentUser.id }));
+      if (currentUser?.email) {
+        setForm((prev) => ({ ...prev, assignee: buildIdentityString(currentUser) }));
       }
     }
   };
 
-  const handleSelectAssignee = (memberId: string) => {
-    setForm((prev) => ({ ...prev, assignee: memberId }));
+  const handleSelectAssignee = (member: User) => {
+    setForm((prev) => ({ ...prev, assignee: buildIdentityString(member) }));
     setAssigneeSearch('');
   };
 
@@ -456,9 +462,10 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                         style={{ backgroundColor: 'var(--surface-hover)' }}
                       >
                         <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                          {filteredMembers.find((m) => m.id === form.assignee)?.displayName ||
-                            teamMembers.find((m) => m.id === form.assignee)?.displayName ||
-                            'Selected'}
+                          {/* Extract display name from identity string "Name <email>" */}
+                          {form.assignee.includes('<')
+                            ? form.assignee.split('<')[0].trim()
+                            : form.assignee}
                         </span>
                         <button
                           type="button"
@@ -486,7 +493,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                             <button
                               key={member.id}
                               type="button"
-                              onClick={() => handleSelectAssignee(member.id)}
+                              onClick={() => handleSelectAssignee(member)}
                               className="block w-full px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
                               style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
                             >
