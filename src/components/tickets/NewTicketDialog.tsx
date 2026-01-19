@@ -67,46 +67,52 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     }
   }, [get]);
 
-  const fetchTeamMembers = useCallback(async (projectName: string) => {
-    setIsLoadingMembers(true);
-    setAssigneeSearch('');
-    try {
-      const response = await get(
-        `/api/devops/projects/${encodeURIComponent(projectName)}/members`
-      );
-      if (!response.ok) throw new Error('Failed to fetch team members');
-      const data = await response.json();
-      setTeamMembers(data.members || []);
-    } catch (err) {
-      console.error('Failed to fetch team members:', err);
-      setTeamMembers([]);
-    } finally {
-      setIsLoadingMembers(false);
-    }
-  }, [get]);
-
-  const fetchWorkItemTypes = useCallback(async (projectName: string) => {
-    setIsLoadingTypes(true);
-    try {
-      const response = await get(
-        `/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`
-      );
-      if (!response.ok) throw new Error('Failed to fetch work item types');
-      const data = await response.json();
-      const types = data.types || [];
-      setWorkItemTypes(types);
-      // Set default to Task if available, otherwise first type
-      if (types.length > 0) {
-        const taskType = types.find((t: WorkItemType) => t.name === 'Task');
-        setForm((prev) => ({ ...prev, workItemType: taskType?.name || types[0].name }));
+  const fetchTeamMembers = useCallback(
+    async (projectName: string) => {
+      setIsLoadingMembers(true);
+      setAssigneeSearch('');
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/members`
+        );
+        if (!response.ok) throw new Error('Failed to fetch team members');
+        const data = await response.json();
+        setTeamMembers(data.members || []);
+      } catch (err) {
+        console.error('Failed to fetch team members:', err);
+        setTeamMembers([]);
+      } finally {
+        setIsLoadingMembers(false);
       }
-    } catch (err) {
-      console.error('Failed to fetch work item types:', err);
-      setWorkItemTypes([]);
-    } finally {
-      setIsLoadingTypes(false);
-    }
-  }, [get]);
+    },
+    [get]
+  );
+
+  const fetchWorkItemTypes = useCallback(
+    async (projectName: string) => {
+      setIsLoadingTypes(true);
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`
+        );
+        if (!response.ok) throw new Error('Failed to fetch work item types');
+        const data = await response.json();
+        const types = data.types || [];
+        setWorkItemTypes(types);
+        // Set default to Task if available, otherwise first type
+        if (types.length > 0) {
+          const taskType = types.find((t: WorkItemType) => t.name === 'Task');
+          setForm((prev) => ({ ...prev, workItemType: taskType?.name || types[0].name }));
+        }
+      } catch (err) {
+        console.error('Failed to fetch work item types:', err);
+        setWorkItemTypes([]);
+      } finally {
+        setIsLoadingTypes(false);
+      }
+    },
+    [get]
+  );
 
   // Reset form when dialog opens
   useEffect(() => {
