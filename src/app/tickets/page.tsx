@@ -105,7 +105,9 @@ function TicketsPageContent() {
     if (session?.accessToken) {
       fetchTickets();
     }
-  }, [session, fetchTickets]);
+    // Use session?.accessToken instead of session to avoid refetch on tab focus
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.accessToken]);
 
   const handleTicketStateChange = useCallback(
     async (ticketId: number, newState: string) => {

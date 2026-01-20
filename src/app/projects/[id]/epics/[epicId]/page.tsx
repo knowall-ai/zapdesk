@@ -55,7 +55,10 @@ export default function EpicDetailPage() {
     if (session?.accessToken && projectId && epicId && selectedOrganization) {
       fetchEpicHierarchy();
     }
-  }, [session, projectId, epicId, selectedOrganization, fetchEpicHierarchy]);
+    // Use session?.accessToken instead of session to avoid refetch on tab focus
+    // (session object reference changes but token stays the same)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.accessToken, projectId, epicId, selectedOrganization]);
 
   if (status === 'loading' || loading) {
     return (

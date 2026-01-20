@@ -61,7 +61,8 @@ export default function ProjectsPage() {
     };
 
     fetchProjects();
-  }, [session, selectedOrganization]);
+    // Use session?.accessToken instead of session to avoid refetch on tab focus
+  }, [session?.accessToken, selectedOrganization]);
 
   if (status === 'loading') {
     return (

@@ -94,7 +94,9 @@ export default function HomePage() {
       fetchDashboardStats();
       fetchProjects();
     }
-  }, [session, selectedOrganization, fetchDashboardStats, fetchProjects]);
+    // Use session?.accessToken instead of session to avoid refetch on tab focus
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.accessToken, selectedOrganization]);
 
   if (status === 'loading') {
     return (

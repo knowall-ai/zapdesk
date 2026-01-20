@@ -114,7 +114,9 @@ export default function TeamPage() {
       fetchTeamData();
       fetchActivityData();
     }
-  }, [session, fetchTeamData, fetchActivityData]);
+    // Use session?.accessToken instead of session to avoid refetch on tab focus
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.accessToken]);
 
   // Pre-calculate max values once for workload distribution (must be before conditional returns)
   const maxAssigned = React.useMemo(() => {
