@@ -36,28 +36,28 @@ function layoutBlocks(items: WorkItem[], containerSize: number): BlockRect[] {
   // Fixed 2px padding (creates 4px gaps between adjacent blocks)
   const padding = 2;
 
-  // Calculate block sizes based on work hours using absolute thresholds
-  // More granular sizing (1-8 grid units) for better visual representation
+  // Calculate block sizes based on work hours using specific thresholds
+  // Size relationships: 0.5-1h is 4x area of 0-0.25h, 6-8h is 4x area of 2-4h
   const itemsWithSize = leafItems.map((item) => {
     const hours = (item.completedWork || 0) + (item.remainingWork || 0);
-    // Granular thresholds: 0-1h=1, 2-3h=2, 4-7h=3, 8-15h=4, 16-23h=5, 24-39h=6, 40-59h=7, 60+h=8
+    // Thresholds with 4x area jumps: size 1→2 (4x area), size 4→8 (4x area), size 8→16 (4x area)
     let size: number;
-    if (hours <= 1) {
-      size = 1;
-    } else if (hours <= 3) {
-      size = 2;
-    } else if (hours <= 7) {
-      size = 3;
-    } else if (hours <= 15) {
-      size = 4;
-    } else if (hours <= 23) {
-      size = 5;
-    } else if (hours <= 39) {
-      size = 6;
-    } else if (hours <= 59) {
-      size = 7;
+    if (hours <= 0.25) {
+      size = 1; // 0 - 0.25h
+    } else if (hours <= 0.5) {
+      size = 1; // 0.25 - 0.5h
+    } else if (hours <= 1) {
+      size = 2; // 0.5 - 1h (4x area of 0-0.25h)
+    } else if (hours <= 2) {
+      size = 3; // 1 - 2h
+    } else if (hours <= 4) {
+      size = 4; // 2 - 4h
+    } else if (hours <= 6) {
+      size = 6; // 4 - 6h
+    } else if (hours <= 8) {
+      size = 8; // 6 - 8h (4x area of 2-4h)
     } else {
-      size = 8;
+      size = 16; // 8h+ (4x area of 6-8h)
     }
     return { item, size, hours };
   });
@@ -68,7 +68,7 @@ function layoutBlocks(items: WorkItem[], containerSize: number): BlockRect[] {
   // Dynamic grid size: tighter fit to fill container
   // Use sqrt of total cells, minimal buffer for compact layout
   const minGridColumns = Math.ceil(Math.sqrt(totalCells));
-  const gridColumns = Math.max(8, Math.min(24, minGridColumns)); // Clamp between 8-24 (min 8 for largest blocks)
+  const gridColumns = Math.max(16, Math.min(32, minGridColumns)); // Clamp between 16-32 (min 16 for largest blocks)
 
   const gridSize = containerSize / gridColumns; // Size of each grid cell
 
