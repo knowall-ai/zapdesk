@@ -36,19 +36,29 @@ function layoutBlocks(items: WorkItem[], containerSize: number): BlockRect[] {
   // Fixed 2px padding (creates 4px gaps between adjacent blocks)
   const padding = 2;
 
-  // Calculate block sizes based on work hours
-  // Find max hours to scale sizes relative to data
-  const hoursArray = leafItems.map((item) => (item.completedWork || 0) + (item.remainingWork || 0));
-  const maxHours = Math.max(...hoursArray, 1);
-
-  // Scale sizes: 1-4 grid units based on relative hours
-  // Items with most hours get size 4, smallest get size 1
+  // Calculate block sizes based on work hours using absolute thresholds
+  // More granular sizing (1-8 grid units) for better visual representation
   const itemsWithSize = leafItems.map((item) => {
     const hours = (item.completedWork || 0) + (item.remainingWork || 0);
-    // Scale to 1-4 based on proportion of max hours
-    // Use sqrt for better visual distribution
-    const ratio = Math.sqrt(hours / maxHours);
-    const size = Math.max(1, Math.min(4, Math.ceil(ratio * 4)));
+    // Granular thresholds: 0-1h=1, 2-3h=2, 4-7h=3, 8-15h=4, 16-23h=5, 24-39h=6, 40-59h=7, 60+h=8
+    let size: number;
+    if (hours <= 1) {
+      size = 1;
+    } else if (hours <= 3) {
+      size = 2;
+    } else if (hours <= 7) {
+      size = 3;
+    } else if (hours <= 15) {
+      size = 4;
+    } else if (hours <= 23) {
+      size = 5;
+    } else if (hours <= 39) {
+      size = 6;
+    } else if (hours <= 59) {
+      size = 7;
+    } else {
+      size = 8;
+    }
     return { item, size, hours };
   });
 
@@ -58,7 +68,7 @@ function layoutBlocks(items: WorkItem[], containerSize: number): BlockRect[] {
   // Dynamic grid size: tighter fit to fill container
   // Use sqrt of total cells, minimal buffer for compact layout
   const minGridColumns = Math.ceil(Math.sqrt(totalCells));
-  const gridColumns = Math.max(6, Math.min(20, minGridColumns)); // Clamp between 6-20
+  const gridColumns = Math.max(8, Math.min(24, minGridColumns)); // Clamp between 8-24 (min 8 for largest blocks)
 
   const gridSize = containerSize / gridColumns; // Size of each grid cell
 
@@ -469,7 +479,7 @@ export default function FeatureTimechain({
                           className="text-2xl font-bold"
                           style={{ color: isSelected ? selectedColors.text : colors.text }}
                         >
-                          {feature.workItems.length}
+                          {feature.workItems.filter(isLeafWorkItem).length}
                         </span>
                         <span
                           className="ml-1 text-sm"
@@ -603,7 +613,7 @@ export default function FeatureTimechain({
                   Items
                 </p>
                 <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-                  {selectedFeature.workItems.length}
+                  {selectedFeature.workItems.filter(isLeafWorkItem).length}
                 </p>
               </div>
               <div>
@@ -629,7 +639,7 @@ export default function FeatureTimechain({
               <h4 className="mb-2 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
                 Explorer
               </h4>
-              {selectedFeature.workItems.length === 0 ? (
+              {selectedFeature.workItems.filter(isLeafWorkItem).length === 0 ? (
                 <div
                   className="flex items-center justify-center"
                   style={{
