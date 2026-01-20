@@ -217,6 +217,128 @@ const PROJECT_DOMAIN_MAP = {
 };
 ----
 
+== Feature Block Explorer
+
+=== Overview
+
+The Feature Block Explorer is a mempool.space-inspired visualization that displays work items within a Feature as colored blocks. It provides an at-a-glance view of work item distribution, priority, and effort.
+
+=== Visual Design
+
+Inspired by https://mempool.space[mempool.space] "Goggles" visualization:
+
+* **Grid-based layout**: Work items are packed into a grid using a first-fit bin-packing algorithm
+* **No text on blocks**: Clean appearance with details shown on hover tooltip
+* **Bottom-aligned**: Blocks align to the bottom of the container (gravity effect)
+* **Fixed gaps**: 4px gaps between blocks for visual separation
+* **Priority-based coloring**: Green gradient from bright (Urgent) to dark (Low)
+
+=== Block Sizing
+
+Block sizes are determined by logged hours using absolute thresholds:
+
+[cols="1,1,1"]
+|===
+|Hours Range |Grid Size |Area (relative)
+
+|0 - 0.25h
+|1×1
+|1
+
+|0.25 - 0.5h
+|1×1
+|1
+
+|0.5 - 1h
+|2×2
+|4 (4× smallest)
+
+|1 - 2h
+|3×3
+|9
+
+|2 - 4h
+|4×4
+|16
+
+|4 - 6h
+|6×6
+|36
+
+|6 - 8h
+|8×8
+|64 (4× of 2-4h)
+
+|8h+
+|16×16
+|256 (4× of 6-8h)
+|===
+
+=== Priority Colors
+
+Using KnowAll brand green palette:
+
+[cols="1,1,2"]
+|===
+|Priority |Color |Hex
+
+|Urgent
+|Brightest green
+|`#4ade80`
+
+|High
+|Primary green
+|`#22c55e`
+
+|Normal
+|Medium green
+|`#16a34a`
+
+|Low
+|Dark green
+|`#15803d`
+
+|Not set
+|Very dark green
+|`#0f5132`
+|===
+
+=== Work Item Filtering
+
+The Explorer only displays "leaf" work items. Container types are excluded:
+
+* User Story
+* Feature
+* Epic
+
+This ensures the visualization shows actionable work items (Tasks, Bugs, etc.) rather than hierarchical containers.
+
+=== Fill Percentage
+
+The Explorer container visually represents the Feature's completion percentage:
+
+* **100%+ full**: Blocks fill the entire container
+* **50% full**: Blocks fill approximately half the container
+* Based on `completedWork / effort` ratio
+
+=== Implementation
+
+The visualization is implemented in `src/components/visualization/FeatureBlockchain.tsx`:
+
+* `layoutBlocks()` - Grid-based bin-packing algorithm
+* `getPriorityColor()` - Priority to color mapping
+* `isLeafWorkItem()` - Filters container types
+* SVG rendering with hover tooltips
+
+=== Tooltip Information
+
+Hovering over a block shows:
+
+* Work item title
+* ID, type, and state
+* Priority level
+* Total hours logged
+
 == Future Enhancements
 
 * Real-time updates via WebSocket/SSE
