@@ -691,11 +691,11 @@ export default function FeatureTimechain({
                       height="100%"
                       viewBox={`0 0 ${gridContainerSize} ${gridContainerSize}`}
                     >
-                      {/* Mempool.space style: grid-based blocks with priority-based green colors */}
+                      {/* Mempool.space style: grid-based blocks - green for active, purple for done */}
                       {blockRects.map((rect) => {
                         const totalWork =
                           (rect.item.completedWork || 0) + (rect.item.remainingWork || 0);
-                        const priorityColor = getPriorityColor(rect.item.priority);
+                        const blockColor = getBlockColor(selectedFeature.state, rect.item.priority);
 
                         return (
                           <rect
@@ -704,7 +704,7 @@ export default function FeatureTimechain({
                             y={rect.y}
                             width={rect.width}
                             height={rect.height}
-                            fill={priorityColor}
+                            fill={blockColor}
                             className="cursor-pointer transition-all hover:brightness-125"
                           >
                             <title>
@@ -726,7 +726,9 @@ export default function FeatureTimechain({
                       <div key={priority} className="flex items-center gap-1.5">
                         <div
                           className="h-3 w-3 rounded-sm"
-                          style={{ backgroundColor: getPriorityColor(priority) }}
+                          style={{
+                            backgroundColor: getBlockColor(selectedFeature.state, priority),
+                          }}
                         />
                         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                           {priority}
@@ -772,20 +774,47 @@ export default function FeatureTimechain({
 
 // Priority-based colors for Explorer treemap (mempool.space style)
 // Uses KnowAll brand green palette: bright (Urgent) to dark (Low)
-function getPriorityColor(priority?: TicketPriority | 'Not set'): string {
+// Green colors for Active/New features (priority-based)
+function getGreenPriorityColor(priority?: TicketPriority | 'Not set'): string {
   switch (priority) {
     case 'Urgent':
-      return '#4ade80'; // Brightest green (primary-light)
+      return '#4ade80'; // Brightest green
     case 'High':
       return '#22c55e'; // Primary green
     case 'Normal':
-      return '#16a34a'; // Medium green (primary-hover)
+      return '#16a34a'; // Medium green
     case 'Low':
-      return '#15803d'; // Dark green (primary-dark)
+      return '#15803d'; // Dark green
     case 'Not set':
     default:
-      return '#0f5132'; // Very dark green (no priority set)
+      return '#0f5132'; // Very dark green
   }
+}
+
+// Purple colors for Done/Closed features (priority-based)
+function getPurplePriorityColor(priority?: TicketPriority | 'Not set'): string {
+  switch (priority) {
+    case 'Urgent':
+      return '#c084fc'; // Brightest purple (purple-400)
+    case 'High':
+      return '#a855f7'; // Primary purple (purple-500)
+    case 'Normal':
+      return '#9333ea'; // Medium purple (purple-600)
+    case 'Low':
+      return '#7e22ce'; // Dark purple (purple-700)
+    case 'Not set':
+    default:
+      return '#581c87'; // Very dark purple (purple-900)
+  }
+}
+
+// Get block color based on feature state and priority
+function getBlockColor(featureState: string, priority?: TicketPriority | 'Not set'): string {
+  const category = getStateCategory(featureState);
+  if (category === 'done') {
+    return getPurplePriorityColor(priority);
+  }
+  return getGreenPriorityColor(priority);
 }
 
 // Priority labels for legend (including "Not set" for items without priority)
