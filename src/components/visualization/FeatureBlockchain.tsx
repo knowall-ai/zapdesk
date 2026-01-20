@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { ExternalLink } from 'lucide-react';
-import type { Feature, WorkItem } from '@/types';
+import type { Feature, WorkItem, TicketPriority } from '@/types';
 import { WorkItemBoard, WORKITEM_COLUMNS } from '@/components/tickets';
 
 // Format hours to avoid floating-point precision issues (e.g., 3.199999999 -> "3.2")
@@ -10,8 +10,9 @@ function formatHours(value: number): string {
   return Number(value.toFixed(1)).toString();
 }
 
-// Treemap layout algorithm - shows Tasks (works with or without User Story layer)
-interface TreemapRect {
+// Grid-based bin-packing layout (like mempool.space)
+// Packs work items into rows on a fixed grid
+interface BlockRect {
   x: number;
   y: number;
   width: number;
@@ -19,98 +20,105 @@ interface TreemapRect {
   item: WorkItem;
 }
 
-// Extract all Tasks from work items - handles both:
-// 1. Feature → Tasks (direct)
-// 2. Feature → User Stories → Tasks (nested)
-function extractTasks(items: WorkItem[]): WorkItem[] {
-  const tasks: WorkItem[] = [];
+// Filter to only leaf work items (exclude container types like User Story, Feature, Epic)
+const containerTypes = new Set(['user story', 'feature', 'epic']);
 
-  for (const item of items) {
-    const type = item.workItemType?.toLowerCase() || '';
-    // If it's a Task, include it
-    if (type === 'task') {
-      tasks.push(item);
+function isLeafWorkItem(item: WorkItem): boolean {
+  const type = (item.workItemType || '').toLowerCase();
+  return !containerTypes.has(type);
+}
+
+// Grid-based bin-packing like mempool.space
+function layoutBlocks(items: WorkItem[], containerSize: number): BlockRect[] {
+  const leafItems = items.filter(isLeafWorkItem);
+  if (leafItems.length === 0) return [];
+
+  // Fixed 2px padding (creates 4px gaps between adjacent blocks)
+  const padding = 2;
+
+  // Calculate block sizes based on work hours
+  // Find max hours to scale sizes relative to data
+  const hoursArray = leafItems.map((item) => (item.completedWork || 0) + (item.remainingWork || 0));
+  const maxHours = Math.max(...hoursArray, 1);
+
+  // Scale sizes: 1-4 grid units based on relative hours
+  // Items with most hours get size 4, smallest get size 1
+  const itemsWithSize = leafItems.map((item) => {
+    const hours = (item.completedWork || 0) + (item.remainingWork || 0);
+    // Scale to 1-4 based on proportion of max hours
+    // Use sqrt for better visual distribution
+    const ratio = Math.sqrt(hours / maxHours);
+    const size = Math.max(1, Math.min(4, Math.ceil(ratio * 4)));
+    return { item, size, hours };
+  });
+
+  // Calculate total grid cells needed
+  const totalCells = itemsWithSize.reduce((sum, { size }) => sum + size * size, 0);
+
+  // Dynamic grid size: tighter fit to fill container
+  // Use sqrt of total cells, minimal buffer for compact layout
+  const minGridColumns = Math.ceil(Math.sqrt(totalCells));
+  const gridColumns = Math.max(6, Math.min(20, minGridColumns)); // Clamp between 6-20
+
+  const gridSize = containerSize / gridColumns; // Size of each grid cell
+
+  // Sort by size descending (largest first, like mempool)
+  itemsWithSize.sort((a, b) => b.size - a.size);
+
+  // Track which grid cells are occupied (use more rows for overflow)
+  const gridRows = gridColumns * 2; // Allow vertical overflow for placement
+  const grid: boolean[][] = Array.from({ length: gridRows }, () => Array(gridColumns).fill(false));
+
+  const rects: BlockRect[] = [];
+
+  // Place each item using first-fit algorithm (top-down initially)
+  for (const { item, size } of itemsWithSize) {
+    const actualSize = Math.min(size, gridColumns);
+    let placed = false;
+
+    // Scan grid for first available position
+    for (let row = 0; row <= gridRows - actualSize && !placed; row++) {
+      for (let col = 0; col <= gridColumns - actualSize && !placed; col++) {
+        let canFit = true;
+        for (let r = row; r < row + actualSize && canFit; r++) {
+          for (let c = col; c < col + actualSize && canFit; c++) {
+            if (grid[r][c]) canFit = false;
+          }
+        }
+
+        if (canFit) {
+          for (let r = row; r < row + actualSize; r++) {
+            for (let c = col; c < col + actualSize; c++) {
+              grid[r][c] = true;
+            }
+          }
+
+          rects.push({
+            x: col * gridSize + padding,
+            y: row * gridSize + padding,
+            width: actualSize * gridSize - padding * 2,
+            height: actualSize * gridSize - padding * 2,
+            item,
+          });
+          placed = true;
+        }
+      }
+    }
+
+    if (!placed) {
+      console.warn(`Could not place work item ${item.id} in grid`);
     }
   }
 
-  // If no Tasks found, show all items (for when there's no User Story layer)
-  return tasks.length > 0 ? tasks : items;
-}
-
-function layoutTreemap(items: WorkItem[], width: number, height: number): TreemapRect[] {
-  const tasks = extractTasks(items);
-  if (tasks.length === 0) return [];
-
-  // Calculate values - use total work or minimum 1
-  const itemsWithValues = tasks.map((item) => ({
-    item,
-    value: Math.max((item.completedWork || 0) + (item.remainingWork || 0), 1),
-  }));
-
-  // Sort by value descending for better layout
-  itemsWithValues.sort((a, b) => b.value - a.value);
-
-  const totalValue = itemsWithValues.reduce((sum, i) => sum + i.value, 0);
-  const rects: TreemapRect[] = [];
-
-  let currentX = 0;
-  let currentY = 0;
-  let remainingWidth = width;
-  let remainingHeight = height;
-  let isHorizontal = width >= height;
-
-  let i = 0;
-  while (i < itemsWithValues.length) {
-    const rowItems: typeof itemsWithValues = [];
-    let rowValue = 0;
-    const targetSize = isHorizontal ? remainingHeight : remainingWidth;
-
-    while (i < itemsWithValues.length) {
-      rowItems.push(itemsWithValues[i]);
-      rowValue += itemsWithValues[i].value;
-
-      const currentRowArea = (rowValue / totalValue) * width * height;
-      const rowSize = currentRowArea / targetSize;
-
-      const worstAspect = Math.max(
-        ...rowItems.map((ri) => {
-          const itemSize = (ri.value / rowValue) * targetSize;
-          return Math.max(rowSize / itemSize, itemSize / rowSize);
-        })
-      );
-
-      if (worstAspect > 4 && rowItems.length > 1) {
-        rowItems.pop();
-        rowValue -= itemsWithValues[i].value;
-        break;
+  // Bottom-align: find the max Y extent and shift all blocks down
+  if (rects.length > 0) {
+    const maxYExtent = Math.max(...rects.map((r) => r.y + r.height + padding));
+    const shiftAmount = containerSize - maxYExtent;
+    if (shiftAmount > 0) {
+      for (const rect of rects) {
+        rect.y += shiftAmount;
       }
-      i++;
     }
-
-    const rowArea = (rowValue / totalValue) * width * height;
-    const rowSize = Math.max(rowArea / targetSize, 1);
-
-    let offset = 0;
-    for (const ri of rowItems) {
-      const itemSize = (ri.value / rowValue) * targetSize;
-      rects.push({
-        x: isHorizontal ? currentX : currentX + offset,
-        y: isHorizontal ? currentY + offset : currentY,
-        width: isHorizontal ? rowSize : itemSize,
-        height: isHorizontal ? itemSize : rowSize,
-        item: ri.item,
-      });
-      offset += itemSize;
-    }
-
-    if (isHorizontal) {
-      currentX += rowSize;
-      remainingWidth -= rowSize;
-    } else {
-      currentY += rowSize;
-      remainingHeight -= rowSize;
-    }
-    isHorizontal = remainingWidth >= remainingHeight;
   }
 
   return rects;
@@ -288,13 +296,13 @@ export default function FeatureTimechain({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount
 
-  // Treemap dimensions (square)
-  const treemapSize = 400;
+  // Block grid dimensions (square)
+  const gridContainerSize = 400;
 
-  // Calculate treemap layout for selected feature's work items
-  const treemapRects = useMemo(() => {
+  // Calculate grid-based block layout for selected feature's work items
+  const blockRects = useMemo(() => {
     if (!selectedFeature) return [];
-    return layoutTreemap(selectedFeature.workItems, treemapSize, treemapSize);
+    return layoutBlocks(selectedFeature.workItems, gridContainerSize);
   }, [selectedFeature]);
 
   const handleBlockClick = (feature: Feature) => {
@@ -461,7 +469,7 @@ export default function FeatureTimechain({
                           className="text-2xl font-bold"
                           style={{ color: isSelected ? selectedColors.text : colors.text }}
                         >
-                          {extractTasks(feature.workItems).length}
+                          {feature.workItems.length}
                         </span>
                         <span
                           className="ml-1 text-sm"
@@ -595,7 +603,7 @@ export default function FeatureTimechain({
                   Items
                 </p>
                 <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-                  {extractTasks(selectedFeature.workItems).length}
+                  {selectedFeature.workItems.length}
                 </p>
               </div>
               <div>
@@ -616,7 +624,7 @@ export default function FeatureTimechain({
               </div>
             </div>
 
-            {/* Explorer visualization - treemap */}
+            {/* Explorer visualization - grid-based block layout (like mempool.space) */}
             <div className="flex flex-col items-center">
               <h4 className="mb-2 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
                 Explorer
@@ -625,8 +633,8 @@ export default function FeatureTimechain({
                 <div
                   className="flex items-center justify-center"
                   style={{
-                    width: treemapSize,
-                    height: treemapSize,
+                    width: gridContainerSize,
+                    height: gridContainerSize,
                     backgroundColor: '#0f1419',
                   }}
                 >
@@ -639,123 +647,58 @@ export default function FeatureTimechain({
                   <div
                     className="relative overflow-hidden"
                     style={{
-                      width: treemapSize,
-                      height: treemapSize,
+                      width: gridContainerSize,
+                      height: gridContainerSize,
                       backgroundColor: '#0f1419',
                     }}
                   >
-                    <svg width="100%" height="100%" viewBox={`0 0 ${treemapSize} ${treemapSize}`}>
-                      {/* Gradient definitions for each work item type */}
-                      <defs>
-                        {Object.entries(workItemTypeColors).map(([key, color]) => (
-                          <linearGradient
-                            key={key}
-                            id={`grad-type-${key.replace(/\s+/g, '-')}`}
-                            x1="0%"
-                            y1="0%"
-                            x2="100%"
-                            y2="100%"
-                          >
-                            <stop offset="0%" stopColor={color.fillLight} />
-                            <stop offset="100%" stopColor={color.fill} />
-                          </linearGradient>
-                        ))}
-                      </defs>
-                      {treemapRects.map((rect) => {
-                        const typeColor = getWorkItemTypeColor(rect.item.workItemType);
+                    <svg
+                      width="100%"
+                      height="100%"
+                      viewBox={`0 0 ${gridContainerSize} ${gridContainerSize}`}
+                    >
+                      {/* Mempool.space style: grid-based blocks with priority-based green colors */}
+                      {blockRects.map((rect) => {
                         const totalWork =
                           (rect.item.completedWork || 0) + (rect.item.remainingWork || 0);
-                        const typeKey = (rect.item.workItemType || 'default')
-                          .toLowerCase()
-                          .replace(/\s+/g, '-');
-                        const gradientId = workItemTypeColors[
-                          rect.item.workItemType?.toLowerCase() || ''
-                        ]
-                          ? `url(#grad-type-${typeKey})`
-                          : 'url(#grad-type-default)';
+                        const priorityColor = getPriorityColor(rect.item.priority);
 
                         return (
-                          <g key={rect.item.id}>
-                            {/* Main rectangle with gradient */}
-                            <rect
-                              x={rect.x + 1}
-                              y={rect.y + 1}
-                              width={Math.max(rect.width - 2, 0)}
-                              height={Math.max(rect.height - 2, 0)}
-                              fill={gradientId}
-                              stroke={typeColor.stroke}
-                              strokeWidth="1"
-                              className="cursor-pointer transition-opacity hover:opacity-80"
-                            >
-                              <title>
-                                {rect.item.title}
-                                {'\n'}#{rect.item.id} • {rect.item.workItemType || 'Task'} •{' '}
-                                {rect.item.state}
-                                {'\n'}
-                                {totalWork}h total
-                              </title>
-                            </rect>
-                            {/* Label - only show if block is big enough */}
-                            {rect.width > 40 && rect.height > 30 && (
-                              <text
-                                x={rect.x + rect.width / 2}
-                                y={rect.y + rect.height / 2}
-                                textAnchor="middle"
-                                dominantBaseline="middle"
-                                fill={typeColor.textColor}
-                                fontSize={rect.width > 60 ? '11' : '9'}
-                                fontFamily="monospace"
-                                fontWeight="500"
-                              >
-                                {rect.item.id}
-                              </text>
-                            )}
-                            {/* Show hours if really big */}
-                            {rect.width > 60 && rect.height > 50 && (
-                              <text
-                                x={rect.x + rect.width / 2}
-                                y={rect.y + rect.height / 2 + 14}
-                                textAnchor="middle"
-                                dominantBaseline="middle"
-                                fill={typeColor.textColor}
-                                fontSize="9"
-                                fontFamily="sans-serif"
-                                opacity="0.7"
-                              >
-                                {totalWork}h
-                              </text>
-                            )}
-                          </g>
+                          <rect
+                            key={rect.item.id}
+                            x={rect.x}
+                            y={rect.y}
+                            width={rect.width}
+                            height={rect.height}
+                            fill={priorityColor}
+                            className="cursor-pointer transition-all hover:brightness-125"
+                          >
+                            <title>
+                              {rect.item.title}
+                              {'\n'}#{rect.item.id} • {rect.item.workItemType || 'Task'} •{' '}
+                              {rect.item.state}
+                              {'\n'}Priority: {rect.item.priority || 'Not set'}
+                              {'\n'}
+                              {totalWork}h total
+                            </title>
+                          </rect>
                         );
                       })}
                     </svg>
                   </div>
-                  {/* Legend showing work item types present */}
+                  {/* Legend showing priority levels */}
                   <div className="mt-3 flex flex-wrap justify-center gap-3">
-                    {(() => {
-                      // Get unique work item types in this feature
-                      const types = new Set<string>();
-                      extractTasks(selectedFeature.workItems).forEach((item) => {
-                        types.add(item.workItemType?.toLowerCase() || 'task');
-                      });
-                      return Array.from(types).map((type) => {
-                        const color = getWorkItemTypeColor(type);
-                        return (
-                          <div key={type} className="flex items-center gap-1.5">
-                            <div
-                              className="h-3 w-3 rounded-sm"
-                              style={{
-                                background: `linear-gradient(135deg, ${color.fillLight} 0%, ${color.fill} 100%)`,
-                                border: `1px solid ${color.stroke}`,
-                              }}
-                            />
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                              {color.label}
-                            </span>
-                          </div>
-                        );
-                      });
-                    })()}
+                    {priorityLevels.map((priority) => (
+                      <div key={priority} className="flex items-center gap-1.5">
+                        <div
+                          className="h-3 w-3 rounded-sm"
+                          style={{ backgroundColor: getPriorityColor(priority) }}
+                        />
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {priority}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </>
               )}
@@ -793,69 +736,29 @@ export default function FeatureTimechain({
   );
 }
 
-// Work item type colors for Explorer treemap
-interface WorkItemTypeColor {
-  fill: string;
-  fillLight: string;
-  stroke: string;
-  textColor: string;
-  label: string;
+// Priority-based colors for Explorer treemap (mempool.space style)
+// Uses KnowAll brand green palette: bright (Urgent) to dark (Low)
+function getPriorityColor(priority?: TicketPriority | 'Not set'): string {
+  switch (priority) {
+    case 'Urgent':
+      return '#4ade80'; // Brightest green (primary-light)
+    case 'High':
+      return '#22c55e'; // Primary green
+    case 'Normal':
+      return '#16a34a'; // Medium green (primary-hover)
+    case 'Low':
+      return '#15803d'; // Dark green (primary-dark)
+    case 'Not set':
+    default:
+      return '#0f5132'; // Very dark green (no priority set)
+  }
 }
 
-const workItemTypeColors: Record<string, WorkItemTypeColor> = {
-  task: {
-    fill: '#0d9488',
-    fillLight: '#14b8a6',
-    stroke: '#2dd4bf',
-    textColor: '#99f6e4',
-    label: 'Task',
-  },
-  bug: {
-    fill: '#dc2626',
-    fillLight: '#ef4444',
-    stroke: '#f87171',
-    textColor: '#fecaca',
-    label: 'Bug',
-  },
-  issue: {
-    fill: '#ea580c',
-    fillLight: '#f97316',
-    stroke: '#fb923c',
-    textColor: '#fed7aa',
-    label: 'Issue',
-  },
-  enhancement: {
-    fill: '#0284c7',
-    fillLight: '#0ea5e9',
-    stroke: '#38bdf8',
-    textColor: '#bae6fd',
-    label: 'Enhancement',
-  },
-  risk: {
-    fill: '#b91c1c',
-    fillLight: '#dc2626',
-    stroke: '#ef4444',
-    textColor: '#fecaca',
-    label: 'Risk',
-  },
-  question: {
-    fill: '#7c2d12',
-    fillLight: '#9a3412',
-    stroke: '#ea580c',
-    textColor: '#fed7aa',
-    label: 'Question',
-  },
-  default: {
-    fill: '#4d7c0f',
-    fillLight: '#65a30d',
-    stroke: '#84cc16',
-    textColor: '#d9f99d',
-    label: 'Other',
-  },
-};
-
-function getWorkItemTypeColor(workItemType?: string): WorkItemTypeColor {
-  if (!workItemType) return workItemTypeColors.default;
-  const normalized = workItemType.toLowerCase();
-  return workItemTypeColors[normalized] || workItemTypeColors.default;
-}
+// Priority labels for legend (including "Not set" for items without priority)
+const priorityLevels: (TicketPriority | 'Not set')[] = [
+  'Urgent',
+  'High',
+  'Normal',
+  'Low',
+  'Not set',
+];
