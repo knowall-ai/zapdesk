@@ -2,7 +2,7 @@
  * Agile Process Template Configuration
  *
  * Azure DevOps Agile process template (Microsoft standard).
- * Uses User Stories, Bugs, and Tasks with traditional Agile states.
+ * Uses Bugs, Tasks, and Issues with traditional Agile states.
  * Note: Agile template uses Priority field (Microsoft.VSTS.Common.Priority).
  */
 
@@ -14,8 +14,8 @@ export const agileConfig: ProcessTemplateConfig = {
 
   workItemTypes: {
     // Ticket types - must be tagged with "ticket" to appear in DevDesk
-    ticketTypes: ['User Story', 'Bug', 'Task', 'Issue'],
-    defaultTicketType: 'User Story',
+    ticketTypes: ['Bug', 'Task', 'Issue'],
+    defaultTicketType: 'Issue',
 
     // Feature and Epic types for hierarchy
     featureType: 'Feature',

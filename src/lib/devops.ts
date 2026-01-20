@@ -201,6 +201,68 @@ export class AzureDevOpsService {
     return data.value;
   }
 
+  // Get the process template name for a project
+  async getProjectProcessTemplate(projectName: string): Promise<string | null> {
+    try {
+      // First get available processes to build a map of process IDs to names
+      const processesResponse = await fetch(
+        `${this.baseUrl}/_apis/work/processes?api-version=7.1-preview.2`,
+        { headers: this.headers }
+      );
+
+      const processMap = new Map<string, string>();
+      if (processesResponse.ok) {
+        const processesData = await processesResponse.json();
+        for (const process of processesData.value || []) {
+          if (process.typeId && process.name) {
+            processMap.set(process.typeId, process.name);
+          }
+        }
+      }
+
+      // Get project properties which includes process template info
+      const propsResponse = await fetch(
+        `${this.baseUrl}/_apis/projects/${encodeURIComponent(projectName)}/properties?api-version=7.1-preview.1`,
+        { headers: this.headers }
+      );
+
+      if (!propsResponse.ok) {
+        return null;
+      }
+
+      const propsData = await propsResponse.json();
+      const properties = propsData.value || [];
+
+      // Get the ProcessTemplateType
+      const processTemplateTypeProp = properties.find(
+        (p: { name: string; value: string }) => p.name === 'System.ProcessTemplateType'
+      );
+
+      if (processTemplateTypeProp?.value) {
+        const templateName = processMap.get(processTemplateTypeProp.value);
+        if (templateName) return templateName;
+      }
+
+      // Fallback to CurrentProcessTemplateId
+      const currentProcessIdProp = properties.find(
+        (p: { name: string; value: string }) => p.name === 'System.CurrentProcessTemplateId'
+      );
+      if (currentProcessIdProp?.value) {
+        const templateName = processMap.get(currentProcessIdProp.value);
+        if (templateName) return templateName;
+      }
+
+      // Final fallback to System.Process Template name
+      const templateNameProp = properties.find(
+        (p: { name: string; value: string }) => p.name === 'System.Process Template'
+      );
+      return templateNameProp?.value || null;
+    } catch (error) {
+      console.error(`Failed to get process template for project ${projectName}:`, error);
+      return null;
+    }
+  }
+
   // Get work items from a specific project
   // By default, filters to work items with "ticket" tag
   // Set ticketsOnly=false to get all work items regardless of tags

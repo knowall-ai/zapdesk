@@ -16,6 +16,7 @@ export default function EpicDetailPage() {
   const params = useParams();
   const { selectedOrganization } = useOrganization();
   const [epic, setEpic] = useState<Epic | null>(null);
+  const [ticketTypes, setTicketTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   const projectId = params.id as string;
@@ -35,6 +36,7 @@ export default function EpicDetailPage() {
       if (response.ok) {
         const data = await response.json();
         setEpic(data.epic);
+        setTicketTypes(data.ticketTypes || []);
       }
     } catch (error) {
       console.error('Failed to fetch epic hierarchy:', error);
@@ -158,6 +160,7 @@ export default function EpicDetailPage() {
               remainingWork: epic.remainingWork || 0,
               devOpsUrl: epic.devOpsUrl,
             }}
+            availableTypes={ticketTypes}
           />
         ) : (
           <div

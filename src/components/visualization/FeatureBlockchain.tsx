@@ -171,6 +171,7 @@ interface FeatureTimechainProps {
   features: Feature[];
   epic?: EpicInfo;
   onFeatureClick?: (feature: Feature) => void;
+  availableTypes?: string[]; // Work item types from process template config
 }
 
 // Map Feature state to category: New, In Progress, Done
@@ -303,6 +304,7 @@ export default function FeatureTimechain({
   features,
   epic,
   onFeatureClick,
+  availableTypes,
 }: FeatureTimechainProps) {
   // Initialize with first Active feature, or fall back to first feature
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(() => {
@@ -753,8 +755,8 @@ export default function FeatureTimechain({
               groupBy="none"
               compact
               readOnlyKanban
-              hideTicketsOnlyToggle
               maxHeight="500px"
+              availableTypes={availableTypes}
             />
           </div>
         </div>

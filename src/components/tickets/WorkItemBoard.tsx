@@ -59,6 +59,7 @@ export const WORKITEM_COLUMNS: ColumnConfig[] = [
   { id: 'id', label: 'ID', sortField: 'id', width: 'w-16' },
   { id: 'type', label: 'Type', sortField: 'type' },
   { id: 'status', label: 'State', sortField: 'status' },
+  { id: 'priority', label: 'Priority', sortField: 'priority' },
   { id: 'subject', label: 'Subject', sortField: 'subject' },
   { id: 'assignee', label: 'Assignee', sortField: 'assignee' },
 ];

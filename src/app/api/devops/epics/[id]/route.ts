@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
+import { getTemplateConfig } from '@/config/process-templates';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -46,9 +47,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const epic = await devOpsService.getEpicHierarchy(project, epicId);
     const treemapData = devOpsService.epicToTreemap(epic);
 
+    // Get the project's process template to include ticketTypes
+    const processTemplate = await devOpsService.getProjectProcessTemplate(project);
+    const templateConfig = processTemplate ? getTemplateConfig(processTemplate) : null;
+    const ticketTypes = templateConfig?.workItemTypes.ticketTypes || [];
+
     return NextResponse.json({
       epic,
       treemapData,
+      ticketTypes,
     });
   } catch (error) {
     console.error('Error fetching epic hierarchy:', error);
