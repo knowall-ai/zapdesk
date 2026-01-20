@@ -646,7 +646,17 @@ export default function FeatureTimechain({
                 <p className="text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
                   Completed
                 </p>
-                <p className="text-lg font-bold" style={{ color: 'var(--primary)' }}>
+                <p
+                  className="text-lg font-bold"
+                  style={{
+                    color:
+                      getStateCategory(selectedFeature.state) === 'done'
+                        ? '#a855f7'
+                        : getStateCategory(selectedFeature.state) === 'inProgress'
+                          ? 'var(--primary)'
+                          : '#9ca3af',
+                  }}
+                >
                   {formatHours(selectedFeature.completedWork)}h
                 </p>
               </div>
