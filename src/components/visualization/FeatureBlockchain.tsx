@@ -691,7 +691,7 @@ export default function FeatureTimechain({
                       height="100%"
                       viewBox={`0 0 ${gridContainerSize} ${gridContainerSize}`}
                     >
-                      {/* Mempool.space style: grid-based blocks - green for active, purple for done */}
+                      {/* Mempool.space style: grid-based blocks - green/purple/grey based on feature state */}
                       {blockRects.map((rect) => {
                         const totalWork =
                           (rect.item.completedWork || 0) + (rect.item.remainingWork || 0);
@@ -773,8 +773,7 @@ export default function FeatureTimechain({
 }
 
 // Priority-based colors for Explorer treemap (mempool.space style)
-// Uses KnowAll brand green palette: bright (Urgent) to dark (Low)
-// Green colors for Active/New features (priority-based)
+// Green colors for Active/In Progress features
 function getGreenPriorityColor(priority?: TicketPriority | 'Not set'): string {
   switch (priority) {
     case 'Urgent':
@@ -791,20 +790,37 @@ function getGreenPriorityColor(priority?: TicketPriority | 'Not set'): string {
   }
 }
 
-// Purple colors for Done/Closed features (priority-based)
+// Purple colors for Done/Closed features
 function getPurplePriorityColor(priority?: TicketPriority | 'Not set'): string {
   switch (priority) {
     case 'Urgent':
-      return '#c084fc'; // Brightest purple (purple-400)
+      return '#c084fc'; // Brightest purple
     case 'High':
-      return '#a855f7'; // Primary purple (purple-500)
+      return '#a855f7'; // Primary purple
     case 'Normal':
-      return '#9333ea'; // Medium purple (purple-600)
+      return '#9333ea'; // Medium purple
     case 'Low':
-      return '#7e22ce'; // Dark purple (purple-700)
+      return '#7e22ce'; // Dark purple
     case 'Not set':
     default:
-      return '#581c87'; // Very dark purple (purple-900)
+      return '#581c87'; // Very dark purple
+  }
+}
+
+// Grey colors for New features
+function getGreyPriorityColor(priority?: TicketPriority | 'Not set'): string {
+  switch (priority) {
+    case 'Urgent':
+      return '#d1d5db'; // Brightest grey
+    case 'High':
+      return '#9ca3af'; // Primary grey
+    case 'Normal':
+      return '#6b7280'; // Medium grey
+    case 'Low':
+      return '#4b5563'; // Dark grey
+    case 'Not set':
+    default:
+      return '#374151'; // Very dark grey
   }
 }
 
@@ -813,6 +829,9 @@ function getBlockColor(featureState: string, priority?: TicketPriority | 'Not se
   const category = getStateCategory(featureState);
   if (category === 'done') {
     return getPurplePriorityColor(priority);
+  }
+  if (category === 'new') {
+    return getGreyPriorityColor(priority);
   }
   return getGreenPriorityColor(priority);
 }
