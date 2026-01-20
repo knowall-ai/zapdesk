@@ -29,12 +29,20 @@ function isLeafWorkItem(item: WorkItem): boolean {
 }
 
 // Grid-based bin-packing like mempool.space
-function layoutBlocks(items: WorkItem[], containerSize: number): BlockRect[] {
+// fillPercentage affects grid sizing: 100% = items fill container, 50% = items fill half
+function layoutBlocks(
+  items: WorkItem[],
+  containerSize: number,
+  fillPercentage: number | null
+): BlockRect[] {
   const leafItems = items.filter(isLeafWorkItem);
   if (leafItems.length === 0) return [];
 
   // Fixed 2px padding (creates 4px gaps between adjacent blocks)
   const padding = 2;
+
+  // Clamp fill percentage: minimum 10%, cap at 100% for grid calculation
+  const targetFill = Math.min(100, Math.max(10, fillPercentage ?? 100)) / 100;
 
   // Calculate block sizes based on work hours using specific thresholds
   // Size relationships: 0.5-1h is 4x area of 0-0.25h, 6-8h is 4x area of 2-4h
@@ -65,10 +73,11 @@ function layoutBlocks(items: WorkItem[], containerSize: number): BlockRect[] {
   // Calculate total grid cells needed
   const totalCells = itemsWithSize.reduce((sum, { size }) => sum + size * size, 0);
 
-  // Dynamic grid size: tighter fit to fill container
-  // Use sqrt of total cells, minimal buffer for compact layout
-  const minGridColumns = Math.ceil(Math.sqrt(totalCells));
-  const gridColumns = Math.max(16, Math.min(32, minGridColumns)); // Clamp between 16-32 (min 16 for largest blocks)
+  // Grid size based on fill percentage:
+  // - 100% fill: grid = sqrt(totalCells) so items fill the container
+  // - 50% fill: grid = sqrt(totalCells/0.5) so items fill half the container
+  const gridForFill = Math.ceil(Math.sqrt(totalCells / targetFill));
+  const gridColumns = Math.max(16, Math.min(32, gridForFill)); // Clamp between 16-32 (min 16 for largest blocks)
 
   const gridSize = containerSize / gridColumns; // Size of each grid cell
 
@@ -313,7 +322,8 @@ export default function FeatureTimechain({
   // Calculate grid-based block layout for selected feature's work items
   const blockRects = useMemo(() => {
     if (!selectedFeature) return [];
-    return layoutBlocks(selectedFeature.workItems, gridContainerSize);
+    const fillPct = calculateFillPercentage(selectedFeature);
+    return layoutBlocks(selectedFeature.workItems, gridContainerSize, fillPct);
   }, [selectedFeature]);
 
   const handleBlockClick = (feature: Feature) => {
