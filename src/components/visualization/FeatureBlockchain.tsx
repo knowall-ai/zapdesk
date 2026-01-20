@@ -29,20 +29,12 @@ function isLeafWorkItem(item: WorkItem): boolean {
 }
 
 // Grid-based bin-packing like mempool.space
-// fillPercentage controls how much of the container the items should fill (100 = full, 50 = half)
-function layoutBlocks(
-  items: WorkItem[],
-  containerSize: number,
-  fillPercentage: number | null
-): BlockRect[] {
+function layoutBlocks(items: WorkItem[], containerSize: number): BlockRect[] {
   const leafItems = items.filter(isLeafWorkItem);
   if (leafItems.length === 0) return [];
 
-  // Fixed 2px padding applied AFTER scaling (creates 4px gaps between adjacent blocks)
+  // Fixed 2px padding (creates 4px gaps between adjacent blocks)
   const padding = 2;
-
-  // Clamp fill percentage: minimum 10% to ensure visibility, cap at 100% for display
-  const targetFill = Math.min(100, Math.max(10, fillPercentage ?? 100)) / 100;
 
   // Calculate block sizes based on work hours using specific thresholds
   // Size relationships: 0.5-1h is 4x area of 0-0.25h, 6-8h is 4x area of 2-4h
@@ -111,12 +103,12 @@ function layoutBlocks(
             }
           }
 
-          // Create rect WITHOUT padding - padding applied after scaling
+          // Create rect with padding for 4px gaps
           rects.push({
-            x: col * gridSize,
-            y: row * gridSize,
-            width: actualSize * gridSize,
-            height: actualSize * gridSize,
+            x: col * gridSize + padding,
+            y: row * gridSize + padding,
+            width: actualSize * gridSize - padding * 2,
+            height: actualSize * gridSize - padding * 2,
             item,
           });
           placed = true;
@@ -129,34 +121,14 @@ function layoutBlocks(
     }
   }
 
-  // Scale and bottom-align based on fill percentage
+  // Bottom-align: shift all blocks down so they sit at the bottom
   if (rects.length > 0) {
-    // Find current bounding box
-    const minX = Math.min(...rects.map((r) => r.x));
-    const minY = Math.min(...rects.map((r) => r.y));
-    const maxXExtent = Math.max(...rects.map((r) => r.x + r.width));
-    const maxYExtent = Math.max(...rects.map((r) => r.y + r.height));
-    const currentWidth = maxXExtent - minX;
-    const currentHeight = maxYExtent - minY;
-
-    // Scale to fill full width, then adjust height by fill percentage
-    const widthScale = containerSize / currentWidth;
-    const targetHeight = containerSize * targetFill;
-    const heightScale = targetHeight / currentHeight;
-
-    // Use uniform scale based on fill percentage for proper proportions
-    const scale = Math.min(widthScale, heightScale);
-
-    // Scale and reposition all rects - align to bottom-left, then apply fixed padding
-    for (const rect of rects) {
-      // Scale relative to origin
-      const relativeX = rect.x - minX;
-      const relativeY = rect.y - minY;
-
-      rect.x = relativeX * scale + padding;
-      rect.y = containerSize - targetHeight + relativeY * scale + padding;
-      rect.width = rect.width * scale - padding * 2;
-      rect.height = rect.height * scale - padding * 2;
+    const maxYExtent = Math.max(...rects.map((r) => r.y + r.height + padding));
+    const shiftAmount = containerSize - maxYExtent;
+    if (shiftAmount > 0) {
+      for (const rect of rects) {
+        rect.y += shiftAmount;
+      }
     }
   }
 
@@ -341,8 +313,7 @@ export default function FeatureTimechain({
   // Calculate grid-based block layout for selected feature's work items
   const blockRects = useMemo(() => {
     if (!selectedFeature) return [];
-    const fillPct = calculateFillPercentage(selectedFeature);
-    return layoutBlocks(selectedFeature.workItems, gridContainerSize, fillPct);
+    return layoutBlocks(selectedFeature.workItems, gridContainerSize);
   }, [selectedFeature]);
 
   const handleBlockClick = (feature: Feature) => {

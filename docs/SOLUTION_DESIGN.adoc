@@ -313,13 +313,14 @@ The Explorer only displays "leaf" work items. Container types are excluded:
 
 This ensures the visualization shows actionable work items (Tasks, Bugs, etc.) rather than hierarchical containers.
 
-=== Fill Percentage
+=== Layout Behavior
 
-The Explorer container visually represents the Feature's completion percentage:
+Blocks are laid out using bin-packing and bottom-aligned:
 
-* **100%+ full**: Blocks fill the entire container
-* **50% full**: Blocks fill approximately half the container
-* Based on `completedWork / effort` ratio
+* Blocks maintain their size based on hours (no scaling)
+* Blocks fill from bottom-left, going right then up
+* Empty space appears at the top when fewer/smaller items
+* The visual fill naturally reflects the work logged
 
 === Implementation
 
