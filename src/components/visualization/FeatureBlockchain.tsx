@@ -73,11 +73,15 @@ function layoutBlocks(
   // Calculate total grid cells needed
   const totalCells = itemsWithSize.reduce((sum, { size }) => sum + size * size, 0);
 
+  // Find largest item to determine minimum grid size
+  const maxItemSize = Math.max(...itemsWithSize.map((i) => i.size));
+
   // Grid size based on fill percentage:
   // - 100% fill: grid = sqrt(totalCells) so items fill the container
   // - 50% fill: grid = sqrt(totalCells/0.5) so items fill half the container
   const gridForFill = Math.ceil(Math.sqrt(totalCells / targetFill));
-  const gridColumns = Math.max(16, Math.min(32, gridForFill)); // Clamp between 16-32 (min 16 for largest blocks)
+  // Minimum grid must fit the largest item, maximum 32
+  const gridColumns = Math.max(maxItemSize, Math.min(32, gridForFill));
 
   const gridSize = containerSize / gridColumns; // Size of each grid cell
 
@@ -130,10 +134,19 @@ function layoutBlocks(
     }
   }
 
-  // Bottom-align: shift all blocks down so they sit at the bottom
+  // Flip Y axis so full rows are at bottom, gaps at top
+  // Then shift to bottom of container
   if (rects.length > 0) {
     const maxYExtent = Math.max(...rects.map((r) => r.y + r.height + padding));
-    const shiftAmount = containerSize - maxYExtent;
+
+    // Flip Y: items placed first (full rows) go to bottom, last row (may have gaps) goes to top
+    for (const rect of rects) {
+      rect.y = maxYExtent - rect.y - rect.height - padding * 2;
+    }
+
+    // Now shift everything to bottom of container
+    const newMaxY = Math.max(...rects.map((r) => r.y + r.height + padding));
+    const shiftAmount = containerSize - newMaxY;
     if (shiftAmount > 0) {
       for (const rect of rects) {
         rect.y += shiftAmount;
