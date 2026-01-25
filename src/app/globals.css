@@ -243,6 +243,20 @@ body {
   .user-content [style*='color'] {
     color: var(--text-secondary) !important;
   }
+
+  /* Mention styles */
+  .mention {
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--primary);
+    padding: 0.125rem 0.25rem;
+    border-radius: 0.25rem;
+    font-weight: 500;
+    cursor: default;
+  }
+
+  .mention:hover {
+    background: rgba(34, 197, 94, 0.25);
+  }
 }
 
 /* Animations */
