@@ -41,8 +41,7 @@
 
 ### Prerequisites
 
-- Node.js 18+
-- npm or yarn
+- [Bun](https://bun.sh/) runtime (v1.0+)
 - Azure DevOps organization
 - Azure AD application for authentication
 - Exchange Online mailbox (for email integration)
@@ -59,7 +58,7 @@
 2. **Install dependencies**
 
    ```bash
-   npm install
+   bun install
    ```
 
 3. **Configure environment variables**
@@ -73,7 +72,7 @@
 4. **Run the development server**
 
    ```bash
-   npm run dev
+   bun run dev
    ```
 
 5. **Open the application**
@@ -138,12 +137,13 @@ See [docs/EMAIL_SETUP.adoc](docs/EMAIL_SETUP.adoc) for detailed instructions.
 
 ## Tech Stack
 
-- **Framework**: Next.js 15 (App Router)
+- **Framework**: Next.js 16 (App Router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
 - **Authentication**: NextAuth.js with Azure AD
 - **Backend**: Azure DevOps REST API
 - **Icons**: Lucide React
+- **Package Manager**: [Bun](https://bun.sh/)
 - **Deployment**: Azure App Service
 
 ## Project Structure
@@ -179,13 +179,13 @@ devdesk/
 
 ```bash
 # Run development server
-npm run dev
+bun run dev
 
 # Build for production
-npm run build
+bun run build
 
 # Run production server
-npm start
+bun run start
 ```
 
 ### Code Quality Checks
@@ -194,17 +194,17 @@ The following checks run automatically on every pull request via GitHub Actions:
 
 ```bash
 # Run all checks (recommended before pushing)
-npm run check
+bun run check
 
 # Individual checks
-npm run typecheck      # TypeScript type checking
-npm run lint           # ESLint
-npm run lint:fix       # ESLint with auto-fix
-npm run format:check   # Prettier format check
-npm run format         # Prettier auto-format
+bun run typecheck      # TypeScript type checking
+bun run lint           # ESLint
+bun run lint:fix       # ESLint with auto-fix
+bun run format:check   # Prettier format check
+bun run format         # Prettier auto-format
 
 # Run tests
-npm run test
+bun run test
 ```
 
 All checks must pass before a PR can be merged.
