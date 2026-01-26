@@ -33,7 +33,7 @@
 - **Azure DevOps Integration** - Work items tagged as "ticket" appear as support tickets
 - **Multi-tenant Support** - Different clients have different DevOps projects (e.g., Medite, Cairn Homes)
 - **Permission-based Access** - Users only see tickets from projects they have access to
-- **Email-to-Ticket** - Send emails to zapdesk@knowall.ai to create tickets automatically
+- **Email-to-Ticket** - Send emails to a configured mailbox to create tickets automatically
 - **Email Responses** - Replies to tickets email the requester via Exchange Online
 - **Zendesk-like UI** - Familiar interface with views, filters, and ticket management
 
@@ -113,9 +113,9 @@ ZapDesk maps Azure DevOps projects to organizations/clients:
 
 ### Inbound Email (Creating Tickets)
 
-Customers send emails to `zapdesk@knowall.ai` to create tickets:
+Customers send emails to the configured support mailbox to create tickets:
 
-1. Set up Exchange Online mailbox for zapdesk@knowall.ai
+1. Set up an Exchange Online shared mailbox
 2. Configure mail flow rule to forward to webhook
 3. Or use Power Automate to POST to `/api/email/webhook`
 
@@ -129,7 +129,7 @@ When agents reply to tickets, the requester receives an email:
 
 ### Exchange Online Setup
 
-1. **Create shared mailbox**: zapdesk@knowall.ai
+1. **Create shared mailbox** for your support email address
 2. **Enable SMTP AUTH** for the mailbox
 3. **Create app password** or configure OAuth
 4. **Set up mail flow rules** for inbound processing
