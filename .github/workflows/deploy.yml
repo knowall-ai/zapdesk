@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: devdesk-knowall
+  AZURE_WEBAPP_NAME: zapdesk-knowallai
   NODE_VERSION: '20.x'
 
 jobs:
@@ -35,8 +35,8 @@ jobs:
           # Build-time environment variables (non-sensitive)
           NEXT_TELEMETRY_DISABLED: 1
           # Runtime config (public)
-          NEXTAUTH_URL: https://devdesk.knowall.ai
-          APP_URL: https://devdesk.knowall.ai
+          NEXTAUTH_URL: https://zapdesk.knowall.ai
+          APP_URL: https://zapdesk.knowall.ai
 
       - name: Prepare standalone deployment
         run: |
@@ -58,7 +58,7 @@ jobs:
     needs: build
     environment:
       name: production
-      url: https://devdesk.knowall.ai
+      url: https://zapdesk.knowall.ai
 
     steps:
       - name: Download artifact
@@ -85,7 +85,7 @@ jobs:
           mask-inputs: true
           app-settings-json: |
             [
-              {"name": "NEXTAUTH_URL", "value": "https://devdesk.knowall.ai"},
+              {"name": "NEXTAUTH_URL", "value": "https://zapdesk.knowall.ai"},
               {"name": "NEXTAUTH_SECRET", "value": "${{ secrets.NEXTAUTH_SECRET }}"},
               {"name": "AZURE_AD_CLIENT_ID", "value": "${{ secrets.AZURE_AD_CLIENT_ID }}"},
               {"name": "AZURE_AD_CLIENT_SECRET", "value": "${{ secrets.AZURE_AD_CLIENT_SECRET }}"},
@@ -95,10 +95,10 @@ jobs:
               {"name": "EMAIL_WEBHOOK_SECRET", "value": "${{ secrets.EMAIL_WEBHOOK_SECRET }}"},
               {"name": "SMTP_HOST", "value": "smtp.office365.com"},
               {"name": "SMTP_PORT", "value": "587"},
-              {"name": "SMTP_USER", "value": "devdesk@knowall.ai"},
+              {"name": "SMTP_USER", "value": "zapdesk@knowall.ai"},
               {"name": "SMTP_PASSWORD", "value": "${{ secrets.SMTP_PASSWORD }}"},
-              {"name": "SMTP_FROM", "value": "devdesk@knowall.ai"},
-              {"name": "SMTP_FROM_NAME", "value": "DevDesk Support"}
+              {"name": "SMTP_FROM", "value": "zapdesk@knowall.ai"},
+              {"name": "SMTP_FROM_NAME", "value": "ZapDesk Support"}
             ]
 
   notify:
@@ -109,7 +109,7 @@ jobs:
     steps:
       - name: Notify on success
         if: ${{ needs.deploy.result == 'success' }}
-        run: echo "Deployment to devdesk.knowall.ai completed successfully!"
+        run: echo "Deployment to zapdesk.knowall.ai completed successfully!"
 
       - name: Notify on failure
         if: ${{ needs.deploy.result == 'failure' }}

@@ -1,10 +1,10 @@
-# CLAUDE.md - DevDesk Project Guidelines
+# CLAUDE.md - ZapDesk Project Guidelines
 
-This document provides guidance for AI assistants (like Claude) working on the DevDesk project.
+This document provides guidance for AI assistants (like Claude) working on the ZapDesk project.
 
 ## Project Overview
 
-DevDesk is a Zendesk-style support ticketing portal that integrates with Azure DevOps. It allows clients to view and manage support tickets through a familiar interface while using Azure DevOps as the backend work item tracker.
+ZapDesk is a Zendesk-style support ticketing portal that integrates with Azure DevOps. It allows clients to view and manage support tickets through a familiar interface while using Azure DevOps as the backend work item tracker.
 
 ## Architecture
 
@@ -73,7 +73,7 @@ src/
 - All DevOps API calls go through `src/lib/devops.ts`
 - Use the user's OAuth token for authenticated requests
 - Use PAT (Personal Access Token) for service account operations (email webhook)
-- Work items must have "ticket" tag to appear in DevDesk
+- Work items must have "ticket" tag to appear in ZapDesk
 
 ### Authentication Flow
 
@@ -246,5 +246,5 @@ When you encounter or help resolve an issue that admins or users might face:
 ## Contact
 
 - **Project Owner**: KnowAll AI
-- **Repository**: https://github.com/knowall-ai/devdesk
+- **Repository**: https://github.com/knowall-ai/zapdesk
 - **Support**: support@knowall.ai

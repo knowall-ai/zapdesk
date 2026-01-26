@@ -5,7 +5,7 @@
  */
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
-const EXTENSION_NAME = 'devdesk.knowall.ai';
+const EXTENSION_NAME = 'zapdesk.knowall.ai';
 
 interface GraphExtension {
   '@odata.type': string;

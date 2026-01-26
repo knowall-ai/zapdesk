@@ -21,7 +21,7 @@ import {
   PlusCircle,
   X,
 } from 'lucide-react';
-import DevDeskIcon from '@/components/common/DevDeskIcon';
+import ZapDeskIcon from '@/components/common/ZapDeskIcon';
 
 interface ViewItem {
   id: string;
@@ -152,9 +152,9 @@ export default function Sidebar({
       <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
         <div className="flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2" onClick={() => onClose?.()}>
-            <DevDeskIcon size={32} />
+            <ZapDeskIcon size={32} />
             <span className="text-xl font-semibold" style={{ color: 'var(--primary)' }}>
-              DevDesk
+              ZapDesk
             </span>
           </Link>
           <button
