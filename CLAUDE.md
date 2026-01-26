@@ -90,6 +90,10 @@ src/
 - Show user-friendly error messages in UI
 - Handle loading states in components
 
+### Security
+
+- **Do not put email addresses in the public repo** - spam bots scrape repositories for email addresses. Use generic references like "configured mailbox" or "your support email" instead.
+
 ## Testing
 
 ### Manual Testing Checklist
