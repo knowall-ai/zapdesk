@@ -7,8 +7,8 @@ test.describe('Navigation (unauthenticated)', () => {
     // Page should load without errors
     await expect(page.locator('body')).toBeVisible();
 
-    // Should have the DevDesk logo/branding
-    await expect(page.locator('text=DevDesk')).toBeVisible();
+    // Should have the ZapDesk logo/branding
+    await expect(page.locator('text=ZapDesk')).toBeVisible();
   });
 
   test('should display sign in with Microsoft button', async ({ page }) => {
@@ -23,7 +23,7 @@ test.describe('Navigation (unauthenticated)', () => {
     await page.goto('/login');
 
     // Check page title
-    await expect(page).toHaveTitle(/DevDesk/);
+    await expect(page).toHaveTitle(/ZapDesk/);
   });
 });
 

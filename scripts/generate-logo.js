@@ -2,9 +2,9 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 
 /**
- * DevDesk Logo Generator
+ * ZapDesk Logo Generator
  *
- * Generates the DevDesk logo assets with a stylized "D" featuring
+ * Generates the ZapDesk logo assets with a stylized "D" featuring
  * a directional arrow cutout for a modern, forward-moving aesthetic.
  *
  * Usage: node scripts/generate-logo.js
@@ -138,7 +138,7 @@ function generateFullLogoDark(width = 400, height = 100) {
     fill-rule="evenodd"
   />
 
-  <!-- "DevDesk" text with two-tone coloring -->
+  <!-- "ZapDesk" text with two-tone coloring -->
   <text x="85" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700">
     <tspan fill="${COLORS.primary}">Dev</tspan><tspan fill="${COLORS.textLight}">Desk</tspan>
   </text>
@@ -193,7 +193,7 @@ function generateFullLogoLight(width = 400, height = 100) {
     fill-rule="evenodd"
   />
 
-  <!-- "DevDesk" text with two-tone coloring -->
+  <!-- "ZapDesk" text with two-tone coloring -->
   <text x="85" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700">
     <tspan fill="${COLORS.primary}">Dev</tspan><tspan fill="${COLORS.textDark}">Desk</tspan>
   </text>

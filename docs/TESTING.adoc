@@ -1,11 +1,11 @@
-= DevDesk Testing Guide
+= ZapDesk Testing Guide
 :toc: left
 :toclevels: 3
 :icons: font
 
 == Overview
 
-This guide covers testing strategies and procedures for DevDesk.
+This guide covers testing strategies and procedures for ZapDesk.
 
 == Test Types
 
@@ -152,19 +152,19 @@ Create test work items in Azure DevOps:
 
 1. Create Task in DevOps
 2. Add "ticket" tag
-3. Verify appears in DevDesk
+3. Verify appears in ZapDesk
 4. Check status shows as "New"
 
 ==== Scenario 2: In Progress Ticket
 
 1. Change DevOps state to "Active"
-2. Verify DevDesk shows "Open"
+2. Verify ZapDesk shows "Open"
 3. Change to "Doing"
 4. Verify shows "In Progress"
 
 ==== Scenario 3: Add Comment
 
-1. Open ticket in DevDesk
+1. Open ticket in ZapDesk
 2. Add comment
 3. Verify comment appears
 4. Check comment visible in DevOps
