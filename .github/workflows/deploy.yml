@@ -10,7 +10,7 @@ on:
 
 env:
   AZURE_WEBAPP_NAME: devdesk-knowall
-  BUN_VERSION: '1.1'
+  BUN_VERSION: '1.2'
 
 jobs:
   build:
