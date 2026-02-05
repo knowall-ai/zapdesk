@@ -26,8 +26,11 @@ export async function GET() {
 
     try {
       const graphToken = await getGraphToken();
-      if (graphToken && session.user?.id) {
-        localeSettings = await getUserLocaleSettings(graphToken, session.user.id);
+      // Use email as the user identifier for Graph API (Azure AD Object ID isn't available in session)
+      const userIdentifier = profile.emailAddress || session.user?.email;
+
+      if (graphToken && userIdentifier) {
+        localeSettings = await getUserLocaleSettings(graphToken, userIdentifier);
       }
     } catch (error) {
       console.error('Error fetching locale settings from Graph:', error);

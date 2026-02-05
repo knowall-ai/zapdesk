@@ -162,6 +162,7 @@ export async function getUserLocaleSettings(
 
   try {
     // Fetch mailbox settings for time/date preferences
+    // Note: Requires MailboxSettings.Read application permission with admin consent
     const mailboxResponse = await fetch(
       `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/mailboxSettings`,
       {
