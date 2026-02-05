@@ -51,7 +51,8 @@ export async function GET(request: Request) {
     const memberFilter = searchParams.get('member');
 
     const devopsService = new AzureDevOpsService(session.accessToken);
-    const tickets = await devopsService.getAllTickets();
+    // Get ALL work items (not just those tagged as "ticket") for accurate team activity
+    const tickets = await devopsService.getAllTickets(false);
 
     // Collect all team members from projects
     const memberMap = new Map<string, User>();
@@ -104,7 +105,7 @@ export async function GET(request: Request) {
         ? tickets.filter((ticket) => ticket.assignee?.id === memberFilter)
         : tickets; // Show all tickets for overall team activity
 
-    // Count activities by date
+    // Count work item activities by date
     for (const ticket of relevantTickets) {
       // Count created date
       const createdDate = ticket.createdAt.toISOString().split('T')[0];
@@ -116,6 +117,30 @@ export async function GET(request: Request) {
       const updatedDate = ticket.updatedAt.toISOString().split('T')[0];
       if (updatedDate !== createdDate && activityByDate.has(updatedDate)) {
         activityByDate.set(updatedDate, (activityByDate.get(updatedDate) || 0) + 1);
+      }
+    }
+
+    // Fetch Git activity (commits and PRs) - only for "all" members view to avoid complexity
+    if (!memberFilter || memberFilter === 'all') {
+      try {
+        const gitActivity = await devopsService.getGitActivity(startDate, endDate);
+
+        // Add commits to activity count
+        for (const commit of gitActivity.commits) {
+          if (activityByDate.has(commit.date)) {
+            activityByDate.set(commit.date, (activityByDate.get(commit.date) || 0) + commit.count);
+          }
+        }
+
+        // Add PRs to activity count
+        for (const pr of gitActivity.pullRequests) {
+          if (activityByDate.has(pr.date)) {
+            activityByDate.set(pr.date, (activityByDate.get(pr.date) || 0) + pr.count);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching Git activity:', error);
+        // Continue without Git activity - work items will still be shown
       }
     }
 
