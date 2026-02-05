@@ -357,15 +357,15 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            <div className="pt-4">
+            <div className="flex flex-wrap gap-3 pt-4">
               <a
-                href="https://dev.azure.com/KnowAll/_usersSettings/about"
+                href="https://outlook.office365.com/mail/options/general/timeAndLanguage"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn-primary inline-flex items-center gap-2"
               >
                 <ExternalLink size={16} />
-                Edit Settings in Azure DevOps
+                Edit in Outlook Settings
               </a>
             </div>
           </div>
@@ -373,7 +373,7 @@ export default function ProfilePage() {
 
         {/* Info Note */}
         <p className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-          Your profile settings are managed in Azure DevOps. Changes made there will be reflected
+          Time and locale settings are managed in Microsoft 365 Outlook. Changes will be reflected
           here after signing out and back in.
         </p>
       </div>
