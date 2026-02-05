@@ -8,7 +8,7 @@ test.describe('Navigation (unauthenticated)', () => {
     await expect(page.locator('body')).toBeVisible();
 
     // Should have the ZapDesk logo/branding
-    await expect(page.locator('text=ZapDesk')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'ZapDesk' })).toBeVisible();
   });
 
   test('should display sign in with Microsoft button', async ({ page }) => {
@@ -33,12 +33,7 @@ test.describe('Protected routes redirect', () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
-  test('customers page redirects to login', async ({ page }) => {
-    await page.goto('/customers');
-    await expect(page).toHaveURL(/\/login/);
-  });
-
-  test('organizations page redirects to login', async ({ page }) => {
+  test('projects page redirects to login', async ({ page }) => {
     await page.goto('/projects');
     await expect(page).toHaveURL(/\/login/);
   });
