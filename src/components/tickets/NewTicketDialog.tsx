@@ -141,14 +141,14 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
 
   // Fetch team members and work item types when project changes
   useEffect(() => {
-    if (form.project && session?.accessToken) {
+    if (form.project && session?.accessToken && hasOrganization) {
       fetchTeamMembers(form.project);
       fetchWorkItemTypes(form.project);
     } else {
       setTeamMembers([]);
       setWorkItemTypes([]);
     }
-  }, [form.project, session, fetchTeamMembers, fetchWorkItemTypes]);
+  }, [form.project, session, hasOrganization, fetchTeamMembers, fetchWorkItemTypes]);
 
   // Filter out Stakeholders and apply search
   const filteredMembers = useMemo(() => {
@@ -220,10 +220,18 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
 
   // Extract display name from identity string "DisplayName <email>"
   const getDisplayNameFromIdentity = (identity: string): string => {
-    if (identity.includes('<')) {
-      return identity.split('<')[0].trim();
+    if (!identity) {
+      return '';
     }
-    return identity;
+
+    const trimmedIdentity = identity.trim();
+    const ltIndex = trimmedIdentity.indexOf('<');
+
+    if (ltIndex !== -1) {
+      return trimmedIdentity.slice(0, ltIndex).trim();
+    }
+
+    return trimmedIdentity;
   };
 
   const handleTakeIt = () => {
@@ -231,7 +239,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       const currentUser = filteredMembers.find(
         (m) => m.email?.toLowerCase() === session.user?.email?.toLowerCase()
       );
-      if (currentUser?.email) {
+      if (currentUser) {
         setForm((prev) => ({ ...prev, assignee: buildIdentityString(currentUser) }));
       }
     }
@@ -471,7 +479,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                       />
                     </div>
                     {/* Selected assignee or dropdown */}
-                    {form.assignee ? (
+                    {form.assignee && form.assignee.trim() ? (
                       <div
                         className="flex items-center justify-between rounded p-2"
                         style={{ backgroundColor: 'var(--surface-hover)' }}
