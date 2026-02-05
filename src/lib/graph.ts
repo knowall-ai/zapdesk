@@ -114,6 +114,81 @@ export async function saveLightningAddress(
 }
 
 /**
+ * User locale settings from Microsoft Graph
+ */
+export interface UserLocaleSettings {
+  preferredLanguage: string | null;
+  country: string | null;
+  timeZone: string | null;
+  dateFormat: string | null;
+  timeFormat: string | null;
+}
+
+/**
+ * Get user locale settings from Microsoft Graph
+ * Combines data from user profile and mailbox settings
+ */
+export async function getUserLocaleSettings(
+  graphToken: string,
+  userId: string
+): Promise<UserLocaleSettings> {
+  const settings: UserLocaleSettings = {
+    preferredLanguage: null,
+    country: null,
+    timeZone: null,
+    dateFormat: null,
+    timeFormat: null,
+  };
+
+  try {
+    // Fetch user profile for basic locale info
+    const userResponse = await fetch(
+      `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}?$select=preferredLanguage,country,usageLocation`,
+      {
+        headers: {
+          Authorization: `Bearer ${graphToken}`,
+        },
+      }
+    );
+
+    if (userResponse.ok) {
+      const userData = await userResponse.json();
+      settings.preferredLanguage = userData.preferredLanguage || null;
+      settings.country = userData.country || userData.usageLocation || null;
+    }
+  } catch (error) {
+    console.error('Error fetching user profile from Graph:', error);
+  }
+
+  try {
+    // Fetch mailbox settings for time/date preferences
+    const mailboxResponse = await fetch(
+      `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/mailboxSettings`,
+      {
+        headers: {
+          Authorization: `Bearer ${graphToken}`,
+        },
+      }
+    );
+
+    if (mailboxResponse.ok) {
+      const mailboxData = await mailboxResponse.json();
+      settings.timeZone = mailboxData.timeZone || null;
+      settings.dateFormat = mailboxData.dateFormat || null;
+      settings.timeFormat = mailboxData.timeFormat || null;
+      // Use mailbox language if preferred language not set
+      if (!settings.preferredLanguage && mailboxData.language?.locale) {
+        settings.preferredLanguage = mailboxData.language.locale;
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching mailbox settings from Graph:', error);
+  }
+
+  return settings;
+}
+
+/**
  * Delete the Lightning Address extension from a user's profile
  */
 export async function deleteLightningAddress(graphToken: string, userId: string): Promise<boolean> {
