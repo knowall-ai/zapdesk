@@ -267,7 +267,7 @@ export default function HomePage() {
               Pro Tip: Use the &quot;ticket&quot; tag
             </p>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Only Azure DevOps work items tagged with &quot;ticket&quot; will appear in DevDesk.
+              Only Azure DevOps work items tagged with &quot;ticket&quot; will appear in ZapDesk.
               Add this tag to any work item you want to track here.
             </p>
           </div>

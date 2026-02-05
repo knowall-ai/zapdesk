@@ -3,7 +3,7 @@ import { getProjectFromEmail } from '@/lib/devops';
 import type { EmailWebhookPayload } from '@/types';
 
 // This endpoint receives emails from email providers like SendGrid, Mailgun, etc.
-// Emails sent to devdesk@knowall.ai will be forwarded here to create tickets
+// Emails sent to zapdesk@knowall.ai will be forwarded here to create tickets
 
 export async function POST(request: NextRequest) {
   try {

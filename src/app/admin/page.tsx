@@ -59,7 +59,7 @@ export default function AdminPage() {
             </h2>
           </div>
           <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-            DevDesk supports the following Azure DevOps process templates. Projects using
+            ZapDesk supports the following Azure DevOps process templates. Projects using
             unsupported templates will display a warning.
           </p>
 
@@ -229,7 +229,7 @@ export default function AdminPage() {
           {/* Request new template link */}
           <div className="mt-4">
             <a
-              href="https://github.com/knowall-ai/devdesk/issues/new?title=Support%20for%20new%20process%20template&labels=enhancement"
+              href="https://github.com/knowall-ai/zapdesk/issues/new?title=Support%20for%20new%20process%20template&labels=enhancement"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm hover:underline"

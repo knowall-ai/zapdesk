@@ -122,7 +122,7 @@ function ZapDialogContent({
 
       // Add comment if the service supports it (shows in recipient's wallet)
       if (meta.commentAllowed && meta.commentAllowed > 0) {
-        const comment = `DevDesk Ticket #${ticketId}`;
+        const comment = `ZapDesk Ticket #${ticketId}`;
         // Truncate if needed (commentAllowed is max length)
         const truncatedComment = comment.slice(0, meta.commentAllowed);
         callbackUrl += `&comment=${encodeURIComponent(truncatedComment)}`;

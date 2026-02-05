@@ -13,7 +13,7 @@ export const basicConfig: ProcessTemplateConfig = {
   id: 'basic',
 
   workItemTypes: {
-    // Ticket types - must be tagged with "ticket" to appear in DevDesk
+    // Ticket types - must be tagged with "ticket" to appear in ZapDesk
     ticketTypes: ['Issue', 'Task'],
     defaultTicketType: 'Issue',
 

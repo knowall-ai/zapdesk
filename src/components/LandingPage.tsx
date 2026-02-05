@@ -2,7 +2,7 @@
 
 import { signIn } from 'next-auth/react';
 import { Ticket, Users, BarChart3, FolderKanban, CheckCircle } from 'lucide-react';
-import DevDeskIcon from '@/components/common/DevDeskIcon';
+import ZapDeskIcon from '@/components/common/ZapDeskIcon';
 
 const features = [
   {
@@ -46,9 +46,9 @@ export default function LandingPage() {
       <header className="border-b px-4 py-4" style={{ borderColor: 'var(--border)' }}>
         <div className="mx-auto flex max-w-4xl items-center justify-between">
           <div className="flex items-center gap-2">
-            <DevDeskIcon size={32} />
+            <ZapDeskIcon size={32} />
             <span className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-              DevDesk
+              ZapDesk
             </span>
           </div>
           <button
@@ -116,7 +116,7 @@ export default function LandingPage() {
                 Open Source by <span style={{ color: 'var(--primary)' }}>KnowAll.ai</span>
               </h2>
               <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>
-                DevDesk provides a seamless experience for managing support tickets against Azure
+                ZapDesk provides a seamless experience for managing support tickets against Azure
                 DevOps projects. Free and open source for everyone.
               </p>
               <div className="space-y-3">
@@ -146,7 +146,7 @@ export default function LandingPage() {
                 Sign in with Microsoft
               </h3>
               <p className="mb-6 text-sm" style={{ color: 'var(--text-muted)' }}>
-                Use your Microsoft account to access DevDesk securely.
+                Use your Microsoft account to access ZapDesk securely.
               </p>
               <button
                 onClick={() => signIn('azure-ad', { callbackUrl: '/' })}
@@ -163,9 +163,9 @@ export default function LandingPage() {
       <footer className="border-t px-4 py-6" style={{ borderColor: 'var(--border)' }}>
         <div className="mx-auto flex max-w-4xl flex-col items-center justify-between gap-4 sm:flex-row">
           <div className="flex items-center gap-2">
-            <DevDeskIcon size={32} />
+            <ZapDeskIcon size={32} />
             <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-              DevDesk
+              ZapDesk
             </span>
             <span style={{ color: 'var(--text-muted)' }}>by</span>
             <a
@@ -180,7 +180,7 @@ export default function LandingPage() {
           </div>
           <div className="flex items-center gap-6 text-sm" style={{ color: 'var(--text-muted)' }}>
             <a
-              href="https://github.com/knowall-ai/devdesk"
+              href="https://github.com/knowall-ai/zapdesk"
               target="_blank"
               rel="noopener noreferrer"
               className="transition-colors hover:text-[var(--text-primary)]"
