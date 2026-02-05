@@ -93,7 +93,7 @@ az webapp update \
 
 === Custom Domain
 
-. Add CNAME record: `devdesk` → `zapdesk-knowall.azurewebsites.net`
+. Add CNAME record: `zapdesk` → `zapdesk-knowall.azurewebsites.net`
 . Add custom domain to App Service:
 +
 [source,bash]
