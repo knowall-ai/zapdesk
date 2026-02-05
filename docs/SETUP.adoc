@@ -197,7 +197,7 @@ Configure your email provider to forward emails to `your-support-email@yourdomai
 
 === Outbound Email (SMTP)
 
-DevDesk uses Microsoft 365 SMTP for sending emails:
+ZapDesk uses Microsoft 365 SMTP for sending emails:
 
 * Host: `smtp.office365.com`
 * Port: `587`
