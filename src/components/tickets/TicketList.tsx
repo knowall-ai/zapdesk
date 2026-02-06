@@ -22,7 +22,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
     title: ticket.title,
     description: ticket.description,
     state: ticket.devOpsState,
-    workItemType: 'Ticket',
+    workItemType: ticket.workItemType,
     areaPath: '',
     project: ticket.project,
     createdAt: ticket.createdAt,

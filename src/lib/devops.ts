@@ -1,4 +1,9 @@
 // Azure DevOps API Service Layer
+
+/** Escape single quotes in WIQL string literals to prevent injection */
+function escapeWiql(value: string): string {
+  return value.replace(/'/g, "''");
+}
 import type {
   DevOpsWorkItem,
   DevOpsProject,
@@ -281,7 +286,7 @@ export class AzureDevOpsService {
                [System.Tags], [Microsoft.VSTS.Common.Priority], [System.Description],
                [System.WorkItemType], [System.AreaPath], [System.TeamProject]
         FROM WorkItems
-        WHERE [System.TeamProject] = '${projectName}'
+        WHERE [System.TeamProject] = '${escapeWiql(projectName)}'
           ${ticketTagClause}
           ${additionalFilters || ''}
         ORDER BY [System.ChangedDate] DESC
@@ -860,7 +865,7 @@ export class AzureDevOpsService {
                [Microsoft.VSTS.Scheduling.RemainingWork],
                [Microsoft.VSTS.Scheduling.OriginalEstimate]
         FROM WorkItems
-        WHERE [System.TeamProject] = '${projectName}'
+        WHERE [System.TeamProject] = '${escapeWiql(projectName)}'
           AND [System.WorkItemType] = 'Epic'
         ORDER BY [System.ChangedDate] DESC
       `,

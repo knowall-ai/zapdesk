@@ -30,8 +30,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const base64Id = uuidToBase64(id);
     const descriptor = `aad.${base64Id}`;
 
-    // Fetch avatar from Azure DevOps
-    const org = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+    // Fetch avatar from Azure DevOps, respecting the selected organization
+    const orgHeader = request.headers.get('x-devops-org');
+    const org = orgHeader || process.env.AZURE_DEVOPS_ORG || 'KnowAll';
     const avatarUrl = `https://dev.azure.com/${org}/_apis/GraphProfile/MemberAvatars/${descriptor}?size=2`;
 
     const avatarResponse = await fetch(avatarUrl, {

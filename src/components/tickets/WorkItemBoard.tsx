@@ -147,7 +147,7 @@ export default function WorkItemBoard({
   const [sortField, setSortField] = useState<SortField>('updated');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
-  const [groupBy] = useState<'assignee' | 'none'>(initialGroupBy);
+  const groupBy: 'assignee' | 'none' = initialGroupBy;
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [ticketsOnly, setTicketsOnly] = useState(defaultTicketsOnly);
   const [filters, setFilters] = useState<Filters>({

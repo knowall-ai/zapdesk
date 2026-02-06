@@ -201,7 +201,7 @@ async function fetchEpicCount(
 ): Promise<number> {
   try {
     const wiqlQuery = {
-      query: `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '${projectName}' AND [System.WorkItemType] = 'Epic'`,
+      query: `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '${projectName.replace(/'/g, "''")}' AND [System.WorkItemType] = 'Epic'`,
     };
 
     const response = await fetch(
