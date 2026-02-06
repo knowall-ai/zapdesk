@@ -1077,13 +1077,17 @@ export class AzureDevOpsService {
     }
 
     const data = await response.json();
-    return data.value?.map((repo: { id: string; name: string }) => ({
-      id: repo.id,
-      name: repo.name,
-    })) || [];
+    return (
+      data.value?.map((repo: { id: string; name: string }) => ({
+        id: repo.id,
+        name: repo.name,
+      })) || []
+    );
   }
 
   // Get commits from a repository within a date range
+  // Note: Returns up to 1000 commits per repo. For very active repos over a 365-day period,
+  // pagination via continuation tokens could be added if needed.
   async getCommits(
     projectName: string,
     repositoryId: string,
@@ -1111,21 +1115,28 @@ export class AzureDevOpsService {
     }
 
     const data = await response.json();
-    return data.value?.map((commit: {
-      author: { date: string; name: string; email: string };
-      committer: { date: string };
-    }) => ({
-      date: commit.author.date.split('T')[0],
-      authorId: commit.author.email,
-      authorName: commit.author.name,
-      authorEmail: commit.author.email,
-    })) || [];
+    return (
+      data.value?.map(
+        (commit: {
+          author: { date: string; name: string; email: string };
+          committer: { date: string };
+        }) => ({
+          date: commit.author.date.split('T')[0],
+          authorId: commit.author.email,
+          authorName: commit.author.name,
+          authorEmail: commit.author.email,
+        })
+      ) || []
+    );
   }
 
   // Get pull requests from a project within a date range
+  // Note: Returns up to 500 PRs per project. For orgs with very high PR volume,
+  // pagination via continuation tokens could be added if needed.
   async getPullRequests(
     projectName: string,
-    fromDate?: Date
+    fromDate?: Date,
+    toDate?: Date
   ): Promise<{ date: string; authorId: string; authorName: string; status: string }[]> {
     const url = new URL(
       `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/git/pullrequests`
@@ -1133,6 +1144,13 @@ export class AzureDevOpsService {
     url.searchParams.set('api-version', '7.0');
     url.searchParams.set('searchCriteria.status', 'all');
     url.searchParams.set('$top', '500');
+
+    if (fromDate) {
+      url.searchParams.set('searchCriteria.minTime', fromDate.toISOString());
+    }
+    if (toDate) {
+      url.searchParams.set('searchCriteria.maxTime', toDate.toISOString());
+    }
 
     const response = await fetch(url.toString(), { headers: this.headers });
 
@@ -1144,13 +1162,8 @@ export class AzureDevOpsService {
     const data = await response.json();
     const prs = data.value || [];
 
-    // Filter by date if provided
-    return prs
-      .filter((pr: { creationDate: string }) => {
-        if (!fromDate) return true;
-        return new Date(pr.creationDate) >= fromDate;
-      })
-      .map((pr: {
+    return prs.map(
+      (pr: {
         creationDate: string;
         createdBy: { id: string; displayName: string };
         status: string;
@@ -1159,11 +1172,16 @@ export class AzureDevOpsService {
         authorId: pr.createdBy.id,
         authorName: pr.createdBy.displayName,
         status: pr.status,
-      }));
+      })
+    );
   }
 
   // Get all Git activity (commits + PRs) across all projects
-  async getGitActivity(fromDate?: Date, toDate?: Date): Promise<{
+  // Uses sequential project processing to avoid overwhelming the Azure DevOps API
+  async getGitActivity(
+    fromDate?: Date,
+    toDate?: Date
+  ): Promise<{
     commits: { date: string; count: number }[];
     pullRequests: { date: string; count: number }[];
   }> {
@@ -1171,28 +1189,30 @@ export class AzureDevOpsService {
     const commitsByDate = new Map<string, number>();
     const prsByDate = new Map<string, number>();
 
-    // Fetch Git activity from all projects in parallel
+    // Process projects sequentially to limit concurrent API requests
     const projectActivities = await Promise.allSettled(
       projects.map(async (project) => {
         // Get repositories
         const repos = await this.getRepositories(project.name);
 
-        // Get commits from all repos
-        const commitPromises = repos.map((repo) =>
-          this.getCommits(project.name, repo.id, fromDate, toDate)
-        );
-        const commitResults = await Promise.allSettled(commitPromises);
+        // Process repos in batches of 5 to limit concurrency
+        for (let i = 0; i < repos.length; i += 5) {
+          const batch = repos.slice(i, i + 5);
+          const commitResults = await Promise.allSettled(
+            batch.map((repo) => this.getCommits(project.name, repo.id, fromDate, toDate))
+          );
 
-        for (const result of commitResults) {
-          if (result.status === 'fulfilled') {
-            for (const commit of result.value) {
-              commitsByDate.set(commit.date, (commitsByDate.get(commit.date) || 0) + 1);
+          for (const result of commitResults) {
+            if (result.status === 'fulfilled') {
+              for (const commit of result.value) {
+                commitsByDate.set(commit.date, (commitsByDate.get(commit.date) || 0) + 1);
+              }
             }
           }
         }
 
         // Get PRs
-        const prs = await this.getPullRequests(project.name, fromDate);
+        const prs = await this.getPullRequests(project.name, fromDate, toDate);
         for (const pr of prs) {
           prsByDate.set(pr.date, (prsByDate.get(pr.date) || 0) + 1);
         }
@@ -1202,7 +1222,10 @@ export class AzureDevOpsService {
     // Log any failures
     for (let i = 0; i < projectActivities.length; i++) {
       if (projectActivities[i].status === 'rejected') {
-        console.error(`Failed to fetch Git activity for ${projects[i].name}`);
+        console.error(
+          `Failed to fetch Git activity for ${projects[i].name}:`,
+          (projectActivities[i] as PromiseRejectedResult).reason
+        );
       }
     }
 

@@ -120,28 +120,26 @@ export async function GET(request: Request) {
       }
     }
 
-    // Fetch Git activity (commits and PRs) - only for "all" members view to avoid complexity
-    if (!memberFilter || memberFilter === 'all') {
-      try {
-        const gitActivity = await devopsService.getGitActivity(startDate, endDate);
+    // Fetch Git activity (commits and PRs) for the selected date range
+    try {
+      const gitActivity = await devopsService.getGitActivity(startDate, endDate);
 
-        // Add commits to activity count
-        for (const commit of gitActivity.commits) {
-          if (activityByDate.has(commit.date)) {
-            activityByDate.set(commit.date, (activityByDate.get(commit.date) || 0) + commit.count);
-          }
+      // Add commits to activity count
+      for (const commit of gitActivity.commits) {
+        if (activityByDate.has(commit.date)) {
+          activityByDate.set(commit.date, (activityByDate.get(commit.date) || 0) + commit.count);
         }
-
-        // Add PRs to activity count
-        for (const pr of gitActivity.pullRequests) {
-          if (activityByDate.has(pr.date)) {
-            activityByDate.set(pr.date, (activityByDate.get(pr.date) || 0) + pr.count);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching Git activity:', error);
-        // Continue without Git activity - work items will still be shown
       }
+
+      // Add PRs to activity count
+      for (const pr of gitActivity.pullRequests) {
+        if (activityByDate.has(pr.date)) {
+          activityByDate.set(pr.date, (activityByDate.get(pr.date) || 0) + pr.count);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching Git activity:', error);
+      // Continue without Git activity - work items will still be shown
     }
 
     // Find max count for level calculation
