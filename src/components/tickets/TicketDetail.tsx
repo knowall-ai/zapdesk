@@ -20,9 +20,11 @@ import {
 import Link from 'next/link';
 import type { Ticket, TicketComment, User, TicketPriority, WorkItemState } from '@/types';
 import { ensureActiveState } from '@/types';
+import { highlightMentions } from '@/lib/mentions';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
+import MentionInput from '../common/MentionInput';
 import ZapDialog from './ZapDialog';
 
 interface TicketDetailProps {
@@ -377,7 +379,7 @@ export default function TicketDetail({
                   <div
                     className="user-content text-sm"
                     style={{ color: 'var(--text-secondary)' }}
-                    dangerouslySetInnerHTML={{ __html: comment.content }}
+                    dangerouslySetInnerHTML={{ __html: highlightMentions(comment.content) }}
                   />
                 </div>
               </div>
@@ -405,10 +407,10 @@ export default function TicketDetail({
           </div>
 
           <div className="relative">
-            <textarea
+            <MentionInput
               value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Type your reply..."
+              onChange={setNewComment}
+              placeholder="Type your reply... Use @ to mention team members"
               className="input min-h-[100px] w-full resize-none pr-24"
             />
             <div className="absolute right-3 bottom-3 flex items-center gap-2">
