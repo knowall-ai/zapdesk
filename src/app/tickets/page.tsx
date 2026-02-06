@@ -201,7 +201,12 @@ function TicketsPageContent() {
   );
 
   const hasActiveFilters =
-    filters.status || filters.priority || filters.assignee || filters.requester || filters.project || filters.type;
+    filters.status ||
+    filters.priority ||
+    filters.assignee ||
+    filters.requester ||
+    filters.project ||
+    filters.type;
 
   if (status === 'loading' || loading) {
     return (
