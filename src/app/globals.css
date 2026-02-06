@@ -435,6 +435,48 @@ body {
   pointer-events: auto;
 }
 
+/* Kanban Swim Lanes */
+.kanban-swim-lanes {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.kanban-swim-lane {
+  border-bottom: 1px solid var(--border);
+}
+
+.kanban-swim-lane:last-child {
+  border-bottom: none;
+}
+
+.kanban-swim-lane-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.kanban-swim-lane .kanban-columns {
+  padding: 0.5rem 1rem;
+  overflow-x: visible;
+  min-width: max-content;
+}
+
+.kanban-swim-lane .kanban-column {
+  min-width: 220px;
+  width: 220px;
+}
+
+.kanban-swim-lane .kanban-column-content {
+  min-height: 60px;
+}
+
 /* Responsive Kanban */
 @media (max-width: 768px) {
   .kanban-columns {

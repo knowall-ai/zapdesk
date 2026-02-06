@@ -7,7 +7,7 @@ import { MainLayout } from '@/components/layout';
 import { FeatureTimechain } from '@/components/visualization';
 import { ArrowLeft, ExternalLink, Loader2, LayoutGrid, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
-import type { Epic } from '@/types';
+import type { Epic, WorkItemType } from '@/types';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 
 export default function EpicDetailPage() {
@@ -16,7 +16,7 @@ export default function EpicDetailPage() {
   const params = useParams();
   const { selectedOrganization } = useOrganization();
   const [epic, setEpic] = useState<Epic | null>(null);
-  const [ticketTypes, setTicketTypes] = useState<string[]>([]);
+  const [ticketTypes, setTicketTypes] = useState<WorkItemType[]>([]);
   const [loading, setLoading] = useState(true);
 
   const projectId = params.id as string;
@@ -29,14 +29,31 @@ export default function EpicDetailPage() {
       if (selectedOrganization?.accountName) {
         headers['x-devops-org'] = selectedOrganization.accountName;
       }
-      const response = await fetch(
+      const epicResponse = await fetch(
         `/api/devops/epics/${epicId}?project=${encodeURIComponent(projectId)}`,
         { headers }
       );
-      if (response.ok) {
-        const data = await response.json();
+      if (epicResponse.ok) {
+        const data = await epicResponse.json();
         setEpic(data.epic);
-        setTicketTypes(data.ticketTypes || []);
+        const ticketTypeNames: string[] = data.ticketTypes || [];
+        // Use the project name from the epic (not the URL GUID) for the workitemtypes call
+        const projectName = data.epic?.project;
+        if (projectName) {
+          const typesResponse = await fetch(
+            `/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`,
+            { headers }
+          );
+          if (typesResponse.ok) {
+            const typesData = await typesResponse.json();
+            const allTypes: WorkItemType[] = typesData.types || [];
+            setTicketTypes(allTypes.filter((t) => ticketTypeNames.includes(t.name)));
+          } else {
+            setTicketTypes(ticketTypeNames.map((name) => ({ name, referenceName: name })));
+          }
+        } else {
+          setTicketTypes(ticketTypeNames.map((name) => ({ name, referenceName: name })));
+        }
       }
     } catch (error) {
       console.error('Failed to fetch epic hierarchy:', error);

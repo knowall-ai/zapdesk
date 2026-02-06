@@ -991,6 +991,7 @@ export class AzureDevOpsService {
     const workItemsData = await workItemsResponse.json();
     const allWorkItems: WorkItem[] = [];
     const grandchildIds: number[] = [];
+    const grandchildParentMap = new Map<number, number>(); // grandchild ID → parent (User Story) ID
 
     // Process direct children - collect all work items and find grandchildren
     for (const wi of workItemsData.value as DevOpsWorkItem[]) {
@@ -1005,7 +1006,9 @@ export class AzureDevOpsService {
         if (relation.rel === 'System.LinkTypes.Hierarchy-Forward' && relation.url) {
           const idMatch = relation.url.match(/workItems\/(\d+)/);
           if (idMatch) {
-            grandchildIds.push(parseInt(idMatch[1], 10));
+            const grandchildId = parseInt(idMatch[1], 10);
+            grandchildIds.push(grandchildId);
+            grandchildParentMap.set(grandchildId, wi.id);
           }
         }
       }
@@ -1021,7 +1024,9 @@ export class AzureDevOpsService {
       if (grandchildResponse.ok) {
         const grandchildData = await grandchildResponse.json();
         for (const wi of grandchildData.value as DevOpsWorkItem[]) {
-          allWorkItems.push(this.mapToWorkItem(wi, featureId));
+          // Set parentId to the User Story (or other intermediate parent), not the feature
+          const parentId = grandchildParentMap.get(wi.id) ?? featureId;
+          allWorkItems.push(this.mapToWorkItem(wi, parentId));
         }
       }
     }

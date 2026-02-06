@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import {
@@ -13,8 +13,12 @@ import {
   List,
   LayoutGrid,
   Tag,
+  Users,
+  Layers,
+  Minus,
 } from 'lucide-react';
-import type { WorkItem, TicketPriority } from '@/types';
+import type { WorkItem, WorkItemType } from '@/types';
+import { useClickOutside } from '@/hooks/useClickOutside';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import KanbanBoard from './KanbanBoard';
@@ -64,6 +68,8 @@ export const WORKITEM_COLUMNS: ColumnConfig[] = [
   { id: 'assignee', label: 'Assignee', sortField: 'assignee' },
 ];
 
+export type GroupByOption = 'none' | 'assignee' | 'userStory';
+
 interface WorkItemBoardProps {
   items: WorkItem[];
   title?: string;
@@ -73,12 +79,14 @@ interface WorkItemBoardProps {
   hideTicketsOnlyToggle?: boolean; // Hide the "Tickets only" toggle
   readOnlyKanban?: boolean; // Disable drag-and-drop in Kanban view
   columns?: ColumnConfig[];
-  groupBy?: 'assignee' | 'none';
+  groupBy?: GroupByOption;
+  availableGroupBy?: GroupByOption[]; // Which groupBy options to show in the toggle
   compact?: boolean;
   maxHeight?: string;
-  availableTypes?: string[]; // Work item types from process template (e.g., ['User Story', 'Task', 'Bug'])
+  availableTypes?: WorkItemType[]; // Work item types with icons from Azure DevOps
   defaultTicketsOnly?: boolean; // Default state of "Tickets only" toggle (default: true)
   onStatusChange?: (itemId: number, newState: string) => Promise<void>; // For drag-and-drop
+  onWorkItemClick?: (item: WorkItem) => void; // Click handler for work item subject (opens dialog instead of navigating)
 }
 
 type SortField =
@@ -95,11 +103,11 @@ type SortField =
 type SortDirection = 'asc' | 'desc';
 
 interface Filters {
-  status: string;
-  priority: TicketPriority | '';
-  assignee: string;
-  requester: string;
-  type: string;
+  status: string[];
+  priority: string[];
+  assignee: string[];
+  requester: string[];
+  type: string[];
 }
 
 interface GroupedItems {
@@ -128,6 +136,74 @@ function SortIcon({
   return sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
 }
 
+function MultiSelectFilter({
+  label,
+  selected,
+  options,
+  onToggle,
+  onClear,
+}: {
+  label: string;
+  selected: string[];
+  options: string[];
+  onToggle: (value: string) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useClickOutside<HTMLDivElement>(() => setOpen(false), open);
+  const count = selected.length;
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="input flex items-center gap-1.5 text-sm"
+        style={{ color: count > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}
+      >
+        {count > 0 ? `${label} (${count})` : `All ${label}`}
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div
+          className="absolute top-full left-0 z-50 mt-1 min-w-48 rounded-lg border shadow-lg"
+          style={{
+            backgroundColor: 'var(--surface)',
+            borderColor: 'var(--border)',
+          }}
+        >
+          <div className="max-h-60 overflow-y-auto py-1">
+            {options.map((option) => (
+              <label
+                key={option}
+                className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.includes(option)}
+                  onChange={() => onToggle(option)}
+                  className="rounded"
+                />
+                {option}
+              </label>
+            ))}
+          </div>
+          {count > 0 && (
+            <button
+              onClick={onClear}
+              className="flex w-full items-center gap-1.5 border-t px-3 py-1.5 text-xs transition-colors hover:bg-[var(--surface-hover)]"
+              style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
+            >
+              <X size={12} />
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function WorkItemBoard({
   items,
   title,
@@ -138,28 +214,35 @@ export default function WorkItemBoard({
   readOnlyKanban = false,
   columns = TICKET_COLUMNS,
   groupBy: initialGroupBy = 'assignee',
+  availableGroupBy,
   compact = false,
   maxHeight,
   availableTypes,
   defaultTicketsOnly = true,
   onStatusChange,
+  onWorkItemClick,
 }: WorkItemBoardProps) {
   const [sortField, setSortField] = useState<SortField>('updated');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
-  const groupBy: 'assignee' | 'none' = initialGroupBy;
+  const [groupBy, setGroupBy] = useState<GroupByOption>(initialGroupBy);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [ticketsOnly, setTicketsOnly] = useState(defaultTicketsOnly);
   const [filters, setFilters] = useState<Filters>({
-    status: '',
-    priority: '',
-    assignee: '',
-    requester: '',
-    type: '',
+    status: [],
+    priority: [],
+    assignee: [],
+    requester: [],
+    type: [],
   });
   const [showBulkMenu, setShowBulkMenu] = useState(false);
+  const [showGroupByMenu, setShowGroupByMenu] = useState(false);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const bulkMenuRef = useRef<HTMLDivElement>(null);
+  const groupByMenuRef = useClickOutside<HTMLDivElement>(
+    () => setShowGroupByMenu(false),
+    showGroupByMenu
+  );
 
   // Close bulk menu when clicking outside
   useEffect(() => {
@@ -257,7 +340,9 @@ export default function WorkItemBoard({
     });
 
     // Use availableTypes from props if provided, otherwise use types from items
-    const typeOptions = availableTypes || Array.from(types).sort();
+    const typeOptions = availableTypes
+      ? availableTypes.map((t) => t.name)
+      : Array.from(types).sort();
 
     return {
       assignees: Array.from(assignees).sort(),
@@ -276,12 +361,12 @@ export default function WorkItemBoard({
     }
   };
 
-  const clearFilters = () => {
-    setFilters({ status: '', priority: '', assignee: '', requester: '', type: '' });
-  };
-
   const hasActiveFilters =
-    filters.status || filters.priority || filters.assignee || filters.requester || filters.type;
+    filters.status.length > 0 ||
+    filters.priority.length > 0 ||
+    filters.assignee.length > 0 ||
+    filters.requester.length > 0 ||
+    filters.type.length > 0;
 
   // Apply filters
   const filteredItems = useMemo(() => {
@@ -291,11 +376,27 @@ export default function WorkItemBoard({
         const hasTicketTag = item.tags?.some((tag) => tag.toLowerCase() === 'ticket');
         if (!hasTicketTag) return false;
       }
-      if (filters.status && item.state !== filters.status) return false;
-      if (filters.priority && item.priority !== filters.priority) return false;
-      if (filters.assignee && item.assignee?.displayName !== filters.assignee) return false;
-      if (filters.requester && item.requester?.displayName !== filters.requester) return false;
-      if (filters.type && item.workItemType !== filters.type) return false;
+      if (filters.status.length > 0 && !filters.status.includes(item.state)) return false;
+      if (
+        filters.priority.length > 0 &&
+        (!item.priority || !filters.priority.includes(item.priority))
+      )
+        return false;
+      if (
+        filters.assignee.length > 0 &&
+        (!item.assignee?.displayName || !filters.assignee.includes(item.assignee.displayName))
+      )
+        return false;
+      if (
+        filters.requester.length > 0 &&
+        (!item.requester?.displayName || !filters.requester.includes(item.requester.displayName))
+      )
+        return false;
+      if (
+        filters.type.length > 0 &&
+        (!item.workItemType || !filters.type.includes(item.workItemType))
+      )
+        return false;
       return true;
     });
   }, [items, filters, ticketsOnly]);
@@ -361,22 +462,73 @@ export default function WorkItemBoard({
     }
   });
 
-  // Group items by assignee if groupBy is set
-  const groupedItems: GroupedItems =
-    groupBy === 'assignee'
-      ? sortedItems.reduce((groups, item) => {
-          const key = item.assignee?.displayName || 'Unassigned';
-          if (!groups[key]) groups[key] = [];
-          groups[key].push(item);
-          return groups;
-        }, {} as GroupedItems)
-      : { 'All Items': sortedItems };
+  // Group items based on groupBy mode
+  const groupedItems: GroupedItems = useMemo(() => {
+    // Identify User Stories that serve as containers (have children in the data)
+    const userStoryMap = new Map<number, { title: string; id: number }>();
+    for (const item of sortedItems) {
+      if (item.workItemType?.toLowerCase() === 'user story') {
+        userStoryMap.set(item.id, { title: item.title, id: item.id });
+      }
+    }
+    const containerStoryIds = new Set<number>();
+    for (const item of sortedItems) {
+      if (item.parentId && userStoryMap.has(item.parentId)) {
+        containerStoryIds.add(item.parentId);
+      }
+    }
+
+    // Exclude container User Stories from visible rows in all modes
+    const displayItems = sortedItems.filter(
+      (item) =>
+        !(item.workItemType?.toLowerCase() === 'user story' && containerStoryIds.has(item.id))
+    );
+
+    if (groupBy === 'assignee') {
+      return displayItems.reduce((groups, item) => {
+        const key = item.assignee?.displayName || 'Unassigned';
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(item);
+        return groups;
+      }, {} as GroupedItems);
+    } else if (groupBy === 'userStory') {
+      // Group items by their parent User Story
+      return displayItems.reduce((groups, item) => {
+        const parentInfo =
+          item.parentId && userStoryMap.has(item.parentId)
+            ? userStoryMap.get(item.parentId)!
+            : null;
+        const groupKey = parentInfo ? `${parentInfo.title} (#${parentInfo.id})` : 'Ungrouped';
+        if (!groups[groupKey]) groups[groupKey] = [];
+        groups[groupKey].push(item);
+        return groups;
+      }, {} as GroupedItems);
+    }
+    return { 'All Items': displayItems };
+  }, [sortedItems, groupBy]);
 
   // Check which columns are visible
   const hasColumn = (id: ColumnId) => columns.some((c) => c.id === id);
   const columnCount = columns.length;
 
   const cellPadding = compact ? 'px-3 py-2' : 'px-4 py-3';
+
+  // Build a lookup map for work item type icons/colors
+  const typeInfoMap = useMemo(() => {
+    const map = new Map<string, WorkItemType>();
+    availableTypes?.forEach((t) => map.set(t.name, t));
+    return map;
+  }, [availableTypes]);
+
+  const toggleFilter = useCallback((key: keyof Filters, value: string) => {
+    setFilters((prev) => {
+      const current = prev[key];
+      const next = current.includes(value)
+        ? current.filter((v) => v !== value)
+        : [...current, value];
+      return { ...prev, [key]: next };
+    });
+  }, []);
 
   return (
     <div className="flex h-full flex-col">
@@ -446,85 +598,48 @@ export default function WorkItemBoard({
               {/* Filter dropdowns */}
               {!hideFilters && (
                 <>
-                  <select
-                    value={filters.status}
-                    onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                    className="input text-sm"
-                  >
-                    <option value="">All Statuses</option>
-                    {filterOptions.statuses.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
+                  <MultiSelectFilter
+                    label="Statuses"
+                    selected={filters.status}
+                    options={filterOptions.statuses}
+                    onToggle={(v) => toggleFilter('status', v)}
+                    onClear={() => setFilters((prev) => ({ ...prev, status: [] }))}
+                  />
 
                   {filterOptions.types.length > 0 && (
-                    <select
-                      value={filters.type}
-                      onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-                      className="input text-sm"
-                    >
-                      <option value="">All Types</option>
-                      {filterOptions.types.map((type) => (
-                        <option key={type} value={type}>
-                          {type}
-                        </option>
-                      ))}
-                    </select>
+                    <MultiSelectFilter
+                      label="Types"
+                      selected={filters.type}
+                      options={filterOptions.types}
+                      onToggle={(v) => toggleFilter('type', v)}
+                      onClear={() => setFilters((prev) => ({ ...prev, type: [] }))}
+                    />
                   )}
 
-                  <select
-                    value={filters.priority}
-                    onChange={(e) =>
-                      setFilters({ ...filters, priority: e.target.value as TicketPriority | '' })
-                    }
-                    className="input text-sm"
-                  >
-                    <option value="">All Priorities</option>
-                    <option value="Urgent">Urgent</option>
-                    <option value="High">High</option>
-                    <option value="Normal">Normal</option>
-                    <option value="Low">Low</option>
-                  </select>
+                  <MultiSelectFilter
+                    label="Priorities"
+                    selected={filters.priority}
+                    options={['Urgent', 'High', 'Normal', 'Low']}
+                    onToggle={(v) => toggleFilter('priority', v)}
+                    onClear={() => setFilters((prev) => ({ ...prev, priority: [] }))}
+                  />
 
-                  <select
-                    value={filters.assignee}
-                    onChange={(e) => setFilters({ ...filters, assignee: e.target.value })}
-                    className="input text-sm"
-                  >
-                    <option value="">All Assignees</option>
-                    {filterOptions.assignees.map((assignee) => (
-                      <option key={assignee} value={assignee}>
-                        {assignee}
-                      </option>
-                    ))}
-                  </select>
+                  <MultiSelectFilter
+                    label="Assignees"
+                    selected={filters.assignee}
+                    options={filterOptions.assignees}
+                    onToggle={(v) => toggleFilter('assignee', v)}
+                    onClear={() => setFilters((prev) => ({ ...prev, assignee: [] }))}
+                  />
 
                   {filterOptions.requesters.length > 0 && (
-                    <select
-                      value={filters.requester}
-                      onChange={(e) => setFilters({ ...filters, requester: e.target.value })}
-                      className="input text-sm"
-                    >
-                      <option value="">All Requesters</option>
-                      {filterOptions.requesters.map((requester) => (
-                        <option key={requester} value={requester}>
-                          {requester}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-
-                  {hasActiveFilters && (
-                    <button
-                      onClick={clearFilters}
-                      className="flex items-center gap-1 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                      style={{ color: 'var(--text-secondary)' }}
-                    >
-                      <X size={14} />
-                      Clear
-                    </button>
+                    <MultiSelectFilter
+                      label="Requesters"
+                      selected={filters.requester}
+                      options={filterOptions.requesters}
+                      onToggle={(v) => toggleFilter('requester', v)}
+                      onClear={() => setFilters((prev) => ({ ...prev, requester: [] }))}
+                    />
                   )}
 
                   {/* Tickets only toggle */}
@@ -545,6 +660,64 @@ export default function WorkItemBoard({
                       <Tag size={14} />
                       Tickets Only
                     </button>
+                  )}
+
+                  {/* Group by dropdown */}
+                  {availableGroupBy && availableGroupBy.length > 1 && (
+                    <div className="relative" ref={groupByMenuRef}>
+                      <button
+                        onClick={() => setShowGroupByMenu(!showGroupByMenu)}
+                        className="input flex items-center gap-1.5 text-sm"
+                        style={{
+                          color: groupBy !== 'none' ? 'var(--text-primary)' : 'var(--text-muted)',
+                        }}
+                      >
+                        <Layers size={14} />
+                        {groupBy === 'none'
+                          ? 'Group'
+                          : groupBy === 'assignee'
+                            ? 'Assignee'
+                            : 'User Story'}
+                        <ChevronDown size={14} />
+                      </button>
+                      {showGroupByMenu && (
+                        <div
+                          className="absolute top-full right-0 z-50 mt-1 min-w-40 rounded-lg border shadow-lg"
+                          style={{
+                            backgroundColor: 'var(--surface)',
+                            borderColor: 'var(--border)',
+                          }}
+                        >
+                          {availableGroupBy.map((option) => {
+                            const label =
+                              option === 'none'
+                                ? 'None'
+                                : option === 'assignee'
+                                  ? 'Assignee'
+                                  : 'User Story';
+                            const Icon =
+                              option === 'none' ? Minus : option === 'assignee' ? Users : Layers;
+                            return (
+                              <button
+                                key={option}
+                                onClick={() => {
+                                  setGroupBy(option);
+                                  setShowGroupByMenu(false);
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                                style={{
+                                  color:
+                                    groupBy === option ? 'var(--primary)' : 'var(--text-primary)',
+                                }}
+                              >
+                                <Icon size={14} />
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {/* View toggle */}
@@ -590,6 +763,9 @@ export default function WorkItemBoard({
             items={filteredItems}
             readOnly={readOnlyKanban}
             onTicketStateChange={onStatusChange}
+            groupBy={groupBy}
+            groupedItems={groupBy !== 'none' ? groupedItems : undefined}
+            typeInfoMap={typeInfoMap}
           />
         </div>
       )}
@@ -638,7 +814,7 @@ export default function WorkItemBoard({
             <tbody>
               {Object.entries(groupedItems).map(([groupName, groupItems]) => (
                 <React.Fragment key={groupName}>
-                  {groupBy === 'assignee' && (
+                  {groupBy !== 'none' && (
                     <tr>
                       <td
                         colSpan={columnCount}
@@ -648,7 +824,18 @@ export default function WorkItemBoard({
                           color: 'var(--text-secondary)',
                         }}
                       >
-                        Assignee: {groupName}
+                        <div className="flex items-center gap-2">
+                          {groupBy === 'assignee' && (
+                            <>
+                              <Avatar
+                                name={groupName === 'Unassigned' ? '?' : groupName}
+                                size="sm"
+                              />
+                              {groupName}
+                            </>
+                          )}
+                          {groupBy === 'userStory' && groupName}
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -674,15 +861,26 @@ export default function WorkItemBoard({
                       )}
                       {hasColumn('type') && (
                         <td className={cellPadding}>
-                          <span
-                            className="rounded px-2 py-0.5 text-xs font-medium"
-                            style={{
-                              backgroundColor: 'var(--surface)',
-                              color: 'var(--text-secondary)',
-                            }}
-                          >
-                            {item.workItemType}
-                          </span>
+                          {(() => {
+                            const typeInfo = typeInfoMap.get(item.workItemType);
+                            const typeColor = typeInfo?.color ? `#${typeInfo.color}` : undefined;
+                            return (
+                              <span
+                                className="flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-medium"
+                                style={{
+                                  backgroundColor: 'var(--surface-hover)',
+                                  color: 'var(--text-secondary)',
+                                  display: 'inline-flex',
+                                  borderLeft: typeColor ? `3px solid ${typeColor}` : undefined,
+                                }}
+                              >
+                                {typeInfo?.icon && (
+                                  <img src={typeInfo.icon} alt="" className="h-3.5 w-3.5" />
+                                )}
+                                {item.workItemType}
+                              </span>
+                            );
+                          })()}
                         </td>
                       )}
                       {hasColumn('status') && (
@@ -692,13 +890,31 @@ export default function WorkItemBoard({
                       )}
                       {hasColumn('subject') && (
                         <td className={cellPadding}>
-                          <Link
-                            href={`/tickets/${item.id}`}
-                            className="text-sm hover:underline"
-                            style={{ color: 'var(--text-primary)' }}
-                          >
-                            {item.title}
-                          </Link>
+                          {onWorkItemClick ? (
+                            <button
+                              onClick={() => onWorkItemClick(item)}
+                              className="text-sm hover:underline"
+                              style={{
+                                color: 'var(--text-primary)',
+                                cursor: 'pointer',
+                                background: 'none',
+                                border: 'none',
+                                padding: 0,
+                                font: 'inherit',
+                                textAlign: 'left',
+                              }}
+                            >
+                              {item.title}
+                            </button>
+                          ) : (
+                            <Link
+                              href={`/tickets/${item.id}`}
+                              className="text-sm hover:underline"
+                              style={{ color: 'var(--text-primary)' }}
+                            >
+                              {item.title}
+                            </Link>
+                          )}
                         </td>
                       )}
                       {hasColumn('project') && (

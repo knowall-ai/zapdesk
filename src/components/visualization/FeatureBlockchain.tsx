@@ -2,8 +2,8 @@
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { ExternalLink } from 'lucide-react';
-import type { Feature, WorkItem, TicketPriority } from '@/types';
-import { WorkItemBoard, WORKITEM_COLUMNS } from '@/components/tickets';
+import type { Feature, WorkItem, WorkItemType, TicketPriority } from '@/types';
+import { WorkItemBoard, WORKITEM_COLUMNS, WorkItemDetailDialog } from '@/components/tickets';
 
 // Format hours to avoid floating-point precision issues (e.g., 3.199999999 -> "3.2")
 function formatHours(value: number): string {
@@ -171,7 +171,7 @@ interface FeatureTimechainProps {
   features: Feature[];
   epic?: EpicInfo;
   onFeatureClick?: (feature: Feature) => void;
-  availableTypes?: string[]; // Work item types from process template config
+  availableTypes?: WorkItemType[]; // Work item types with icons from Azure DevOps
 }
 
 // Map Feature state to category: New, In Progress, Done
@@ -311,6 +311,8 @@ export default function FeatureTimechain({
     const firstActive = features.find((f) => f.state === 'Active');
     return firstActive || features[0] || null;
   });
+  const [selectedWorkItem, setSelectedWorkItem] = useState<WorkItem | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const blockRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [isDragging, setIsDragging] = useState(false);
@@ -340,6 +342,22 @@ export default function FeatureTimechain({
     const fillPct = calculateFillPercentage(selectedFeature);
     return layoutBlocks(selectedFeature.workItems, gridContainerSize, fillPct);
   }, [selectedFeature]);
+
+  const handleWorkItemClick = useCallback((item: WorkItem) => {
+    setSelectedWorkItem(item);
+    setIsDialogOpen(true);
+  }, []);
+
+  const handleDialogStateChange = useCallback(async (workItemId: number, newState: string) => {
+    const response = await fetch(`/api/devops/tickets/${workItemId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newState }),
+    });
+    if (!response.ok) throw new Error('Failed to update state');
+    // Update local state so dialog reflects the change
+    setSelectedWorkItem((prev) => (prev ? { ...prev, state: newState } : null));
+  }, []);
 
   const handleBlockClick = (feature: Feature) => {
     // Always select clicked feature (don't allow deselection)
@@ -763,10 +781,12 @@ export default function FeatureTimechain({
               title="Work Items"
               columns={WORKITEM_COLUMNS}
               groupBy="none"
+              availableGroupBy={['none', 'assignee', 'userStory']}
               compact
-              readOnlyKanban
               maxHeight="500px"
               availableTypes={availableTypes}
+              onWorkItemClick={handleWorkItemClick}
+              onStatusChange={handleDialogStateChange}
             />
           </div>
         </div>
@@ -780,6 +800,17 @@ export default function FeatureTimechain({
           </p>
         </div>
       )}
+
+      {/* Work Item Detail Dialog */}
+      <WorkItemDetailDialog
+        workItem={selectedWorkItem}
+        isOpen={isDialogOpen}
+        onClose={() => {
+          setIsDialogOpen(false);
+          setSelectedWorkItem(null);
+        }}
+        onStateChange={handleDialogStateChange}
+      />
     </div>
   );
 }

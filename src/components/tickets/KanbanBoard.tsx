@@ -16,8 +16,9 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import KanbanColumn from './KanbanColumn';
 import KanbanCard from './KanbanCard';
-import type { Ticket, WorkItem, WorkItemState } from '@/types';
+import type { Ticket, WorkItem, WorkItemState, WorkItemType } from '@/types';
 import { ensureActiveState } from '@/types';
+import type { GroupByOption } from './WorkItemBoard';
 
 // KanbanBoard can work with either Ticket[] or WorkItem[]
 // WorkItem uses 'state' while Ticket uses 'devOpsState' for the state name
@@ -28,6 +29,9 @@ interface KanbanBoardProps {
   items?: WorkItem[]; // Alternative prop for WorkItem[]
   onTicketStateChange?: (ticketId: number, newState: string) => Promise<void>;
   readOnly?: boolean; // Disable drag-and-drop
+  groupBy?: GroupByOption;
+  groupedItems?: Record<string, WorkItem[]>; // Pre-grouped items from WorkItemBoard
+  typeInfoMap?: Map<string, WorkItemType>; // Work item type icons/colors
 }
 
 // Helper to get state from either Ticket or WorkItem
@@ -51,6 +55,9 @@ export default function KanbanBoard({
   items,
   onTicketStateChange,
   readOnly = false,
+  groupBy = 'none',
+  groupedItems,
+  typeInfoMap,
 }: KanbanBoardProps) {
   // Use items if provided, otherwise fall back to tickets
   // Wrapped in useMemo to prevent reference changes on every render
@@ -242,6 +249,29 @@ export default function KanbanBoard({
     setLocalItems(sourceItems);
   }, [sourceItems]);
 
+  // Group items by state for a subset of items (used for swim lanes)
+  const getItemsByStateForGroup = useCallback(
+    (groupItems: KanbanItem[]): Record<string, KanbanItem[]> => {
+      const grouped: Record<string, KanbanItem[]> = {};
+      kanbanStates.forEach((state) => {
+        grouped[state.name] = [];
+      });
+      groupItems.forEach((item) => {
+        const state = getItemState(item);
+        if (grouped[state]) {
+          grouped[state].push(item);
+        } else {
+          const firstColumn = kanbanStates[0]?.name;
+          if (firstColumn && grouped[firstColumn]) {
+            grouped[firstColumn].push(item);
+          }
+        }
+      });
+      return grouped;
+    },
+    [kanbanStates]
+  );
+
   if (isLoadingStates) {
     return (
       <div className="kanban-board flex items-center justify-center p-8">
@@ -250,26 +280,54 @@ export default function KanbanBoard({
     );
   }
 
-  // Render columns content (shared between readOnly and interactive modes)
-  const columnsContent = (
+  // Render columns for a set of items
+  const renderColumns = (stateItems: Record<string, KanbanItem[]>) => (
     <div className="kanban-columns">
       {kanbanStates.map((state) => (
         <KanbanColumn
           key={state.name}
           stateName={state.name}
           stateColor={state.color}
-          items={itemsByState[state.name] || []}
+          items={stateItems[state.name] || []}
           activeId={readOnly ? null : activeId}
           itemsWithUnrecognizedState={itemsWithUnrecognizedState}
           readOnly={readOnly}
+          typeInfoMap={typeInfoMap}
         />
       ))}
     </div>
   );
 
+  // Render columns content (shared between readOnly and interactive modes)
+  const columnsContent = renderColumns(itemsByState);
+
+  // Swim lane rendering for grouped mode
+  const hasSwimLanes = groupBy !== 'none' && groupedItems && Object.keys(groupedItems).length > 0;
+
+  const swimLaneContent = hasSwimLanes ? (
+    <div className="kanban-swim-lanes">
+      {Object.entries(groupedItems).map(([groupName, groupItems]) => {
+        const laneItemsByState = getItemsByStateForGroup(groupItems);
+        return (
+          <div key={groupName} className="kanban-swim-lane">
+            <div className="kanban-swim-lane-header">
+              <span className="text-sm font-semibold text-[var(--text-primary)]">{groupName}</span>
+              <span className="rounded-full bg-[var(--surface-hover)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
+                {groupItems.length}
+              </span>
+            </div>
+            {renderColumns(laneItemsByState)}
+          </div>
+        );
+      })}
+    </div>
+  ) : null;
+
+  const boardContent = hasSwimLanes ? swimLaneContent : columnsContent;
+
   // ReadOnly mode: just render columns without drag-and-drop
   if (readOnly) {
-    return <div className="kanban-board">{columnsContent}</div>;
+    return <div className="kanban-board">{boardContent}</div>;
   }
 
   // Interactive mode: wrap with DndContext for drag-and-drop
@@ -289,9 +347,21 @@ export default function KanbanBoard({
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        {columnsContent}
+        {boardContent}
 
-        <DragOverlay>{activeItem ? <KanbanCard item={activeItem} isDragging /> : null}</DragOverlay>
+        <DragOverlay>
+          {activeItem ? (
+            <KanbanCard
+              item={activeItem}
+              isDragging
+              typeInfo={
+                'workItemType' in activeItem && typeInfoMap
+                  ? typeInfoMap.get(activeItem.workItemType)
+                  : undefined
+              }
+            />
+          ) : null}
+        </DragOverlay>
       </DndContext>
     </div>
   );

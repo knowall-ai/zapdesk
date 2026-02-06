@@ -3,7 +3,7 @@
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import KanbanCard from './KanbanCard';
-import type { Ticket, WorkItem } from '@/types';
+import type { Ticket, WorkItem, WorkItemType } from '@/types';
 
 // KanbanColumn can work with either Ticket[] or WorkItem[]
 type KanbanItem = Ticket | WorkItem;
@@ -15,6 +15,7 @@ interface KanbanColumnProps {
   activeId?: number | null;
   itemsWithUnrecognizedState?: Set<number>;
   readOnly?: boolean;
+  typeInfoMap?: Map<string, WorkItemType>;
 }
 
 export default function KanbanColumn({
@@ -24,6 +25,7 @@ export default function KanbanColumn({
   activeId,
   itemsWithUnrecognizedState,
   readOnly = false,
+  typeInfoMap,
 }: KanbanColumnProps) {
   const color = stateColor ? `#${stateColor}` : 'var(--text-muted)';
 
@@ -34,15 +36,19 @@ export default function KanbanColumn({
   });
 
   // Render cards
-  const cards = items.map((item) => (
-    <KanbanCard
-      key={item.id}
-      item={item}
-      isDragging={activeId === item.id}
-      hasUnrecognizedState={itemsWithUnrecognizedState?.has(item.id)}
-      readOnly={readOnly}
-    />
-  ));
+  const cards = items.map((item) => {
+    const itemType = 'workItemType' in item ? item.workItemType : undefined;
+    return (
+      <KanbanCard
+        key={item.id}
+        item={item}
+        isDragging={activeId === item.id}
+        hasUnrecognizedState={itemsWithUnrecognizedState?.has(item.id)}
+        readOnly={readOnly}
+        typeInfo={itemType && typeInfoMap ? typeInfoMap.get(itemType) : undefined}
+      />
+    );
+  });
 
   return (
     <div className="kanban-column">

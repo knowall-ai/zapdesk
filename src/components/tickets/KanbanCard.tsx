@@ -5,7 +5,7 @@ import { CSS } from '@dnd-kit/utilities';
 import Link from 'next/link';
 import Avatar from '@/components/common/Avatar';
 import PriorityIndicator from '@/components/common/PriorityIndicator';
-import type { Ticket, WorkItem } from '@/types';
+import type { Ticket, WorkItem, WorkItemType } from '@/types';
 
 // KanbanCard can work with either Ticket or WorkItem
 type KanbanItem = Ticket | WorkItem;
@@ -31,6 +31,7 @@ interface KanbanCardProps {
   isDragging?: boolean;
   hasUnrecognizedState?: boolean;
   readOnly?: boolean;
+  typeInfo?: WorkItemType;
 }
 
 export default function KanbanCard({
@@ -38,6 +39,7 @@ export default function KanbanCard({
   isDragging,
   hasUnrecognizedState,
   readOnly = false,
+  typeInfo,
 }: KanbanCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
     id: item.id,
@@ -68,7 +70,17 @@ export default function KanbanCard({
     >
       <Link href={`/tickets/${item.id}`} className="block">
         <div className="mb-2 flex items-start justify-between gap-2">
-          <span className="text-xs text-[var(--text-muted)]">#{item.id}</span>
+          <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+            {typeInfo?.icon ? (
+              <img src={typeInfo.icon} alt="" className="h-3.5 w-3.5" />
+            ) : typeInfo?.color ? (
+              <span
+                className="inline-block h-3 w-3 rounded-sm"
+                style={{ backgroundColor: `#${typeInfo.color}` }}
+              />
+            ) : null}
+            #{item.id}
+          </span>
           <PriorityIndicator priority={item.priority} />
         </div>
 

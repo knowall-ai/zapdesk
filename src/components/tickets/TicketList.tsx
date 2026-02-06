@@ -45,6 +45,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
       hideFilters={hideFilters}
       columns={TICKET_COLUMNS}
       groupBy="assignee"
+      availableGroupBy={['none', 'assignee']}
     />
   );
 }
