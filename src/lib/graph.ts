@@ -156,7 +156,9 @@ export async function getUserLocaleSettings(
     const userData = await userResult.value.json();
     settings.preferredLanguage = userData.preferredLanguage || null;
     settings.country = userData.usageLocation || null;
-  } else if (userResult.status === 'rejected') {
+  } else if (userResult.status === 'fulfilled') {
+    console.error('Failed to fetch user profile from Graph:', userResult.value.status);
+  } else {
     console.error('Error fetching user profile from Graph:', userResult.reason);
   }
 
@@ -168,7 +170,9 @@ export async function getUserLocaleSettings(
     if (!settings.preferredLanguage && mailboxData.language?.locale) {
       settings.preferredLanguage = mailboxData.language.locale;
     }
-  } else if (mailboxResult.status === 'rejected') {
+  } else if (mailboxResult.status === 'fulfilled') {
+    console.error('Failed to fetch mailbox settings from Graph:', mailboxResult.value.status);
+  } else {
     console.error('Error fetching mailbox settings from Graph:', mailboxResult.reason);
   }
 
