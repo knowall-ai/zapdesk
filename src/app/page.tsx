@@ -243,7 +243,7 @@ export default function HomePage() {
               >
                 <div className="flex items-center gap-3">
                   <Building2 size={20} style={{ color: 'var(--status-pending)' }} />
-                  <span style={{ color: 'var(--text-primary)' }}>View organizations</span>
+                  <span style={{ color: 'var(--text-primary)' }}>View projects</span>
                 </div>
                 <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
               </Link>
