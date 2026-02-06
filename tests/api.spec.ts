@@ -27,6 +27,11 @@ test.describe('API Routes', () => {
     expect(response.status()).toBe(401);
   });
 
+  test('customers endpoint requires authentication', async ({ request }) => {
+    const response = await request.get('/api/devops/customers');
+    expect(response.status()).toBe(401);
+  });
+
   test('email webhook requires secret header', async ({ request }) => {
     const response = await request.post('/api/email/webhook', {
       data: {

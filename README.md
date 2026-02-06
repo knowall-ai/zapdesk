@@ -41,7 +41,8 @@
 
 ### Prerequisites
 
-- [Bun](https://bun.sh) 1.1+
+- [Node.js](https://nodejs.org/) 20+ (runtime for the server)
+- [Bun](https://bun.sh) 1.2+ (package manager)
 - Azure DevOps organization
 - Azure AD application for authentication
 - Exchange Online mailbox (for email integration)
@@ -138,7 +139,8 @@ See [docs/EMAIL_SETUP.adoc](docs/EMAIL_SETUP.adoc) for detailed instructions.
 ## Tech Stack
 
 - **Framework**: Next.js 16 (App Router)
-- **Runtime/Package Manager**: Bun
+- **Runtime**: Node.js (production), Bun (local development)
+- **Package Manager**: Bun
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS 4
 - **Authentication**: NextAuth.js with Azure AD

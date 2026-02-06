@@ -11,7 +11,8 @@ ZapDesk is a Zendesk-style support ticketing portal that integrates with Azure D
 ### Tech Stack
 
 - **Frontend**: Next.js 16 with App Router, React 19, TypeScript
-- **Runtime/Package Manager**: Bun
+- **Runtime**: Node.js (production), Bun (local development)
+- **Package Manager**: Bun
 - **Styling**: Tailwind CSS 4 with custom CSS variables for theming
 - **Authentication**: NextAuth.js with Azure AD provider
 - **Backend API**: Azure DevOps REST API
