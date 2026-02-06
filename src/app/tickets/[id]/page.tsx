@@ -68,7 +68,9 @@ export default function TicketDetailPage() {
     if (session?.accessToken && ticketId) {
       fetchTicket();
     }
-  }, [session, ticketId, fetchTicket]);
+    // Use session?.accessToken instead of session to avoid refetch on tab focus
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.accessToken, ticketId]);
 
   const handleAddComment = async (comment: string) => {
     try {

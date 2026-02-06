@@ -79,6 +79,7 @@ export interface Ticket {
   description: string;
   status: TicketStatus;
   devOpsState: string; // Original Azure DevOps state (e.g., 'New', 'Approved', 'To Do', etc.)
+  workItemType: string; // Azure DevOps work item type (e.g., 'Task', 'Bug', 'User Story')
   priority?: TicketPriority;
   requester: Customer;
   assignee?: User;
@@ -315,11 +316,15 @@ export interface Feature {
   updatedAt: Date;
   completedWork: number;
   remainingWork: number;
+  originalEstimate: number;
+  effort?: number; // Original effort estimate for the Feature (Microsoft.VSTS.Scheduling.Effort)
   totalWork: number;
   workItems: WorkItem[];
   devOpsUrl: string;
   tags: string[];
   priority?: TicketPriority;
+  stackRank?: number; // For ordering features (some templates)
+  backlogPriority?: number; // For ordering features (Agile/Scrum templates)
 }
 
 export interface WorkItem {
@@ -340,6 +345,9 @@ export interface WorkItem {
   devOpsUrl: string;
   tags: string[];
   priority?: TicketPriority;
+  // Optional ticket-specific fields (populated when item is a ticket)
+  requester?: Customer;
+  organization?: Organization;
 }
 
 // Treemap data structure for visualization

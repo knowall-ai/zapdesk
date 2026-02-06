@@ -3,28 +3,46 @@
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import KanbanCard from './KanbanCard';
-import type { Ticket } from '@/types';
+import type { Ticket, WorkItem } from '@/types';
+
+// KanbanColumn can work with either Ticket[] or WorkItem[]
+type KanbanItem = Ticket | WorkItem;
 
 interface KanbanColumnProps {
   stateName: string; // DevOps state name (e.g., 'New', 'Approved', 'In Progress')
   stateColor?: string; // Hex color from DevOps (without #)
-  tickets: Ticket[];
+  items: KanbanItem[];
   activeId?: number | null;
-  ticketsWithUnrecognizedState?: Set<number>;
+  itemsWithUnrecognizedState?: Set<number>;
+  readOnly?: boolean;
 }
 
 export default function KanbanColumn({
   stateName,
   stateColor,
-  tickets,
+  items,
   activeId,
-  ticketsWithUnrecognizedState,
+  itemsWithUnrecognizedState,
+  readOnly = false,
 }: KanbanColumnProps) {
   const color = stateColor ? `#${stateColor}` : 'var(--text-muted)';
 
+  // Only use droppable in interactive mode
   const { setNodeRef, isOver } = useDroppable({
     id: stateName,
+    disabled: readOnly,
   });
+
+  // Render cards
+  const cards = items.map((item) => (
+    <KanbanCard
+      key={item.id}
+      item={item}
+      isDragging={activeId === item.id}
+      hasUnrecognizedState={itemsWithUnrecognizedState?.has(item.id)}
+      readOnly={readOnly}
+    />
+  ));
 
   return (
     <div className="kanban-column">
@@ -34,28 +52,27 @@ export default function KanbanColumn({
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">{stateName}</h3>
         </div>
         <span className="rounded-full bg-[var(--surface-hover)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
-          {tickets.length}
+          {items.length}
         </span>
       </div>
 
       <div
-        ref={setNodeRef}
-        className={`kanban-column-content ${isOver ? 'kanban-column-over' : ''}`}
+        ref={readOnly ? undefined : setNodeRef}
+        className={`kanban-column-content ${isOver && !readOnly ? 'kanban-column-over' : ''}`}
       >
-        <SortableContext items={tickets.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-          {tickets.map((ticket) => (
-            <KanbanCard
-              key={ticket.id}
-              ticket={ticket}
-              isDragging={activeId === ticket.id}
-              hasUnrecognizedState={ticketsWithUnrecognizedState?.has(ticket.id)}
-            />
-          ))}
-        </SortableContext>
+        {readOnly ? (
+          // Read-only mode: render cards without sortable context
+          cards
+        ) : (
+          // Interactive mode: wrap with SortableContext
+          <SortableContext items={items.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+            {cards}
+          </SortableContext>
+        )}
 
-        {tickets.length === 0 && (
+        {items.length === 0 && (
           <div className="flex h-24 items-center justify-center text-sm text-[var(--text-muted)]">
-            No tickets
+            No items
           </div>
         )}
       </div>
