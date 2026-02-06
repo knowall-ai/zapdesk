@@ -359,6 +359,8 @@ function findExistingWorkItem(guid, existingItems) {
 }
 
 // Update an existing work item
+// Note: _parentId parameter exists for API compatibility but is intentionally unused
+// to avoid breaking existing work item hierarchies
 async function updateWorkItem(
   workItemId,
   workItemType,
@@ -368,7 +370,7 @@ async function updateWorkItem(
   tags,
   remainingWork,
   storyPoints,
-  _parentId = null,
+  _parentId = null, // eslint-disable-line @typescript-eslint/no-unused-vars
   assignee = null
 ) {
   const patchDocument = [
