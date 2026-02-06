@@ -9,6 +9,7 @@ import type {
   User,
   Organization,
   TicketComment,
+  Attachment,
   Epic,
   Feature,
   WorkItem,
@@ -484,6 +485,147 @@ export class AzureDevOpsService {
     }
 
     return response.json();
+  }
+
+  // Upload an attachment to Azure DevOps
+  async uploadAttachment(
+    projectName: string,
+    fileName: string,
+    fileContent: ArrayBuffer,
+    contentType: string
+  ): Promise<{ id: string; url: string }> {
+    const encodedFileName = encodeURIComponent(fileName);
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/attachments?fileName=${encodedFileName}&api-version=7.0`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          'Content-Type': contentType || 'application/octet-stream',
+        },
+        body: fileContent,
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to upload attachment: ${response.statusText} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    return { id: data.id, url: data.url };
+  }
+
+  // Link an uploaded attachment to a work item
+  async linkAttachmentToWorkItem(
+    projectName: string,
+    workItemId: number,
+    attachmentUrl: string,
+    fileName: string,
+    comment?: string
+  ): Promise<void> {
+    const patchDocument = [
+      {
+        op: 'add',
+        path: '/relations/-',
+        value: {
+          rel: 'AttachedFile',
+          url: attachmentUrl,
+          attributes: {
+            comment: comment || fileName,
+          },
+        },
+      },
+    ];
+
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?api-version=7.0`,
+      {
+        method: 'PATCH',
+        headers: {
+          ...this.headers,
+          'Content-Type': 'application/json-patch+json',
+        },
+        body: JSON.stringify(patchDocument),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to link attachment: ${response.statusText} - ${errorText}`);
+    }
+  }
+
+  // Upload and link an attachment to a work item in one operation
+  async addAttachmentToWorkItem(
+    projectName: string,
+    workItemId: number,
+    fileName: string,
+    fileContent: ArrayBuffer,
+    contentType: string,
+    comment?: string
+  ): Promise<{ id: string; url: string }> {
+    // Step 1: Upload the attachment
+    const uploadResult = await this.uploadAttachment(
+      projectName,
+      fileName,
+      fileContent,
+      contentType
+    );
+
+    // Step 2: Link it to the work item
+    await this.linkAttachmentToWorkItem(
+      projectName,
+      workItemId,
+      uploadResult.url,
+      fileName,
+      comment
+    );
+
+    return uploadResult;
+  }
+
+  // Get attachments for a work item
+  async getWorkItemAttachments(projectName: string, workItemId: number): Promise<Attachment[]> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?$expand=relations&api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch work item relations: ${response.statusText}`);
+    }
+
+    const workItem = await response.json();
+    const attachments: Attachment[] = [];
+
+    // Filter relations for AttachedFile type
+    for (const relation of workItem.relations || []) {
+      if (relation.rel === 'AttachedFile') {
+        // Extract attachment ID from URL
+        const attachmentUrl = relation.url;
+        const idMatch = attachmentUrl.match(/attachments\/([a-f0-9-]+)/i);
+        const id = idMatch ? idMatch[1] : attachmentUrl;
+
+        // Parse filename from attributes or URL
+        const fileName =
+          relation.attributes?.name ||
+          relation.attributes?.comment ||
+          attachmentUrl.split('/').pop()?.split('?')[0] ||
+          'attachment';
+
+        attachments.push({
+          id,
+          fileName,
+          url: attachmentUrl,
+          contentType: relation.attributes?.contentType || 'application/octet-stream',
+          size: relation.attributes?.length || 0,
+          createdAt: new Date(relation.attributes?.resourceCreatedDate || Date.now()),
+        });
+      }
+    }
+
+    return attachments;
   }
 
   // Get all tickets from all accessible projects

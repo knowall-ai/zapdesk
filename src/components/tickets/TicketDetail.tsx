@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { format } from 'date-fns';
 import {
   ArrowLeft,
@@ -16,9 +16,21 @@ import {
   Zap,
   Info,
   X,
+  FileText,
+  Image as ImageIcon,
+  File,
+  Download,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { Ticket, TicketComment, User, TicketPriority, WorkItemState } from '@/types';
+import type {
+  Ticket,
+  TicketComment,
+  User,
+  TicketPriority,
+  WorkItemState,
+  Attachment,
+} from '@/types';
+import { MAX_ATTACHMENT_SIZE, ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { ensureActiveState } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
@@ -32,6 +44,7 @@ interface TicketDetailProps {
   onStateChange?: (state: string) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
+  onUploadAttachment?: (file: File) => Promise<Attachment>;
 }
 
 const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
@@ -48,6 +61,7 @@ export default function TicketDetail({
   onStateChange,
   onAssigneeChange,
   onPriorityChange,
+  onUploadAttachment,
 }: TicketDetailProps) {
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -81,6 +95,12 @@ export default function TicketDetail({
   // Priority editing state
   const [isPriorityDropdownOpen, setIsPriorityDropdownOpen] = useState(false);
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
+
+  // Attachment state
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch available states when state dropdown opens
   useEffect(() => {
@@ -164,18 +184,6 @@ export default function TicketDetail({
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
   }, [teamMembers, assigneeSearch]);
 
-  const handleSubmitComment = async () => {
-    if (!newComment.trim() || !onAddComment) return;
-
-    setIsSubmitting(true);
-    try {
-      await onAddComment(newComment);
-      setNewComment('');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleAssigneeSelect = async (memberId: string | null) => {
     if (!onAssigneeChange) return;
     setIsUpdatingAssignee(true);
@@ -196,6 +204,92 @@ export default function TicketDetail({
       setIsPriorityDropdownOpen(false);
     } finally {
       setIsUpdatingPriority(false);
+    }
+  };
+
+  // File attachment handlers
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    setUploadError(null);
+    const newFiles: File[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
+      // Validate file size
+      if (file.size > MAX_ATTACHMENT_SIZE) {
+        setUploadError(
+          `File "${file.name}" is too large. Maximum size is ${MAX_ATTACHMENT_SIZE / (1024 * 1024)}MB`
+        );
+        continue;
+      }
+
+      // Validate file type
+      if (!ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {
+        setUploadError(
+          `File "${file.name}" type is not allowed. Supported: images, PDFs, Office docs, text files, ZIP.`
+        );
+        continue;
+      }
+
+      newFiles.push(file);
+    }
+
+    if (newFiles.length > 0) {
+      setPendingFiles((prev) => [...prev, ...newFiles]);
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removePendingFile = (index: number) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const getFileIcon = (contentType: string) => {
+    if (contentType.startsWith('image/')) return <ImageIcon size={16} />;
+    if (contentType === 'application/pdf') return <FileText size={16} />;
+    return <File size={16} />;
+  };
+
+  const handleSubmitWithAttachments = async () => {
+    if (!newComment.trim() && pendingFiles.length === 0) return;
+
+    setIsSubmitting(true);
+    setUploadError(null);
+
+    try {
+      // Upload all pending files first
+      if (onUploadAttachment && pendingFiles.length > 0) {
+        setIsUploadingFiles(true);
+        for (const file of pendingFiles) {
+          await onUploadAttachment(file);
+        }
+        setIsUploadingFiles(false);
+        setPendingFiles([]);
+      }
+
+      // Then add comment if there is one
+      if (newComment.trim() && onAddComment) {
+        await onAddComment(newComment);
+        setNewComment('');
+      }
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Failed to upload files');
+    } finally {
+      setIsSubmitting(false);
+      setIsUploadingFiles(false);
     }
   };
 
@@ -340,6 +434,43 @@ export default function TicketDetail({
                     __html: ticket.description || '<em>No description provided</em>',
                   }}
                 />
+                {/* Attachments */}
+                {ticket.attachments && ticket.attachments.length > 0 && (
+                  <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+                    <div
+                      className="mb-2 flex items-center gap-1 text-xs"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <Paperclip size={12} />
+                      <span>Attachments ({ticket.attachments.length})</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {ticket.attachments.map((attachment) => (
+                        <a
+                          key={attachment.id}
+                          href={attachment.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                          style={{
+                            backgroundColor: 'var(--surface)',
+                            color: 'var(--text-secondary)',
+                          }}
+                          title={`Download ${attachment.fileName}`}
+                        >
+                          {getFileIcon(attachment.contentType)}
+                          <span className="max-w-[150px] truncate">{attachment.fileName}</span>
+                          {attachment.size > 0 && (
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                              ({formatFileSize(attachment.size)})
+                            </span>
+                          )}
+                          <Download size={12} style={{ color: 'var(--text-muted)' }} />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -390,6 +521,16 @@ export default function TicketDetail({
           className="border-t p-4"
           style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
         >
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            onChange={handleFileSelect}
+            accept={ALLOWED_ATTACHMENT_TYPES.join(',')}
+            className="hidden"
+          />
+
           <div className="mb-3 flex items-center gap-2">
             <label className="flex cursor-not-allowed items-center gap-2">
               <input
@@ -404,6 +545,48 @@ export default function TicketDetail({
             </label>
           </div>
 
+          {/* Upload error */}
+          {uploadError && (
+            <div
+              className="mb-3 flex items-center justify-between rounded-md p-2 text-sm"
+              style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}
+            >
+              <span>{uploadError}</span>
+              <button onClick={() => setUploadError(null)} className="ml-2 hover:opacity-70">
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* Pending files */}
+          {pendingFiles.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {pendingFiles.map((file, index) => (
+                <div
+                  key={`${file.name}-${index}`}
+                  className="flex items-center gap-2 rounded-md px-2 py-1 text-sm"
+                  style={{
+                    backgroundColor: 'var(--surface-hover)',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  {getFileIcon(file.type)}
+                  <span className="max-w-[150px] truncate">{file.name}</span>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    ({formatFileSize(file.size)})
+                  </span>
+                  <button
+                    onClick={() => removePendingFile(index)}
+                    className="ml-1 hover:opacity-70"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="relative">
             <textarea
               value={newComment}
@@ -413,10 +596,11 @@ export default function TicketDetail({
             />
             <div className="absolute right-3 bottom-3 flex items-center gap-2">
               <button
-                onClick={() => alert('Attachments not yet implemented')}
+                onClick={() => fileInputRef.current?.click()}
                 className="rounded p-2 transition-colors hover:bg-[var(--surface-hover)]"
-                style={{ color: 'var(--text-muted)' }}
+                style={{ color: pendingFiles.length > 0 ? 'var(--primary)' : 'var(--text-muted)' }}
                 title="Attach file"
+                disabled={!onUploadAttachment}
               >
                 <Paperclip size={18} />
               </button>
@@ -431,12 +615,26 @@ export default function TicketDetail({
                 </button>
               )}
               <button
-                onClick={handleSubmitComment}
-                disabled={!newComment.trim() || isSubmitting}
+                onClick={handleSubmitWithAttachments}
+                disabled={(!newComment.trim() && pendingFiles.length === 0) || isSubmitting}
                 className="btn-primary flex items-center gap-1 py-1.5 text-sm"
               >
-                <Send size={16} />
-                {isSubmitting ? 'Sending...' : 'Submit'}
+                {isUploadingFiles ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Uploading...
+                  </>
+                ) : isSubmitting ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send size={16} />
+                    Submit
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -693,6 +891,35 @@ export default function TicketDetail({
                 ))}
               </div>
             </div>
+
+            {/* Attachments */}
+            {ticket.attachments && ticket.attachments.length > 0 && (
+              <div>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Attachments ({ticket.attachments.length})
+                </label>
+                <div className="space-y-1">
+                  {ticket.attachments.map((attachment) => (
+                    <a
+                      key={attachment.id}
+                      href={attachment.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                      style={{ color: 'var(--text-secondary)' }}
+                      title={`Download ${attachment.fileName}`}
+                    >
+                      {getFileIcon(attachment.contentType)}
+                      <span className="flex-1 truncate">{attachment.fileName}</span>
+                      <Download size={12} style={{ color: 'var(--text-muted)' }} />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Dates */}
             <div>

@@ -40,9 +40,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           });
 
           const comments = await devopsService.getWorkItemComments(project.name, ticketId);
+          const attachments = await devopsService.getWorkItemAttachments(project.name, ticketId);
 
           return NextResponse.json({
-            ticket,
+            ticket: { ...ticket, attachments },
             comments,
           });
         }
