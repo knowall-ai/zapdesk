@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { format } from 'date-fns';
 import {
   ArrowLeft,
@@ -24,6 +24,7 @@ import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
 import ZapDialog from './ZapDialog';
+import { useClickOutside } from '@/hooks';
 
 interface TicketDetailProps {
   ticket: Ticket;
@@ -81,6 +82,24 @@ export default function TicketDetail({
   // Priority editing state
   const [isPriorityDropdownOpen, setIsPriorityDropdownOpen] = useState(false);
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
+
+  // Click-outside handlers for dropdowns
+  const closeStateDropdown = useCallback(() => setIsStateDropdownOpen(false), []);
+  const closeAssigneeDropdown = useCallback(() => {
+    setIsAssigneeDropdownOpen(false);
+    setAssigneeSearch('');
+  }, []);
+  const closePriorityDropdown = useCallback(() => setIsPriorityDropdownOpen(false), []);
+
+  const stateDropdownRef = useClickOutside<HTMLDivElement>(closeStateDropdown, isStateDropdownOpen);
+  const assigneeDropdownRef = useClickOutside<HTMLDivElement>(
+    closeAssigneeDropdown,
+    isAssigneeDropdownOpen
+  );
+  const priorityDropdownRef = useClickOutside<HTMLDivElement>(
+    closePriorityDropdown,
+    isPriorityDropdownOpen
+  );
 
   // Fetch available states when state dropdown opens
   useEffect(() => {
@@ -240,7 +259,7 @@ export default function TicketDetail({
 
           <div className="flex items-center gap-4">
             {/* State dropdown */}
-            <div className="relative">
+            <div className="relative" ref={stateDropdownRef}>
               <button
                 onClick={() => setIsStateDropdownOpen(!isStateDropdownOpen)}
                 disabled={!onStateChange || isUpdatingState}
@@ -476,7 +495,7 @@ export default function TicketDetail({
 
           <div className="space-y-4">
             {/* Assignee - Editable */}
-            <div className="relative">
+            <div className="relative" ref={assigneeDropdownRef}>
               <label
                 className="mb-1 block text-xs uppercase"
                 style={{ color: 'var(--text-muted)' }}
@@ -604,7 +623,7 @@ export default function TicketDetail({
             </div>
 
             {/* Priority - Editable */}
-            <div className="relative">
+            <div className="relative" ref={priorityDropdownRef}>
               <label
                 className="mb-1 block text-xs uppercase"
                 style={{ color: 'var(--text-muted)' }}
