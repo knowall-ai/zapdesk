@@ -373,8 +373,8 @@ export default function ProfilePage() {
 
         {/* Info Note */}
         <p className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-          Time and locale settings are managed in Microsoft 365 Outlook. Changes will be reflected
-          here after signing out and back in.
+          Time and locale settings are sourced from your Microsoft 365 profile and Outlook mailbox
+          settings. Changes made in Outlook will be reflected here on your next visit.
         </p>
       </div>
     </MainLayout>

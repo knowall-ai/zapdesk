@@ -140,50 +140,36 @@ export async function getUserLocaleSettings(
     timeFormat: null,
   };
 
-  try {
-    // Fetch user profile for basic locale info
-    const userResponse = await fetch(
-      `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}?$select=preferredLanguage,country,usageLocation`,
-      {
-        headers: {
-          Authorization: `Bearer ${graphToken}`,
-        },
-      }
-    );
+  const encodedUserId = encodeURIComponent(userId);
+  const headers = { Authorization: `Bearer ${graphToken}` };
 
-    if (userResponse.ok) {
-      const userData = await userResponse.json();
-      settings.preferredLanguage = userData.preferredLanguage || null;
-      settings.country = userData.country || userData.usageLocation || null;
-    }
-  } catch (error) {
-    console.error('Error fetching user profile from Graph:', error);
+  // Fetch user profile and mailbox settings in parallel
+  const [userResult, mailboxResult] = await Promise.allSettled([
+    fetch(`${GRAPH_BASE_URL}/users/${encodedUserId}?$select=preferredLanguage,usageLocation`, {
+      headers,
+    }),
+    // Note: Requires MailboxSettings.Read application permission with admin consent
+    fetch(`${GRAPH_BASE_URL}/users/${encodedUserId}/mailboxSettings`, { headers }),
+  ]);
+
+  if (userResult.status === 'fulfilled' && userResult.value.ok) {
+    const userData = await userResult.value.json();
+    settings.preferredLanguage = userData.preferredLanguage || null;
+    settings.country = userData.usageLocation || null;
+  } else if (userResult.status === 'rejected') {
+    console.error('Error fetching user profile from Graph:', userResult.reason);
   }
 
-  try {
-    // Fetch mailbox settings for time/date preferences
-    // Note: Requires MailboxSettings.Read application permission with admin consent
-    const mailboxResponse = await fetch(
-      `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/mailboxSettings`,
-      {
-        headers: {
-          Authorization: `Bearer ${graphToken}`,
-        },
-      }
-    );
-
-    if (mailboxResponse.ok) {
-      const mailboxData = await mailboxResponse.json();
-      settings.timeZone = mailboxData.timeZone || null;
-      settings.dateFormat = mailboxData.dateFormat || null;
-      settings.timeFormat = mailboxData.timeFormat || null;
-      // Use mailbox language if preferred language not set
-      if (!settings.preferredLanguage && mailboxData.language?.locale) {
-        settings.preferredLanguage = mailboxData.language.locale;
-      }
+  if (mailboxResult.status === 'fulfilled' && mailboxResult.value.ok) {
+    const mailboxData = await mailboxResult.value.json();
+    settings.timeZone = mailboxData.timeZone || null;
+    settings.dateFormat = mailboxData.dateFormat || null;
+    settings.timeFormat = mailboxData.timeFormat || null;
+    if (!settings.preferredLanguage && mailboxData.language?.locale) {
+      settings.preferredLanguage = mailboxData.language.locale;
     }
-  } catch (error) {
-    console.error('Error fetching mailbox settings from Graph:', error);
+  } else if (mailboxResult.status === 'rejected') {
+    console.error('Error fetching mailbox settings from Graph:', mailboxResult.reason);
   }
 
   return settings;
