@@ -10,8 +10,10 @@ ZapDesk is a Zendesk-style support ticketing portal that integrates with Azure D
 
 ### Tech Stack
 
-- **Frontend**: Next.js 15 with App Router, React 19, TypeScript
-- **Styling**: Tailwind CSS with custom CSS variables for theming
+- **Frontend**: Next.js 16 with App Router, React 19, TypeScript
+- **Runtime**: Node.js (production), Bun (local development)
+- **Package Manager**: Bun
+- **Styling**: Tailwind CSS 4 with custom CSS variables for theming
 - **Authentication**: NextAuth.js with Azure AD provider
 - **Backend API**: Azure DevOps REST API
 - **Deployment**: Azure App Service
@@ -110,27 +112,27 @@ src/
 Tests are in `/tests` directory. Run with:
 
 ```bash
-npm run test
+bun run test
 ```
 
 ## Code Quality & CI/CD
 
 ### Running Checks Locally
 
-**CRITICAL: ALWAYS run `npm run check` before pushing to ensure CI will pass.** Failing to do so may cause CI/CD pipeline failures.
+**CRITICAL: ALWAYS run `bun run check` before pushing to ensure CI will pass.** Failing to do so may cause CI/CD pipeline failures.
 
 Before pushing code, run all checks to ensure CI will pass:
 
 ```bash
 # Run all checks at once (recommended)
-npm run check
+bun run check
 
 # Individual checks
-npm run typecheck      # TypeScript type checking
-npm run lint           # ESLint code linting
-npm run lint:fix       # ESLint with auto-fix
-npm run format:check   # Prettier formatting check
-npm run format         # Auto-format with Prettier
+bun run typecheck      # TypeScript type checking
+bun run lint           # ESLint code linting
+bun run lint:fix       # ESLint with auto-fix
+bun run format:check   # Prettier formatting check
+bun run format         # Auto-format with Prettier
 ```
 
 ### CI Pipeline
@@ -157,9 +159,9 @@ All checks must pass before a PR can be merged.
 
 When making changes:
 
-1. Run `npm run format` to auto-format code
-2. Run `npm run lint:fix` to auto-fix linting issues
-3. Run `npm run check` to verify all checks pass
+1. Run `bun run format` to auto-format code
+2. Run `bun run lint:fix` to auto-fix linting issues
+3. Run `bun run check` to verify all checks pass
 
 ## Common Tasks
 
@@ -199,20 +201,20 @@ When making changes:
 
 ### Azure App Service
 
-1. Create Azure App Service (Node.js 18+)
+1. Create Azure App Service (Node.js 20+)
 2. Configure environment variables in App Service Configuration
 3. Deploy via GitHub Actions (see `.github/workflows/deploy.yml`)
 4. Ensure Azure AD redirect URI includes production URL
 
 ### Release Process
 
-Use `npm version` to create releases - it syncs `package.json` and git tags automatically:
+Use `bun version` to create releases - it syncs `package.json` and git tags automatically:
 
 ```bash
 # On main branch, after merging PRs
-npm version patch   # Bug fixes (0.3.1 -> 0.3.2)
-npm version minor   # New features (0.3.2 -> 0.4.0)
-npm version major   # Breaking changes (0.4.0 -> 1.0.0)
+bun version patch   # Bug fixes (0.3.1 -> 0.3.2)
+bun version minor   # New features (0.3.2 -> 0.4.0)
+bun version major   # Breaking changes (0.4.0 -> 1.0.0)
 
 # Push with tags to trigger deployment
 git push --follow-tags

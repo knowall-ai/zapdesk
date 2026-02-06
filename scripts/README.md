@@ -1,6 +1,6 @@
-# DevDesk Scripts
+# ZapDesk Scripts
 
-This directory contains utility scripts for the DevDesk project.
+This directory contains utility scripts for the ZapDesk project.
 
 ## create-backlog.mjs
 
@@ -11,7 +11,7 @@ Creates a realistic backlog of work items in Azure DevOps for demo/testing purpo
 1. **Azure DevOps Personal Access Token (PAT)**
    - Go to https://dev.azure.com/{your-org}/_usersSettings/tokens
    - Click "New Token"
-   - Set name: "DevDesk Backlog Creator"
+   - Set name: "ZapDesk Backlog Creator"
    - Set organization: Select your organization
    - Set expiration: Choose appropriate duration
    - Set scopes: **Work Items (Read, Write)**
@@ -109,7 +109,7 @@ Website Support (Epic)
 **Tagging:**
 
 - All items tagged with `dummy` for identification
-- Only support tickets tagged with `ticket` (appear in DevDesk)
+- Only support tickets tagged with `ticket` (appear in ZapDesk)
 - Website build items are NOT tagged with `ticket`
 
 **States:**
