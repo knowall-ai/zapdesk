@@ -13,13 +13,19 @@ export function useClickOutside<T extends HTMLElement = HTMLElement>(
   enabled: boolean = true
 ): RefObject<T | null> {
   const ref = useRef<T>(null);
+  const callbackRef = useRef(callback);
+
+  // Keep callback ref in sync without triggering effect re-runs
+  useEffect(() => {
+    callbackRef.current = callback;
+  });
 
   useEffect(() => {
     if (!enabled) return;
 
     function handleClickOutside(event: MouseEvent) {
       if (ref.current && !ref.current.contains(event.target as Node)) {
-        callback();
+        callbackRef.current();
       }
     }
 
@@ -29,7 +35,7 @@ export function useClickOutside<T extends HTMLElement = HTMLElement>(
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [callback, enabled]);
+  }, [enabled]);
 
   return ref;
 }
