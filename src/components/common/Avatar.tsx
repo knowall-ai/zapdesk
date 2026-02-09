@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 interface AvatarProps {
   name: string;
   image?: string;
@@ -47,22 +49,27 @@ function getColorFromName(name: string): string {
 }
 
 export default function Avatar({ name, image, size = 'md', className = '' }: AvatarProps) {
-  if (image) {
+  const [imageError, setImageError] = useState(false);
+
+  // Show initials fallback if no image or image failed to load
+  if (!image || imageError) {
     return (
-      <img
-        src={image}
-        alt={name}
-        className={`${sizeClasses[size]} rounded-full object-cover ${className}`}
-      />
+      <div
+        className={`${sizeClasses[size]} flex items-center justify-center rounded-full font-medium text-white ${className}`}
+        style={{ backgroundColor: getColorFromName(name) }}
+      >
+        {getInitials(name)}
+      </div>
     );
   }
 
   return (
-    <div
-      className={`${sizeClasses[size]} flex items-center justify-center rounded-full font-medium text-white ${className}`}
-      style={{ backgroundColor: getColorFromName(name) }}
-    >
-      {getInitials(name)}
-    </div>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={image}
+      alt={name}
+      className={`${sizeClasses[size]} rounded-full object-cover ${className}`}
+      onError={() => setImageError(true)}
+    />
   );
 }

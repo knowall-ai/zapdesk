@@ -1,17 +1,19 @@
-# CLAUDE.md - DevDesk Project Guidelines
+# CLAUDE.md - ZapDesk Project Guidelines
 
-This document provides guidance for AI assistants (like Claude) working on the DevDesk project.
+This document provides guidance for AI assistants (like Claude) working on the ZapDesk project.
 
 ## Project Overview
 
-DevDesk is a Zendesk-style support ticketing portal that integrates with Azure DevOps. It allows clients to view and manage support tickets through a familiar interface while using Azure DevOps as the backend work item tracker.
+ZapDesk is a Zendesk-style support ticketing portal that integrates with Azure DevOps. It allows clients to view and manage support tickets through a familiar interface while using Azure DevOps as the backend work item tracker.
 
 ## Architecture
 
 ### Tech Stack
 
-- **Frontend**: Next.js 15 with App Router, React 19, TypeScript
-- **Styling**: Tailwind CSS with custom CSS variables for theming
+- **Frontend**: Next.js 16 with App Router, React 19, TypeScript
+- **Runtime**: Node.js (production), Bun (local development)
+- **Package Manager**: Bun
+- **Styling**: Tailwind CSS 4 with custom CSS variables for theming
 - **Authentication**: NextAuth.js with Azure AD provider
 - **Backend API**: Azure DevOps REST API
 - **Deployment**: Azure App Service
@@ -73,7 +75,7 @@ src/
 - All DevOps API calls go through `src/lib/devops.ts`
 - Use the user's OAuth token for authenticated requests
 - Use PAT (Personal Access Token) for service account operations (email webhook)
-- Work items must have "ticket" tag to appear in DevDesk
+- Work items must have "ticket" tag to appear in ZapDesk
 
 ### Authentication Flow
 
@@ -89,6 +91,10 @@ src/
 - Log errors server-side with `console.error`
 - Show user-friendly error messages in UI
 - Handle loading states in components
+
+### Security
+
+- **Do not put email addresses in the public repo** - spam bots scrape repositories for email addresses. Use generic references like "configured mailbox" or "your support email" instead.
 
 ## Testing
 
@@ -106,25 +112,27 @@ src/
 Tests are in `/tests` directory. Run with:
 
 ```bash
-npm run test
+bun run test
 ```
 
 ## Code Quality & CI/CD
 
 ### Running Checks Locally
 
+**CRITICAL: ALWAYS run `bun run check` before pushing to ensure CI will pass.** Failing to do so may cause CI/CD pipeline failures.
+
 Before pushing code, run all checks to ensure CI will pass:
 
 ```bash
 # Run all checks at once (recommended)
-npm run check
+bun run check
 
 # Individual checks
-npm run typecheck      # TypeScript type checking
-npm run lint           # ESLint code linting
-npm run lint:fix       # ESLint with auto-fix
-npm run format:check   # Prettier formatting check
-npm run format         # Auto-format with Prettier
+bun run typecheck      # TypeScript type checking
+bun run lint           # ESLint code linting
+bun run lint:fix       # ESLint with auto-fix
+bun run format:check   # Prettier formatting check
+bun run format         # Auto-format with Prettier
 ```
 
 ### CI Pipeline
@@ -151,9 +159,9 @@ All checks must pass before a PR can be merged.
 
 When making changes:
 
-1. Run `npm run format` to auto-format code
-2. Run `npm run lint:fix` to auto-fix linting issues
-3. Run `npm run check` to verify all checks pass
+1. Run `bun run format` to auto-format code
+2. Run `bun run lint:fix` to auto-fix linting issues
+3. Run `bun run check` to verify all checks pass
 
 ## Common Tasks
 
@@ -193,10 +201,28 @@ When making changes:
 
 ### Azure App Service
 
-1. Create Azure App Service (Node.js 18+)
+1. Create Azure App Service (Node.js 20+)
 2. Configure environment variables in App Service Configuration
 3. Deploy via GitHub Actions (see `.github/workflows/deploy.yml`)
 4. Ensure Azure AD redirect URI includes production URL
+
+### Release Process
+
+Use `bun version` to create releases - it syncs `package.json` and git tags automatically:
+
+```bash
+# On main branch, after merging PRs
+bun version patch   # Bug fixes (0.3.1 -> 0.3.2)
+bun version minor   # New features (0.3.2 -> 0.4.0)
+bun version major   # Breaking changes (0.4.0 -> 1.0.0)
+
+# Push with tags to trigger deployment
+git push --follow-tags
+```
+
+The version is displayed in the sidebar footer, read from `package.json` at build time.
+
+See `/docs/DEPLOYMENT.adoc` for full release documentation.
 
 ### Pre-deployment Checklist
 
@@ -226,5 +252,5 @@ When you encounter or help resolve an issue that admins or users might face:
 ## Contact
 
 - **Project Owner**: KnowAll AI
-- **Repository**: https://github.com/knowall-ai/devdesk
+- **Repository**: https://github.com/knowall-ai/zapdesk
 - **Support**: support@knowall.ai

@@ -1,11 +1,11 @@
-= DevDesk Deployment Guide
+= ZapDesk Deployment Guide
 :toc: left
 :toclevels: 3
 :icons: font
 
 == Overview
 
-DevDesk is deployed to Azure App Service using GitHub Actions for CI/CD.
+ZapDesk is deployed to Azure App Service using GitHub Actions for CI/CD.
 
 == Prerequisites
 
@@ -21,11 +21,11 @@ DevDesk is deployed to Azure App Service using GitHub Actions for CI/CD.
 
 1. Go to Azure Portal > Azure Active Directory > App registrations
 2. Click "New registration"
-3. Enter name: "DevDesk"
+3. Enter name: "ZapDesk"
 4. Select "Accounts in any organizational directory" (for multi-tenant)
 5. Add redirect URIs:
    - `http://localhost:3000/api/auth/callback/azure-ad` (development)
-   - `https://devdesk.knowall.ai/api/auth/callback/azure-ad` (production)
+   - `https://zapdesk.yourdomain.com/api/auth/callback/azure-ad` (production)
 6. Click "Register"
 
 === Configure API Permissions
@@ -51,20 +51,20 @@ DevDesk is deployed to Azure App Service using GitHub Actions for CI/CD.
 [source,bash]
 ----
 # Create resource group
-az group create --name devdesk-rg --location westeurope
+az group create --name zapdesk-rg --location westeurope
 
 # Create App Service plan
 az appservice plan create \
-  --name devdesk-plan \
-  --resource-group devdesk-rg \
+  --name zapdesk-plan \
+  --resource-group zapdesk-rg \
   --sku B1 \
   --is-linux
 
 # Create Web App
 az webapp create \
-  --name devdesk-knowall \
-  --resource-group devdesk-rg \
-  --plan devdesk-plan \
+  --name zapdesk-knowall \
+  --resource-group zapdesk-rg \
+  --plan zapdesk-plan \
   --runtime "NODE:18-lts"
 ----
 
@@ -77,7 +77,7 @@ Set the following environment variables in Azure App Service > Configuration:
 |Variable |Value
 
 |`NEXTAUTH_URL`
-|https://devdesk.knowall.ai
+|https://zapdesk.yourdomain.com
 
 |`NEXTAUTH_SECRET`
 |<generate-with-openssl-rand-hex-32>
@@ -107,7 +107,7 @@ Set the following environment variables in Azure App Service > Configuration:
 === Configure Custom Domain
 
 1. Go to Azure App Service > Custom domains
-2. Add custom domain: devdesk.knowall.ai
+2. Add custom domain: zapdesk.yourdomain.com
 3. Configure DNS CNAME record
 4. Enable HTTPS with managed certificate
 
@@ -148,9 +148,142 @@ zip -r deploy.zip .next package.json package-lock.json public next.config.ts
 
 # Deploy to Azure
 az webapp deployment source config-zip \
-  --resource-group devdesk-rg \
-  --name devdesk-knowall \
+  --resource-group zapdesk-rg \
+  --name zapdesk-knowall \
   --src deploy.zip
+----
+
+== Release Process
+
+ZapDesk uses `npm version` to manage releases, which keeps `package.json` and git tags in sync.
+
+=== Creating a Release
+
+[source,bash]
+----
+# 1. Ensure you're on main with latest changes
+git checkout main
+git pull
+
+# 2. Bump version (choose one based on changes)
+npm version patch   # Bug fixes (0.3.1 -> 0.3.2)
+npm version minor   # New features (0.3.2 -> 0.4.0)
+npm version major   # Breaking changes (0.4.0 -> 1.0.0)
+
+# 3. Push with tags to trigger deployment
+git push --follow-tags
+----
+
+The `npm version` command automatically:
+
+* Updates `package.json` version
+* Creates a git commit with message "v0.3.2"
+* Creates a git tag `v0.3.2`
+
+=== Version Display
+
+The app version is displayed in the sidebar footer and is read from `package.json` at build time via `next.config.ts`.
+
+=== Manual Workflow Dispatch
+
+You can also trigger a release via GitHub Actions:
+
+1. Go to Actions > Deploy to Azure
+2. Click "Run workflow"
+3. Select branch and run
+
+== Demo Data Setup
+
+For testing and demonstration purposes, ZapDesk includes scripts to populate an Azure DevOps project with realistic dummy data.
+
+=== Prerequisites
+
+1. An Azure DevOps project using the Agile process template
+2. A Personal Access Token (PAT) with Work Items (Read & Write) permissions
+3. PAT configured in `.env.local` or exported:
+
+[source,bash]
+----
+# Personal Access Token with Work Items Read & Write scope
+AZURE_DEVOPS_PAT=your-pat-here
+----
+
+Organization and project are passed as command-line arguments (`-o` and `-p`).
+
+=== Scripts Overview
+
+The dummy data system consists of two files:
+
+* `scripts/create-backlog.mjs` - CLI tool that creates/updates work items in Azure DevOps
+* `scripts/dummy-agile-backlog.mjs` - Defines the backlog structure and content
+
+=== Backlog Structure
+
+The dummy backlog creates the following hierarchy:
+
+----
+Website Support (Epic)
+├── Support Setup (Feature) - Enabler
+│   └── User Story with setup tasks
+├── Block 1: Month 1 Support (Feature) - Closed
+│   └── "As a user, I want to be supported" (User Story)
+│       └── 35-40 support tickets (Tasks, Bugs, User Stories)
+├── Block 2: Month 2 Support (Feature) - Closed
+│   └── ... (similar structure)
+├── Block 3: Month 3 Support (Feature) - Closed
+│   └── ... (similar structure)
+├── Block 4: Month 4 Support (Feature) - Active
+│   └── ... (5 active tickets)
+└── Blocks 5-12: Future months (Features) - New
+    └── Monthly checkpoint tasks only
+----
+
+Key characteristics:
+
+* **Support tickets** are tagged with `ticket` and appear in ZapDesk
+* **All items** are tagged with `dummy` for identification
+* **GUID markers** in descriptions enable upsert functionality
+* **Blocks 1-3** simulate completed support periods (Closed state)
+* **Block 4** simulates current active support work
+* **Blocks 5-12** represent planned future work
+
+=== Running the Script
+
+[source,bash]
+----
+# Preview what would be created (dry run)
+node scripts/create-backlog.mjs -o KnowAllTest -p "ABC Inc (Agile)" -t agile --dry-run
+
+# Create/update work items
+node scripts/create-backlog.mjs -o KnowAllTest -p "ABC Inc (Agile)" -t agile
+
+# Delete all existing dummy items and recreate fresh
+node scripts/create-backlog.mjs -o KnowAllTest -p "ABC Inc (Agile)" -t agile --delete-existing
+----
+
+=== GUID-Based Matching
+
+The scripts use GUID markers embedded in work item descriptions to enable reliable upsert (update or insert) functionality:
+
+[source,html]
+----
+<!-- BACKLOG-GUID:abc123-def456-... -->
+----
+
+This allows the script to:
+
+* Find existing items by GUID rather than title
+* Update existing items instead of creating duplicates
+* Track which items were created by the script
+
+=== Cleanup
+
+To remove all dummy data from a project, run the delete command then interrupt before recreation:
+
+[source,bash]
+----
+# Delete all items tagged with "dummy" (Ctrl+C after deletion completes)
+node scripts/create-backlog.mjs -o KnowAllTest -p "ABC Inc (Agile)" -t agile --delete-existing
 ----
 
 == Post-Deployment Checklist
@@ -171,8 +304,8 @@ Enable Application Insights for monitoring:
 [source,bash]
 ----
 az webapp config appsettings set \
-  --name devdesk-knowall \
-  --resource-group devdesk-rg \
+  --name zapdesk-knowall \
+  --resource-group zapdesk-rg \
   --settings APPLICATIONINSIGHTS_CONNECTION_STRING="<connection-string>"
 ----
 
@@ -191,12 +324,12 @@ To rollback to a previous deployment:
 [source,bash]
 ----
 # List deployment slots
-az webapp deployment list --name devdesk-knowall --resource-group devdesk-rg
+az webapp deployment list --name zapdesk-knowall --resource-group zapdesk-rg
 
 # Rollback to specific deployment
 az webapp deployment slot swap \
-  --name devdesk-knowall \
-  --resource-group devdesk-rg \
+  --name zapdesk-knowall \
+  --resource-group zapdesk-rg \
   --slot staging \
   --target-slot production
 ----

@@ -1,4 +1,4 @@
-= DevDesk Troubleshooting Guide
+= ZapDesk Troubleshooting Guide
 :toc: left
 :icons: font
 
@@ -9,7 +9,7 @@
 |Problem |Solution
 
 |**"Sign in failed" after Microsoft login**
-|Verify Azure AD redirect URI matches exactly: `https://devdesk.knowall.ai/api/auth/callback/azure-ad`. Check AZURE_AD_CLIENT_ID and AZURE_AD_CLIENT_SECRET are correct.
+|Verify Azure AD redirect URI matches exactly: `https://zapdesk.yourdomain.com/api/auth/callback/azure-ad`. Check AZURE_AD_CLIENT_ID and AZURE_AD_CLIENT_SECRET are correct.
 
 |**"Unauthorized" when viewing tickets**
 |Session may have expired. Sign out and sign in again. Check NEXTAUTH_SECRET is set correctly and matches across deployments.
@@ -54,7 +54,16 @@
 |API routes should proxy all requests. Check you're using /api/ routes, not calling DevOps directly. Verify NEXTAUTH_URL is correct.
 
 |**Deployment failing**
-|Check GitHub Actions logs. Verify AZURE_WEBAPP_PUBLISH_PROFILE secret is current. Ensure Node.js version matches (18+).
+|Check GitHub Actions logs. Verify AZURE_CREDENTIALS secret contains valid service principal. Ensure Node.js version matches (20+).
+
+|**503 Service Unavailable / Exit code 127 after deployment**
+|Exit code 127 means "command not found". This usually means node_modules are missing. The app requires `output: 'standalone'` in `next.config.ts` for Azure App Service. The standalone build creates a self-contained package in `.next/standalone/` with all dependencies bundled. Deploy this folder and use `node server.js` as startup command instead of `npm start`.
+
+|**.next folder not deployed**
+|Ensure `include-hidden-files: true` is set in the upload-artifact action. Files/folders starting with `.` are excluded by default.
+
+|**"Publish profile is invalid" deployment error**
+|SCM Basic Authentication may be disabled. Check with: `az rest --method get --url "https://management.azure.com/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Web/sites/{app}/basicPublishingCredentialsPolicies/scm?api-version=2022-03-01" --query "properties.allow"`. If false, switch to service principal authentication using azure/login action.
 
 |**Custom domain not working**
 |Verify DNS CNAME record. Check Azure SSL certificate status. Allow up to 24 hours for DNS propagation.
@@ -67,7 +76,13 @@
 In Azure App Service:
 [source,bash]
 ----
-az webapp log tail --name devdesk-knowall --resource-group devdesk-rg
+az webapp log tail --name zapdesk-knowall --resource-group KnowAllAIRG
+----
+
+Or download logs:
+[source,bash]
+----
+az webapp log download --name zapdesk-knowall --resource-group KnowAllAIRG --log-file logs.zip
 ----
 
 === Check Browser Console
@@ -85,7 +100,7 @@ az webapp log tail --name devdesk-knowall --resource-group devdesk-rg
 cat .env
 
 # Azure App Service
-az webapp config appsettings list --name devdesk-knowall --resource-group devdesk-rg
+az webapp config appsettings list --name zapdesk-knowall --resource-group KnowAllAIRG
 ----
 
 === Test Azure DevOps Connection
@@ -98,6 +113,6 @@ curl -u ":YOUR_PAT" "https://dev.azure.com/KnowAll/_apis/projects?api-version=7.
 
 == Getting Help
 
-* Check GitHub Issues: https://github.com/knowall-ai/devdesk/issues
+* Check GitHub Issues: https://github.com/knowall-ai/zapdesk/issues
 * Contact Support: support@knowall.ai
 * Azure DevOps Status: https://status.dev.azure.com/

@@ -52,8 +52,8 @@
       fill-rule="evenodd"
     />
 
-    <!-- DevDesk Text -->
-    <text x="70" y="38" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#22c55e">Dev</text>
+    <!-- ZapDesk Text -->
+    <text x="70" y="38" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#22c55e">Zap</text>
     <text x="131" y="38" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#f3f4f6">Desk</text>
   </g>
 

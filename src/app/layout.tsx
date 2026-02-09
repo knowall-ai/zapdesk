@@ -1,13 +1,14 @@
 import type { Metadata } from 'next';
 import SessionProvider from '@/components/providers/SessionProvider';
+import OrganizationProvider from '@/components/providers/OrganizationProvider';
 import './globals.css';
 
-const siteUrl = process.env.NEXTAUTH_URL || 'https://devdesk.knowall.ai';
+const siteUrl = process.env.NEXTAUTH_URL || 'https://zapdesk.knowall.ai';
 
 export const metadata: Metadata = {
-  title: 'DevDesk - Support Ticketing by KnowAll',
+  title: 'ZapDesk - Support Ticketing by KnowAll',
   description:
-    'A modern Zendesk-style support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
+    'A modern support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
   keywords: [
     'support ticketing',
     'help desk',
@@ -32,25 +33,25 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'en_US',
     url: siteUrl,
-    siteName: 'DevDesk',
-    title: 'DevDesk - Support Ticketing by KnowAll',
+    siteName: 'ZapDesk',
+    title: 'ZapDesk - Support Ticketing by KnowAll',
     description:
-      'A modern Zendesk-style support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
+      'A modern support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'DevDesk - Support Ticketing Dashboard',
+        alt: 'ZapDesk - Support Ticketing Dashboard',
         type: 'image/png',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'DevDesk - Support Ticketing by KnowAll',
+    title: 'ZapDesk - Support Ticketing by KnowAll',
     description:
-      'A modern Zendesk-style support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
+      'A modern support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
     images: ['/og-image.png'],
   },
   robots: {
@@ -71,7 +72,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="antialiased">
-        <SessionProvider>{children}</SessionProvider>
+        <SessionProvider>
+          <OrganizationProvider>{children}</OrganizationProvider>
+        </SessionProvider>
       </body>
     </html>
   );

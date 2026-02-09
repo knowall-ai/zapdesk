@@ -1,8 +1,10 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
+import { LoadingSpinner, ProjectList } from '@/components/common';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 import LandingPage from '@/components/LandingPage';
 import {
   Ticket,
@@ -13,6 +15,7 @@ import {
   Users,
   Building2,
   ArrowRight,
+  PlusCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -21,31 +24,41 @@ interface DashboardStats {
   openTickets: number;
   pendingTickets: number;
   resolvedToday: number;
+  createdToday: number;
   avgResponseTime: string;
   customerSatisfaction: number;
 }
 
+interface Project {
+  id: string;
+  name: string;
+  url: string;
+}
+
 export default function HomePage() {
   const { data: session, status } = useSession();
+  const { selectedOrganization } = useOrganization();
   const [stats, setStats] = useState<DashboardStats>({
     totalTickets: 0,
     openTickets: 0,
     pendingTickets: 0,
     resolvedToday: 0,
+    createdToday: 0,
     avgResponseTime: '-',
     customerSatisfaction: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
 
-  useEffect(() => {
-    if (session?.accessToken) {
-      fetchDashboardStats();
-    }
-  }, [session]);
-
-  const fetchDashboardStats = async () => {
+  const fetchDashboardStats = useCallback(async () => {
     try {
-      const response = await fetch('/api/devops/stats');
+      setLoading(true);
+      const headers: HeadersInit = {};
+      if (selectedOrganization?.accountName) {
+        headers['x-devops-org'] = selectedOrganization.accountName;
+      }
+      const response = await fetch('/api/devops/stats', { headers });
       if (response.ok) {
         const data = await response.json();
         setStats(data);
@@ -55,7 +68,33 @@ export default function HomePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedOrganization]);
+
+  const fetchProjects = useCallback(async () => {
+    try {
+      const headers: HeadersInit = {};
+      if (selectedOrganization?.accountName) {
+        headers['x-devops-org'] = selectedOrganization.accountName;
+      }
+      const response = await fetch('/api/devops/projects', { headers });
+      if (response.ok) {
+        const data = await response.json();
+        setProjects(data.projects || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch projects:', error);
+    } finally {
+      setProjectsLoading(false);
+    }
+  }, [selectedOrganization]);
+
+  // Fetch data when session or organization changes
+  useEffect(() => {
+    if (session?.accessToken) {
+      fetchDashboardStats();
+      fetchProjects();
+    }
+  }, [session, selectedOrganization, fetchDashboardStats, fetchProjects]);
 
   if (status === 'loading') {
     return (
@@ -63,10 +102,7 @@ export default function HomePage() {
         className="flex min-h-screen items-center justify-center"
         style={{ backgroundColor: 'var(--background)' }}
       >
-        <div
-          className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-          style={{ borderColor: 'var(--primary)' }}
-        />
+        <LoadingSpinner size="lg" />
       </div>
     );
   }
@@ -82,7 +118,7 @@ export default function HomePage() {
       value: stats.openTickets,
       icon: <AlertCircle size={24} />,
       color: 'var(--status-open)',
-      href: '/tickets?view=all-unsolved',
+      href: '/tickets?view=all-active',
     },
     {
       title: 'Pending',
@@ -90,6 +126,13 @@ export default function HomePage() {
       icon: <Clock size={24} />,
       color: 'var(--status-pending)',
       href: '/tickets?view=pending',
+    },
+    {
+      title: 'Created Today',
+      value: stats.createdToday,
+      icon: <PlusCircle size={24} />,
+      color: 'var(--status-new)',
+      href: '/tickets?view=created-today',
     },
     {
       title: 'Resolved Today',
@@ -121,7 +164,7 @@ export default function HomePage() {
         </div>
 
         {/* Stats cards */}
-        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
           {statCards.map((stat) => (
             <Link
               key={stat.title}
@@ -133,9 +176,15 @@ export default function HomePage() {
                   <p className="mb-1 text-sm" style={{ color: 'var(--text-muted)' }}>
                     {stat.title}
                   </p>
-                  <p className="text-3xl font-bold" style={{ color: stat.color }}>
-                    {loading ? '-' : stat.value}
-                  </p>
+                  {loading ? (
+                    <div className="flex h-9 items-center">
+                      <LoadingSpinner size="sm" />
+                    </div>
+                  ) : (
+                    <p className="text-3xl font-bold" style={{ color: stat.color }}>
+                      {stat.value}
+                    </p>
+                  )}
                 </div>
                 <div
                   className="rounded-lg p-3"
@@ -159,12 +208,12 @@ export default function HomePage() {
             </div>
             <div className="space-y-3 p-4">
               <Link
-                href="/tickets?view=your-unsolved"
+                href="/tickets?view=your-active"
                 className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
               >
                 <div className="flex items-center gap-3">
                   <Ticket size={20} style={{ color: 'var(--primary)' }} />
-                  <span style={{ color: 'var(--text-primary)' }}>View your unsolved tickets</span>
+                  <span style={{ color: 'var(--text-primary)' }}>View your active tickets</span>
                 </div>
                 <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
               </Link>
@@ -179,22 +228,22 @@ export default function HomePage() {
                 <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
               </Link>
               <Link
-                href="/customers"
+                href="/users"
                 className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
               >
                 <div className="flex items-center gap-3">
                   <Users size={20} style={{ color: 'var(--status-progress)' }} />
-                  <span style={{ color: 'var(--text-primary)' }}>Browse customers</span>
+                  <span style={{ color: 'var(--text-primary)' }}>Browse users</span>
                 </div>
                 <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
               </Link>
               <Link
-                href="/organizations"
+                href="/projects"
                 className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
               >
                 <div className="flex items-center gap-3">
                   <Building2 size={20} style={{ color: 'var(--status-pending)' }} />
-                  <span style={{ color: 'var(--text-primary)' }}>View organizations</span>
+                  <span style={{ color: 'var(--text-primary)' }}>View projects</span>
                 </div>
                 <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
               </Link>
@@ -203,46 +252,7 @@ export default function HomePage() {
 
           {/* Projects */}
           <div className="card">
-            <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
-              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-                Your Projects
-              </h2>
-            </div>
-            <div className="p-4">
-              <p className="mb-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                Tickets are fetched from Azure DevOps projects you have access to.
-              </p>
-              <div className="space-y-2">
-                <a
-                  href="https://dev.azure.com/KnowAll/Medite"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded bg-blue-600 text-sm font-medium text-white">
-                      M
-                    </div>
-                    <span style={{ color: 'var(--text-primary)' }}>Medite</span>
-                  </div>
-                  <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
-                </a>
-                <a
-                  href="https://dev.azure.com/KnowAll/Cairn%20Homes"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded bg-orange-600 text-sm font-medium text-white">
-                      CH
-                    </div>
-                    <span style={{ color: 'var(--text-primary)' }}>Cairn Homes</span>
-                  </div>
-                  <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
-                </a>
-              </div>
-            </div>
+            <ProjectList projects={projects} loading={projectsLoading} title="Your Projects" />
           </div>
         </div>
 
@@ -257,7 +267,7 @@ export default function HomePage() {
               Pro Tip: Use the &quot;ticket&quot; tag
             </p>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Only Azure DevOps work items tagged with &quot;ticket&quot; will appear in DevDesk.
+              Only Azure DevOps work items tagged with &quot;ticket&quot; will appear in ZapDesk.
               Add this tag to any work item you want to track here.
             </p>
           </div>

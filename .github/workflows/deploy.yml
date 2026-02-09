@@ -1,15 +1,16 @@
 name: Deploy to Azure App Service
 
 on:
+  # Deploy when a release tag is created (e.g., v1.0.0)
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'
+  # Allow manual deployment
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: devdesk-knowall
-  AZURE_WEBAPP_PACKAGE_PATH: '.'
-  NODE_VERSION: '20.x'
+  AZURE_WEBAPP_NAME: zapdesk-knowallai
+  BUN_VERSION: '1.2'
 
 jobs:
   build:
@@ -19,34 +20,36 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          bun-version: ${{ env.BUN_VERSION }}
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build application
-        run: npm run build
+        run: bun run build
         env:
           # Build-time environment variables (non-sensitive)
           NEXT_TELEMETRY_DISABLED: 1
           # Runtime config (public)
-          NEXTAUTH_URL: https://devdesk.knowall.ai
-          APP_URL: https://devdesk.knowall.ai
+          NEXTAUTH_URL: https://zapdesk.knowall.ai
+          APP_URL: https://zapdesk.knowall.ai
+
+      - name: Prepare standalone deployment
+        run: |
+          # Copy static assets to standalone folder
+          cp -r public .next/standalone/
+          cp -r .next/static .next/standalone/.next/
+          echo "Standalone deployment package prepared"
 
       - name: Upload artifact for deployment
         uses: actions/upload-artifact@v4
         with:
           name: nextjs-app
-          path: |
-            .next/
-            public/
-            package.json
-            package-lock.json
-            next.config.ts
+          include-hidden-files: true
+          path: .next/standalone
           retention-days: 1
 
   deploy:
@@ -54,7 +57,7 @@ jobs:
     needs: build
     environment:
       name: production
-      url: https://devdesk.knowall.ai
+      url: https://zapdesk.knowall.ai
 
     steps:
       - name: Download artifact
@@ -62,20 +65,17 @@ jobs:
         with:
           name: nextjs-app
 
-      - name: Setup Node.js for production
-        uses: actions/setup-node@v4
+      - name: Login to Azure
+        uses: azure/login@v2
         with:
-          node-version: '20.x'
-
-      - name: Install production dependencies
-        run: npm ci --production
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+          package: .
+          startup-command: 'node server.js'
 
       - name: Configure App Settings
         uses: azure/appservice-settings@v1
@@ -84,7 +84,7 @@ jobs:
           mask-inputs: true
           app-settings-json: |
             [
-              {"name": "NEXTAUTH_URL", "value": "https://devdesk.knowall.ai"},
+              {"name": "NEXTAUTH_URL", "value": "https://zapdesk.knowall.ai"},
               {"name": "NEXTAUTH_SECRET", "value": "${{ secrets.NEXTAUTH_SECRET }}"},
               {"name": "AZURE_AD_CLIENT_ID", "value": "${{ secrets.AZURE_AD_CLIENT_ID }}"},
               {"name": "AZURE_AD_CLIENT_SECRET", "value": "${{ secrets.AZURE_AD_CLIENT_SECRET }}"},
@@ -94,10 +94,10 @@ jobs:
               {"name": "EMAIL_WEBHOOK_SECRET", "value": "${{ secrets.EMAIL_WEBHOOK_SECRET }}"},
               {"name": "SMTP_HOST", "value": "smtp.office365.com"},
               {"name": "SMTP_PORT", "value": "587"},
-              {"name": "SMTP_USER", "value": "devdesk@knowall.ai"},
+              {"name": "SMTP_USER", "value": "zapdesk@knowall.ai"},
               {"name": "SMTP_PASSWORD", "value": "${{ secrets.SMTP_PASSWORD }}"},
-              {"name": "SMTP_FROM", "value": "devdesk@knowall.ai"},
-              {"name": "SMTP_FROM_NAME", "value": "DevDesk Support"}
+              {"name": "SMTP_FROM", "value": "zapdesk@knowall.ai"},
+              {"name": "SMTP_FROM_NAME", "value": "ZapDesk Support"}
             ]
 
   notify:
@@ -108,7 +108,7 @@ jobs:
     steps:
       - name: Notify on success
         if: ${{ needs.deploy.result == 'success' }}
-        run: echo "Deployment to devdesk.knowall.ai completed successfully!"
+        run: echo "Deployment to zapdesk.knowall.ai completed successfully!"
 
       - name: Notify on failure
         if: ${{ needs.deploy.result == 'failure' }}
