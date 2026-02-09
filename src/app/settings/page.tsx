@@ -24,11 +24,12 @@ const DEFAULT_SETTINGS: UserSettings = {
     emailMentions: true,
     emailAssignments: true,
   },
-  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  timezone:
+    typeof window !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC',
   defaultTicketView: 'all-unsolved',
 };
 
-const TIMEZONE_OPTIONS = [
+const BASE_TIMEZONE_OPTIONS = [
   'America/New_York',
   'America/Chicago',
   'America/Denver',
@@ -38,12 +39,20 @@ const TIMEZONE_OPTIONS = [
   'Europe/London',
   'Europe/Paris',
   'Europe/Berlin',
+  'Asia/Kolkata',
   'Asia/Tokyo',
   'Asia/Shanghai',
   'Asia/Singapore',
   'Australia/Sydney',
   'Pacific/Auckland',
 ];
+
+function getTimezoneOptions(): string[] {
+  if (typeof window === 'undefined') return BASE_TIMEZONE_OPTIONS;
+  const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (BASE_TIMEZONE_OPTIONS.includes(detected)) return BASE_TIMEZONE_OPTIONS;
+  return [detected, ...BASE_TIMEZONE_OPTIONS];
+}
 
 const VIEW_OPTIONS = [
   { value: 'your-unsolved', label: 'Your unsolved tickets' },
@@ -58,7 +67,15 @@ function getInitialSettings(): UserSettings {
   try {
     const stored = localStorage.getItem('devdesk-settings');
     if (stored) {
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+      const parsed = JSON.parse(stored) as Partial<UserSettings>;
+      return {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        notifications: {
+          ...DEFAULT_SETTINGS.notifications,
+          ...(parsed.notifications || {}),
+        },
+      };
     }
   } catch {
     // Ignore parse errors
@@ -75,7 +92,6 @@ export default function SettingsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [settings, setSettings] = useState<UserSettings>(() => getInitialSettings());
-  const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
@@ -106,12 +122,9 @@ export default function SettingsPage() {
   };
 
   const handleSave = () => {
-    setIsSaving(true);
     saveSettings(settings);
-    setTimeout(() => {
-      setIsSaving(false);
-      setSaveSuccess(true);
-    }, 300);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2000);
   };
 
   if (status === 'loading') {
@@ -142,11 +155,7 @@ export default function SettingsPage() {
               Settings
             </h1>
           </div>
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="btn-primary flex items-center gap-2"
-          >
+          <button onClick={handleSave} className="btn-primary flex items-center gap-2">
             {saveSuccess ? (
               <>
                 <Check size={18} />
@@ -155,7 +164,7 @@ export default function SettingsPage() {
             ) : (
               <>
                 <Save size={18} />
-                {isSaving ? 'Saving...' : 'Save Changes'}
+                Save Changes
               </>
             )}
           </button>
@@ -228,7 +237,7 @@ export default function SettingsPage() {
                 onChange={(e) => handleTimezoneChange(e.target.value)}
                 className="input w-full max-w-md"
               >
-                {TIMEZONE_OPTIONS.map((tz) => (
+                {getTimezoneOptions().map((tz) => (
                   <option key={tz} value={tz}>
                     {tz.replace(/_/g, ' ')}
                   </option>
@@ -284,6 +293,8 @@ interface ToggleOptionProps {
   onChange: () => void;
 }
 
+const TOGGLE_OFFSET = 20; // width(44px) - toggle(20px) - padding(4px)
+
 function ToggleOption({ label, description, checked, onChange }: ToggleOptionProps) {
   return (
     <div className="flex items-center justify-between">
@@ -297,17 +308,24 @@ function ToggleOption({ label, description, checked, onChange }: ToggleOptionPro
       </div>
       <button
         onClick={onChange}
+        onKeyDown={(e) => {
+          if (e.key === ' ') {
+            e.preventDefault();
+            onChange();
+          }
+        }}
         className="relative h-6 w-11 rounded-full transition-colors"
         style={{
           backgroundColor: checked ? 'var(--primary)' : 'var(--border)',
         }}
         role="switch"
         aria-checked={checked}
+        aria-label={label}
       >
         <span
           className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform"
           style={{
-            transform: checked ? 'translateX(20px)' : 'translateX(0)',
+            transform: checked ? `translateX(${TOGGLE_OFFSET}px)` : 'translateX(0)',
           }}
         />
       </button>
