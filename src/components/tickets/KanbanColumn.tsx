@@ -16,6 +16,8 @@ interface KanbanColumnProps {
   itemsWithUnrecognizedState?: Set<number>;
   readOnly?: boolean;
   typeInfoMap?: Map<string, WorkItemType>;
+  onItemClick?: (item: KanbanItem) => void;
+  onZapClick?: (item: KanbanItem) => void;
 }
 
 export default function KanbanColumn({
@@ -26,6 +28,8 @@ export default function KanbanColumn({
   itemsWithUnrecognizedState,
   readOnly = false,
   typeInfoMap,
+  onItemClick,
+  onZapClick,
 }: KanbanColumnProps) {
   const color = stateColor ? `#${stateColor}` : 'var(--text-muted)';
 
@@ -46,6 +50,8 @@ export default function KanbanColumn({
         hasUnrecognizedState={itemsWithUnrecognizedState?.has(item.id)}
         readOnly={readOnly}
         typeInfo={itemType && typeInfoMap ? typeInfoMap.get(itemType) : undefined}
+        onItemClick={onItemClick}
+        onZapClick={onZapClick}
       />
     );
   });

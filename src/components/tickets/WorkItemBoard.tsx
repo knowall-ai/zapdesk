@@ -16,8 +16,9 @@ import {
   Users,
   Layers,
   Minus,
+  Zap,
 } from 'lucide-react';
-import type { WorkItem, WorkItemType } from '@/types';
+import type { Ticket, WorkItem, WorkItemType } from '@/types';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
@@ -47,6 +48,7 @@ export interface ColumnConfig {
 // Default columns for tickets view (backwards compatible)
 export const TICKET_COLUMNS: ColumnConfig[] = [
   { id: 'checkbox', label: '', width: 'w-10' },
+  { id: 'type', label: 'Type', sortField: 'type' },
   { id: 'status', label: 'Ticket Status', sortField: 'status' },
   { id: 'subject', label: 'Subject', sortField: 'subject' },
   { id: 'project', label: 'Project', sortField: 'project' },
@@ -87,6 +89,8 @@ interface WorkItemBoardProps {
   defaultTicketsOnly?: boolean; // Default state of "Tickets only" toggle (default: true)
   onStatusChange?: (itemId: number, newState: string) => Promise<void>; // For drag-and-drop
   onWorkItemClick?: (item: WorkItem) => void; // Click handler for work item subject (opens dialog instead of navigating)
+  onZapClick?: (item: WorkItem) => void; // Opens ZapDialog for the work item's assignee
+  defaultViewMode?: 'list' | 'kanban'; // Initial view mode
 }
 
 type SortField =
@@ -221,12 +225,14 @@ export default function WorkItemBoard({
   defaultTicketsOnly = true,
   onStatusChange,
   onWorkItemClick,
+  onZapClick,
+  defaultViewMode = 'list',
 }: WorkItemBoardProps) {
   const [sortField, setSortField] = useState<SortField>('updated');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
   const [groupBy, setGroupBy] = useState<GroupByOption>(initialGroupBy);
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>(defaultViewMode);
   const [ticketsOnly, setTicketsOnly] = useState(defaultTicketsOnly);
   const [filters, setFilters] = useState<Filters>({
     status: [],
@@ -766,6 +772,8 @@ export default function WorkItemBoard({
             groupBy={groupBy}
             groupedItems={groupBy !== 'none' ? groupedItems : undefined}
             typeInfoMap={typeInfoMap}
+            onItemClick={onWorkItemClick as ((item: Ticket | WorkItem) => void) | undefined}
+            onZapClick={onZapClick as ((item: Ticket | WorkItem) => void) | undefined}
           />
         </div>
       )}
@@ -829,6 +837,7 @@ export default function WorkItemBoard({
                             <>
                               <Avatar
                                 name={groupName === 'Unassigned' ? '?' : groupName}
+                                image={groupItems[0]?.assignee?.avatarUrl}
                                 size="sm"
                               />
                               {groupName}
@@ -994,6 +1003,19 @@ export default function WorkItemBoard({
                               <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                                 {item.assignee.displayName}
                               </span>
+                              {onZapClick && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onZapClick(item);
+                                  }}
+                                  className="rounded p-0.5 transition-colors hover:bg-[var(--surface-hover)]"
+                                  style={{ color: 'var(--warning)', cursor: 'pointer' }}
+                                  title="Send a Zap tip"
+                                >
+                                  <Zap size={14} />
+                                </button>
+                              )}
                             </div>
                           ) : (
                             <span className="text-sm" style={{ color: 'var(--text-muted)' }}>

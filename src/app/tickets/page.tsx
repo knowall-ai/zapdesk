@@ -2,22 +2,14 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState, Suspense, useCallback, useMemo } from 'react';
-import { List, LayoutGrid, X, Tag } from 'lucide-react';
+import { useEffect, useState, Suspense, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
-import { TicketList, KanbanBoard } from '@/components/tickets';
+import { TicketList } from '@/components/tickets';
+import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
+import ZapDialog from '@/components/tickets/ZapDialog';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
-import type { Ticket, TicketStatus, TicketPriority } from '@/types';
-
-interface Filters {
-  status: TicketStatus | '';
-  priority: TicketPriority | '';
-  assignee: string;
-  requester: string;
-  project: string;
-  type: string; // Work item type filter
-}
+import type { Ticket, WorkItem, User, WorkItemType } from '@/types';
 
 const viewTitles: Record<string, string> = {
   'your-active': 'Your active tickets',
@@ -43,31 +35,15 @@ function TicketsPageContent() {
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
-  const [displayMode, setDisplayMode] = useState<'list' | 'kanban'>(
-    displayParam === 'kanban' ? 'kanban' : isKanbanView ? 'kanban' : 'list'
-  );
-  const [ticketsOnly, setTicketsOnly] = useState(true); // Filter by "ticket" tag
-  const [filters, setFilters] = useState<Filters>({
-    status: '',
-    priority: '',
-    assignee: '',
-    requester: '',
-    project: '',
-    type: '',
-  });
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [zapTarget, setZapTarget] = useState<{ agent: User; ticketId: number } | null>(null);
+  const [workItemTypes, setWorkItemTypes] = useState<WorkItemType[]>([]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login');
     }
   }, [status, router]);
-
-  // Update display mode when navigating to kanban view
-  useEffect(() => {
-    if (isKanbanView) {
-      setDisplayMode('kanban');
-    }
-  }, [isKanbanView]);
 
   const fetchTickets = useCallback(async () => {
     if (!selectedOrganization) return;
@@ -76,9 +52,6 @@ function TicketsPageContent() {
       // For kanban view, fetch all active tickets
       const fetchView = isKanbanView ? 'all-active' : view;
       const params = new URLSearchParams({ view: fetchView });
-      if (!ticketsOnly) {
-        params.set('ticketsOnly', 'false');
-      }
       const response = await fetch(`/api/devops/tickets?${params.toString()}`, {
         headers: { 'x-devops-org': selectedOrganization.accountName },
       });
@@ -93,21 +66,32 @@ function TicketsPageContent() {
           })
         );
         setTickets(ticketsWithDates);
+
+        // Fetch work item types for type icons from the first project
+        const firstProject = ticketsWithDates.find((t: Ticket) => t.project)?.project;
+        if (firstProject) {
+          fetch(`/api/devops/projects/${encodeURIComponent(firstProject)}/workitemtypes`, {
+            headers: { 'x-devops-org': selectedOrganization.accountName },
+          })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+              if (d) setWorkItemTypes(d.types || []);
+            })
+            .catch(() => {});
+        }
       }
     } catch (error) {
       console.error('Failed to fetch tickets:', error);
     } finally {
       setLoading(false);
     }
-  }, [view, isKanbanView, ticketsOnly, selectedOrganization]);
+  }, [view, isKanbanView, selectedOrganization]);
 
   useEffect(() => {
     if (session?.accessToken) {
       fetchTickets();
     }
-    // Use session?.accessToken instead of session to avoid refetch on tab focus
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken]);
+  }, [session, fetchTickets]);
 
   const handleTicketStateChange = useCallback(
     async (ticketId: number, newState: string) => {
@@ -139,74 +123,55 @@ function TicketsPageContent() {
     [selectedOrganization]
   );
 
-  // Get unique values for filter dropdowns
-  const filterOptions = useMemo(() => {
-    const assignees = new Set<string>();
-    const requesters = new Set<string>();
-    const projects = new Set<string>();
-    const types = new Set<string>();
-
-    tickets.forEach((ticket) => {
-      if (ticket.assignee?.displayName) {
-        assignees.add(ticket.assignee.displayName);
-      }
-      if (ticket.requester?.displayName) {
-        requesters.add(ticket.requester.displayName);
-      }
-      if (ticket.project) {
-        projects.add(ticket.project);
-      }
-      if (ticket.workItemType) {
-        types.add(ticket.workItemType);
-      }
-    });
-
+  // Convert a Ticket to a WorkItem shape for the detail dialog
+  const ticketToWorkItem = useCallback((ticket: Ticket): WorkItem => {
     return {
-      assignees: Array.from(assignees).sort(),
-      requesters: Array.from(requesters).sort(),
-      projects: Array.from(projects).sort(),
-      types: Array.from(types).sort(),
+      id: ticket.id,
+      title: ticket.title,
+      description: ticket.description,
+      state: ticket.devOpsState,
+      workItemType: ticket.workItemType,
+      areaPath: '',
+      project: ticket.project,
+      createdAt: ticket.createdAt,
+      updatedAt: ticket.updatedAt,
+      completedWork: 0,
+      remainingWork: 0,
+      originalEstimate: 0,
+      assignee: ticket.assignee,
+      devOpsUrl: ticket.devOpsUrl,
+      tags: ticket.tags,
+      priority: ticket.priority,
+      requester: ticket.requester,
+      organization: ticket.organization,
     };
-  }, [tickets]);
+  }, []);
 
-  // Apply filters
-  const filteredTickets = useMemo(() => {
-    return tickets.filter((ticket) => {
-      if (filters.status && ticket.status !== filters.status) return false;
-      if (filters.priority && ticket.priority !== filters.priority) return false;
-      if (filters.assignee && ticket.assignee?.displayName !== filters.assignee) return false;
-      if (filters.requester && ticket.requester.displayName !== filters.requester) return false;
-      if (filters.project && ticket.project !== filters.project) return false;
-      return true;
-    });
-  }, [tickets, filters]);
-
-  const clearFilters = () => {
-    setFilters({ status: '', priority: '', assignee: '', requester: '', project: '', type: '' });
-  };
-
-  // Update URL when display mode changes to preserve view on navigation
-  const handleDisplayModeChange = useCallback(
-    (mode: 'list' | 'kanban') => {
-      setDisplayMode(mode);
-      const params = new URLSearchParams(searchParams.toString());
-      if (mode === 'kanban') {
-        params.set('display', 'kanban');
-      } else {
-        params.delete('display');
+  const handleWorkItemClick = useCallback(
+    (item: WorkItem) => {
+      // Find the full ticket from our state
+      const ticket = tickets.find((t) => t.id === item.id);
+      if (ticket) {
+        setSelectedTicket(ticket);
       }
-      router.replace(`/tickets?${params.toString()}`, { scroll: false });
     },
-    [router, searchParams]
+    [tickets]
   );
 
-  const hasActiveFilters =
-    filters.status ||
-    filters.priority ||
-    filters.assignee ||
-    filters.requester ||
-    filters.project ||
-    filters.type;
+  const handleDialogStateChange = useCallback(
+    async (workItemId: number, state: string) => {
+      await handleTicketStateChange(workItemId, state);
+      // Update the selected ticket's state in the dialog
+      setSelectedTicket((prev) => (prev ? { ...prev, devOpsState: state } : null));
+    },
+    [handleTicketStateChange]
+  );
+
+  const handleZapClick = useCallback((item: WorkItem) => {
+    if (item.assignee) {
+      setZapTarget({ agent: item.assignee, ticketId: item.id });
+    }
+  }, []);
 
   if (status === 'loading' || loading) {
     return (
@@ -223,159 +188,42 @@ function TicketsPageContent() {
   }
 
   const title = viewTitles[view] || 'Tickets';
+  const defaultViewMode = isKanbanView || displayParam === 'kanban' ? 'kanban' : 'list';
 
   return (
     <MainLayout>
       <div className="flex h-full flex-col">
-        {/* Header */}
-        <div className="border-b px-6 py-4" style={{ borderColor: 'var(--border)' }}>
-          <div className="mb-3 flex items-center justify-between">
-            <h1 className="text-xl font-semibold text-[var(--text-primary)]">{title}</h1>
-          </div>
-
-          {/* Filters and view toggle */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              {filteredTickets.length} ticket{filteredTickets.length !== 1 ? 's' : ''}
-              {hasActiveFilters && ` (filtered from ${tickets.length})`}
-            </span>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <select
-                value={filters.status}
-                onChange={(e) =>
-                  setFilters({ ...filters, status: e.target.value as TicketStatus | '' })
-                }
-                className="input text-sm"
-              >
-                <option value="">All Statuses</option>
-                <option value="New">New</option>
-                <option value="Open">Open</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Pending">Pending</option>
-                <option value="Resolved">Resolved</option>
-                <option value="Closed">Closed</option>
-              </select>
-
-              <select
-                value={filters.priority}
-                onChange={(e) =>
-                  setFilters({ ...filters, priority: e.target.value as TicketPriority | '' })
-                }
-                className="input text-sm"
-              >
-                <option value="">All Priorities</option>
-                <option value="Urgent">Urgent</option>
-                <option value="High">High</option>
-                <option value="Normal">Normal</option>
-                <option value="Low">Low</option>
-              </select>
-
-              <select
-                value={filters.assignee}
-                onChange={(e) => setFilters({ ...filters, assignee: e.target.value })}
-                className="input text-sm"
-              >
-                <option value="">All Assignees</option>
-                {filterOptions.assignees.map((assignee) => (
-                  <option key={assignee} value={assignee}>
-                    {assignee}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={filters.requester}
-                onChange={(e) => setFilters({ ...filters, requester: e.target.value })}
-                className="input text-sm"
-              >
-                <option value="">All Requesters</option>
-                {filterOptions.requesters.map((requester) => (
-                  <option key={requester} value={requester}>
-                    {requester}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={filters.project}
-                onChange={(e) => setFilters({ ...filters, project: e.target.value })}
-                className="input text-sm"
-              >
-                <option value="">All Projects</option>
-                {filterOptions.projects.map((project) => (
-                  <option key={project} value={project}>
-                    {project}
-                  </option>
-                ))}
-              </select>
-
-              {hasActiveFilters && (
-                <button
-                  onClick={clearFilters}
-                  className="flex items-center gap-1 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  <X size={14} />
-                  Clear
-                </button>
-              )}
-
-              {/* Tickets only toggle */}
-              <button
-                onClick={() => setTicketsOnly(!ticketsOnly)}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  ticketsOnly
-                    ? 'bg-[var(--primary)] text-white'
-                    : 'bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                }`}
-                title={
-                  ticketsOnly ? 'Showing only items tagged "ticket"' : 'Showing all work items'
-                }
-              >
-                <Tag size={14} />
-                <span className="hidden sm:inline">Tickets Only</span>
-              </button>
-
-              {/* View toggle */}
-              <div className="flex items-center gap-1 rounded-lg bg-[var(--surface)] p-1">
-                <button
-                  onClick={() => handleDisplayModeChange('list')}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                    displayMode === 'list'
-                      ? 'bg-[var(--primary)] text-white'
-                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                  }`}
-                  title="List view"
-                >
-                  <List size={16} />
-                  <span className="hidden sm:inline">List</span>
-                </button>
-                <button
-                  onClick={() => handleDisplayModeChange('kanban')}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                    displayMode === 'kanban'
-                      ? 'bg-[var(--primary)] text-white'
-                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                  }`}
-                  title="Kanban view"
-                >
-                  <LayoutGrid size={16} />
-                  <span className="hidden sm:inline">Kanban</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Content area */}
+        {/* TicketList renders WorkItemBoard with built-in filters, group-by, and view toggle */}
         <div className="flex-1 overflow-hidden">
-          {displayMode === 'list' ? (
-            <TicketList tickets={filteredTickets} title="" hideFilters />
-          ) : (
-            <KanbanBoard tickets={filteredTickets} onTicketStateChange={handleTicketStateChange} />
-          )}
+          <TicketList
+            tickets={tickets}
+            title={title}
+            onWorkItemClick={handleWorkItemClick}
+            onZapClick={handleZapClick}
+            onStatusChange={handleTicketStateChange}
+            availableTypes={workItemTypes}
+            defaultViewMode={defaultViewMode}
+            hideTicketsOnlyToggle
+          />
         </div>
+
+        {/* Work item detail dialog for list and kanban clicks */}
+        <WorkItemDetailDialog
+          workItem={selectedTicket ? ticketToWorkItem(selectedTicket) : null}
+          isOpen={!!selectedTicket}
+          onClose={() => setSelectedTicket(null)}
+          onStateChange={handleDialogStateChange}
+        />
+
+        {/* Zap dialog for lightning tips from list/kanban views */}
+        {zapTarget && (
+          <ZapDialog
+            isOpen={!!zapTarget}
+            onClose={() => setZapTarget(null)}
+            agent={zapTarget.agent}
+            ticketId={zapTarget.ticketId}
+          />
+        )}
       </div>
     </MainLayout>
   );

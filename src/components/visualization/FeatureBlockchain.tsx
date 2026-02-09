@@ -349,10 +349,10 @@ export default function FeatureTimechain({
   }, []);
 
   const handleDialogStateChange = useCallback(async (workItemId: number, newState: string) => {
-    const response = await fetch(`/api/devops/tickets/${workItemId}/status`, {
+    const response = await fetch(`/api/devops/tickets/${workItemId}/state`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newState }),
+      body: JSON.stringify({ state: newState }),
     });
     if (!response.ok) throw new Error('Failed to update state');
     // Update local state so dialog reflects the change

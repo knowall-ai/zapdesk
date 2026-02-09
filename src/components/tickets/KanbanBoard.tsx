@@ -32,6 +32,8 @@ interface KanbanBoardProps {
   groupBy?: GroupByOption;
   groupedItems?: Record<string, WorkItem[]>; // Pre-grouped items from WorkItemBoard
   typeInfoMap?: Map<string, WorkItemType>; // Work item type icons/colors
+  onItemClick?: (item: Ticket | WorkItem) => void; // Open detail dialog instead of navigating
+  onZapClick?: (item: Ticket | WorkItem) => void; // Opens ZapDialog for the assignee
 }
 
 // Helper to get state from either Ticket or WorkItem
@@ -58,6 +60,8 @@ export default function KanbanBoard({
   groupBy = 'none',
   groupedItems,
   typeInfoMap,
+  onItemClick,
+  onZapClick,
 }: KanbanBoardProps) {
   // Use items if provided, otherwise fall back to tickets
   // Wrapped in useMemo to prevent reference changes on every render
@@ -293,6 +297,8 @@ export default function KanbanBoard({
           itemsWithUnrecognizedState={itemsWithUnrecognizedState}
           readOnly={readOnly}
           typeInfoMap={typeInfoMap}
+          onItemClick={onItemClick}
+          onZapClick={onZapClick}
         />
       ))}
     </div>
