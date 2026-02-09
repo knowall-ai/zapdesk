@@ -526,16 +526,34 @@ export class AzureDevOpsService {
     return response.json();
   }
 
-  // Update work item fields (assignee, priority)
+  // Update work item fields (assignee, priority, title, description)
   async updateTicketFields(
     projectName: string,
     workItemId: number,
     updates: {
       assignee?: string | null;
       priority?: number;
+      title?: string;
+      description?: string;
     }
   ): Promise<DevOpsWorkItem> {
     const patchDocument: Array<{ op: string; path: string; value: string | number | null }> = [];
+
+    if (updates.title !== undefined) {
+      patchDocument.push({
+        op: 'add',
+        path: '/fields/System.Title',
+        value: updates.title,
+      });
+    }
+
+    if (updates.description !== undefined) {
+      patchDocument.push({
+        op: 'add',
+        path: '/fields/System.Description',
+        value: updates.description,
+      });
+    }
 
     if (updates.assignee !== undefined) {
       if (updates.assignee === null) {

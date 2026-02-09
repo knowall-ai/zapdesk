@@ -993,35 +993,41 @@ export default function WorkItemBoard({
                       )}
                       {hasColumn('assignee') && (
                         <td className={cellPadding}>
-                          {item.assignee ? (
-                            <div className="flex items-center gap-2">
-                              <Avatar
-                                name={item.assignee.displayName}
-                                image={item.assignee.avatarUrl}
-                                size="sm"
-                              />
-                              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                                {item.assignee.displayName}
-                              </span>
-                              {onZapClick && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onZapClick(item);
-                                  }}
-                                  className="rounded p-0.5 transition-colors hover:bg-[var(--surface-hover)]"
-                                  style={{ color: 'var(--warning)', cursor: 'pointer' }}
-                                  title="Send a Zap tip"
+                          <div className="flex items-center gap-2">
+                            {item.assignee ? (
+                              <>
+                                <Avatar
+                                  name={item.assignee.displayName}
+                                  image={item.assignee.avatarUrl}
+                                  size="sm"
+                                />
+                                <span
+                                  className="text-sm"
+                                  style={{ color: 'var(--text-secondary)' }}
                                 >
-                                  <Zap size={14} />
-                                </button>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                              Unassigned
-                            </span>
-                          )}
+                                  {item.assignee.displayName}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Unassigned
+                              </span>
+                            )}
+                            {onZapClick && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (item.assignee) onZapClick(item);
+                                }}
+                                disabled={!item.assignee}
+                                className="rounded p-0.5 transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-30"
+                                style={{ color: 'var(--warning)' }}
+                                title={item.assignee ? 'Send a Zap tip' : 'Assign someone first'}
+                              >
+                                <Zap size={14} />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       )}
                     </tr>

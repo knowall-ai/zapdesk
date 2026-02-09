@@ -9,6 +9,7 @@ import { TicketList } from '@/components/tickets';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import ZapDialog from '@/components/tickets/ZapDialog';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
+import { ticketToWorkItem } from '@/lib/devops';
 import type { Ticket, WorkItem, User, WorkItemType } from '@/types';
 
 const viewTitles: Record<string, string> = {
@@ -67,7 +68,10 @@ function TicketsPageContent() {
         );
         setTickets(ticketsWithDates);
 
-        // Fetch work item types for type icons from the first project
+        // Fetch work item types for type icons, filtered to only ticket types
+        const ticketTypeNames = new Set(
+          ticketsWithDates.map((t: Ticket) => t.workItemType).filter(Boolean)
+        );
         const firstProject = ticketsWithDates.find((t: Ticket) => t.project)?.project;
         if (firstProject) {
           fetch(`/api/devops/projects/${encodeURIComponent(firstProject)}/workitemtypes`, {
@@ -75,7 +79,13 @@ function TicketsPageContent() {
           })
             .then((r) => (r.ok ? r.json() : null))
             .then((d) => {
-              if (d) setWorkItemTypes(d.types || []);
+              if (d) {
+                // Only include types that appear in ticket data (excludes User Story, Feature, etc.)
+                const types = (d.types || []).filter((t: { name: string }) =>
+                  ticketTypeNames.has(t.name)
+                );
+                setWorkItemTypes(types);
+              }
             })
             .catch(() => {});
         }
@@ -123,30 +133,6 @@ function TicketsPageContent() {
     [selectedOrganization]
   );
 
-  // Convert a Ticket to a WorkItem shape for the detail dialog
-  const ticketToWorkItem = useCallback((ticket: Ticket): WorkItem => {
-    return {
-      id: ticket.id,
-      title: ticket.title,
-      description: ticket.description,
-      state: ticket.devOpsState,
-      workItemType: ticket.workItemType,
-      areaPath: '',
-      project: ticket.project,
-      createdAt: ticket.createdAt,
-      updatedAt: ticket.updatedAt,
-      completedWork: 0,
-      remainingWork: 0,
-      originalEstimate: 0,
-      assignee: ticket.assignee,
-      devOpsUrl: ticket.devOpsUrl,
-      tags: ticket.tags,
-      priority: ticket.priority,
-      requester: ticket.requester,
-      organization: ticket.organization,
-    };
-  }, []);
-
   const handleWorkItemClick = useCallback(
     (item: WorkItem) => {
       // Find the full ticket from our state
@@ -172,6 +158,48 @@ function TicketsPageContent() {
       setZapTarget({ agent: item.assignee, ticketId: item.id });
     }
   }, []);
+
+  const handleWorkItemUpdate = useCallback(
+    async (workItemId: number, updates: { title?: string; description?: string }) => {
+      const ticket = tickets.find((t) => t.id === workItemId);
+      if (!ticket || !selectedOrganization) return;
+      const response = await fetch(`/api/devops/tickets/${workItemId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-devops-org': selectedOrganization.accountName,
+        },
+        body: JSON.stringify({ ...updates, project: ticket.project }),
+      });
+      if (response.ok) {
+        // Update local state
+        setTickets((prev) =>
+          prev.map((t) =>
+            t.id === workItemId
+              ? {
+                  ...t,
+                  ...(updates.title && { title: updates.title }),
+                  ...(updates.description && { description: updates.description }),
+                }
+              : t
+          )
+        );
+        // Update selected ticket in dialog
+        setSelectedTicket((prev) =>
+          prev
+            ? {
+                ...prev,
+                ...(updates.title && { title: updates.title }),
+                ...(updates.description && { description: updates.description }),
+              }
+            : null
+        );
+      } else {
+        throw new Error('Failed to update work item');
+      }
+    },
+    [tickets, selectedOrganization]
+  );
 
   if (status === 'loading' || loading) {
     return (
@@ -213,6 +241,7 @@ function TicketsPageContent() {
           isOpen={!!selectedTicket}
           onClose={() => setSelectedTicket(null)}
           onStateChange={handleDialogStateChange}
+          onUpdate={handleWorkItemUpdate}
         />
 
         {/* Zap dialog for lightning tips from list/kanban views */}

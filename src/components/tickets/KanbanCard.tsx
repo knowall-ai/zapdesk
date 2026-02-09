@@ -60,31 +60,34 @@ function CardContent({
       </h4>
 
       <div className="flex items-center justify-between">
-        {item.assignee ? (
-          <div className="flex items-center gap-1.5">
-            <Avatar name={item.assignee.displayName} size="sm" />
-            <span className="max-w-[100px] truncate text-xs text-[var(--text-secondary)]">
-              {item.assignee.displayName}
-            </span>
-            {onZapClick && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  onZapClick(item);
-                }}
-                className="rounded p-0.5 transition-colors hover:bg-[var(--surface-hover)]"
-                style={{ color: 'var(--warning)', cursor: 'pointer' }}
-                title="Send a Zap tip"
-              >
-                <Zap size={12} />
-              </button>
-            )}
-          </div>
-        ) : (
-          <span className="text-xs text-[var(--text-muted)]">Unassigned</span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {item.assignee ? (
+            <>
+              <Avatar name={item.assignee.displayName} size="sm" />
+              <span className="max-w-[100px] truncate text-xs text-[var(--text-secondary)]">
+                {item.assignee.displayName}
+              </span>
+            </>
+          ) : (
+            <span className="text-xs text-[var(--text-muted)]">Unassigned</span>
+          )}
+          {onZapClick && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                if (item.assignee) onZapClick(item);
+              }}
+              disabled={!item.assignee}
+              className="rounded p-0.5 transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-30"
+              style={{ color: 'var(--warning)' }}
+              title={item.assignee ? 'Send a Zap tip' : 'Assign someone first'}
+            >
+              <Zap size={12} />
+            </button>
+          )}
+        </div>
 
         {organization && (
           <span className="max-w-[80px] truncate text-xs text-[var(--text-muted)]">
