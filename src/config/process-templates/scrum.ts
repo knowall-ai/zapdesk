@@ -13,7 +13,7 @@ export const scrumConfig: ProcessTemplateConfig = {
   id: 'scrum',
 
   workItemTypes: {
-    // Ticket types - must be tagged with "ticket" to appear in DevDesk
+    // Ticket types - must be tagged with "ticket" to appear in ZapDesk
     ticketTypes: ['Product Backlog Item', 'Bug', 'Task', 'Impediment'],
     defaultTicketType: 'Product Backlog Item',
 

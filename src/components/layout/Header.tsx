@@ -163,7 +163,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           <input
             ref={searchInputRef}
             type="text"
-            placeholder="Search tickets, users, organizations... (Ctrl+K)"
+            placeholder="Search tickets, users, projects... (Ctrl+K)"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}

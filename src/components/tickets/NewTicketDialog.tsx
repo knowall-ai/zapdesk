@@ -1,20 +1,14 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import {
-  X,
-  Send,
-  Loader2,
-  Search,
-  Paperclip,
-  File,
-  FileText,
-  Image as ImageIcon,
-} from 'lucide-react';
+import { X, Send, Loader2, Search, Paperclip } from 'lucide-react';
+import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import type { DevOpsProject, User, WorkItemType } from '@/types';
-import { MAX_ATTACHMENT_SIZE, ALLOWED_ATTACHMENT_TYPES } from '@/types';
+import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
+import { formatFileSize, validateFile } from '@/lib/attachment-utils';
+import { FileIcon } from '@/components/common';
 
 interface NewTicketForm {
   project: string;
@@ -35,6 +29,7 @@ interface NewTicketDialogProps {
 export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProps) {
   const { data: session } = useSession();
   const router = useRouter();
+  const { get, post, hasOrganization } = useDevOpsApi();
   const [projects, setProjects] = useState<DevOpsProject[]>([]);
   const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const [workItemTypes, setWorkItemTypes] = useState<WorkItemType[]>([]);
@@ -60,6 +55,73 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     workItemType: 'Task',
   });
 
+  // Fetch functions defined first (before useEffects that use them)
+  const fetchProjects = useCallback(async () => {
+    setIsLoadingProjects(true);
+    setError(null);
+    try {
+      const response = await get('/api/devops/projects');
+      if (!response.ok) throw new Error('Failed to fetch projects');
+      const data = await response.json();
+      const sortedProjects = (data.projects || []).sort((a: DevOpsProject, b: DevOpsProject) =>
+        a.name.localeCompare(b.name)
+      );
+      setProjects(sortedProjects);
+    } catch (err) {
+      setError('Failed to load projects. Please try again.');
+      console.error('Failed to fetch projects:', err);
+    } finally {
+      setIsLoadingProjects(false);
+    }
+  }, [get]);
+
+  const fetchTeamMembers = useCallback(
+    async (projectName: string) => {
+      setIsLoadingMembers(true);
+      setAssigneeSearch('');
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/members`
+        );
+        if (!response.ok) throw new Error('Failed to fetch team members');
+        const data = await response.json();
+        setTeamMembers(data.members || []);
+      } catch (err) {
+        console.error('Failed to fetch team members:', err);
+        setTeamMembers([]);
+      } finally {
+        setIsLoadingMembers(false);
+      }
+    },
+    [get]
+  );
+
+  const fetchWorkItemTypes = useCallback(
+    async (projectName: string) => {
+      setIsLoadingTypes(true);
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`
+        );
+        if (!response.ok) throw new Error('Failed to fetch work item types');
+        const data = await response.json();
+        const types = data.types || [];
+        setWorkItemTypes(types);
+        // Set default to Task if available, otherwise first type
+        if (types.length > 0) {
+          const taskType = types.find((t: WorkItemType) => t.name === 'Task');
+          setForm((prev) => ({ ...prev, workItemType: taskType?.name || types[0].name }));
+        }
+      } catch (err) {
+        console.error('Failed to fetch work item types:', err);
+        setWorkItemTypes([]);
+      } finally {
+        setIsLoadingTypes(false);
+      }
+    },
+    [get]
+  );
+
   // Reset form when dialog opens
   useEffect(() => {
     if (isOpen) {
@@ -81,21 +143,21 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
 
   // Fetch projects on load
   useEffect(() => {
-    if (isOpen && session?.accessToken) {
+    if (isOpen && session?.accessToken && hasOrganization) {
       fetchProjects();
     }
-  }, [isOpen, session]);
+  }, [isOpen, session, hasOrganization, fetchProjects]);
 
   // Fetch team members and work item types when project changes
   useEffect(() => {
-    if (form.project && session?.accessToken) {
+    if (form.project && session?.accessToken && hasOrganization) {
       fetchTeamMembers(form.project);
       fetchWorkItemTypes(form.project);
     } else {
       setTeamMembers([]);
       setWorkItemTypes([]);
     }
-  }, [form.project, session]);
+  }, [form.project, session, hasOrganization, fetchTeamMembers, fetchWorkItemTypes]);
 
   // Filter out Stakeholders and apply search
   const filteredMembers = useMemo(() => {
@@ -118,66 +180,6 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
   }, [teamMembers, assigneeSearch]);
 
-  const fetchProjects = async () => {
-    setIsLoadingProjects(true);
-    setError(null);
-    try {
-      const response = await fetch('/api/devops/projects');
-      if (!response.ok) throw new Error('Failed to fetch projects');
-      const data = await response.json();
-      const sortedProjects = (data.projects || []).sort((a: DevOpsProject, b: DevOpsProject) =>
-        a.name.localeCompare(b.name)
-      );
-      setProjects(sortedProjects);
-    } catch (err) {
-      setError('Failed to load projects. Please try again.');
-      console.error('Failed to fetch projects:', err);
-    } finally {
-      setIsLoadingProjects(false);
-    }
-  };
-
-  const fetchTeamMembers = async (projectName: string) => {
-    setIsLoadingMembers(true);
-    setAssigneeSearch('');
-    try {
-      const response = await fetch(
-        `/api/devops/projects/${encodeURIComponent(projectName)}/members`
-      );
-      if (!response.ok) throw new Error('Failed to fetch team members');
-      const data = await response.json();
-      setTeamMembers(data.members || []);
-    } catch (err) {
-      console.error('Failed to fetch team members:', err);
-      setTeamMembers([]);
-    } finally {
-      setIsLoadingMembers(false);
-    }
-  };
-
-  const fetchWorkItemTypes = async (projectName: string) => {
-    setIsLoadingTypes(true);
-    try {
-      const response = await fetch(
-        `/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`
-      );
-      if (!response.ok) throw new Error('Failed to fetch work item types');
-      const data = await response.json();
-      const types = data.types || [];
-      setWorkItemTypes(types);
-      // Set default to Task if available, otherwise first type
-      if (types.length > 0) {
-        const taskType = types.find((t: WorkItemType) => t.name === 'Task');
-        setForm((prev) => ({ ...prev, workItemType: taskType?.name || types[0].name }));
-      }
-    } catch (err) {
-      console.error('Failed to fetch work item types:', err);
-      setWorkItemTypes([]);
-    } finally {
-      setIsLoadingTypes(false);
-    }
-  };
-
   // File attachment handlers
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -188,23 +190,11 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-
-      // Validate file size
-      if (file.size > MAX_ATTACHMENT_SIZE) {
-        setError(
-          `File "${file.name}" is too large. Maximum size is ${MAX_ATTACHMENT_SIZE / (1024 * 1024)}MB`
-        );
+      const validationError = validateFile(file);
+      if (validationError) {
+        setError(validationError);
         continue;
       }
-
-      // Validate file type
-      if (!ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {
-        setError(
-          `File "${file.name}" type is not allowed. Supported: images, PDFs, Office docs, text files, ZIP.`
-        );
-        continue;
-      }
-
       newFiles.push(file);
     }
 
@@ -222,18 +212,6 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     setPendingFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const getFileIcon = (contentType: string) => {
-    if (contentType.startsWith('image/')) return <ImageIcon size={14} />;
-    if (contentType === 'application/pdf') return <FileText size={14} />;
-    return <File size={14} />;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.project || !form.title.trim()) {
@@ -245,21 +223,17 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     setError(null);
 
     try {
-      const response = await fetch('/api/devops/tickets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project: form.project,
-          title: form.title.trim(),
-          description: form.description.trim(),
-          priority: form.priority,
-          assignee: form.assignee || undefined,
-          workItemType: form.workItemType,
-          tags: form.tags
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean),
-        }),
+      const response = await post('/api/devops/tickets', {
+        project: form.project,
+        title: form.title.trim(),
+        description: form.description.trim(),
+        priority: form.priority,
+        assignee: form.assignee || undefined,
+        workItemType: form.workItemType,
+        tags: form.tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
       });
 
       if (!response.ok) {
@@ -273,6 +247,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       // Upload attachments if any
       if (pendingFiles.length > 0) {
         setIsUploadingFiles(true);
+        const failedUploads: string[] = [];
         for (const file of pendingFiles) {
           const formData = new FormData();
           formData.append('file', file);
@@ -283,10 +258,17 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
           });
 
           if (!uploadResponse.ok) {
-            console.error('Failed to upload attachment:', file.name);
+            failedUploads.push(file.name);
           }
         }
         setIsUploadingFiles(false);
+
+        if (failedUploads.length > 0) {
+          setError(
+            `Ticket created, but ${failedUploads.length} attachment(s) failed to upload: ${failedUploads.join(', ')}`
+          );
+          return;
+        }
       }
 
       onClose();
@@ -299,19 +281,43 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     }
   };
 
+  // Build full identity string for Azure DevOps: "DisplayName <email>"
+  const buildIdentityString = (member: User): string => {
+    if (member.email) {
+      return `${member.displayName} <${member.email}>`;
+    }
+    return member.displayName;
+  };
+
+  // Extract display name from identity string "DisplayName <email>"
+  const getDisplayNameFromIdentity = (identity: string): string => {
+    if (!identity) {
+      return '';
+    }
+
+    const trimmedIdentity = identity.trim();
+    const ltIndex = trimmedIdentity.indexOf('<');
+
+    if (ltIndex !== -1) {
+      return trimmedIdentity.slice(0, ltIndex).trim();
+    }
+
+    return trimmedIdentity;
+  };
+
   const handleTakeIt = () => {
     if (session?.user?.email) {
       const currentUser = filteredMembers.find(
         (m) => m.email?.toLowerCase() === session.user?.email?.toLowerCase()
       );
       if (currentUser) {
-        setForm((prev) => ({ ...prev, assignee: currentUser.id }));
+        setForm((prev) => ({ ...prev, assignee: buildIdentityString(currentUser) }));
       }
     }
   };
 
-  const handleSelectAssignee = (memberId: string) => {
-    setForm((prev) => ({ ...prev, assignee: memberId }));
+  const handleSelectAssignee = (member: User) => {
+    setForm((prev) => ({ ...prev, assignee: buildIdentityString(member) }));
     setAssigneeSearch('');
   };
 
@@ -418,7 +424,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                           color: 'var(--text-secondary)',
                         }}
                       >
-                        {getFileIcon(file.type)}
+                        <FileIcon contentType={file.type} size={14} />
                         <span className="max-w-[150px] truncate">{file.name}</span>
                         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                           ({formatFileSize(file.size)})
@@ -617,15 +623,13 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                       />
                     </div>
                     {/* Selected assignee or dropdown */}
-                    {form.assignee ? (
+                    {form.assignee && form.assignee.trim() ? (
                       <div
                         className="flex items-center justify-between rounded p-2"
                         style={{ backgroundColor: 'var(--surface-hover)' }}
                       >
                         <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                          {filteredMembers.find((m) => m.id === form.assignee)?.displayName ||
-                            teamMembers.find((m) => m.id === form.assignee)?.displayName ||
-                            'Selected'}
+                          {getDisplayNameFromIdentity(form.assignee)}
                         </span>
                         <button
                           type="button"
@@ -653,7 +657,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                             <button
                               key={member.id}
                               type="button"
-                              onClick={() => handleSelectAssignee(member.id)}
+                              onClick={() => handleSelectAssignee(member)}
                               className="block w-full px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
                               style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
                             >

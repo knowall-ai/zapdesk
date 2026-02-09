@@ -1,4 +1,4 @@
-// DevDesk Types - Azure DevOps Work Items mapped to Zendesk-like concepts
+// ZapDesk Types - Azure DevOps Work Items mapped to Zendesk-like concepts
 
 export interface User {
   id: string;
@@ -27,7 +27,7 @@ export interface Organization {
   createdAt: Date;
   updatedAt: Date;
   processTemplate?: string; // Azure DevOps process template (e.g., "T-Minus-15", "Basic")
-  isTemplateSupported?: boolean; // Whether this template has a config in DevDesk
+  isTemplateSupported?: boolean; // Whether this template has a config in ZapDesk
 }
 
 export interface Customer {
@@ -212,7 +212,7 @@ export interface EmailWebhookPayload {
 }
 
 // Session types extending next-auth
-export interface DevDeskSession {
+export interface ZapDeskSession {
   user: {
     id: string;
     name: string;

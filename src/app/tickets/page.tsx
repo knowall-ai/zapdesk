@@ -15,6 +15,7 @@ interface Filters {
   priority: TicketPriority | '';
   assignee: string;
   requester: string;
+  project: string;
 }
 
 const viewTitles: Record<string, string> = {
@@ -50,6 +51,7 @@ function TicketsPageContent() {
     priority: '',
     assignee: '',
     requester: '',
+    project: '',
   });
 
   useEffect(() => {
@@ -137,6 +139,7 @@ function TicketsPageContent() {
   const filterOptions = useMemo(() => {
     const assignees = new Set<string>();
     const requesters = new Set<string>();
+    const projects = new Set<string>();
 
     tickets.forEach((ticket) => {
       if (ticket.assignee?.displayName) {
@@ -145,11 +148,15 @@ function TicketsPageContent() {
       if (ticket.requester?.displayName) {
         requesters.add(ticket.requester.displayName);
       }
+      if (ticket.project) {
+        projects.add(ticket.project);
+      }
     });
 
     return {
       assignees: Array.from(assignees).sort(),
       requesters: Array.from(requesters).sort(),
+      projects: Array.from(projects).sort(),
     };
   }, [tickets]);
 
@@ -160,12 +167,13 @@ function TicketsPageContent() {
       if (filters.priority && ticket.priority !== filters.priority) return false;
       if (filters.assignee && ticket.assignee?.displayName !== filters.assignee) return false;
       if (filters.requester && ticket.requester.displayName !== filters.requester) return false;
+      if (filters.project && ticket.project !== filters.project) return false;
       return true;
     });
   }, [tickets, filters]);
 
   const clearFilters = () => {
-    setFilters({ status: '', priority: '', assignee: '', requester: '' });
+    setFilters({ status: '', priority: '', assignee: '', requester: '', project: '' });
   };
 
   // Update URL when display mode changes to preserve view on navigation
@@ -184,7 +192,7 @@ function TicketsPageContent() {
   );
 
   const hasActiveFilters =
-    filters.status || filters.priority || filters.assignee || filters.requester;
+    filters.status || filters.priority || filters.assignee || filters.requester || filters.project;
 
   if (status === 'loading' || loading) {
     return (
@@ -271,6 +279,19 @@ function TicketsPageContent() {
                 {filterOptions.requesters.map((requester) => (
                   <option key={requester} value={requester}>
                     {requester}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={filters.project}
+                onChange={(e) => setFilters({ ...filters, project: e.target.value })}
+                className="input text-sm"
+              >
+                <option value="">All Projects</option>
+                {filterOptions.projects.map((project) => (
+                  <option key={project} value={project}>
+                    {project}
                   </option>
                 ))}
               </select>

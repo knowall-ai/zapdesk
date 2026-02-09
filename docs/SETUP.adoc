@@ -1,4 +1,4 @@
-= DevDesk Setup Guide
+= ZapDesk Setup Guide
 :toc:
 :toc-placement!:
 
@@ -6,7 +6,7 @@ toc::[]
 
 == Overview
 
-DevDesk is a Zendesk-style support ticketing portal that uses Azure DevOps as its backend. Work items tagged with `ticket` are displayed as support tickets.
+ZapDesk is a Zendesk-style support ticketing portal that uses Azure DevOps as its backend. Work items tagged with `ticket` are displayed as support tickets.
 
 == Prerequisites
 
@@ -20,9 +20,9 @@ DevDesk is a Zendesk-style support ticketing portal that uses Azure DevOps as it
 . Go to https://portal.azure.com[Azure Portal] > Azure Active Directory > App registrations
 . Click "New registration"
 . Configure:
-** Name: `DevDesk`
+** Name: `ZapDesk`
 ** Supported account types: "Accounts in this organizational directory only"
-** Redirect URI: `https://devdesk.knowall.ai/api/auth/callback/azure-ad` (Web)
+** Redirect URI: `https://zapdesk.yourdomain.com/api/auth/callback/azure-ad` (Web)
 . After creation, note the:
 ** Application (client) ID → `AZURE_AD_CLIENT_ID`
 ** Directory (tenant) ID → `AZURE_AD_TENANT_ID`
@@ -72,36 +72,36 @@ The system queries DevOps every 5 minutes to refresh the routing map. If no doma
 ----
 # Create App Service Plan
 az appservice plan create \
-  --name devdesk-plan \
+  --name zapdesk-plan \
   --resource-group KnowAllAIRG \
   --sku B1 \
   --is-linux
 
 # Create Web App
 az webapp create \
-  --name devdesk-knowall \
+  --name zapdesk-knowall \
   --resource-group KnowAllAIRG \
-  --plan devdesk-plan \
+  --plan zapdesk-plan \
   --runtime "NODE:20-lts"
 
 # Enable HTTPS only
 az webapp update \
-  --name devdesk-knowall \
+  --name zapdesk-knowall \
   --resource-group KnowAllAIRG \
   --https-only true
 ----
 
 === Custom Domain
 
-. Add CNAME record: `devdesk` → `devdesk-knowall.azurewebsites.net`
+. Add CNAME record: `zapdesk` → `zapdesk-knowall.azurewebsites.net`
 . Add custom domain to App Service:
 +
 [source,bash]
 ----
 az webapp config hostname add \
-  --webapp-name devdesk-knowall \
+  --webapp-name zapdesk-knowall \
   --resource-group KnowAllAIRG \
-  --hostname devdesk.knowall.ai
+  --hostname zapdesk.yourdomain.com
 ----
 
 . Create managed SSL certificate (after DNS propagates):
@@ -110,15 +110,15 @@ az webapp config hostname add \
 ----
 # Create certificate
 az webapp config ssl create \
-  --name devdesk-knowall \
+  --name zapdesk-knowall \
   --resource-group KnowAllAIRG \
-  --hostname devdesk.knowall.ai
+  --hostname zapdesk.yourdomain.com
 
 # Bind certificate (use thumbprint from previous command)
 az webapp config ssl bind \
-  --name devdesk-knowall \
+  --name zapdesk-knowall \
   --resource-group KnowAllAIRG \
-  --hostname devdesk.knowall.ai \
+  --hostname zapdesk.yourdomain.com \
   --certificate-thumbprint <THUMBPRINT> \
   --ssl-type SNI
 ----
@@ -132,7 +132,7 @@ Configure these secrets in your GitHub repository for the CI/CD pipeline:
 |Secret |Description
 
 |`AZURE_WEBAPP_PUBLISH_PROFILE`
-|Azure Web App publish profile (XML). Get with: `az webapp deployment list-publishing-profiles --name devdesk-knowall --resource-group KnowAllAIRG --xml`
+|Azure Web App publish profile (XML). Get with: `az webapp deployment list-publishing-profiles --name zapdesk-knowall --resource-group KnowAllAIRG --xml`
 
 |`NEXTAUTH_SECRET`
 |Random 32-byte hex string. Generate with: `openssl rand -hex 32`
@@ -161,7 +161,7 @@ Configure these secrets in your GitHub repository for the CI/CD pipeline:
 ----
 # Auto-generated secrets
 az webapp deployment list-publishing-profiles \
-  --name devdesk-knowall \
+  --name zapdesk-knowall \
   --resource-group KnowAllAIRG \
   --xml | gh secret set AZURE_WEBAPP_PUBLISH_PROFILE
 
@@ -180,9 +180,9 @@ gh secret set SMTP_PASSWORD --body "your-smtp-password"
 
 === Inbound Email (Webhook)
 
-Configure your email provider to forward emails to `devdesk@knowall.ai` via webhook:
+Configure your email provider to forward emails to `your-support-email@yourdomain.com` via webhook:
 
-* Webhook URL: `https://devdesk.knowall.ai/api/email/webhook`
+* Webhook URL: `https://zapdesk.yourdomain.com/api/email/webhook`
 * Header: `x-webhook-secret: <EMAIL_WEBHOOK_SECRET>`
 * Payload format:
 +
@@ -197,11 +197,11 @@ Configure your email provider to forward emails to `devdesk@knowall.ai` via webh
 
 === Outbound Email (SMTP)
 
-DevDesk uses Microsoft 365 SMTP for sending emails:
+ZapDesk uses Microsoft 365 SMTP for sending emails:
 
 * Host: `smtp.office365.com`
 * Port: `587`
-* User: `devdesk@knowall.ai`
+* User: `your-support-email@yourdomain.com`
 * TLS: Required
 
 Create an app password in Microsoft 365 admin for the SMTP_PASSWORD.

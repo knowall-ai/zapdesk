@@ -157,8 +157,6 @@ export default function TicketDetailPage() {
     }
 
     const data = await response.json();
-    // Refresh ticket to get updated attachments
-    await fetchTicket();
     return data.attachment;
   };
 
@@ -187,6 +185,7 @@ export default function TicketDetailPage() {
         onAssigneeChange={handleAssigneeChange}
         onPriorityChange={handlePriorityChange}
         onUploadAttachment={handleUploadAttachment}
+        onRefreshTicket={fetchTicket}
       />
     </MainLayout>
   );

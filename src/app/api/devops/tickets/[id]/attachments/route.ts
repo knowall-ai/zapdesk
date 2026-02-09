@@ -23,26 +23,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const devopsService = new AzureDevOpsService(session.accessToken);
+    const result = await devopsService.findProjectForWorkItem(ticketId);
 
-    // Get all projects to find the ticket
-    const projects = await devopsService.getProjects();
-
-    for (const project of projects) {
-      try {
-        // First check if the work item exists in this project
-        await devopsService.getWorkItem(project.name, ticketId);
-
-        // If it exists, get attachments
-        const attachments = await devopsService.getWorkItemAttachments(project.name, ticketId);
-
-        return NextResponse.json({ attachments });
-      } catch {
-        // Ticket not in this project, continue
-        continue;
-      }
+    if (!result) {
+      return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+    const attachments = await devopsService.getWorkItemAttachments(result.project.name, ticketId);
+
+    return NextResponse.json({ attachments });
   } catch (error) {
     console.error('Error fetching attachments:', error);
     return NextResponse.json({ error: 'Failed to fetch attachments' }, { status: 500 });
@@ -94,46 +83,36 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const devopsService = new AzureDevOpsService(session.accessToken);
+    const found = await devopsService.findProjectForWorkItem(ticketId);
 
-    // Get all projects to find the ticket
-    const projects = await devopsService.getProjects();
-
-    for (const project of projects) {
-      try {
-        // First check if the work item exists in this project
-        await devopsService.getWorkItem(project.name, ticketId);
-
-        // Convert File to ArrayBuffer
-        const fileBuffer = await file.arrayBuffer();
-
-        // Upload and link the attachment
-        const result = await devopsService.addAttachmentToWorkItem(
-          project.name,
-          ticketId,
-          file.name,
-          fileBuffer,
-          file.type,
-          comment || undefined
-        );
-
-        return NextResponse.json({
-          success: true,
-          attachment: {
-            id: result.id,
-            fileName: file.name,
-            url: result.url,
-            contentType: file.type,
-            size: file.size,
-            createdAt: new Date(),
-          },
-        });
-      } catch {
-        // Ticket not in this project, continue
-        continue;
-      }
+    if (!found) {
+      return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+    // Convert File to ArrayBuffer
+    const fileBuffer = await file.arrayBuffer();
+
+    // Upload and link the attachment
+    const result = await devopsService.addAttachmentToWorkItem(
+      found.project.name,
+      ticketId,
+      file.name,
+      fileBuffer,
+      file.type,
+      comment || undefined
+    );
+
+    return NextResponse.json({
+      success: true,
+      attachment: {
+        id: result.id,
+        fileName: file.name,
+        url: result.url,
+        contentType: file.type,
+        size: file.size,
+        createdAt: new Date(),
+      },
+    });
   } catch (error) {
     console.error('Error uploading attachment:', error);
     return NextResponse.json(

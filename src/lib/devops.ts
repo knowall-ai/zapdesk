@@ -628,6 +628,30 @@ export class AzureDevOpsService {
     return attachments;
   }
 
+  /**
+   * Find which project a work item belongs to by checking all accessible projects.
+   * Returns the project and the work item, or null if not found.
+   */
+  async findProjectForWorkItem(
+    workItemId: number
+  ): Promise<{ project: DevOpsProject; workItem: DevOpsWorkItem } | null> {
+    const projects = await this.getProjects();
+
+    for (const project of projects) {
+      try {
+        const workItem = await this.getWorkItem(project.name, workItemId);
+        if (workItem) {
+          return { project, workItem };
+        }
+      } catch {
+        // Work item not in this project, continue
+        continue;
+      }
+    }
+
+    return null;
+  }
+
   // Get all tickets from all accessible projects
   // Set ticketsOnly=false to get all work items (not just those tagged as "ticket")
   async getAllTickets(ticketsOnly: boolean = true): Promise<Ticket[]> {
@@ -1201,6 +1225,179 @@ export class AzureDevOpsService {
           .map((t: string) => t.trim())
           .filter(Boolean) || [],
       priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
+    };
+  }
+
+  // Git API Methods
+
+  // Get all repositories in a project
+  async getRepositories(projectName: string): Promise<{ id: string; name: string }[]> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/git/repositories?api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!response.ok) {
+      console.error(`Failed to fetch repositories for ${projectName}:`, response.statusText);
+      return [];
+    }
+
+    const data = await response.json();
+    return (
+      data.value?.map((repo: { id: string; name: string }) => ({
+        id: repo.id,
+        name: repo.name,
+      })) || []
+    );
+  }
+
+  // Get commits from a repository within a date range
+  // Note: Returns up to 1000 commits per repo. For very active repos over a 365-day period,
+  // pagination via continuation tokens could be added if needed.
+  async getCommits(
+    projectName: string,
+    repositoryId: string,
+    fromDate?: Date,
+    toDate?: Date
+  ): Promise<{ date: string; authorId: string; authorName: string; authorEmail: string }[]> {
+    const url = new URL(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/git/repositories/${repositoryId}/commits`
+    );
+    url.searchParams.set('api-version', '7.0');
+    url.searchParams.set('$top', '1000');
+
+    if (fromDate) {
+      url.searchParams.set('searchCriteria.fromDate', fromDate.toISOString());
+    }
+    if (toDate) {
+      url.searchParams.set('searchCriteria.toDate', toDate.toISOString());
+    }
+
+    const response = await fetch(url.toString(), { headers: this.headers });
+
+    if (!response.ok) {
+      console.error(`Failed to fetch commits:`, response.statusText);
+      return [];
+    }
+
+    const data = await response.json();
+    return (
+      data.value?.map(
+        (commit: {
+          author: { date: string; name: string; email: string };
+          committer: { date: string };
+        }) => ({
+          date: commit.author.date.split('T')[0],
+          authorId: commit.author.email,
+          authorName: commit.author.name,
+          authorEmail: commit.author.email,
+        })
+      ) || []
+    );
+  }
+
+  // Get pull requests from a project within a date range
+  // Note: Returns up to 500 PRs per project. For orgs with very high PR volume,
+  // pagination via continuation tokens could be added if needed.
+  async getPullRequests(
+    projectName: string,
+    fromDate?: Date,
+    toDate?: Date
+  ): Promise<{ date: string; authorId: string; authorName: string; status: string }[]> {
+    const url = new URL(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/git/pullrequests`
+    );
+    url.searchParams.set('api-version', '7.0');
+    url.searchParams.set('searchCriteria.status', 'all');
+    url.searchParams.set('$top', '500');
+
+    if (fromDate) {
+      url.searchParams.set('searchCriteria.minTime', fromDate.toISOString());
+    }
+    if (toDate) {
+      url.searchParams.set('searchCriteria.maxTime', toDate.toISOString());
+    }
+
+    const response = await fetch(url.toString(), { headers: this.headers });
+
+    if (!response.ok) {
+      console.error(`Failed to fetch pull requests:`, response.statusText);
+      return [];
+    }
+
+    const data = await response.json();
+    const prs = data.value || [];
+
+    return prs.map(
+      (pr: {
+        creationDate: string;
+        createdBy: { id: string; displayName: string };
+        status: string;
+      }) => ({
+        date: pr.creationDate.split('T')[0],
+        authorId: pr.createdBy.id,
+        authorName: pr.createdBy.displayName,
+        status: pr.status,
+      })
+    );
+  }
+
+  // Get all Git activity (commits + PRs) across all projects
+  // Uses sequential project processing to avoid overwhelming the Azure DevOps API
+  async getGitActivity(
+    fromDate?: Date,
+    toDate?: Date
+  ): Promise<{
+    commits: { date: string; count: number }[];
+    pullRequests: { date: string; count: number }[];
+  }> {
+    const projects = await this.getProjects();
+    const commitsByDate = new Map<string, number>();
+    const prsByDate = new Map<string, number>();
+
+    // Process projects sequentially to limit concurrent API requests
+    const projectActivities = await Promise.allSettled(
+      projects.map(async (project) => {
+        // Get repositories
+        const repos = await this.getRepositories(project.name);
+
+        // Process repos in batches of 5 to limit concurrency
+        for (let i = 0; i < repos.length; i += 5) {
+          const batch = repos.slice(i, i + 5);
+          const commitResults = await Promise.allSettled(
+            batch.map((repo) => this.getCommits(project.name, repo.id, fromDate, toDate))
+          );
+
+          for (const result of commitResults) {
+            if (result.status === 'fulfilled') {
+              for (const commit of result.value) {
+                commitsByDate.set(commit.date, (commitsByDate.get(commit.date) || 0) + 1);
+              }
+            }
+          }
+        }
+
+        // Get PRs
+        const prs = await this.getPullRequests(project.name, fromDate, toDate);
+        for (const pr of prs) {
+          prsByDate.set(pr.date, (prsByDate.get(pr.date) || 0) + 1);
+        }
+      })
+    );
+
+    // Log any failures
+    for (let i = 0; i < projectActivities.length; i++) {
+      if (projectActivities[i].status === 'rejected') {
+        console.error(
+          `Failed to fetch Git activity for ${projects[i].name}:`,
+          (projectActivities[i] as PromiseRejectedResult).reason
+        );
+      }
+    }
+
+    return {
+      commits: Array.from(commitsByDate.entries()).map(([date, count]) => ({ date, count })),
+      pullRequests: Array.from(prsByDate.entries()).map(([date, count]) => ({ date, count })),
     };
   }
 }

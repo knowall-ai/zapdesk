@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { format } from 'date-fns';
 import {
   ArrowLeft,
@@ -16,9 +16,6 @@ import {
   Zap,
   Info,
   X,
-  FileText,
-  Image as ImageIcon,
-  File,
   Download,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -30,12 +27,15 @@ import type {
   WorkItemState,
   Attachment,
 } from '@/types';
-import { MAX_ATTACHMENT_SIZE, ALLOWED_ATTACHMENT_TYPES } from '@/types';
+import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { ensureActiveState } from '@/types';
+import { formatFileSize, validateFile } from '@/lib/attachment-utils';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
+import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
+import { useClickOutside } from '@/hooks';
 
 interface TicketDetailProps {
   ticket: Ticket;
@@ -45,6 +45,7 @@ interface TicketDetailProps {
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
+  onRefreshTicket?: () => Promise<void>;
 }
 
 const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
@@ -62,6 +63,7 @@ export default function TicketDetail({
   onAssigneeChange,
   onPriorityChange,
   onUploadAttachment,
+  onRefreshTicket,
 }: TicketDetailProps) {
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -101,6 +103,24 @@ export default function TicketDetail({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Click-outside handlers for dropdowns
+  const closeStateDropdown = useCallback(() => setIsStateDropdownOpen(false), []);
+  const closeAssigneeDropdown = useCallback(() => {
+    setIsAssigneeDropdownOpen(false);
+    setAssigneeSearch('');
+  }, []);
+  const closePriorityDropdown = useCallback(() => setIsPriorityDropdownOpen(false), []);
+
+  const stateDropdownRef = useClickOutside<HTMLDivElement>(closeStateDropdown, isStateDropdownOpen);
+  const assigneeDropdownRef = useClickOutside<HTMLDivElement>(
+    closeAssigneeDropdown,
+    isAssigneeDropdownOpen
+  );
+  const priorityDropdownRef = useClickOutside<HTMLDivElement>(
+    closePriorityDropdown,
+    isPriorityDropdownOpen
+  );
 
   // Fetch available states when state dropdown opens
   useEffect(() => {
@@ -217,23 +237,11 @@ export default function TicketDetail({
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-
-      // Validate file size
-      if (file.size > MAX_ATTACHMENT_SIZE) {
-        setUploadError(
-          `File "${file.name}" is too large. Maximum size is ${MAX_ATTACHMENT_SIZE / (1024 * 1024)}MB`
-        );
+      const validationError = validateFile(file);
+      if (validationError) {
+        setUploadError(validationError);
         continue;
       }
-
-      // Validate file type
-      if (!ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {
-        setUploadError(
-          `File "${file.name}" type is not allowed. Supported: images, PDFs, Office docs, text files, ZIP.`
-        );
-        continue;
-      }
-
       newFiles.push(file);
     }
 
@@ -249,18 +257,6 @@ export default function TicketDetail({
 
   const removePendingFile = (index: number) => {
     setPendingFiles((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const getFileIcon = (contentType: string) => {
-    if (contentType.startsWith('image/')) return <ImageIcon size={16} />;
-    if (contentType === 'application/pdf') return <FileText size={16} />;
-    return <File size={16} />;
   };
 
   const handleSubmitWithAttachments = async () => {
@@ -284,6 +280,11 @@ export default function TicketDetail({
       if (newComment.trim() && onAddComment) {
         await onAddComment(newComment);
         setNewComment('');
+      }
+
+      // Refresh ticket once after all uploads and comment
+      if (onRefreshTicket) {
+        await onRefreshTicket();
       }
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : 'Failed to upload files');
@@ -334,7 +335,7 @@ export default function TicketDetail({
 
           <div className="flex items-center gap-4">
             {/* State dropdown */}
-            <div className="relative">
+            <div className="relative" ref={stateDropdownRef}>
               <button
                 onClick={() => setIsStateDropdownOpen(!isStateDropdownOpen)}
                 disabled={!onStateChange || isUpdatingState}
@@ -458,7 +459,7 @@ export default function TicketDetail({
                           }}
                           title={`Download ${attachment.fileName}`}
                         >
-                          {getFileIcon(attachment.contentType)}
+                          <FileIcon contentType={attachment.contentType} />
                           <span className="max-w-[150px] truncate">{attachment.fileName}</span>
                           {attachment.size > 0 && (
                             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -570,7 +571,7 @@ export default function TicketDetail({
                     color: 'var(--text-secondary)',
                   }}
                 >
-                  {getFileIcon(file.type)}
+                  <FileIcon contentType={file.type} />
                   <span className="max-w-[150px] truncate">{file.name}</span>
                   <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                     ({formatFileSize(file.size)})
@@ -674,7 +675,7 @@ export default function TicketDetail({
 
           <div className="space-y-4">
             {/* Assignee - Editable */}
-            <div className="relative">
+            <div className="relative" ref={assigneeDropdownRef}>
               <label
                 className="mb-1 block text-xs uppercase"
                 style={{ color: 'var(--text-muted)' }}
@@ -802,7 +803,7 @@ export default function TicketDetail({
             </div>
 
             {/* Priority - Editable */}
-            <div className="relative">
+            <div className="relative" ref={priorityDropdownRef}>
               <label
                 className="mb-1 block text-xs uppercase"
                 style={{ color: 'var(--text-muted)' }}
@@ -912,7 +913,7 @@ export default function TicketDetail({
                       style={{ color: 'var(--text-secondary)' }}
                       title={`Download ${attachment.fileName}`}
                     >
-                      {getFileIcon(attachment.contentType)}
+                      <FileIcon contentType={attachment.contentType} />
                       <span className="flex-1 truncate">{attachment.fileName}</span>
                       <Download size={12} style={{ color: 'var(--text-muted)' }} />
                     </a>
