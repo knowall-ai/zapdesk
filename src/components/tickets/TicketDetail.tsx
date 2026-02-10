@@ -29,10 +29,12 @@ import type {
 } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { ensureActiveState } from '@/types';
+import { highlightMentions } from '@/lib/mentions';
 import { formatFileSize, validateFile } from '@/lib/attachment-utils';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
+import MentionInput from '../common/MentionInput';
 import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
 import { useClickOutside } from '@/hooks';
@@ -509,7 +511,7 @@ export default function TicketDetail({
                   <div
                     className="user-content text-sm"
                     style={{ color: 'var(--text-secondary)' }}
-                    dangerouslySetInnerHTML={{ __html: comment.content }}
+                    dangerouslySetInnerHTML={{ __html: highlightMentions(comment.content) }}
                   />
                 </div>
               </div>
@@ -589,10 +591,10 @@ export default function TicketDetail({
           )}
 
           <div className="relative">
-            <textarea
+            <MentionInput
               value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Type your reply..."
+              onChange={setNewComment}
+              placeholder="Type your reply... Use @ to mention team members"
               className="input min-h-[100px] w-full resize-none pr-24"
             />
             <div className="absolute right-3 bottom-3 flex items-center gap-2">
