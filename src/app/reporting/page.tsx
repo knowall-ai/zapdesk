@@ -2,8 +2,8 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useCallback } from 'react';
-import { format } from 'date-fns';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { format, subDays, startOfWeek } from 'date-fns';
 import Link from 'next/link';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
@@ -19,7 +19,10 @@ import {
   Zap,
 } from 'lucide-react';
 import { StatusBadge, Avatar } from '@/components/common';
+import { TicketVolumeChart, ResponseTimeChart, TeamPerformanceChart } from '@/components/reporting';
 import type { Ticket as TicketType } from '@/types';
+
+type DateRange = 7 | 30 | 90 | 365;
 
 interface LiveStats {
   totalTickets: number;
@@ -42,11 +45,13 @@ export default function LiveDashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [stats, setStats] = useState<LiveStats | null>(null);
+  const [allTickets, setAllTickets] = useState<TicketType[]>([]);
   const [recentTickets, setRecentTickets] = useState<TicketType[]>([]);
   const [projectStats, setProjectStats] = useState<ProjectStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [dateRange, setDateRange] = useState<DateRange>(365);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -65,8 +70,8 @@ export default function LiveDashboardPage() {
         setStats(statsData);
       }
 
-      // Fetch all tickets for recent activity and project breakdown
-      const ticketsResponse = await fetch('/api/devops/tickets');
+      // Fetch all tickets (including resolved/closed) for charts and activity
+      const ticketsResponse = await fetch('/api/devops/tickets?view=all');
       if (ticketsResponse.ok) {
         const ticketsData = await ticketsResponse.json();
         const tickets: TicketType[] = (ticketsData.tickets || []).map(
@@ -76,6 +81,8 @@ export default function LiveDashboardPage() {
             updatedAt: new Date(t.updatedAt),
           })
         );
+
+        setAllTickets(tickets);
 
         // Sort by updated date for recent activity
         const sorted = [...tickets].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
@@ -153,6 +160,85 @@ export default function LiveDashboardPage() {
     return () => clearInterval(interval);
   }, [autoRefresh, session?.accessToken, fetchData]);
 
+  // Compute chart data from tickets filtered by date range
+  const chartData = useMemo(() => {
+    const now = new Date();
+    const cutoff = subDays(now, dateRange);
+    const filtered = allTickets.filter((t) => t.createdAt >= cutoff);
+    const useWeekly = dateRange >= 90;
+
+    // --- Ticket Volume ---
+    const volumeMap = new Map<string, { created: number; resolved: number }>();
+    filtered.forEach((t) => {
+      const key = useWeekly
+        ? format(startOfWeek(t.createdAt, { weekStartsOn: 1 }), 'dd MMM')
+        : format(t.createdAt, 'dd MMM');
+      if (!volumeMap.has(key)) volumeMap.set(key, { created: 0, resolved: 0 });
+      volumeMap.get(key)!.created++;
+    });
+    // Count resolved tickets in the same buckets
+    allTickets
+      .filter((t) => (t.status === 'Resolved' || t.status === 'Closed') && t.updatedAt >= cutoff)
+      .forEach((t) => {
+        const key = useWeekly
+          ? format(startOfWeek(t.updatedAt, { weekStartsOn: 1 }), 'dd MMM')
+          : format(t.updatedAt, 'dd MMM');
+        if (!volumeMap.has(key)) volumeMap.set(key, { created: 0, resolved: 0 });
+        volumeMap.get(key)!.resolved++;
+      });
+
+    const volumeData = Array.from(volumeMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([label, counts]) => ({ label, ...counts }));
+
+    // --- Response Time ---
+    const responseMap = new Map<string, { totalHours: number; count: number }>();
+    filtered.forEach((t) => {
+      const hours = (t.updatedAt.getTime() - t.createdAt.getTime()) / (1000 * 60 * 60);
+      if (hours < 0) return;
+      const key = useWeekly
+        ? format(startOfWeek(t.createdAt, { weekStartsOn: 1 }), 'dd MMM')
+        : format(t.createdAt, 'dd MMM');
+      if (!responseMap.has(key)) responseMap.set(key, { totalHours: 0, count: 0 });
+      const entry = responseMap.get(key)!;
+      entry.totalHours += hours;
+      entry.count++;
+    });
+
+    const responseData = Array.from(responseMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([label, { totalHours, count }]) => ({
+        label,
+        avgHours: count > 0 ? totalHours / count : 0,
+      }));
+
+    // --- Team Performance ---
+    const teamMap = new Map<string, number>();
+    allTickets
+      .filter(
+        (t) =>
+          (t.status === 'Resolved' || t.status === 'Closed') && t.updatedAt >= cutoff && t.assignee
+      )
+      .forEach((t) => {
+        const name = t.assignee!.displayName;
+        teamMap.set(name, (teamMap.get(name) || 0) + 1);
+      });
+
+    const teamData = Array.from(teamMap.entries())
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([name, resolved]) => ({ name, resolved }));
+
+    return { volumeData, responseData, teamData };
+  }, [allTickets, dateRange]);
+
+  const dateRangeOptions: { value: DateRange; label: string }[] = [
+    { value: 7, label: '7d' },
+    { value: 30, label: '30d' },
+    { value: 90, label: '90d' },
+    { value: 365, label: '365d' },
+  ];
+
   if (status === 'loading') {
     return (
       <MainLayout>
@@ -227,6 +313,25 @@ export default function LiveDashboardPage() {
               </p>
             </div>
             <div className="flex items-center gap-4">
+              <div
+                className="flex items-center rounded-lg border"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                {dateRangeOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setDateRange(opt.value)}
+                    className="px-3 py-1.5 text-xs font-medium transition-colors"
+                    style={{
+                      backgroundColor: dateRange === opt.value ? 'var(--primary)' : 'transparent',
+                      color:
+                        dateRange === opt.value ? 'var(--background)' : 'var(--text-secondary)',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
               {lastUpdated && (
                 <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   Updated {format(lastUpdated, 'HH:mm:ss')}
@@ -274,6 +379,58 @@ export default function LiveDashboardPage() {
               </div>
             ))}
           </div>
+
+          {/* Charts */}
+          {!loading && (
+            <div className="mb-6">
+              <div className="mb-4 grid grid-cols-1 gap-6 lg:grid-cols-2">
+                {/* Ticket Volume */}
+                <div className="card">
+                  <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
+                    <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      Ticket Volume
+                    </h2>
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      Created vs resolved over time
+                    </p>
+                  </div>
+                  <div className="p-4">
+                    <TicketVolumeChart data={chartData.volumeData} />
+                  </div>
+                </div>
+
+                {/* Response Time */}
+                <div className="card">
+                  <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
+                    <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      Response Time
+                    </h2>
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      Average time to first update
+                    </p>
+                  </div>
+                  <div className="p-4">
+                    <ResponseTimeChart data={chartData.responseData} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Team Performance - full width */}
+              <div className="card">
+                <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
+                  <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    Team Performance
+                  </h2>
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                    Tickets resolved per team member
+                  </p>
+                </div>
+                <div className="p-4">
+                  <TeamPerformanceChart data={chartData.teamData} />
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             {/* Recent Activity */}
