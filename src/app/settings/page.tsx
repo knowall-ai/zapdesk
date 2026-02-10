@@ -29,29 +29,12 @@ const DEFAULT_SETTINGS: UserSettings = {
   defaultTicketView: 'all-unsolved',
 };
 
-const BASE_TIMEZONE_OPTIONS = [
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'America/Anchorage',
-  'Pacific/Honolulu',
-  'Europe/London',
-  'Europe/Paris',
-  'Europe/Berlin',
-  'Asia/Kolkata',
-  'Asia/Tokyo',
-  'Asia/Shanghai',
-  'Asia/Singapore',
-  'Australia/Sydney',
-  'Pacific/Auckland',
-];
-
 function getTimezoneOptions(): string[] {
-  if (typeof window === 'undefined') return BASE_TIMEZONE_OPTIONS;
-  const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  if (BASE_TIMEZONE_OPTIONS.includes(detected)) return BASE_TIMEZONE_OPTIONS;
-  return [detected, ...BASE_TIMEZONE_OPTIONS];
+  try {
+    return Intl.supportedValuesOf('timeZone');
+  } catch {
+    return ['UTC'];
+  }
 }
 
 const VIEW_OPTIONS = [
@@ -65,7 +48,7 @@ const VIEW_OPTIONS = [
 function getInitialSettings(): UserSettings {
   if (typeof window === 'undefined') return DEFAULT_SETTINGS;
   try {
-    const stored = localStorage.getItem('devdesk-settings');
+    const stored = localStorage.getItem('zapdesk-settings');
     if (stored) {
       const parsed = JSON.parse(stored) as Partial<UserSettings>;
       return {
@@ -85,7 +68,7 @@ function getInitialSettings(): UserSettings {
 
 function saveSettings(settings: UserSettings): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem('devdesk-settings', JSON.stringify(settings));
+  localStorage.setItem('zapdesk-settings', JSON.stringify(settings));
 }
 
 export default function SettingsPage() {
@@ -264,7 +247,7 @@ export default function SettingsPage() {
                 style={{ color: 'var(--text-secondary)' }}
                 htmlFor="view-select"
               >
-                Choose which view to show by default when opening tickets
+                Choose your preferred ticket view
               </label>
               <select
                 id="view-select"
