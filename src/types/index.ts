@@ -1,4 +1,4 @@
-// DevDesk Types - Azure DevOps Work Items mapped to Zendesk-like concepts
+// ZapDesk Types - Azure DevOps Work Items mapped to Zendesk-like concepts
 
 export interface User {
   id: string;
@@ -27,7 +27,7 @@ export interface Organization {
   createdAt: Date;
   updatedAt: Date;
   processTemplate?: string; // Azure DevOps process template (e.g., "T-Minus-15", "Basic")
-  isTemplateSupported?: boolean; // Whether this template has a config in DevDesk
+  isTemplateSupported?: boolean; // Whether this template has a config in ZapDesk
 }
 
 export interface Customer {
@@ -90,6 +90,7 @@ export interface Ticket {
   devOpsUrl: string;
   project: string;
   comments: TicketComment[];
+  attachments?: Attachment[];
 }
 
 export interface TicketComment {
@@ -99,6 +100,39 @@ export interface TicketComment {
   createdAt: Date;
   isInternal: boolean;
 }
+
+// Attachment types for tickets and comments
+export interface Attachment {
+  id: string;
+  fileName: string;
+  url: string;
+  contentType: string;
+  size: number;
+  createdAt: Date;
+  createdBy?: User;
+}
+
+// Maximum file size for attachments (25MB)
+export const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
+
+// Allowed file types for attachments
+export const ALLOWED_ATTACHMENT_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/csv',
+  'application/zip',
+  'application/x-zip-compressed',
+];
 
 export interface TicketFilter {
   status?: TicketStatus[];
@@ -178,7 +212,7 @@ export interface EmailWebhookPayload {
 }
 
 // Session types extending next-auth
-export interface DevDeskSession {
+export interface ZapDeskSession {
   user: {
     id: string;
     name: string;

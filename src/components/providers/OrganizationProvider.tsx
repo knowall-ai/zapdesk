@@ -12,7 +12,7 @@ import {
 import { useSession } from 'next-auth/react';
 import type { DevOpsOrganization } from '@/types';
 
-const STORAGE_KEY = 'devdesk-selected-org';
+const STORAGE_KEY = 'zapdesk-selected-org';
 
 interface OrganizationContextType {
   organizations: DevOpsOrganization[];

@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { TicketDetail } from '@/components/tickets';
-import type { Ticket, TicketComment } from '@/types';
+import type { Ticket, TicketComment, Attachment } from '@/types';
 
 export default function TicketDetailPage() {
   const { data: session, status } = useSession();
@@ -142,6 +142,24 @@ export default function TicketDetailPage() {
     }
   };
 
+  const handleUploadAttachment = async (file: File): Promise<Attachment> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`/api/devops/tickets/${ticketId}/attachments`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to upload attachment');
+    }
+
+    const data = await response.json();
+    return data.attachment;
+  };
+
   if (status === 'loading' || loading) {
     return (
       <MainLayout>
@@ -166,6 +184,8 @@ export default function TicketDetailPage() {
         onStateChange={handleStateChange}
         onAssigneeChange={handleAssigneeChange}
         onPriorityChange={handlePriorityChange}
+        onUploadAttachment={handleUploadAttachment}
+        onRefreshTicket={fetchTicket}
       />
     </MainLayout>
   );

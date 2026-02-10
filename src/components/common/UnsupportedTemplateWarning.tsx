@@ -34,7 +34,7 @@ export function UnsupportedTemplateWarning({
           </h3>
           <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
             {projectName ? `The project "${projectName}" uses` : 'This project uses'} the &ldquo;
-            {templateName}&rdquo; process template which is not yet supported in DevDesk. Some
+            {templateName}&rdquo; process template which is not yet supported in ZapDesk. Some
             features like ticket creation may not work correctly.
           </p>
           {/* TODO: Re-enable once GitHub integration is implemented (see #186) */}

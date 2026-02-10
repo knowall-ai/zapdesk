@@ -3,7 +3,7 @@
  *
  * Azure DevOps supports multiple process templates (T-Minus-15, Basic, Agile, Scrum, CMMI)
  * each with different work item types, states, and fields. This configuration system
- * provides template-specific mappings for DevDesk.
+ * provides template-specific mappings for ZapDesk.
  */
 
 export interface ProcessTemplateConfig {

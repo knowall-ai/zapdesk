@@ -1,11 +1,11 @@
-= DevDesk Solution Design
+= ZapDesk Solution Design
 :toc: left
 :toclevels: 3
 :icons: font
 
 == Overview
 
-DevDesk is a customer support ticketing portal that provides a Zendesk-like experience while using Azure DevOps as the backend work item management system. This enables organizations to manage customer support requests alongside their development work.
+ZapDesk is a customer support ticketing portal that provides a Zendesk-like experience while using Azure DevOps as the backend work item management system. This enables organizations to manage customer support requests alongside their development work.
 
 == Architecture
 
@@ -15,7 +15,7 @@ DevDesk is a customer support ticketing portal that provides a Zendesk-like expe
 ----
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │                 │     │                 │     │                 │
-│   Client        │────▶│   DevDesk       │────▶│   Azure DevOps  │
+│   Client        │────▶│   ZapDesk       │────▶│   Azure DevOps  │
 │   (Browser)     │     │   (Next.js)     │     │   REST API      │
 │                 │     │                 │     │                 │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
@@ -83,7 +83,7 @@ DevDesk is a customer support ticketing portal that provides a Zendesk-like expe
 
 [cols="1,1,2"]
 |===
-|DevDesk Concept |DevOps Entity |Notes
+|ZapDesk Concept |DevOps Entity |Notes
 
 |Ticket
 |Work Item
@@ -110,7 +110,7 @@ DevDesk is a customer support ticketing portal that provides a Zendesk-like expe
 
 [cols="1,1"]
 |===
-|Azure DevOps State |DevDesk Status
+|Azure DevOps State |ZapDesk Status
 
 |New
 |New
