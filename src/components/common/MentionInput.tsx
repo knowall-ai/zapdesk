@@ -155,25 +155,29 @@ export default function MentionInput({
 
   // Handle keyboard navigation
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!showSuggestions || suggestions.length === 0) return;
+    if (!showSuggestions) return;
 
     switch (e.key) {
       case 'ArrowDown':
-        e.preventDefault();
-        setSelectedIndex((prev) => (prev + 1) % suggestions.length);
+        if (suggestions.length > 0) {
+          e.preventDefault();
+          setSelectedIndex((prev) => (prev + 1) % suggestions.length);
+        }
         break;
       case 'ArrowUp':
-        e.preventDefault();
-        setSelectedIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
+        if (suggestions.length > 0) {
+          e.preventDefault();
+          setSelectedIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
+        }
         break;
       case 'Enter':
-        if (showSuggestions && suggestions.length > 0) {
+        if (suggestions.length > 0) {
           e.preventDefault();
           selectUser(suggestions[selectedIndex]);
         }
         break;
       case 'Tab':
-        if (showSuggestions && suggestions.length > 0) {
+        if (suggestions.length > 0) {
           e.preventDefault();
           selectUser(suggestions[selectedIndex]);
         }

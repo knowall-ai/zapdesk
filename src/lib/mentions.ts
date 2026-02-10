@@ -18,7 +18,7 @@ export function highlightMentions(html: string): string {
   // This regex handles display names like "John Doe" or "Jane.Smith"
   const mentionRegex = /(^|[\s>])(@[\w][\w\s.\-']*[\w]|@[\w])/g;
 
-  return html.replace(mentionRegex, (match, prefix, mention) => {
+  return html.replace(mentionRegex, (_match, prefix, mention) => {
     // Escape HTML in the mention text for safety
     const escapedMention = escapeHtml(mention);
     return `${prefix}<span class="mention">${escapedMention}</span>`;
@@ -47,7 +47,7 @@ function escapeHtml(text: string): string {
 export function extractMentions(text: string): string[] {
   if (!text) return [];
 
-  const mentionRegex = /@([\w][\w\s.\-']*[\w]|[\w])/g;
+  const mentionRegex = /(?<!\S)@([\w][\w\s.\-']*[\w]|[\w])/g;
   const mentions: string[] = [];
   let match;
 
