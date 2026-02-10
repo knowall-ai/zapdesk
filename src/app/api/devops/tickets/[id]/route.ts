@@ -21,38 +21,29 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const devopsService = new AzureDevOpsService(session.accessToken);
+    const found = await devopsService.findProjectForWorkItem(ticketId);
 
-    // Get all projects to find the ticket
-    const projects = await devopsService.getProjects();
-
-    for (const project of projects) {
-      try {
-        const workItem = await devopsService.getWorkItem(project.name, ticketId);
-        if (workItem) {
-          const ticket = workItemToTicket(workItem, {
-            id: project.id,
-            name: project.name,
-            devOpsProject: project.name,
-            devOpsOrg: 'KnowAll',
-            tags: [],
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          });
-
-          const comments = await devopsService.getWorkItemComments(project.name, ticketId);
-
-          return NextResponse.json({
-            ticket,
-            comments,
-          });
-        }
-      } catch {
-        // Ticket not in this project, continue
-        continue;
-      }
+    if (!found) {
+      return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+    const ticket = workItemToTicket(found.workItem, {
+      id: found.project.id,
+      name: found.project.name,
+      devOpsProject: found.project.name,
+      devOpsOrg: 'KnowAll',
+      tags: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const comments = await devopsService.getWorkItemComments(found.project.name, ticketId);
+    const attachments = await devopsService.getWorkItemAttachments(found.project.name, ticketId);
+
+    return NextResponse.json({
+      ticket: { ...ticket, attachments },
+      comments,
+    });
   } catch (error) {
     console.error('Error fetching ticket:', error);
     return NextResponse.json({ error: 'Failed to fetch ticket' }, { status: 500 });
