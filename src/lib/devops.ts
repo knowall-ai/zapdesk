@@ -501,7 +501,7 @@ export class AzureDevOpsService {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
-          'Content-Type': contentType || 'application/octet-stream',
+          'Content-Type': 'application/octet-stream',
         },
         body: fileContent,
       }
