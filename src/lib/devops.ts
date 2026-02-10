@@ -1,4 +1,9 @@
 // Azure DevOps API Service Layer
+
+/** Escape single quotes in WIQL string literals to prevent injection */
+function escapeWiql(value: string): string {
+  return value.replace(/'/g, "''");
+}
 import type {
   DevOpsWorkItem,
   DevOpsProject,
@@ -76,6 +81,7 @@ function mapPriority(priority?: number): TicketPriority | undefined {
 }
 
 // Convert DevOps identity to User
+// Uses avatar API as fallback when imageUrl is not provided
 function identityToUser(identity?: {
   displayName: string;
   uniqueName: string;
@@ -87,11 +93,13 @@ function identityToUser(identity?: {
     id: identity.id,
     displayName: identity.displayName,
     email: identity.uniqueName,
-    avatarUrl: identity.imageUrl,
+    // Use imageUrl if available, otherwise fall back to avatar API
+    avatarUrl: identity.imageUrl || `/api/devops/avatar/${identity.id}`,
   };
 }
 
 // Convert DevOps identity to Customer
+// Uses avatar API as fallback when imageUrl is not provided
 function identityToCustomer(identity: {
   displayName: string;
   uniqueName: string;
@@ -104,8 +112,33 @@ function identityToCustomer(identity: {
     email: identity.uniqueName,
     timezone: 'Europe/Dublin',
     tags: [],
-    avatarUrl: identity.imageUrl,
+    // Use imageUrl if available, otherwise fall back to avatar API
+    avatarUrl: identity.imageUrl || `/api/devops/avatar/${identity.id}`,
     lastUpdated: new Date(),
+  };
+}
+
+// Convert Ticket to WorkItem (for WorkItemBoard compatibility)
+export function ticketToWorkItem(ticket: Ticket): WorkItem {
+  return {
+    id: ticket.id,
+    title: ticket.title,
+    description: ticket.description,
+    state: ticket.devOpsState,
+    workItemType: ticket.workItemType,
+    areaPath: '',
+    project: ticket.project,
+    createdAt: ticket.createdAt,
+    updatedAt: ticket.updatedAt,
+    completedWork: 0,
+    remainingWork: 0,
+    originalEstimate: 0,
+    assignee: ticket.assignee,
+    devOpsUrl: ticket.devOpsUrl,
+    tags: ticket.tags,
+    priority: ticket.priority,
+    requester: ticket.requester,
+    organization: ticket.organization,
   };
 }
 
@@ -119,6 +152,7 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     description: fields['System.Description'] || '',
     status: mapStateToStatus(fields['System.State']),
     devOpsState: fields['System.State'], // Preserve original DevOps state
+    workItemType: fields['System.WorkItemType'], // Azure DevOps work item type
     priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
     requester: identityToCustomer(fields['System.CreatedBy']),
     assignee: identityToUser(fields['System.AssignedTo']),
@@ -172,6 +206,68 @@ export class AzureDevOpsService {
     return data.value;
   }
 
+  // Get the process template name for a project
+  async getProjectProcessTemplate(projectName: string): Promise<string | null> {
+    try {
+      // First get available processes to build a map of process IDs to names
+      const processesResponse = await fetch(
+        `${this.baseUrl}/_apis/work/processes?api-version=7.1-preview.2`,
+        { headers: this.headers }
+      );
+
+      const processMap = new Map<string, string>();
+      if (processesResponse.ok) {
+        const processesData = await processesResponse.json();
+        for (const process of processesData.value || []) {
+          if (process.typeId && process.name) {
+            processMap.set(process.typeId, process.name);
+          }
+        }
+      }
+
+      // Get project properties which includes process template info
+      const propsResponse = await fetch(
+        `${this.baseUrl}/_apis/projects/${encodeURIComponent(projectName)}/properties?api-version=7.1-preview.1`,
+        { headers: this.headers }
+      );
+
+      if (!propsResponse.ok) {
+        return null;
+      }
+
+      const propsData = await propsResponse.json();
+      const properties = propsData.value || [];
+
+      // Get the ProcessTemplateType
+      const processTemplateTypeProp = properties.find(
+        (p: { name: string; value: string }) => p.name === 'System.ProcessTemplateType'
+      );
+
+      if (processTemplateTypeProp?.value) {
+        const templateName = processMap.get(processTemplateTypeProp.value);
+        if (templateName) return templateName;
+      }
+
+      // Fallback to CurrentProcessTemplateId
+      const currentProcessIdProp = properties.find(
+        (p: { name: string; value: string }) => p.name === 'System.CurrentProcessTemplateId'
+      );
+      if (currentProcessIdProp?.value) {
+        const templateName = processMap.get(currentProcessIdProp.value);
+        if (templateName) return templateName;
+      }
+
+      // Final fallback to System.Process Template name
+      const templateNameProp = properties.find(
+        (p: { name: string; value: string }) => p.name === 'System.Process Template'
+      );
+      return templateNameProp?.value || null;
+    } catch (error) {
+      console.error(`Failed to get process template for project ${projectName}:`, error);
+      return null;
+    }
+  }
+
   // Get work items from a specific project
   // By default, filters to work items with "ticket" tag
   // Set ticketsOnly=false to get all work items regardless of tags
@@ -190,7 +286,7 @@ export class AzureDevOpsService {
                [System.Tags], [Microsoft.VSTS.Common.Priority], [System.Description],
                [System.WorkItemType], [System.AreaPath], [System.TeamProject]
         FROM WorkItems
-        WHERE [System.TeamProject] = '${projectName}'
+        WHERE [System.TeamProject] = '${escapeWiql(projectName)}'
           ${ticketTagClause}
           ${additionalFilters || ''}
         ORDER BY [System.ChangedDate] DESC
@@ -430,16 +526,34 @@ export class AzureDevOpsService {
     return response.json();
   }
 
-  // Update work item fields (assignee, priority)
+  // Update work item fields (assignee, priority, title, description)
   async updateTicketFields(
     projectName: string,
     workItemId: number,
     updates: {
       assignee?: string | null;
       priority?: number;
+      title?: string;
+      description?: string;
     }
   ): Promise<DevOpsWorkItem> {
     const patchDocument: Array<{ op: string; path: string; value: string | number | null }> = [];
+
+    if (updates.title !== undefined) {
+      patchDocument.push({
+        op: 'add',
+        path: '/fields/System.Title',
+        value: updates.title,
+      });
+    }
+
+    if (updates.description !== undefined) {
+      patchDocument.push({
+        op: 'add',
+        path: '/fields/System.Description',
+        value: updates.description,
+      });
+    }
 
     if (updates.assignee !== undefined) {
       if (updates.assignee === null) {
@@ -769,7 +883,7 @@ export class AzureDevOpsService {
                [Microsoft.VSTS.Scheduling.RemainingWork],
                [Microsoft.VSTS.Scheduling.OriginalEstimate]
         FROM WorkItems
-        WHERE [System.TeamProject] = '${projectName}'
+        WHERE [System.TeamProject] = '${escapeWiql(projectName)}'
           AND [System.WorkItemType] = 'Epic'
         ORDER BY [System.ChangedDate] DESC
       `,
@@ -854,7 +968,7 @@ export class AzureDevOpsService {
       .map((wi: DevOpsWorkItem) => this.mapToFeature(wi, epicId));
   }
 
-  // Get Work Items under a Feature
+  // Get Tasks under a Feature (handles both direct Tasks and Tasks under User Stories)
   async getWorkItemsByFeature(projectName: string, featureId: number): Promise<WorkItem[]> {
     const response = await fetch(
       `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${featureId}?$expand=relations&api-version=7.0`,
@@ -882,9 +996,9 @@ export class AzureDevOpsService {
       return [];
     }
 
-    // Fetch Work Item details
+    // Fetch direct children with relations (could be User Stories or Tasks)
     const workItemsResponse = await fetch(
-      `${this.baseUrl}/_apis/wit/workitems?ids=${childIds.join(',')}&$expand=all&api-version=7.0`,
+      `${this.baseUrl}/_apis/wit/workitems?ids=${childIds.join(',')}&$expand=relations&api-version=7.0`,
       { headers: this.headers }
     );
 
@@ -893,7 +1007,49 @@ export class AzureDevOpsService {
     }
 
     const workItemsData = await workItemsResponse.json();
-    return workItemsData.value.map((wi: DevOpsWorkItem) => this.mapToWorkItem(wi, featureId));
+    const allWorkItems: WorkItem[] = [];
+    const grandchildIds: number[] = [];
+    const grandchildParentMap = new Map<number, number>(); // grandchild ID → parent (User Story) ID
+
+    // Process direct children - collect all work items and find grandchildren
+    for (const wi of workItemsData.value as DevOpsWorkItem[]) {
+      // Add all work items (Task, Bug, Issue, User Story, etc.)
+      allWorkItems.push(this.mapToWorkItem(wi, featureId));
+
+      // Also check for children (e.g., Tasks under User Stories)
+      const wiWithRelations = wi as DevOpsWorkItem & {
+        relations?: Array<{ rel: string; url: string }>;
+      };
+      for (const relation of wiWithRelations.relations || []) {
+        if (relation.rel === 'System.LinkTypes.Hierarchy-Forward' && relation.url) {
+          const idMatch = relation.url.match(/workItems\/(\d+)/);
+          if (idMatch) {
+            const grandchildId = parseInt(idMatch[1], 10);
+            grandchildIds.push(grandchildId);
+            grandchildParentMap.set(grandchildId, wi.id);
+          }
+        }
+      }
+    }
+
+    // Fetch grandchildren (all work items under User Stories, etc.)
+    if (grandchildIds.length > 0) {
+      const grandchildResponse = await fetch(
+        `${this.baseUrl}/_apis/wit/workitems?ids=${grandchildIds.join(',')}&$expand=all&api-version=7.0`,
+        { headers: this.headers }
+      );
+
+      if (grandchildResponse.ok) {
+        const grandchildData = await grandchildResponse.json();
+        for (const wi of grandchildData.value as DevOpsWorkItem[]) {
+          // Set parentId to the User Story (or other intermediate parent), not the feature
+          const parentId = grandchildParentMap.get(wi.id) ?? featureId;
+          allWorkItems.push(this.mapToWorkItem(wi, parentId));
+        }
+      }
+    }
+
+    return allWorkItems;
   }
 
   // Get full Epic hierarchy with Features and Work Items for treemap
@@ -922,6 +1078,16 @@ export class AzureDevOpsService {
       feature.remainingWork = feature.workItems.reduce((sum, wi) => sum + wi.remainingWork, 0);
       feature.totalWork = feature.completedWork + feature.remainingWork;
     }
+
+    // Sort features by backlog order (lower = higher priority / earlier in chain)
+    // Agile/CMMI use StackRank, Scrum uses BacklogPriority
+    features.sort((a, b) => {
+      const aOrder = a.backlogPriority ?? a.stackRank ?? Number.MAX_SAFE_INTEGER;
+      const bOrder = b.backlogPriority ?? b.stackRank ?? Number.MAX_SAFE_INTEGER;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      // Fall back to ID for stable sorting if order values are equal
+      return a.id - b.id;
+    });
 
     epic.features = features;
     // Calculate totals for epic
@@ -1018,6 +1184,8 @@ export class AzureDevOpsService {
       updatedAt: new Date(fields['System.ChangedDate']),
       completedWork: (fields['Microsoft.VSTS.Scheduling.CompletedWork'] as number) || 0,
       remainingWork: (fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number) || 0,
+      originalEstimate: (fields['Microsoft.VSTS.Scheduling.OriginalEstimate'] as number) || 0,
+      effort: fields['Microsoft.VSTS.Scheduling.Effort'] as number | undefined,
       totalWork: 0,
       workItems: [],
       devOpsUrl:
@@ -1029,6 +1197,8 @@ export class AzureDevOpsService {
           .map((t: string) => t.trim())
           .filter(Boolean) || [],
       priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
+      stackRank: fields['Microsoft.VSTS.Common.StackRank'] as number | undefined,
+      backlogPriority: fields['Microsoft.VSTS.Common.BacklogPriority'] as number | undefined,
     };
   }
 

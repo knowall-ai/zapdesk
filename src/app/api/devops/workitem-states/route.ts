@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
@@ -13,7 +13,7 @@ interface WorkItemTypeStates {
   states: WorkItemState[];
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -23,30 +23,39 @@ export async function GET() {
 
     const organization = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
 
-    // Get all projects first
-    const projectsResponse = await fetch(
-      `https://dev.azure.com/${organization}/_apis/projects?api-version=7.0`,
-      {
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`,
-          'Content-Type': 'application/json',
-        },
+    // Optional query params to filter by specific work item type and project
+    const { searchParams } = new URL(request.url);
+    const typeFilter = searchParams.get('type');
+    const projectFilter = searchParams.get('project');
+
+    // Determine which project to query
+    let projectName = projectFilter;
+    if (!projectName) {
+      // Fallback: get first project
+      const projectsResponse = await fetch(
+        `https://dev.azure.com/${organization}/_apis/projects?api-version=7.0`,
+        {
+          headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!projectsResponse.ok) {
+        return NextResponse.json({ error: 'Failed to fetch projects' }, { status: 500 });
       }
-    );
 
-    if (!projectsResponse.ok) {
-      return NextResponse.json({ error: 'Failed to fetch projects' }, { status: 500 });
+      const projectsData = await projectsResponse.json();
+      projectName = projectsData.value?.[0]?.name;
+
+      if (!projectName) {
+        return NextResponse.json({ error: 'No projects found' }, { status: 404 });
+      }
     }
 
-    const projectsData = await projectsResponse.json();
-    const firstProject = projectsData.value?.[0]?.name;
-
-    if (!firstProject) {
-      return NextResponse.json({ error: 'No projects found' }, { status: 404 });
-    }
-
-    // Work item types we care about for tickets (includes Issue for "Active" state)
-    const workItemTypes = ['Bug', 'Task', 'Enhancement', 'Issue'];
+    // If a specific type is requested, fetch states for just that type
+    const workItemTypes = typeFilter ? [typeFilter] : ['Bug', 'Task', 'Enhancement', 'Issue'];
     const allStates: WorkItemTypeStates[] = [];
     const uniqueStates = new Map<string, WorkItemState>();
 
@@ -54,7 +63,7 @@ export async function GET() {
     for (const witType of workItemTypes) {
       try {
         const statesResponse = await fetch(
-          `https://dev.azure.com/${organization}/${encodeURIComponent(firstProject)}/_apis/wit/workitemtypes/${encodeURIComponent(witType)}/states?api-version=7.0`,
+          `https://dev.azure.com/${organization}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(witType)}/states?api-version=7.0`,
           {
             headers: {
               Authorization: `Bearer ${session.accessToken}`,
@@ -73,13 +82,6 @@ export async function GET() {
             })
           );
 
-          // Log states for each work item type with category
-          console.log('────────────────────────────────────────');
-          console.log(`Work Item Type: ${witType}`);
-          console.log(
-            `States: ${states.length > 0 ? states.map((s) => `${s.name} (${s.category})`).join(', ') : '(empty - type may not exist)'}`
-          );
-
           allStates.push({
             workItemType: witType,
             states,
@@ -91,16 +93,9 @@ export async function GET() {
               uniqueStates.set(state.name, state);
             }
           }
-        } else {
-          // Log when work item type doesn't exist or no states returned
-          console.log('────────────────────────────────────────');
-          console.log(`Work Item Type: ${witType}`);
-          console.log('States: (empty - type may not exist)');
         }
       } catch (error) {
-        console.log('────────────────────────────────────────');
-        console.log(`Work Item Type: ${witType}`);
-        console.log(`States: (error fetching: ${error})`);
+        console.error(`Error fetching states for ${witType}:`, error);
       }
     }
 
@@ -117,11 +112,6 @@ export async function GET() {
       const orderB = categoryOrder[b.category] || 99;
       return orderA - orderB;
     });
-
-    console.log(
-      '[WorkItemStates] Final unique states:',
-      sortedStates.map((s) => s.name).join(', ')
-    );
 
     return NextResponse.json({
       statesByType: allStates,

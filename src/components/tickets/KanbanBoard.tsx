@@ -16,16 +16,57 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import KanbanColumn from './KanbanColumn';
 import KanbanCard from './KanbanCard';
-import type { Ticket, WorkItemState } from '@/types';
+import type { Ticket, WorkItem, WorkItemState, WorkItemType } from '@/types';
 import { ensureActiveState } from '@/types';
+import type { GroupByOption } from './WorkItemBoard';
+
+// KanbanBoard can work with either Ticket[] or WorkItem[]
+// WorkItem uses 'state' while Ticket uses 'devOpsState' for the state name
+type KanbanItem = Ticket | WorkItem;
 
 interface KanbanBoardProps {
-  tickets: Ticket[];
+  tickets?: Ticket[];
+  items?: WorkItem[]; // Alternative prop for WorkItem[]
   onTicketStateChange?: (ticketId: number, newState: string) => Promise<void>;
+  readOnly?: boolean; // Disable drag-and-drop
+  groupBy?: GroupByOption;
+  groupedItems?: Record<string, WorkItem[]>; // Pre-grouped items from WorkItemBoard
+  typeInfoMap?: Map<string, WorkItemType>; // Work item type icons/colors
+  onItemClick?: (item: Ticket | WorkItem) => void; // Open detail dialog instead of navigating
+  onZapClick?: (item: Ticket | WorkItem) => void; // Opens ZapDialog for the assignee
 }
 
-export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoardProps) {
-  const [localTickets, setLocalTickets] = useState<Ticket[]>(tickets);
+// Helper to get state from either Ticket or WorkItem
+function getItemState(item: KanbanItem): string {
+  if ('devOpsState' in item) {
+    return item.devOpsState;
+  }
+  return item.state;
+}
+
+// Helper to create updated item with new state
+function setItemState<T extends KanbanItem>(item: T, newState: string): T {
+  if ('devOpsState' in item) {
+    return { ...item, devOpsState: newState } as T;
+  }
+  return { ...item, state: newState } as T;
+}
+
+export default function KanbanBoard({
+  tickets,
+  items,
+  onTicketStateChange,
+  readOnly = false,
+  groupBy = 'none',
+  groupedItems,
+  typeInfoMap,
+  onItemClick,
+  onZapClick,
+}: KanbanBoardProps) {
+  // Use items if provided, otherwise fall back to tickets
+  // Wrapped in useMemo to prevent reference changes on every render
+  const sourceItems = useMemo<KanbanItem[]>(() => items || tickets || [], [items, tickets]);
+  const [localItems, setLocalItems] = useState<KanbanItem[]>(sourceItems);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [kanbanStates, setKanbanStates] = useState<WorkItemState[]>([]);
@@ -53,10 +94,10 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
     fetchStates();
   }, []);
 
-  // Update local tickets when props change
+  // Update local items when props change
   useEffect(() => {
-    setLocalTickets(tickets);
-  }, [tickets]);
+    setLocalItems(sourceItems);
+  }, [sourceItems]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -69,10 +110,10 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
     })
   );
 
-  // Group tickets by their original DevOps state and track unrecognized states
-  const { ticketsByState, ticketsWithUnrecognizedState } = useMemo(() => {
-    const grouped: Record<string, Ticket[]> = {};
-    const unrecognizedTicketIds = new Set<number>();
+  // Group items by their state and track unrecognized states
+  const { itemsByState, itemsWithUnrecognizedState } = useMemo(() => {
+    const grouped: Record<string, KanbanItem[]> = {};
+    const unrecognizedItemIds = new Set<number>();
 
     // Initialize all state columns
     kanbanStates.forEach((state) => {
@@ -82,19 +123,19 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
     // Track unmatched states
     const unmatchedStates = new Set<string>();
 
-    // Group tickets by their DevOps state
-    localTickets.forEach((ticket) => {
-      const state = ticket.devOpsState;
+    // Group items by their state
+    localItems.forEach((item) => {
+      const state = getItemState(item);
       if (grouped[state]) {
-        grouped[state].push(ticket);
+        grouped[state].push(item);
       } else {
-        // Track tickets with states not in our columns
+        // Track items with states not in our columns
         unmatchedStates.add(state);
-        unrecognizedTicketIds.add(ticket.id);
+        unrecognizedItemIds.add(item.id);
         // Put them in the first column (usually "New") as fallback
         const firstColumn = kanbanStates[0]?.name;
         if (firstColumn && grouped[firstColumn]) {
-          grouped[firstColumn].push(ticket);
+          grouped[firstColumn].push(item);
         }
       }
     });
@@ -102,18 +143,18 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
     // Log any unmatched states for debugging
     if (unmatchedStates.size > 0) {
       console.warn(
-        '[KanbanBoard] Tickets with unrecognized states placed in first column:',
+        '[KanbanBoard] Items with unrecognized states placed in first column:',
         Array.from(unmatchedStates)
       );
     }
 
-    return { ticketsByState: grouped, ticketsWithUnrecognizedState: unrecognizedTicketIds };
-  }, [localTickets, kanbanStates]);
+    return { itemsByState: grouped, itemsWithUnrecognizedState: unrecognizedItemIds };
+  }, [localItems, kanbanStates]);
 
-  const activeTicket = useMemo(() => {
+  const activeItem = useMemo(() => {
     if (!activeId) return null;
-    return localTickets.find((t) => t.id === activeId) || null;
-  }, [activeId, localTickets]);
+    return localItems.find((t) => t.id === activeId) || null;
+  }, [activeId, localItems]);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(event.active.id as number);
@@ -127,35 +168,35 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
       const { active, over } = event;
       if (!over) return;
 
-      const activeTicketId = active.id as number;
+      const activeItemId = active.id as number;
       const overId = over.id as string;
 
-      // Find the ticket being dragged
-      const ticket = localTickets.find((t) => t.id === activeTicketId);
-      if (!ticket) return;
+      // Find the item being dragged
+      const item = localItems.find((t) => t.id === activeItemId);
+      if (!item) return;
 
-      // Determine the target state (DevOps state name)
+      // Determine the target state
       let targetState: string | null = null;
 
       // Check if we're over a column (state name)
       if (stateNames.includes(overId)) {
         targetState = overId;
       } else {
-        // We're over another ticket - find its DevOps state
-        const overTicket = localTickets.find((t) => t.id === Number(overId));
-        if (overTicket) {
-          targetState = overTicket.devOpsState;
+        // We're over another item - find its state
+        const overItem = localItems.find((t) => t.id === Number(overId));
+        if (overItem) {
+          targetState = getItemState(overItem);
         }
       }
 
       // If moving to a different state, update locally for visual feedback
-      if (targetState && ticket.devOpsState !== targetState) {
-        setLocalTickets((prev) =>
-          prev.map((t) => (t.id === activeTicketId ? { ...t, devOpsState: targetState } : t))
+      if (targetState && getItemState(item) !== targetState) {
+        setLocalItems((prev) =>
+          prev.map((t) => (t.id === activeItemId ? setItemState(t, targetState!) : t))
         );
       }
     },
-    [localTickets, stateNames]
+    [localItems, stateNames]
   );
 
   const handleDragEnd = useCallback(
@@ -165,28 +206,28 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
 
       if (!over) return;
 
-      const activeTicketId = active.id as number;
+      const activeItemId = active.id as number;
       const overId = over.id as string;
 
-      // Find the original ticket (from props, not local state)
-      const originalTicket = tickets.find((t) => t.id === activeTicketId);
-      if (!originalTicket) return;
+      // Find the original item (from props, not local state)
+      const originalItem = sourceItems.find((t) => t.id === activeItemId);
+      if (!originalItem) return;
 
-      // Determine the target state (DevOps state name)
+      // Determine the target state
       let targetState: string | null = null;
 
       if (stateNames.includes(overId)) {
         targetState = overId;
       } else {
-        const overTicket = localTickets.find((t) => t.id === Number(overId));
-        if (overTicket) {
-          targetState = overTicket.devOpsState;
+        const overItem = localItems.find((t) => t.id === Number(overId));
+        if (overItem) {
+          targetState = getItemState(overItem);
         }
       }
 
       // If state hasn't changed, reset to original
-      if (!targetState || originalTicket.devOpsState === targetState) {
-        setLocalTickets(tickets);
+      if (!targetState || getItemState(originalItem) === targetState) {
+        setLocalItems(sourceItems);
         return;
       }
 
@@ -194,23 +235,46 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
       if (onTicketStateChange) {
         setIsUpdating(true);
         try {
-          await onTicketStateChange(activeTicketId, targetState);
+          await onTicketStateChange(activeItemId, targetState);
         } catch (error) {
-          console.error('Failed to update ticket state:', error);
+          console.error('Failed to update item state:', error);
           // Rollback on failure
-          setLocalTickets(tickets);
+          setLocalItems(sourceItems);
         } finally {
           setIsUpdating(false);
         }
       }
     },
-    [tickets, localTickets, onTicketStateChange, stateNames]
+    [sourceItems, localItems, onTicketStateChange, stateNames]
   );
 
   const handleDragCancel = useCallback(() => {
     setActiveId(null);
-    setLocalTickets(tickets);
-  }, [tickets]);
+    setLocalItems(sourceItems);
+  }, [sourceItems]);
+
+  // Group items by state for a subset of items (used for swim lanes)
+  const getItemsByStateForGroup = useCallback(
+    (groupItems: KanbanItem[]): Record<string, KanbanItem[]> => {
+      const grouped: Record<string, KanbanItem[]> = {};
+      kanbanStates.forEach((state) => {
+        grouped[state.name] = [];
+      });
+      groupItems.forEach((item) => {
+        const state = getItemState(item);
+        if (grouped[state]) {
+          grouped[state].push(item);
+        } else {
+          const firstColumn = kanbanStates[0]?.name;
+          if (firstColumn && grouped[firstColumn]) {
+            grouped[firstColumn].push(item);
+          }
+        }
+      });
+      return grouped;
+    },
+    [kanbanStates]
+  );
 
   if (isLoadingStates) {
     return (
@@ -220,6 +284,59 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
     );
   }
 
+  // Render columns for a set of items
+  const renderColumns = (stateItems: Record<string, KanbanItem[]>) => (
+    <div className="kanban-columns">
+      {kanbanStates.map((state) => (
+        <KanbanColumn
+          key={state.name}
+          stateName={state.name}
+          stateColor={state.color}
+          items={stateItems[state.name] || []}
+          activeId={readOnly ? null : activeId}
+          itemsWithUnrecognizedState={itemsWithUnrecognizedState}
+          readOnly={readOnly}
+          typeInfoMap={typeInfoMap}
+          onItemClick={onItemClick}
+          onZapClick={onZapClick}
+        />
+      ))}
+    </div>
+  );
+
+  // Render columns content (shared between readOnly and interactive modes)
+  const columnsContent = renderColumns(itemsByState);
+
+  // Swim lane rendering for grouped mode
+  const hasSwimLanes = groupBy !== 'none' && groupedItems && Object.keys(groupedItems).length > 0;
+
+  const swimLaneContent = hasSwimLanes ? (
+    <div className="kanban-swim-lanes">
+      {Object.entries(groupedItems).map(([groupName, groupItems]) => {
+        const laneItemsByState = getItemsByStateForGroup(groupItems);
+        return (
+          <div key={groupName} className="kanban-swim-lane">
+            <div className="kanban-swim-lane-header">
+              <span className="text-sm font-semibold text-[var(--text-primary)]">{groupName}</span>
+              <span className="rounded-full bg-[var(--surface-hover)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
+                {groupItems.length}
+              </span>
+            </div>
+            {renderColumns(laneItemsByState)}
+          </div>
+        );
+      })}
+    </div>
+  ) : null;
+
+  const boardContent = hasSwimLanes ? swimLaneContent : columnsContent;
+
+  // ReadOnly mode: just render columns without drag-and-drop
+  if (readOnly) {
+    return <div className="kanban-board">{boardContent}</div>;
+  }
+
+  // Interactive mode: wrap with DndContext for drag-and-drop
   return (
     <div className="kanban-board">
       {isUpdating && (
@@ -236,21 +353,20 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div className="kanban-columns">
-          {kanbanStates.map((state) => (
-            <KanbanColumn
-              key={state.name}
-              stateName={state.name}
-              stateColor={state.color}
-              tickets={ticketsByState[state.name] || []}
-              activeId={activeId}
-              ticketsWithUnrecognizedState={ticketsWithUnrecognizedState}
-            />
-          ))}
-        </div>
+        {boardContent}
 
         <DragOverlay>
-          {activeTicket ? <KanbanCard ticket={activeTicket} isDragging /> : null}
+          {activeItem ? (
+            <KanbanCard
+              item={activeItem}
+              isDragging
+              typeInfo={
+                'workItemType' in activeItem && typeInfoMap
+                  ? typeInfoMap.get(activeItem.workItemType)
+                  : undefined
+              }
+            />
+          ) : null}
         </DragOverlay>
       </DndContext>
     </div>

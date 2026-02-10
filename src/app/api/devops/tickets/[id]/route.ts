@@ -20,7 +20,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const organization = request.headers.get('x-devops-org') || undefined;
+    const devopsService = new AzureDevOpsService(session.accessToken, organization);
 
     // Get all projects to find the ticket
     const projects = await devopsService.getProjects();
@@ -75,16 +76,22 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { assignee, priority, project } = body;
+    const { assignee, priority, project, title, description } = body;
 
     if (!project) {
       return NextResponse.json({ error: 'Project name is required' }, { status: 400 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const organization = request.headers.get('x-devops-org') || undefined;
+    const devopsService = new AzureDevOpsService(session.accessToken, organization);
 
     // Build updates object
-    const updates: { assignee?: string | null; priority?: number } = {};
+    const updates: {
+      assignee?: string | null;
+      priority?: number;
+      title?: string;
+      description?: string;
+    } = {};
 
     if (assignee !== undefined) {
       updates.assignee = assignee; // Can be null to unassign
@@ -92,6 +99,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (priority !== undefined) {
       updates.priority = priority;
+    }
+
+    if (title !== undefined) {
+      updates.title = title;
+    }
+
+    if (description !== undefined) {
+      updates.description = description;
     }
 
     // Update the work item

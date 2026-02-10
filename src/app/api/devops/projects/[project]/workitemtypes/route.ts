@@ -15,7 +15,8 @@ export async function GET(
 
     const { project } = await params;
     const projectName = decodeURIComponent(project);
-    const organization = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+    const organization =
+      request.headers.get('x-devops-org') || process.env.AZURE_DEVOPS_ORG || 'KnowAll';
 
     // Fetch work item types for the project
     const response = await fetch(

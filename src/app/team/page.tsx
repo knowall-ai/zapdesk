@@ -14,6 +14,7 @@ import {
   Activity,
   ChevronUp,
   ChevronDown,
+  Tag,
 } from 'lucide-react';
 import { ActivityCalendar, type Activity as CalendarActivity } from 'react-activity-calendar';
 import { Tooltip } from 'react-tooltip';
@@ -49,6 +50,7 @@ export default function TeamPage() {
   const [sortColumn, setSortColumn] = useState<SortColumn>('resolved');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [isMobile, setIsMobile] = useState(false);
+  const [ticketsOnly, setTicketsOnly] = useState(true);
 
   // Detect mobile screen size
   useEffect(() => {
@@ -68,7 +70,11 @@ export default function TeamPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/devops/team');
+      const params = new URLSearchParams();
+      if (!ticketsOnly) {
+        params.set('ticketsOnly', 'false');
+      }
+      const response = await fetch(`/api/devops/team?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
         setTeamData(data);
@@ -82,12 +88,16 @@ export default function TeamPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [ticketsOnly]);
 
   const fetchActivityData = useCallback(async () => {
     setActivityLoading(true);
     try {
-      const response = await fetch('/api/devops/team-activity');
+      const params = new URLSearchParams();
+      if (!ticketsOnly) {
+        params.set('ticketsOnly', 'false');
+      }
+      const response = await fetch(`/api/devops/team-activity?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
         setActivityData(data);
@@ -97,14 +107,16 @@ export default function TeamPage() {
     } finally {
       setActivityLoading(false);
     }
-  }, []);
+  }, [ticketsOnly]);
 
   useEffect(() => {
     if (session?.accessToken) {
       fetchTeamData();
       fetchActivityData();
     }
-  }, [session, fetchTeamData, fetchActivityData]);
+    // Use session?.accessToken instead of session to avoid refetch on tab focus
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.accessToken]);
 
   // Pre-calculate max values once for workload distribution (must be before conditional returns)
   const maxAssigned = React.useMemo(() => {
@@ -234,12 +246,28 @@ export default function TeamPage() {
       <div className="p-6">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="mb-2 text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            Team
-          </h1>
-          <p style={{ color: 'var(--text-secondary)' }}>
-            Monitor team performance, workload distribution, and individual KPIs.
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="mb-2 text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                Team
+              </h1>
+              <p style={{ color: 'var(--text-secondary)' }}>
+                Monitor team performance, workload distribution, and individual KPIs.
+              </p>
+            </div>
+            <button
+              onClick={() => setTicketsOnly(!ticketsOnly)}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                ticketsOnly
+                  ? 'bg-[var(--primary)] text-white'
+                  : 'bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+              title={ticketsOnly ? 'Showing only items tagged "ticket"' : 'Showing all work items'}
+            >
+              <Tag size={14} />
+              Tickets Only
+            </button>
+          </div>
         </div>
 
         {/* Stats cards */}

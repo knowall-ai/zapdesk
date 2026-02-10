@@ -13,6 +13,7 @@ import { useOrganization } from '@/components/providers/OrganizationProvider';
 
 interface ProjectWithSLA extends Organization {
   sla?: SLALevel;
+  description?: string;
   processTemplate?: string;
   isTemplateSupported?: boolean;
 }
@@ -71,7 +72,8 @@ export default function ProjectDetailPage() {
         setLoading(false);
       }
     }
-  }, [session, projectId, selectedOrganization]);
+    // Use session?.accessToken instead of session to avoid refetch on tab focus
+  }, [session?.accessToken, projectId, selectedOrganization]);
 
   // Fetch epics once we have the project name
   useEffect(() => {
@@ -102,7 +104,8 @@ export default function ProjectDetailPage() {
     }
 
     fetchProjectEpics(projectName);
-  }, [session, project, selectedOrganization]);
+    // Use session?.accessToken instead of session to avoid refetch on tab focus
+  }, [session?.accessToken, project, selectedOrganization]);
 
   if (status === 'loading' || loading) {
     return (
@@ -157,13 +160,19 @@ export default function ProjectDetailPage() {
           {project.domain && <p style={{ color: 'var(--text-secondary)' }}>{project.domain}</p>}
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
           {/* Details card */}
           <div className="card p-6">
             <h2 className="mb-4 font-semibold" style={{ color: 'var(--text-primary)' }}>
               Details
             </h2>
             <div className="space-y-3 text-sm">
+              {project.description && (
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>Description:</span>
+                  <p style={{ color: 'var(--text-primary)' }}>{project.description}</p>
+                </div>
+              )}
               <div>
                 <span style={{ color: 'var(--text-muted)' }}>Domain:</span>
                 <p style={{ color: 'var(--text-primary)' }}>{project.domain || '-'}</p>
@@ -314,12 +323,37 @@ export default function ProjectDetailPage() {
               <div className="flex items-center gap-2">
                 <LayoutGrid size={18} style={{ color: 'var(--primary)' }} />
                 <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  Epics ({epics.length})
+                  Epics {project.isTemplateSupported && `(${epics.length})`}
                 </h2>
               </div>
             </div>
             <div className="p-4">
-              {loadingEpics ? (
+              {!project.isTemplateSupported ? (
+                <div className="py-8 text-center">
+                  <div
+                    className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full"
+                    style={{ backgroundColor: 'rgba(234, 179, 8, 0.15)' }}
+                  >
+                    <Info size={24} style={{ color: '#eab308' }} />
+                  </div>
+                  <p className="mb-2 font-medium" style={{ color: 'var(--text-primary)' }}>
+                    Unsupported Process Template
+                  </p>
+                  <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+                    The &ldquo;{project.processTemplate}&rdquo; template is not yet supported by
+                    DevDesk. Epic navigation is not available for this project.
+                  </p>
+                  <a
+                    href="https://github.com/knowall-ai/devdesk/issues/new?title=Support%20for%20new%20process%20template&labels=enhancement"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm hover:underline"
+                    style={{ color: 'var(--primary)' }}
+                  >
+                    Request support for a new process template &rarr;
+                  </a>
+                </div>
+              ) : loadingEpics ? (
                 <LoadingSpinner size="md" message="Loading epics..." />
               ) : epics.length === 0 ? (
                 <p className="text-center text-sm" style={{ color: 'var(--text-muted)' }}>
@@ -328,14 +362,16 @@ export default function ProjectDetailPage() {
               ) : (
                 <div className="space-y-3">
                   {epics.map((epic) => (
-                    <Link
+                    <div
                       key={epic.id}
-                      href={`/projects/${projectId}/epics/${epic.id}`}
-                      className="block rounded-lg p-4 transition-colors hover:bg-[var(--surface)]"
+                      className="rounded-lg p-4 transition-colors hover:bg-[var(--surface)]"
                       style={{ backgroundColor: 'var(--surface-hover)' }}
                     >
                       <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0 flex-1">
+                        <Link
+                          href={`/projects/${projectId}/epics/${epic.id}`}
+                          className="min-w-0 flex-1"
+                        >
                           <div className="mb-1 flex items-center gap-2">
                             <h3
                               className="truncate font-medium"
@@ -387,14 +423,19 @@ export default function ProjectDetailPage() {
                               </div>
                             )}
                           </div>
-                        </div>
-                        <ExternalLink
-                          size={16}
-                          className="shrink-0"
-                          style={{ color: 'var(--text-muted)' }}
-                        />
+                        </Link>
+                        <a
+                          href={`https://dev.azure.com/${project.devOpsOrg}/${encodeURIComponent(project.devOpsProject)}/_workitems/edit/${epic.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 rounded p-1 transition-colors hover:bg-[var(--surface)]"
+                          title="Open in Azure DevOps"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <ExternalLink size={16} style={{ color: 'var(--text-muted)' }} />
+                        </a>
                       </div>
-                    </Link>
+                    </div>
                   ))}
                 </div>
               )}
