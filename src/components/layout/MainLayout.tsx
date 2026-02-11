@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import NewTicketDialog from '@/components/tickets/NewTicketDialog';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 
 interface TicketCounts {
   yourActive: number;
@@ -12,6 +13,7 @@ interface TicketCounts {
   unassigned: number;
   allActive: number;
   recentlyUpdated: number;
+  createdToday: number;
   pending: number;
   recentlySolved: number;
 }
@@ -22,13 +24,22 @@ interface MainLayoutProps {
 
 export default function MainLayout({ children }: MainLayoutProps) {
   const { data: session } = useSession();
+  const { selectedOrganization } = useOrganization();
   const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
   const [ticketCounts, setTicketCounts] = useState<TicketCounts | undefined>();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
+    // Don't fetch until we have both session and organization
+    if (!session?.accessToken || !selectedOrganization?.accountName) return;
+
     const fetchTicketCounts = async () => {
       try {
-        const response = await fetch('/api/devops/ticket-counts');
+        const response = await fetch('/api/devops/ticket-counts', {
+          headers: {
+            'x-devops-org': selectedOrganization.accountName,
+          },
+        });
         if (response.ok) {
           const counts = await response.json();
           setTicketCounts(counts);
@@ -38,20 +49,31 @@ export default function MainLayout({ children }: MainLayoutProps) {
       }
     };
 
-    if (session?.accessToken) {
-      fetchTicketCounts();
-    }
-  }, [session]);
+    fetchTicketCounts();
+  }, [session, selectedOrganization]);
 
   return (
     <div className="flex h-screen overflow-hidden">
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
       <Suspense
         fallback={<div className="w-60 shrink-0" style={{ backgroundColor: 'var(--sidebar)' }} />}
       >
-        <Sidebar ticketCounts={ticketCounts} onNewTicket={() => setIsNewTicketOpen(true)} />
+        <Sidebar
+          ticketCounts={ticketCounts}
+          onNewTicket={() => setIsNewTicketOpen(true)}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
       </Suspense>
       <div className="flex flex-1 flex-col overflow-hidden">
-        <Header />
+        <Header onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
         <main className="flex-1 overflow-auto" style={{ backgroundColor: 'var(--background)' }}>
           {children}
         </main>

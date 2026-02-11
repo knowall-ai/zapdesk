@@ -1,10 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import type { Ticket, TicketStatus } from '@/types';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -12,7 +12,14 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    // Get organization from header (client sends from localStorage selection)
+    const organization = request.headers.get('x-devops-org');
+
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization specified' }, { status: 400 });
+    }
+
+    const devopsService = new AzureDevOpsService(session.accessToken, organization);
     const tickets = await devopsService.getAllTickets();
 
     const today = new Date();
@@ -29,6 +36,7 @@ export async function GET() {
         const updatedToday = t.updatedAt >= today;
         return resolved && updatedToday;
       }).length,
+      createdToday: tickets.filter((t) => t.createdAt >= today).length,
       avgResponseTime: calculateAvgResponseTime(tickets),
       customerSatisfaction: 0, // Would need CSAT integration
     };
@@ -40,7 +48,8 @@ export async function GET() {
   }
 }
 
-function calculateAvgResponseTime(tickets: Ticket[]): string {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function calculateAvgResponseTime(_tickets: Ticket[]): string {
   // This would need actual first response data from DevOps
   // For now, return a placeholder
   return '< 2 hours';

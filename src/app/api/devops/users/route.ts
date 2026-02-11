@@ -13,14 +13,51 @@ export async function GET() {
     }
 
     const devopsService = new AzureDevOpsService(session.accessToken);
-    const tickets = await devopsService.getAllTickets();
 
-    // Extract unique users from ticket requesters
+    // Fetch tickets, projects, and all users from entitlements API in parallel
+    const [tickets, projects, allUsersWithLicenses] = await Promise.all([
+      devopsService.getAllTickets(),
+      devopsService.getProjects(),
+      devopsService.getAllUsersWithEntitlements(),
+    ]);
+
+    // Start with all users from entitlements API
     const userMap = new Map<string, Customer>();
 
+    // Add all users from entitlements API first
+    for (const user of allUsersWithLicenses) {
+      userMap.set(user.email.toLowerCase(), {
+        id: user.id,
+        displayName: user.displayName,
+        email: user.email,
+        timezone: '(GMT+00:00) Edinburgh',
+        tags: [],
+        avatarUrl: user.avatarUrl,
+        license: user.license,
+      });
+    }
+
+    // Update with ticket activity info
     for (const ticket of tickets) {
-      if (!userMap.has(ticket.requester.email)) {
-        userMap.set(ticket.requester.email, {
+      const emailKey = ticket.requester.email.toLowerCase();
+      const existing = userMap.get(emailKey);
+
+      if (existing) {
+        // Update with ticket activity
+        if (!existing.lastUpdated || ticket.updatedAt > existing.lastUpdated) {
+          existing.lastUpdated = ticket.updatedAt;
+        }
+        if (!existing.organizationId && ticket.organization?.id) {
+          existing.organizationId = ticket.organization.id;
+          existing.organization = ticket.organization;
+        }
+        // Use avatar from ticket if available
+        if (!existing.avatarUrl && ticket.requester.avatarUrl) {
+          existing.avatarUrl = ticket.requester.avatarUrl;
+        }
+      } else {
+        // User not in entitlements - add from ticket
+        userMap.set(emailKey, {
           id: ticket.requester.id,
           displayName: ticket.requester.displayName,
           email: ticket.requester.email,
@@ -31,30 +68,23 @@ export async function GET() {
           avatarUrl: ticket.requester.avatarUrl,
           lastUpdated: ticket.updatedAt,
         });
-      } else {
-        // Update last updated if this ticket is more recent
-        const existing = userMap.get(ticket.requester.email)!;
-        if (!existing.lastUpdated || ticket.updatedAt > existing.lastUpdated) {
-          existing.lastUpdated = ticket.updatedAt;
-        }
       }
     }
 
     // Also get team members from projects
-    const projects = await devopsService.getProjects();
     for (const project of projects) {
       try {
         const members = await devopsService.getTeamMembers(project.name);
         for (const member of members) {
-          if (!userMap.has(member.email)) {
-            userMap.set(member.email, {
+          const emailKey = member.email.toLowerCase();
+          if (!userMap.has(emailKey)) {
+            userMap.set(emailKey, {
               id: member.id,
               displayName: member.displayName,
               email: member.email,
               timezone: '(GMT+00:00) Edinburgh',
               tags: [],
               avatarUrl: member.avatarUrl,
-              // No lastUpdated - user has no ticket activity
             });
           }
         }

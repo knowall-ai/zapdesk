@@ -177,7 +177,7 @@ function SLATicketRow({ status }: { status: TicketSLAStatus }) {
           style={{ color: 'var(--text-muted)' }}
         >
           <span>#{ticket.id}</span>
-          <span className={`priority-${ticket.priority.toLowerCase()}`}>{ticket.priority}</span>
+          <span className={`priority-${(ticket.priority ?? 'Normal').toLowerCase()}`}>{ticket.priority ?? 'Normal'}</span>
           <span>{ticket.project}</span>
         </div>
       </div>

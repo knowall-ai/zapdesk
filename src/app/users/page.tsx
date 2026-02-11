@@ -16,7 +16,9 @@ export default function UsersPage() {
   const [users, setUsers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeList, setActiveList] = useState<'all' | 'suspended'>('all');
+  const [domainFilter, setDomainFilter] = useState<string>('all');
+  const [accessLevelFilter, setAccessLevelFilter] = useState<string>('all');
+  const [showNotImplemented, setShowNotImplemented] = useState(false);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -49,11 +51,29 @@ export default function UsersPage() {
     }
   };
 
-  const filteredUsers = users.filter(
-    (user) =>
+  // Get unique email domains for filter dropdown
+  const emailDomains = Array.from(
+    new Set(users.map((user) => user.email.split('@')[1]).filter(Boolean))
+  ).sort();
+
+  // Get unique access levels for filter dropdown
+  const accessLevels = Array.from(
+    new Set(users.map((user) => user.license).filter(Boolean))
+  ).sort();
+
+  const filteredUsers = users.filter((user) => {
+    const matchesSearch =
       user.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+      user.email.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesDomain = domainFilter === 'all' || user.email.endsWith(`@${domainFilter}`);
+    const matchesAccessLevel = accessLevelFilter === 'all' || user.license === accessLevelFilter;
+    return matchesSearch && matchesDomain && matchesAccessLevel;
+  });
+
+  const handleNotImplemented = () => {
+    setShowNotImplemented(true);
+    setTimeout(() => setShowNotImplemented(false), 3000);
+  };
 
   if (status === 'loading') {
     return (
@@ -71,177 +91,206 @@ export default function UsersPage() {
 
   return (
     <MainLayout>
-      <div className="flex h-full">
-        {/* Sidebar */}
-        <div
-          className="w-64 border-r p-4"
-          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
-        >
-          <h2 className="mb-4 text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>
-            User lists
-          </h2>
-          <nav className="space-y-1">
-            <button
-              onClick={() => setActiveList('all')}
-              className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                activeList === 'all'
-                  ? 'bg-[rgba(34,197,94,0.15)] text-[var(--primary)]'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
-              }`}
-            >
-              All users
-            </button>
-            <button
-              onClick={() => setActiveList('suspended')}
-              className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                activeList === 'suspended'
-                  ? 'bg-[rgba(34,197,94,0.15)] text-[var(--primary)]'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
-              }`}
-            >
-              Suspended users
-            </button>
-          </nav>
-        </div>
-
-        {/* Main content */}
-        <div className="flex-1 overflow-auto p-6">
-          {/* Header */}
-          <div className="mb-6 flex items-start justify-between">
-            <div>
-              <h1 className="mb-2 text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                Users
-              </h1>
-              <p style={{ color: 'var(--text-secondary)' }}>
-                Search and manage your users all in one place.
-              </p>
+      <div className="flex-1 overflow-auto p-6">
+        {/* Not implemented toast */}
+        {showNotImplemented && (
+          <div
+            className="fixed top-4 right-4 z-50 rounded-lg border px-4 py-3 shadow-lg"
+            style={{
+              backgroundColor: 'var(--surface)',
+              borderColor: 'var(--border)',
+              color: 'var(--text-primary)',
+            }}
+          >
+            <p className="font-medium">Not yet implemented</p>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              Please manage users in{' '}
               <a
-                href="#"
-                className="mt-1 flex items-center gap-1 text-sm"
+                href="https://dev.azure.com/KnowAll/_settings/users"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
                 style={{ color: 'var(--primary)' }}
               >
-                Learn about this page <ExternalLink size={12} />
+                Azure DevOps
               </a>
-            </div>
-            <div className="flex items-center gap-2">
-              <button className="btn-secondary flex items-center gap-2">
-                <Upload size={16} /> Bulk import
-              </button>
-              <button className="btn-primary flex items-center gap-2">
-                <Plus size={16} /> Add user
-              </button>
-            </div>
+            </p>
           </div>
+        )}
 
-          {/* Search */}
-          <div className="mb-6">
-            <div className="relative max-w-md">
-              <Search
-                size={18}
-                className="absolute top-1/2 left-3 -translate-y-1/2"
-                style={{ color: 'var(--text-muted)' }}
-              />
-              <input
-                type="text"
-                placeholder="Search users"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="input w-full pl-10"
-              />
-            </div>
+        {/* Header */}
+        <div className="mb-6 flex items-start justify-between">
+          <div>
+            <h1 className="mb-2 text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+              Users
+            </h1>
+            <p style={{ color: 'var(--text-secondary)' }}>
+              Search and manage your users all in one place.
+            </p>
+            <a
+              href="https://dev.azure.com/KnowAll/_settings/users"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 flex items-center gap-1 text-sm"
+              style={{ color: 'var(--primary)' }}
+            >
+              See users in Azure DevOps <ExternalLink size={12} />
+            </a>
           </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleNotImplemented}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <Upload size={16} /> Bulk import
+            </button>
+            <button onClick={handleNotImplemented} className="btn-primary flex items-center gap-2">
+              <Plus size={16} /> Add user
+            </button>
+          </div>
+        </div>
 
-          {/* Count */}
-          <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-            {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}
-          </p>
+        {/* Search and filters */}
+        <div className="mb-6 flex flex-wrap items-center gap-4">
+          <div className="relative max-w-md flex-1">
+            <Search
+              size={18}
+              className="absolute top-1/2 left-3 -translate-y-1/2"
+              style={{ color: 'var(--text-muted)' }}
+            />
+            <input
+              type="text"
+              placeholder="Search users"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input w-full pl-10"
+            />
+          </div>
+          <select
+            value={domainFilter}
+            onChange={(e) => setDomainFilter(e.target.value)}
+            className="input"
+          >
+            <option value="all">All domains</option>
+            {emailDomains.map((domain) => (
+              <option key={domain} value={domain}>
+                @{domain}
+              </option>
+            ))}
+          </select>
+          <select
+            value={accessLevelFilter}
+            onChange={(e) => setAccessLevelFilter(e.target.value)}
+            className="input"
+          >
+            <option value="all">All access levels</option>
+            {accessLevels.map((level) => (
+              <option key={level} value={level}>
+                {level}
+              </option>
+            ))}
+          </select>
+        </div>
 
-          {/* Table */}
-          <div className="card overflow-hidden">
-            <table className="w-full">
-              <thead className="table-header">
+        {/* Count */}
+        <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+          {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}
+        </p>
+
+        {/* Table */}
+        <div className="card overflow-hidden">
+          <table className="w-full">
+            <thead className="table-header">
+              <tr>
+                <th className="w-10 px-4 py-3">
+                  <input type="checkbox" className="rounded" />
+                </th>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Name
+                </th>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Email
+                </th>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Access Level
+                </th>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Timezone
+                </th>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Last updated
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
                 <tr>
-                  <th className="w-10 px-4 py-3">
-                    <input type="checkbox" className="rounded" />
-                  </th>
-                  <th
-                    className="px-4 py-3 text-left text-xs font-medium uppercase"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    Name
-                  </th>
-                  <th
-                    className="px-4 py-3 text-left text-xs font-medium uppercase"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    Email
-                  </th>
-                  <th
-                    className="px-4 py-3 text-left text-xs font-medium uppercase"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    Timezone
-                  </th>
-                  <th
-                    className="px-4 py-3 text-left text-xs font-medium uppercase"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    Last updated
-                  </th>
+                  <td colSpan={6} className="px-4 py-12">
+                    <LoadingSpinner size="lg" message="Loading users..." />
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-12">
-                      <LoadingSpinner size="lg" message="Loading users..." />
+              ) : filteredUsers.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 text-center"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    No users found
+                  </td>
+                </tr>
+              ) : (
+                filteredUsers.map((user) => (
+                  <tr key={user.id} className="table-row">
+                    <td className="px-4 py-3">
+                      <input type="checkbox" className="rounded" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <Avatar name={user.displayName} image={user.avatarUrl} size="sm" />
+                        <Link
+                          href={`/users/${user.id}`}
+                          className="font-medium hover:underline"
+                          style={{ color: 'var(--primary)' }}
+                        >
+                          {user.displayName}
+                        </Link>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        {user.email}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      {user.license || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      {user.timezone}
+                    </td>
+                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      {user.lastUpdated ? format(user.lastUpdated, 'dd MMM yyyy') : '-'}
                     </td>
                   </tr>
-                ) : filteredUsers.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="px-4 py-8 text-center"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      No users found
-                    </td>
-                  </tr>
-                ) : (
-                  filteredUsers.map((user) => (
-                    <tr key={user.id} className="table-row">
-                      <td className="px-4 py-3">
-                        <input type="checkbox" className="rounded" />
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <Avatar name={user.displayName} image={user.avatarUrl} size="sm" />
-                          <Link
-                            href={`/users/${user.id}`}
-                            className="font-medium hover:underline"
-                            style={{ color: 'var(--primary)' }}
-                          >
-                            {user.displayName}
-                          </Link>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                          {user.email}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {user.timezone}
-                      </td>
-                      <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {user.lastUpdated ? format(user.lastUpdated, 'dd MMM yyyy') : '-'}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </MainLayout>

@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { Avatar } from '@/components/common';
 import { useProfilePhoto } from '@/hooks';
@@ -16,6 +16,9 @@ import {
   Languages,
   ExternalLink,
   Loader2,
+  Zap,
+  Save,
+  Check,
 } from 'lucide-react';
 
 interface DevOpsProfile {
@@ -36,6 +39,65 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<DevOpsProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Lightning address state
+  const [lightningAddress, setLightningAddress] = useState('');
+  const [lightningAddressSaved, setLightningAddressSaved] = useState(false);
+  const [isSavingLightning, setIsSavingLightning] = useState(false);
+  const [isLoadingLightning, setIsLoadingLightning] = useState(true);
+  const [lightningError, setLightningError] = useState<string | null>(null);
+
+  // Load lightning address from Microsoft Graph
+  const loadLightningAddress = useCallback(async () => {
+    setIsLoadingLightning(true);
+    setLightningError(null);
+    try {
+      const response = await fetch('/api/lightning');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.lightningAddress) {
+          setLightningAddress(data.lightningAddress);
+        }
+      } else if (response.status !== 401) {
+        setLightningError('Failed to load Lightning Address');
+      }
+    } catch {
+      setLightningError('Failed to connect to server');
+    } finally {
+      setIsLoadingLightning(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (session?.accessToken) {
+      loadLightningAddress();
+    }
+  }, [session?.accessToken, loadLightningAddress]);
+
+  const saveLightningAddress = async () => {
+    if (!session) return;
+    setIsSavingLightning(true);
+    setLightningError(null);
+    try {
+      const response = await fetch('/api/lightning', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lightningAddress }),
+      });
+
+      if (response.ok) {
+        setLightningAddressSaved(true);
+        setTimeout(() => setLightningAddressSaved(false), 2000);
+      } else {
+        const data = await response.json();
+        setLightningError(data.error || 'Failed to save Lightning Address');
+      }
+    } catch {
+      setLightningError('Failed to connect to server');
+    } finally {
+      setIsSavingLightning(false);
+    }
+  };
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -166,6 +228,86 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        {/* Lightning Payments Card */}
+        <div className="card mb-6 p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <Zap size={20} style={{ color: '#f7931a' }} />
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Lightning Payments
+            </h3>
+          </div>
+          <p className="mb-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
+            Configure your Lightning address to receive tips from satisfied customers. This is
+            stored in your Microsoft profile.
+          </p>
+
+          {lightningError && (
+            <div
+              className="mb-4 rounded-md p-3 text-sm"
+              style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--priority-urgent)' }}
+            >
+              {lightningError}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <label
+                htmlFor="lightning-address"
+                className="mb-1 block text-xs uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Lightning Address
+              </label>
+              <div className="flex gap-2">
+                {isLoadingLightning ? (
+                  <div className="input flex flex-1 items-center">
+                    <Loader2
+                      className="animate-spin"
+                      size={16}
+                      style={{ color: 'var(--text-muted)' }}
+                    />
+                    <span className="ml-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+                      Loading...
+                    </span>
+                  </div>
+                ) : (
+                  <input
+                    id="lightning-address"
+                    type="text"
+                    placeholder="yourname@getalby.com"
+                    value={lightningAddress}
+                    onChange={(e) => setLightningAddress(e.target.value)}
+                    className="input flex-1"
+                  />
+                )}
+                <button
+                  onClick={saveLightningAddress}
+                  disabled={isSavingLightning || isLoadingLightning}
+                  className="btn-primary flex items-center gap-2"
+                >
+                  {lightningAddressSaved ? (
+                    <>
+                      <Check size={16} />
+                      Saved
+                    </>
+                  ) : isSavingLightning ? (
+                    <Loader2 className="animate-spin" size={16} />
+                  ) : (
+                    <>
+                      <Save size={16} />
+                      Save
+                    </>
+                  )}
+                </button>
+              </div>
+              <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                Enter your Lightning address (e.g., name@getalby.com) or LNURL to receive zaps.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Time and Locale Card */}
         <div className="card mb-6 p-6">
           <h3 className="mb-4 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -215,15 +357,15 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            <div className="pt-4">
+            <div className="flex flex-wrap gap-3 pt-4">
               <a
-                href="https://dev.azure.com/KnowAll/_usersSettings/about"
+                href="https://outlook.office365.com/mail/options/general/timeAndLanguage"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn-primary inline-flex items-center gap-2"
               >
                 <ExternalLink size={16} />
-                Edit Settings in Azure DevOps
+                Edit in Outlook Settings
               </a>
             </div>
           </div>
@@ -231,8 +373,8 @@ export default function ProfilePage() {
 
         {/* Info Note */}
         <p className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-          Your profile settings are managed in Azure DevOps. Changes made there will be reflected
-          here after signing out and back in.
+          Time and locale settings are sourced from your Microsoft 365 profile and Outlook mailbox
+          settings. Changes made in Outlook will be reflected here on your next visit.
         </p>
       </div>
     </MainLayout>

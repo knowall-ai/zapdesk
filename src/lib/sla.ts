@@ -50,7 +50,7 @@ export function getSLATargetsForPriority(priority: TicketPriority): SLATargets {
  * Calculate the resolution deadline for a ticket
  */
 export function calculateResolutionDeadline(ticket: Ticket): Date {
-  const targets = getSLATargetsForPriority(ticket.priority);
+  const targets = getSLATargetsForPriority(ticket.priority ?? 'Normal');
   const createdAt = new Date(ticket.createdAt);
   return new Date(createdAt.getTime() + targets.resolutionTimeHours * 60 * 60 * 1000);
 }
@@ -59,7 +59,7 @@ export function calculateResolutionDeadline(ticket: Ticket): Date {
  * Calculate the response deadline for a ticket
  */
 export function calculateResponseDeadline(ticket: Ticket): Date {
-  const targets = getSLATargetsForPriority(ticket.priority);
+  const targets = getSLATargetsForPriority(ticket.priority ?? 'Normal');
   const createdAt = new Date(ticket.createdAt);
   return new Date(createdAt.getTime() + targets.responseTimeHours * 60 * 60 * 1000);
 }
@@ -75,7 +75,7 @@ export function isActiveTicketStatus(status: TicketStatus): boolean {
  * Calculate SLA status for a single ticket
  */
 export function calculateTicketSLAStatus(ticket: Ticket, now: Date = new Date()): TicketSLAStatus {
-  const targets = getSLATargetsForPriority(ticket.priority);
+  const targets = getSLATargetsForPriority(ticket.priority ?? 'Normal');
   const createdAt = new Date(ticket.createdAt);
 
   const responseTarget = calculateResponseDeadline(ticket);

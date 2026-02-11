@@ -1,10 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import type { TicketStatus } from '@/types';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -12,7 +12,14 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    // Get organization from header (client sends from localStorage selection)
+    const organization = request.headers.get('x-devops-org');
+
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization specified' }, { status: 400 });
+    }
+
+    const devopsService = new AzureDevOpsService(session.accessToken, organization);
     const tickets = await devopsService.getAllTickets();
     const currentUserEmail = session.user?.email?.toLowerCase();
 
@@ -33,6 +40,7 @@ export async function GET() {
       unassigned: tickets.filter((t) => activeStatuses.includes(t.status) && !t.assignee).length,
       allActive: tickets.filter((t) => activeStatuses.includes(t.status)).length,
       recentlyUpdated: tickets.filter((t) => t.updatedAt >= sevenDaysAgo).length,
+      createdToday: tickets.filter((t) => t.createdAt >= today).length,
       pending: tickets.filter((t) => t.status === 'Pending').length,
       recentlySolved: tickets.filter((t) => {
         const solved = t.status === 'Resolved' || t.status === 'Closed';

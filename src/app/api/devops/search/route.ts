@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
         id: p.id,
         title: p.name,
         subtitle: 'Organization',
-        url: `/organizations/${p.id}`,
+        url: `/projects/${p.id}`,
       }));
     results.push(...matchingOrgs);
 

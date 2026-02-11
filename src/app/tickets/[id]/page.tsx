@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { TicketDetail } from '@/components/tickets';
-import type { Ticket, TicketComment } from '@/types';
+import type { Ticket, TicketComment, Attachment } from '@/types';
 
 export default function TicketDetailPage() {
   const { data: session, status } = useSession();
@@ -17,6 +17,13 @@ export default function TicketDetailPage() {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [comments, setComments] = useState<TicketComment[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Reset state when navigating to a different ticket
+  useEffect(() => {
+    setTicket(null);
+    setComments([]);
+    setLoading(true);
+  }, [ticketId]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -36,10 +43,15 @@ export default function TicketDetailPage() {
           updatedAt: new Date(data.ticket.updatedAt),
         });
         setComments(
-          data.comments.map((c: TicketComment & { createdAt: string }) => ({
-            ...c,
-            createdAt: new Date(c.createdAt),
-          }))
+          data.comments
+            .map((c: TicketComment & { createdAt: string }) => ({
+              ...c,
+              createdAt: new Date(c.createdAt),
+            }))
+            // Sort by date ascending (oldest first, newest at bottom)
+            .sort(
+              (a: TicketComment, b: TicketComment) => a.createdAt.getTime() - b.createdAt.getTime()
+            )
         );
       } else {
         router.push('/tickets');
@@ -74,20 +86,78 @@ export default function TicketDetailPage() {
     }
   };
 
-  const handleStatusChange = async (newStatus: string) => {
+  const handleStateChange = async (newState: string) => {
     try {
-      const response = await fetch(`/api/devops/tickets/${ticketId}/status`, {
+      const response = await fetch(`/api/devops/tickets/${ticketId}/state`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ state: newState }),
       });
 
       if (response.ok) {
         await fetchTicket(); // Refresh ticket
       }
     } catch (error) {
-      console.error('Failed to update status:', error);
+      console.error('Failed to update state:', error);
     }
+  };
+
+  const handleAssigneeChange = async (assigneeId: string | null) => {
+    if (!ticket) return;
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignee: assigneeId,
+          project: ticket.project,
+        }),
+      });
+
+      if (response.ok) {
+        await fetchTicket(); // Refresh ticket
+      }
+    } catch (error) {
+      console.error('Failed to update assignee:', error);
+    }
+  };
+
+  const handlePriorityChange = async (priority: number) => {
+    if (!ticket) return;
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          priority,
+          project: ticket.project,
+        }),
+      });
+
+      if (response.ok) {
+        await fetchTicket(); // Refresh ticket
+      }
+    } catch (error) {
+      console.error('Failed to update priority:', error);
+    }
+  };
+
+  const handleUploadAttachment = async (file: File): Promise<Attachment> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`/api/devops/tickets/${ticketId}/attachments`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to upload attachment');
+    }
+
+    const data = await response.json();
+    return data.attachment;
   };
 
   if (status === 'loading' || loading) {
@@ -107,10 +177,15 @@ export default function TicketDetailPage() {
   return (
     <MainLayout>
       <TicketDetail
+        key={ticketId}
         ticket={ticket}
         comments={comments}
         onAddComment={handleAddComment}
-        onStatusChange={handleStatusChange}
+        onStateChange={handleStateChange}
+        onAssigneeChange={handleAssigneeChange}
+        onPriorityChange={handlePriorityChange}
+        onUploadAttachment={handleUploadAttachment}
+        onRefreshTicket={fetchTicket}
       />
     </MainLayout>
   );
