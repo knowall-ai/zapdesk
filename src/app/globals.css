@@ -288,6 +288,65 @@ body {
   animation: slideIn 0.2s ease-out;
 }
 
+/* SLA Risk Panel styles */
+.sla-card {
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.sla-card:hover {
+  transform: translateY(-1px);
+}
+
+.sla-breached {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--priority-urgent);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.sla-at-risk {
+  background: rgba(249, 115, 22, 0.15);
+  color: var(--priority-high);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+}
+
+.sla-on-track {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--status-resolved);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+/* SLA indicator dots */
+.sla-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sla-indicator-breached {
+  background: var(--priority-urgent);
+  box-shadow: 0 0 6px var(--priority-urgent);
+  animation: pulse-red 2s infinite;
+}
+
+.sla-indicator-at-risk {
+  background: var(--priority-high);
+  box-shadow: 0 0 4px var(--priority-high);
+}
+
+@keyframes pulse-red {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
 /* Zap (Lightning) styles */
 .zap-btn {
   background: linear-gradient(135deg, #f7931a 0%, #ff9500 100%);
@@ -318,6 +377,7 @@ body {
 .zap-confirm-btn:hover {
   background: linear-gradient(135deg, #e8850f 0%, #e88700 100%);
 }
+
 /* Kanban Board Styles */
 .kanban-board {
   display: flex;
