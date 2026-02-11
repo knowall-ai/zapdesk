@@ -68,7 +68,7 @@ export interface TicketSLAStatus {
   resolutionTarget: Date;
   responseTarget: Date;
   timeRemaining: number; // milliseconds, negative if breached
-  percentageRemaining: number; // 0-100, can be negative if breached
+  percentageRemaining: number; // 0-100 percentage of SLA time remaining
   isResponseBreached: boolean;
   isResolutionBreached: boolean;
 }
