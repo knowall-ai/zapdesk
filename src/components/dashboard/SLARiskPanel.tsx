@@ -12,12 +12,14 @@ interface SLARiskPanelProps {
 
 export function SLARiskPanel({ accessToken }: SLARiskPanelProps) {
   const [data, setData] = useState<SLAStatusResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!!accessToken);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (accessToken) {
       fetchSLAStatus();
+    } else {
+      setLoading(false);
     }
   }, [accessToken]);
 
