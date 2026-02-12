@@ -53,13 +53,12 @@ export default function HomePage() {
   const [projectsLoading, setProjectsLoading] = useState(true);
 
   const fetchDashboardStats = useCallback(async () => {
+    if (!selectedOrganization?.accountName) return;
     try {
       setLoading(true);
-      const headers: HeadersInit = {};
-      if (selectedOrganization?.accountName) {
-        headers['x-devops-org'] = selectedOrganization.accountName;
-      }
-      const response = await fetch('/api/devops/stats', { headers });
+      const response = await fetch('/api/devops/stats', {
+        headers: { 'x-devops-org': selectedOrganization.accountName },
+      });
       if (response.ok) {
         const data = await response.json();
         setStats(data);
@@ -72,12 +71,11 @@ export default function HomePage() {
   }, [selectedOrganization]);
 
   const fetchProjects = useCallback(async () => {
+    if (!selectedOrganization?.accountName) return;
     try {
-      const headers: HeadersInit = {};
-      if (selectedOrganization?.accountName) {
-        headers['x-devops-org'] = selectedOrganization.accountName;
-      }
-      const response = await fetch('/api/devops/projects', { headers });
+      const response = await fetch('/api/devops/projects', {
+        headers: { 'x-devops-org': selectedOrganization.accountName },
+      });
       if (response.ok) {
         const data = await response.json();
         setProjects(data.projects || []);
