@@ -10,11 +10,16 @@ import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { formatFileSize, validateFile } from '@/lib/attachment-utils';
 import { FileIcon } from '@/components/common';
 
+interface PriorityOption {
+  value: number | string;
+  label: string;
+}
+
 interface NewTicketForm {
   project: string;
   title: string;
   description: string;
-  priority: number;
+  priority: number | string;
   assignee: string;
   tags: string;
   workItemType: string;
@@ -36,6 +41,10 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isLoadingTypes, setIsLoadingTypes] = useState(false);
+  const [priorityOptions, setPriorityOptions] = useState<PriorityOption[]>([]);
+  const [isLoadingPriorities, setIsLoadingPriorities] = useState(false);
+  const [hasPriority, setHasPriority] = useState(true);
+  const [priorityFieldRef, setPriorityFieldRef] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [assigneeSearch, setAssigneeSearch] = useState('');
@@ -49,7 +58,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     project: '',
     title: '',
     description: '',
-    priority: 3,
+    priority: '',
     assignee: '',
     tags: '',
     workItemType: 'Task',
@@ -122,6 +131,32 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     [get]
   );
 
+  const fetchPriorities = useCallback(
+    async (projectName: string, workItemType: string) => {
+      setIsLoadingPriorities(true);
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/priorities?workItemType=${encodeURIComponent(workItemType)}`
+        );
+        if (!response.ok) throw new Error('Failed to fetch priorities');
+        const data = await response.json();
+        setHasPriority(data.hasPriority);
+        setPriorityOptions(data.priorities || []);
+        setPriorityFieldRef(data.fieldReferenceName || null);
+        // Reset priority to blank when options change
+        setForm((prev) => ({ ...prev, priority: '' }));
+      } catch (err) {
+        console.error('Failed to fetch priorities:', err);
+        setPriorityOptions([]);
+        setHasPriority(true);
+        setPriorityFieldRef(null);
+      } finally {
+        setIsLoadingPriorities(false);
+      }
+    },
+    [get]
+  );
+
   // Reset form when dialog opens
   useEffect(() => {
     if (isOpen) {
@@ -129,7 +164,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         project: '',
         title: '',
         description: '',
-        priority: 3,
+        priority: '',
         assignee: '',
         tags: '',
         workItemType: 'Task',
@@ -137,6 +172,9 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       setError(null);
       setAssigneeSearch('');
       setWorkItemTypes([]);
+      setPriorityOptions([]);
+      setHasPriority(true);
+      setPriorityFieldRef(null);
       setPendingFiles([]);
     }
   }, [isOpen]);
@@ -158,6 +196,16 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       setWorkItemTypes([]);
     }
   }, [form.project, session, hasOrganization, fetchTeamMembers, fetchWorkItemTypes]);
+
+  // Fetch priorities when project or work item type changes
+  useEffect(() => {
+    if (form.project && form.workItemType && session?.accessToken && hasOrganization) {
+      fetchPriorities(form.project, form.workItemType);
+    } else {
+      setPriorityOptions([]);
+      setHasPriority(true);
+    }
+  }, [form.project, form.workItemType, session, hasOrganization, fetchPriorities]);
 
   // Filter out Stakeholders and apply search
   const filteredMembers = useMemo(() => {
@@ -227,7 +275,8 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         project: form.project,
         title: form.title.trim(),
         description: form.description.trim(),
-        priority: form.priority,
+        priority: hasPriority ? form.priority : undefined,
+        priorityFieldRef: priorityFieldRef || undefined,
         assignee: form.assignee || undefined,
         workItemType: form.workItemType,
         tags: form.tags
@@ -692,26 +741,54 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
               </div>
 
               {/* Priority */}
-              <div>
-                <label
-                  className="mb-1 block text-xs uppercase"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  Priority
-                </label>
-                <select
-                  value={form.priority}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, priority: parseInt(e.target.value) }))
-                  }
-                  className="input w-full"
-                >
-                  <option value={1}>Urgent</option>
-                  <option value={2}>High</option>
-                  <option value={3}>Normal</option>
-                  <option value={4}>Low</option>
-                </select>
-              </div>
+              {hasPriority && (
+                <div>
+                  <label
+                    className="mb-1 block text-xs uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Priority
+                  </label>
+                  {isLoadingPriorities ? (
+                    <div
+                      className="flex items-center gap-2 text-sm"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <Loader2 className="animate-spin" size={14} />
+                      Loading...
+                    </div>
+                  ) : priorityOptions.length > 0 ? (
+                    <select
+                      value={String(form.priority)}
+                      onChange={(e) =>
+                        setForm((prev) => {
+                          const selected = priorityOptions.find(
+                            (opt) => String(opt.value) === e.target.value
+                          );
+                          return { ...prev, priority: selected ? selected.value : e.target.value };
+                        })
+                      }
+                      className="input w-full"
+                    >
+                      <option value="">Select priority...</option>
+                      {priorityOptions.map((opt) => (
+                        <option key={String(opt.value)} value={String(opt.value)}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <select
+                      value={String(form.priority)}
+                      onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value }))}
+                      className="input w-full"
+                      disabled={!form.project}
+                    >
+                      <option value="">Select priority...</option>
+                    </select>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </form>
