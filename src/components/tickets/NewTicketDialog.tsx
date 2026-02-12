@@ -239,9 +239,13 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     const userName = session?.user?.name?.toLowerCase();
 
     // Try matching by email first, then fall back to display name
-    const currentUser =
-      teamMembers.find((m) => userEmail && m.email?.toLowerCase() === userEmail) ||
-      teamMembers.find((m) => userName && m.displayName?.toLowerCase() === userName);
+    let currentUser: User | undefined;
+    if (userEmail) {
+      currentUser = teamMembers.find((m) => m.email?.toLowerCase() === userEmail);
+    }
+    if (!currentUser && userName) {
+      currentUser = teamMembers.find((m) => m.displayName?.toLowerCase() === userName);
+    }
 
     if (currentUser) {
       setForm((prev) => ({ ...prev, assignee: buildIdentityString(currentUser) }));
