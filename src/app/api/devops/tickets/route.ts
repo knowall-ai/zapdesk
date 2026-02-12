@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
 }
 
 function filterTicketsByView(tickets: Ticket[], view: string, userEmail?: string | null): Ticket[] {
-  const activeStatuses: TicketStatus[] = ['New', 'Open', 'In Progress', 'Pending'];
+  const activeStatuses: TicketStatus[] = ['New', 'Open', 'In Progress'];
   const currentUserEmail = userEmail?.toLowerCase();
 
   switch (view) {
