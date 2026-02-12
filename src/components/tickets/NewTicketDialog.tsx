@@ -58,7 +58,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     project: '',
     title: '',
     description: '',
-    priority: 3,
+    priority: '',
     assignee: '',
     tags: '',
     workItemType: 'Task',
@@ -143,11 +143,8 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         setHasPriority(data.hasPriority);
         setPriorityOptions(data.priorities || []);
         setPriorityFieldRef(data.fieldReferenceName || null);
-        if (data.priorities?.length > 0) {
-          // Default to middle priority value or first
-          const midIndex = Math.floor(data.priorities.length / 2);
-          setForm((prev) => ({ ...prev, priority: data.priorities[midIndex].value }));
-        }
+        // Reset priority to blank when options change
+        setForm((prev) => ({ ...prev, priority: '' }));
       } catch (err) {
         console.error('Failed to fetch priorities:', err);
         setPriorityOptions([]);
@@ -167,7 +164,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         project: '',
         title: '',
         description: '',
-        priority: 3,
+        priority: '',
         assignee: '',
         tags: '',
         workItemType: 'Task',
@@ -766,6 +763,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                       onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value }))}
                       className="input w-full"
                     >
+                      <option value="">Select priority...</option>
                       {priorityOptions.map((opt) => (
                         <option key={String(opt.value)} value={String(opt.value)}>
                           {opt.label}
@@ -774,17 +772,12 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     </select>
                   ) : (
                     <select
-                      value={form.priority}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, priority: parseInt(e.target.value) }))
-                      }
+                      value={String(form.priority)}
+                      onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value }))}
                       className="input w-full"
                       disabled={!form.project}
                     >
-                      <option value={1}>1</option>
-                      <option value={2}>2</option>
-                      <option value={3}>3</option>
-                      <option value={4}>4</option>
+                      <option value="">Select priority...</option>
                     </select>
                   )}
                 </div>
