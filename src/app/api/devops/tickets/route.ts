@@ -98,6 +98,17 @@ export async function POST(request: NextRequest) {
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
 
+    // Validate priorityFieldRef to prevent arbitrary field injection
+    const allowedPriorityFields = [
+      'Microsoft.VSTS.Common.Priority',
+      'Custom.PriorityLevel',
+      'Microsoft.VSTS.CMMI.Priority',
+    ];
+    const validatedFieldRef =
+      priorityFieldRef && allowedPriorityFields.some((f) => priorityFieldRef.startsWith(f))
+        ? priorityFieldRef
+        : undefined;
+
     // Create the ticket with 'ticket' tag always included
     const allTags = ['ticket', ...(tags || [])].filter(Boolean);
     const workItem = await devopsService.createTicketWithAssignee(
@@ -109,8 +120,8 @@ export async function POST(request: NextRequest) {
       allTags,
       assignee,
       workItemType || 'Task',
-      !!priority,
-      priorityFieldRef
+      Boolean(validatedFieldRef),
+      validatedFieldRef
     );
 
     const ticket = workItemToTicket(workItem);

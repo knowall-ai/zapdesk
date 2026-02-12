@@ -760,7 +760,14 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                   ) : priorityOptions.length > 0 ? (
                     <select
                       value={String(form.priority)}
-                      onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((prev) => {
+                          const selected = priorityOptions.find(
+                            (opt) => String(opt.value) === e.target.value
+                          );
+                          return { ...prev, priority: selected ? selected.value : e.target.value };
+                        })
+                      }
                       className="input w-full"
                     >
                       <option value="">Select priority...</option>

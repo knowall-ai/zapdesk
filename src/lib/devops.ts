@@ -357,8 +357,8 @@ export class AzureDevOpsService {
       { op: 'add', path: '/fields/System.Tags', value: tags.join('; ') },
     ];
 
-    // Only add Priority if the template supports it
-    if (hasPriority && priority != null) {
+    // Only add Priority if the template supports it and a value was provided
+    if (hasPriority && priority != null && priority !== '') {
       const fieldPath = priorityFieldRef || 'Microsoft.VSTS.Common.Priority';
       patchDocument.push({
         op: 'add',
