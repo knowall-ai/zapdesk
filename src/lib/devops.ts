@@ -338,16 +338,18 @@ export class AzureDevOpsService {
   // Create a new work item (ticket) with assignee and custom tags
   // workItemType: the type to create (e.g., "Task", "Issue") - depends on process template
   // hasPriority: whether the process template supports Priority field
+  // priorityFieldRef: the DevOps field reference name for priority (e.g., "Microsoft.VSTS.Common.Priority")
   async createTicketWithAssignee(
     projectName: string,
     title: string,
     description: string,
     _requesterEmail: string,
-    priority: number = 3,
+    priority?: number | string,
     tags: string[] = ['ticket'],
     assigneeId?: string,
     workItemType: string = 'Task',
-    hasPriority: boolean = true
+    hasPriority: boolean = true,
+    priorityFieldRef?: string
   ): Promise<DevOpsWorkItem> {
     const patchDocument: Array<{ op: string; path: string; value: string | number }> = [
       { op: 'add', path: '/fields/System.Title', value: title },
@@ -356,10 +358,11 @@ export class AzureDevOpsService {
     ];
 
     // Only add Priority if the template supports it
-    if (hasPriority) {
+    if (hasPriority && priority != null) {
+      const fieldPath = priorityFieldRef || 'Microsoft.VSTS.Common.Priority';
       patchDocument.push({
         op: 'add',
-        path: '/fields/Microsoft.VSTS.Common.Priority',
+        path: `/fields/${fieldPath}`,
         value: priority,
       });
     }

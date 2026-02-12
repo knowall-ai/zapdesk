@@ -66,7 +66,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { project, title, description, priority, assignee, tags } = body;
+    const {
+      project,
+      title,
+      description,
+      priority,
+      priorityFieldRef,
+      assignee,
+      tags,
+      workItemType,
+    } = body;
 
     if (!project || !title) {
       return NextResponse.json({ error: 'Project and title are required' }, { status: 400 });
@@ -96,9 +105,12 @@ export async function POST(request: NextRequest) {
       title,
       description || '',
       session.user?.email || 'unknown',
-      priority || 3,
+      priority,
       allTags,
-      assignee
+      assignee,
+      workItemType || 'Task',
+      !!priority,
+      priorityFieldRef
     );
 
     const ticket = workItemToTicket(workItem);
