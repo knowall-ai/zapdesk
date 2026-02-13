@@ -120,6 +120,7 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     description: fields['System.Description'] || '',
     status: mapStateToStatus(fields['System.State']),
     devOpsState: fields['System.State'], // Preserve original DevOps state
+    workItemType: fields['System.WorkItemType'],
     priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
     requester: identityToCustomer(fields['System.CreatedBy']),
     assignee: identityToUser(fields['System.AssignedTo']),
