@@ -66,7 +66,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { project, title, description, priority, assignee, tags } = body;
+    const {
+      project,
+      title,
+      description,
+      priority,
+      priorityFieldRef,
+      assignee,
+      tags,
+      workItemType,
+    } = body;
 
     if (!project || !title) {
       return NextResponse.json({ error: 'Project and title are required' }, { status: 400 });
@@ -89,6 +98,17 @@ export async function POST(request: NextRequest) {
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
 
+    // Validate priorityFieldRef to prevent arbitrary field injection
+    const allowedPriorityFields = [
+      'Microsoft.VSTS.Common.Priority',
+      'Custom.PriorityLevel',
+      'Microsoft.VSTS.CMMI.Priority',
+    ];
+    const validatedFieldRef =
+      priorityFieldRef && allowedPriorityFields.some((f) => priorityFieldRef.startsWith(f))
+        ? priorityFieldRef
+        : undefined;
+
     // Create the ticket with 'ticket' tag always included
     const allTags = ['ticket', ...(tags || [])].filter(Boolean);
     const workItem = await devopsService.createTicketWithAssignee(
@@ -96,9 +116,12 @@ export async function POST(request: NextRequest) {
       title,
       description || '',
       session.user?.email || 'unknown',
-      priority || 3,
+      priority,
       allTags,
-      assignee
+      assignee,
+      workItemType || 'Task',
+      Boolean(validatedFieldRef),
+      validatedFieldRef
     );
 
     const ticket = workItemToTicket(workItem);
@@ -160,13 +183,15 @@ export async function GET(request: NextRequest) {
 }
 
 function filterTicketsByView(tickets: Ticket[], view: string, userEmail?: string | null): Ticket[] {
-  const activeStatuses: TicketStatus[] = ['New', 'Open', 'In Progress', 'Pending'];
+  const activeStatuses: TicketStatus[] = ['New', 'Open', 'In Progress'];
+  const currentUserEmail = userEmail?.toLowerCase();
 
   switch (view) {
     case 'your-active':
     case 'your-unsolved':
       return tickets.filter(
-        (t) => activeStatuses.includes(t.status) && t.assignee?.email === userEmail
+        (t) =>
+          activeStatuses.includes(t.status) && t.assignee?.email?.toLowerCase() === currentUserEmail
       );
 
     case 'unassigned':
