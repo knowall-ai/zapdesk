@@ -871,6 +871,21 @@ export default function TicketDetail({
               </div>
             )}
 
+            {/* Type */}
+            {ticket.workItemType && (
+              <div>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Type
+                </label>
+                <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                  {ticket.workItemType}
+                </span>
+              </div>
+            )}
+
             {/* Tags */}
             <div>
               <label
