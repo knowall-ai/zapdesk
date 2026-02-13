@@ -37,6 +37,7 @@ import PriorityIndicator from '../common/PriorityIndicator';
 import MentionInput from '../common/MentionInput';
 import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
+import TicketContentTabs from './TicketContentTabs';
 import { useClickOutside } from '@/hooks';
 
 interface TicketDetailProps {
@@ -430,12 +431,11 @@ export default function TicketDetail({
                     {format(ticket.createdAt, 'dd MMM yyyy, HH:mm')}
                   </span>
                 </div>
-                <div
-                  className="prose prose-sm prose-invert user-content max-w-none"
-                  style={{ color: 'var(--text-secondary)' }}
-                  dangerouslySetInnerHTML={{
-                    __html: ticket.description || '<em>No description provided</em>',
-                  }}
+                <TicketContentTabs
+                  description={ticket.description}
+                  reproSteps={ticket.reproSteps}
+                  systemInfo={ticket.systemInfo}
+                  resolvedReason={ticket.resolvedReason}
                 />
                 {/* Attachments */}
                 {ticket.attachments && ticket.attachments.length > 0 && (
