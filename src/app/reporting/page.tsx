@@ -7,6 +7,7 @@ import { format, subDays, startOfWeek } from 'date-fns';
 import Link from 'next/link';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
+import { useDevOpsApi } from '@/hooks';
 import {
   RefreshCw,
   Clock,
@@ -44,6 +45,7 @@ interface ProjectStats {
 export default function LiveDashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { get: devOpsGet } = useDevOpsApi();
   const [stats, setStats] = useState<LiveStats | null>(null);
   const [allTickets, setAllTickets] = useState<TicketType[]>([]);
   const [recentTickets, setRecentTickets] = useState<TicketType[]>([]);
@@ -64,21 +66,22 @@ export default function LiveDashboardPage() {
 
     try {
       // Fetch stats
-      const statsResponse = await fetch('/api/devops/stats');
+      const statsResponse = await devOpsGet('/api/devops/stats');
       if (statsResponse.ok) {
         const statsData = await statsResponse.json();
         setStats(statsData);
       }
 
       // Fetch all tickets (including resolved/closed) for charts and activity
-      const ticketsResponse = await fetch('/api/devops/tickets?view=all');
+      const ticketsResponse = await devOpsGet('/api/devops/tickets?view=all');
       if (ticketsResponse.ok) {
         const ticketsData = await ticketsResponse.json();
         const tickets: TicketType[] = (ticketsData.tickets || []).map(
-          (t: TicketType & { createdAt: string; updatedAt: string }) => ({
+          (t: TicketType & { createdAt: string; updatedAt: string; resolvedAt?: string }) => ({
             ...t,
             createdAt: new Date(t.createdAt),
             updatedAt: new Date(t.updatedAt),
+            resolvedAt: t.resolvedAt ? new Date(t.resolvedAt) : undefined,
           })
         );
 
@@ -141,7 +144,7 @@ export default function LiveDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [session?.accessToken]);
+  }, [session?.accessToken, devOpsGet]);
 
   useEffect(() => {
     if (session?.accessToken) {
@@ -167,38 +170,43 @@ export default function LiveDashboardPage() {
     const filtered = allTickets.filter((t) => t.createdAt >= cutoff);
     const useWeekly = dateRange >= 90;
 
+    // Helper: get a sortable ISO date key for a given date bucket
+    const bucketKey = (date: Date) =>
+      useWeekly
+        ? startOfWeek(date, { weekStartsOn: 1 }).toISOString()
+        : new Date(date.getFullYear(), date.getMonth(), date.getDate()).toISOString();
+    const bucketLabel = (isoKey: string) => format(new Date(isoKey), 'dd MMM');
+
     // --- Ticket Volume ---
     const volumeMap = new Map<string, { created: number; resolved: number }>();
     filtered.forEach((t) => {
-      const key = useWeekly
-        ? format(startOfWeek(t.createdAt, { weekStartsOn: 1 }), 'dd MMM')
-        : format(t.createdAt, 'dd MMM');
+      const key = bucketKey(t.createdAt);
       if (!volumeMap.has(key)) volumeMap.set(key, { created: 0, resolved: 0 });
       volumeMap.get(key)!.created++;
     });
-    // Count resolved tickets in the same buckets
+    // Count resolved tickets in the same buckets (use resolvedAt when available)
     allTickets
-      .filter((t) => (t.status === 'Resolved' || t.status === 'Closed') && t.updatedAt >= cutoff)
+      .filter((t) => {
+        const resolutionDate = t.resolvedAt ?? t.updatedAt;
+        return (t.status === 'Resolved' || t.status === 'Closed') && resolutionDate >= cutoff;
+      })
       .forEach((t) => {
-        const key = useWeekly
-          ? format(startOfWeek(t.updatedAt, { weekStartsOn: 1 }), 'dd MMM')
-          : format(t.updatedAt, 'dd MMM');
+        const resolutionDate = t.resolvedAt ?? t.updatedAt;
+        const key = bucketKey(resolutionDate);
         if (!volumeMap.has(key)) volumeMap.set(key, { created: 0, resolved: 0 });
         volumeMap.get(key)!.resolved++;
       });
 
     const volumeData = Array.from(volumeMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([label, counts]) => ({ label, ...counts }));
+      .map(([key, counts]) => ({ label: bucketLabel(key), ...counts }));
 
-    // --- Response Time ---
+    // --- Response Time (time to last change) ---
     const responseMap = new Map<string, { totalHours: number; count: number }>();
     filtered.forEach((t) => {
       const hours = (t.updatedAt.getTime() - t.createdAt.getTime()) / (1000 * 60 * 60);
       if (hours < 0) return;
-      const key = useWeekly
-        ? format(startOfWeek(t.createdAt, { weekStartsOn: 1 }), 'dd MMM')
-        : format(t.createdAt, 'dd MMM');
+      const key = bucketKey(t.createdAt);
       if (!responseMap.has(key)) responseMap.set(key, { totalHours: 0, count: 0 });
       const entry = responseMap.get(key)!;
       entry.totalHours += hours;
@@ -207,18 +215,22 @@ export default function LiveDashboardPage() {
 
     const responseData = Array.from(responseMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([label, { totalHours, count }]) => ({
-        label,
+      .map(([key, { totalHours, count }]) => ({
+        label: bucketLabel(key),
         avgHours: count > 0 ? totalHours / count : 0,
       }));
 
-    // --- Team Performance ---
+    // --- Team Performance (use resolvedAt when available) ---
     const teamMap = new Map<string, number>();
     allTickets
-      .filter(
-        (t) =>
-          (t.status === 'Resolved' || t.status === 'Closed') && t.updatedAt >= cutoff && t.assignee
-      )
+      .filter((t) => {
+        const resolutionDate = t.resolvedAt ?? t.updatedAt;
+        return (
+          (t.status === 'Resolved' || t.status === 'Closed') &&
+          resolutionDate >= cutoff &&
+          t.assignee
+        );
+      })
       .forEach((t) => {
         const name = t.assignee!.displayName;
         teamMap.set(name, (teamMap.get(name) || 0) + 1);
@@ -314,12 +326,16 @@ export default function LiveDashboardPage() {
             </div>
             <div className="flex items-center gap-4">
               <div
+                role="group"
+                aria-label="Date range"
                 className="flex items-center rounded-lg border"
                 style={{ borderColor: 'var(--border)' }}
               >
                 {dateRangeOptions.map((opt) => (
                   <button
                     key={opt.value}
+                    type="button"
+                    aria-pressed={dateRange === opt.value}
                     onClick={() => setDateRange(opt.value)}
                     className="px-3 py-1.5 text-xs font-medium transition-colors"
                     style={{
@@ -406,7 +422,7 @@ export default function LiveDashboardPage() {
                       Response Time
                     </h2>
                     <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                      Average time to first update
+                      Average time to last change
                     </p>
                   </div>
                   <div className="p-4">
