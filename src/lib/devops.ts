@@ -10,6 +10,7 @@ import type {
   Organization,
   TicketComment,
   Attachment,
+  WorkItemUpdate,
   Epic,
   Feature,
   WorkItem,
@@ -287,6 +288,71 @@ export class AzureDevOpsService {
         })
       ) || []
     );
+  }
+
+  // Get update history for a work item
+  async getWorkItemUpdates(projectName: string, workItemId: number): Promise<WorkItemUpdate[]> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/updates?api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch work item updates: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    const stringifyFieldValue = (val: unknown): string | undefined => {
+      if (val == null) return undefined;
+      // Identity fields come as objects with displayName
+      if (typeof val === 'object' && val !== null && 'displayName' in val) {
+        const identity = val as { displayName: string; uniqueName?: string };
+        return identity.uniqueName
+          ? `${identity.displayName} <${identity.uniqueName}>`
+          : identity.displayName;
+      }
+      return String(val);
+    };
+
+    return (data.value || [])
+      .filter(
+        (update: { fields?: Record<string, unknown> }) =>
+          update.fields && Object.keys(update.fields).length > 0
+      )
+      .map(
+        (update: {
+          id: number;
+          revisedBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string };
+          revisedDate: string;
+          fields: Record<string, { oldValue?: unknown; newValue?: unknown }>;
+        }) => {
+          // Use System.ChangedDate as the display date since revisedDate
+          // represents when the revision was superseded (9999-01-01 for latest)
+          const changedDate = update.fields['System.ChangedDate']?.newValue as string | undefined;
+          const displayDate = changedDate || update.revisedDate;
+
+          return {
+            id: update.id,
+            revisedBy: {
+              id: update.revisedBy.id,
+              displayName: update.revisedBy.displayName,
+              email: update.revisedBy.uniqueName,
+              avatarUrl: update.revisedBy.imageUrl,
+            },
+            revisedDate: new Date(displayDate),
+            fields: Object.fromEntries(
+              Object.entries(update.fields).map(([key, val]) => [
+                key,
+                {
+                  oldValue: stringifyFieldValue(val.oldValue),
+                  newValue: stringifyFieldValue(val.newValue),
+                },
+              ])
+            ),
+          };
+        }
+      );
   }
 
   // Create a new work item (ticket)
