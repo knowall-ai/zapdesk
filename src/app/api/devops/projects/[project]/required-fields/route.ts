@@ -69,13 +69,25 @@ export async function GET(
     }
 
     const data = await response.json();
-    const allFields: (DevOpsField & { required?: boolean; alwaysRequired?: boolean })[] =
-      data.value || [];
+    const allFields: (DevOpsField & {
+      required?: boolean;
+      alwaysRequired?: boolean;
+      defaultValue?: string;
+      allowedValues?: string[];
+    })[] = data.value || [];
 
-    // Filter to only required fields that we don't already handle
-    const requiredFields = allFields.filter(
-      (f) => (f.required || f.alwaysRequired) && !isHandledField(f.referenceName, f.name)
-    );
+    // Filter to required fields we don't already handle, plus fields with
+    // constrained allowed values and a default that may be invalid per type
+    // (e.g. Microsoft.VSTS.Common.ValueArea defaults to "Internal" on some
+    // process templates but Bug only allows "Business"/"Architectural").
+    const requiredFields = allFields.filter((f) => {
+      if (isHandledField(f.referenceName, f.name)) return false;
+      if (f.required || f.alwaysRequired) return true;
+      // Include fields with constrained values and a default — the default
+      // may not be valid for the selected work item type.
+      if (f.defaultValue && f.allowedValues && f.allowedValues.length > 0) return true;
+      return false;
+    });
 
     // Resolve allowed values for each required field
     const fieldsWithValues = await Promise.all(
