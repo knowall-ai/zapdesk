@@ -588,7 +588,14 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting || !form.project || !form.title.trim()}
+                  disabled={
+                    isSubmitting ||
+                    !form.project ||
+                    !form.title.trim() ||
+                    requiredFields.some(
+                      (f) => !additionalFieldValues[f.referenceName]?.toString().trim()
+                    )
+                  }
                   className="btn-primary flex items-center gap-2"
                   style={{ cursor: 'pointer' }}
                 >
@@ -871,6 +878,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     </label>
                     {field.allowedValues ? (
                       <select
+                        required
                         value={additionalFieldValues[field.referenceName] || ''}
                         onChange={(e) =>
                           setAdditionalFieldValues((prev) => ({
@@ -889,6 +897,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                       </select>
                     ) : (
                       <input
+                        required
                         type="text"
                         placeholder={field.name}
                         value={additionalFieldValues[field.referenceName] || ''}

@@ -373,10 +373,16 @@ export class AzureDevOpsService {
       patchDocument.push({ op: 'add', path: '/fields/System.AssignedTo', value: assigneeId });
     }
 
-    // Append any additional required fields
+    // Append any additional required fields, excluding fields already set above
+    const reservedFields = new Set([
+      'System.Title',
+      'System.Description',
+      'System.Tags',
+      'System.AssignedTo',
+    ]);
     if (additionalFields) {
       for (const [key, value] of Object.entries(additionalFields)) {
-        if (value != null && value !== '') {
+        if (value != null && value !== '' && !reservedFields.has(key)) {
           patchDocument.push({ op: 'add', path: `/fields/${key}`, value });
         }
       }

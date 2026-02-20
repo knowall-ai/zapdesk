@@ -111,7 +111,18 @@ export async function POST(request: NextRequest) {
         : undefined;
 
     // Validate additionalFields: only allow known DevOps field prefixes
-    const ALLOWED_FIELD_PREFIXES = ['Microsoft.VSTS.', 'Custom.', 'System.'];
+    // and deny core System.* fields that are set by the handler itself
+    const ALLOWED_FIELD_PREFIXES = ['Microsoft.VSTS.', 'Custom.'];
+    const DENIED_FIELDS = new Set([
+      'System.Title',
+      'System.Description',
+      'System.Tags',
+      'System.AssignedTo',
+      'System.State',
+      'System.AreaPath',
+      'System.IterationPath',
+      'System.WorkItemType',
+    ]);
     let validatedAdditionalFields: Record<string, string | number> | undefined;
     if (additionalFields && typeof additionalFields === 'object') {
       validatedAdditionalFields = {};
@@ -120,6 +131,7 @@ export async function POST(request: NextRequest) {
         const hasPathTraversal = /[/\\]/.test(key);
         if (
           isAllowedPrefix &&
+          !DENIED_FIELDS.has(key) &&
           !hasPathTraversal &&
           (typeof value === 'string' || typeof value === 'number')
         ) {
