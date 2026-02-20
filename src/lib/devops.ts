@@ -303,6 +303,18 @@ export class AzureDevOpsService {
 
     const data = await response.json();
 
+    const stringifyFieldValue = (val: unknown): string | undefined => {
+      if (val == null) return undefined;
+      // Identity fields come as objects with displayName
+      if (typeof val === 'object' && val !== null && 'displayName' in val) {
+        const identity = val as { displayName: string; uniqueName?: string };
+        return identity.uniqueName
+          ? `${identity.displayName} <${identity.uniqueName}>`
+          : identity.displayName;
+      }
+      return String(val);
+    };
+
     return (data.value || [])
       .filter(
         (update: { fields?: Record<string, unknown> }) =>
@@ -314,25 +326,32 @@ export class AzureDevOpsService {
           revisedBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string };
           revisedDate: string;
           fields: Record<string, { oldValue?: unknown; newValue?: unknown }>;
-        }) => ({
-          id: update.id,
-          revisedBy: {
-            id: update.revisedBy.id,
-            displayName: update.revisedBy.displayName,
-            email: update.revisedBy.uniqueName,
-            avatarUrl: update.revisedBy.imageUrl,
-          },
-          revisedDate: new Date(update.revisedDate),
-          fields: Object.fromEntries(
-            Object.entries(update.fields).map(([key, val]) => [
-              key,
-              {
-                oldValue: val.oldValue != null ? String(val.oldValue) : undefined,
-                newValue: val.newValue != null ? String(val.newValue) : undefined,
-              },
-            ])
-          ),
-        })
+        }) => {
+          // Use System.ChangedDate as the display date since revisedDate
+          // represents when the revision was superseded (9999-01-01 for latest)
+          const changedDate = update.fields['System.ChangedDate']?.newValue as string | undefined;
+          const displayDate = changedDate || update.revisedDate;
+
+          return {
+            id: update.id,
+            revisedBy: {
+              id: update.revisedBy.id,
+              displayName: update.revisedBy.displayName,
+              email: update.revisedBy.uniqueName,
+              avatarUrl: update.revisedBy.imageUrl,
+            },
+            revisedDate: new Date(displayDate),
+            fields: Object.fromEntries(
+              Object.entries(update.fields).map(([key, val]) => [
+                key,
+                {
+                  oldValue: stringifyFieldValue(val.oldValue),
+                  newValue: stringifyFieldValue(val.newValue),
+                },
+              ])
+            ),
+          };
+        }
       );
   }
 
