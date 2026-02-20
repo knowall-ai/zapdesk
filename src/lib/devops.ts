@@ -10,6 +10,7 @@ import type {
   Organization,
   TicketComment,
   Attachment,
+  WorkItemUpdate,
   Epic,
   Feature,
   WorkItem,
@@ -287,6 +288,52 @@ export class AzureDevOpsService {
         })
       ) || []
     );
+  }
+
+  // Get update history for a work item
+  async getWorkItemUpdates(projectName: string, workItemId: number): Promise<WorkItemUpdate[]> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/updates?api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch work item updates: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    return (data.value || [])
+      .filter(
+        (update: { fields?: Record<string, unknown> }) =>
+          update.fields && Object.keys(update.fields).length > 0
+      )
+      .map(
+        (update: {
+          id: number;
+          revisedBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string };
+          revisedDate: string;
+          fields: Record<string, { oldValue?: unknown; newValue?: unknown }>;
+        }) => ({
+          id: update.id,
+          revisedBy: {
+            id: update.revisedBy.id,
+            displayName: update.revisedBy.displayName,
+            email: update.revisedBy.uniqueName,
+            avatarUrl: update.revisedBy.imageUrl,
+          },
+          revisedDate: new Date(update.revisedDate),
+          fields: Object.fromEntries(
+            Object.entries(update.fields).map(([key, val]) => [
+              key,
+              {
+                oldValue: val.oldValue != null ? String(val.oldValue) : undefined,
+                newValue: val.newValue != null ? String(val.newValue) : undefined,
+              },
+            ])
+          ),
+        })
+      );
   }
 
   // Create a new work item (ticket)

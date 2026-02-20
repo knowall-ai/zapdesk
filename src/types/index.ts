@@ -203,6 +203,19 @@ export interface DevOpsWorkItem {
   };
 }
 
+// Work item history / update types
+export interface WorkItemFieldChange {
+  oldValue?: string;
+  newValue?: string;
+}
+
+export interface WorkItemUpdate {
+  id: number;
+  revisedBy: User;
+  revisedDate: Date;
+  fields: Record<string, WorkItemFieldChange>;
+}
+
 export interface DevOpsIdentity {
   displayName: string;
   uniqueName: string;

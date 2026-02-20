@@ -17,6 +17,7 @@ import {
   Info,
   X,
   Download,
+  History,
 } from 'lucide-react';
 import Link from 'next/link';
 import type {
@@ -25,6 +26,7 @@ import type {
   User,
   TicketPriority,
   WorkItemState,
+  WorkItemUpdate,
   Attachment,
 } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
@@ -99,6 +101,11 @@ export default function TicketDetail({
   // Priority editing state
   const [isPriorityDropdownOpen, setIsPriorityDropdownOpen] = useState(false);
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
+
+  // History state
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [historyUpdates, setHistoryUpdates] = useState<WorkItemUpdate[] | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   // Attachment state
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -226,6 +233,60 @@ export default function TicketDetail({
       setIsPriorityDropdownOpen(false);
     } finally {
       setIsUpdatingPriority(false);
+    }
+  };
+
+  // History helpers
+  const MEANINGFUL_FIELDS: Record<string, string> = {
+    'System.State': 'State',
+    'System.AssignedTo': 'Assignee',
+    'System.Title': 'Title',
+    'Microsoft.VSTS.Common.Priority': 'Priority',
+    'System.Tags': 'Tags',
+    'System.AreaPath': 'Area Path',
+    'System.IterationPath': 'Iteration',
+    'System.Reason': 'Reason',
+    'System.WorkItemType': 'Type',
+    'Microsoft.VSTS.Common.Severity': 'Severity',
+  };
+
+  const formatPriority = (val: string | undefined): string => {
+    if (!val) return 'None';
+    const map: Record<string, string> = { '1': 'Urgent', '2': 'High', '3': 'Normal', '4': 'Low' };
+    return map[val] || val;
+  };
+
+  const formatFieldValue = (fieldKey: string, value: string | undefined): string => {
+    if (!value) return 'None';
+    if (fieldKey === 'Microsoft.VSTS.Common.Priority') return formatPriority(value);
+    // Identity fields come as "Display Name <email>" — extract just the name
+    if (fieldKey === 'System.AssignedTo') {
+      const match = value.match(/^(.+?)\s*<.*>$/);
+      return match ? match[1] : value;
+    }
+    return value;
+  };
+
+  const fetchHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticket.workItemId}/history`);
+      if (response.ok) {
+        const data = await response.json();
+        setHistoryUpdates(data.updates || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch history:', err);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const handleToggleHistory = () => {
+    const opening = !isHistoryOpen;
+    setIsHistoryOpen(opening);
+    if (opening && historyUpdates === null) {
+      fetchHistory();
     }
   };
 
@@ -517,6 +578,94 @@ export default function TicketDetail({
               </div>
             </div>
           ))}
+
+          {/* History section */}
+          <div className="mb-4">
+            <button
+              onClick={handleToggleHistory}
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              <History size={16} />
+              {isHistoryOpen ? 'Hide History' : 'Show History'}
+              {isLoadingHistory && <Loader2 size={14} className="animate-spin" />}
+            </button>
+
+            {isHistoryOpen && (
+              <div className="mt-2 space-y-3">
+                {isLoadingHistory && !historyUpdates && (
+                  <div
+                    className="flex items-center gap-2 p-4 text-sm"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <Loader2 size={16} className="animate-spin" />
+                    Loading history...
+                  </div>
+                )}
+
+                {historyUpdates && historyUpdates.length === 0 && (
+                  <p className="p-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+                    No field changes recorded.
+                  </p>
+                )}
+
+                {historyUpdates?.map((update) => {
+                  const meaningfulChanges = Object.entries(update.fields).filter(
+                    ([key]) => key in MEANINGFUL_FIELDS
+                  );
+                  if (meaningfulChanges.length === 0) return null;
+
+                  return (
+                    <div key={update.id} className="card flex items-start gap-3 p-3">
+                      <Avatar
+                        name={update.revisedBy.displayName}
+                        image={update.revisedBy.avatarUrl}
+                        size="sm"
+                      />
+                      <div className="flex-1">
+                        <div className="mb-1 flex items-center gap-2">
+                          <span
+                            className="text-sm font-medium"
+                            style={{ color: 'var(--text-primary)' }}
+                          >
+                            {update.revisedBy.displayName}
+                          </span>
+                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            {format(new Date(update.revisedDate), 'dd MMM yyyy, HH:mm')}
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          {meaningfulChanges.map(([key, change]) => (
+                            <div
+                              key={key}
+                              className="text-sm"
+                              style={{ color: 'var(--text-secondary)' }}
+                            >
+                              <span style={{ color: 'var(--text-muted)' }}>
+                                {MEANINGFUL_FIELDS[key]}:
+                              </span>{' '}
+                              {change.oldValue != null && (
+                                <>
+                                  <span
+                                    className="line-through"
+                                    style={{ color: 'var(--text-muted)' }}
+                                  >
+                                    {formatFieldValue(key, change.oldValue)}
+                                  </span>
+                                  {' → '}
+                                </>
+                              )}
+                              <span>{formatFieldValue(key, change.newValue)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Reply box */}
