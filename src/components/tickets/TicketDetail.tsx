@@ -273,10 +273,19 @@ export default function TicketDetail({
       const response = await fetch(`/api/devops/tickets/${ticket.workItemId}/history`);
       if (response.ok) {
         const data = await response.json();
-        setHistoryUpdates(data.updates || []);
+        const normalizedUpdates = (data.updates || []).map(
+          (update: WorkItemUpdate & { revisedDate: string | Date }) => ({
+            ...update,
+            revisedDate: update.revisedDate ? new Date(update.revisedDate) : undefined,
+          })
+        );
+        setHistoryUpdates(normalizedUpdates);
+      } else {
+        setHistoryUpdates([]);
       }
     } catch (err) {
       console.error('Failed to fetch history:', err);
+      setHistoryUpdates([]);
     } finally {
       setIsLoadingHistory(false);
     }
