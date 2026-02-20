@@ -36,6 +36,10 @@ function mapCategoryToStatus(category: string): TicketStatus {
 // Cache for state-to-category mapping (populated by fetchStateCategories)
 let stateCategoryCache: Record<string, string> = {};
 
+// Cache for project list per organization (avoids redundant fetches)
+const projectListCache: Map<string, { data: DevOpsProject[]; timestamp: number }> = new Map();
+const PROJECT_CACHE_TTL_MS = 30 * 1000; // 30 seconds
+
 // Set the state category cache (called from API routes after fetching states)
 export function setStateCategoryCache(stateCategories: Record<string, string>) {
   stateCategoryCache = stateCategories;
@@ -159,8 +163,13 @@ export class AzureDevOpsService {
     };
   }
 
-  // Get all projects the user has access to
+  // Get all projects the user has access to (cached for 30s per org)
   async getProjects(): Promise<DevOpsProject[]> {
+    const cached = projectListCache.get(this.organization);
+    if (cached && Date.now() - cached.timestamp < PROJECT_CACHE_TTL_MS) {
+      return cached.data;
+    }
+
     const response = await fetch(`${this.baseUrl}/_apis/projects?api-version=7.0`, {
       headers: this.headers,
     });
@@ -170,7 +179,9 @@ export class AzureDevOpsService {
     }
 
     const data = await response.json();
-    return data.value;
+    const projects: DevOpsProject[] = data.value;
+    projectListCache.set(this.organization, { data: projects, timestamp: Date.now() });
+    return projects;
   }
 
   // Get work items from a specific project
@@ -224,8 +235,21 @@ export class AzureDevOpsService {
 
     for (let i = 0; i < workItemIds.length; i += batchSize) {
       const batch = workItemIds.slice(i, i + batchSize);
+      const fields = [
+        'System.Title',
+        'System.Description',
+        'System.State',
+        'System.CreatedDate',
+        'System.ChangedDate',
+        'System.CreatedBy',
+        'System.AssignedTo',
+        'System.Tags',
+        'Microsoft.VSTS.Common.Priority',
+        'System.TeamProject',
+        'System.WorkItemType',
+      ].join(',');
       const workItemsResponse = await fetch(
-        `${this.baseUrl}/_apis/wit/workitems?ids=${batch.join(',')}&$expand=all&api-version=7.0`,
+        `${this.baseUrl}/_apis/wit/workitems?ids=${batch.join(',')}&fields=${fields}&api-version=7.0`,
         { headers: this.headers }
       );
 
@@ -655,14 +679,13 @@ export class AzureDevOpsService {
     return null;
   }
 
-  // Get all tickets from all accessible projects
+  // Get all tickets from all accessible projects (fetches in parallel)
   // Set ticketsOnly=false to get all work items (not just those tagged as "ticket")
   async getAllTickets(ticketsOnly: boolean = true): Promise<Ticket[]> {
     const projects = await this.getProjects();
-    const allTickets: Ticket[] = [];
 
-    for (const project of projects) {
-      try {
+    const results = await Promise.allSettled(
+      projects.map(async (project) => {
         const workItems = await this.getTickets(project.name, { ticketsOnly });
         const organization: Organization = {
           id: project.id,
@@ -673,10 +696,17 @@ export class AzureDevOpsService {
           createdAt: new Date(),
           updatedAt: new Date(),
         };
-        const tickets = workItems.map((wi) => workItemToTicket(wi, organization));
-        allTickets.push(...tickets);
-      } catch (error) {
-        console.error(`Failed to fetch tickets from ${project.name}:`, error);
+        return workItems.map((wi) => workItemToTicket(wi, organization));
+      })
+    );
+
+    const allTickets: Ticket[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      if (result.status === 'fulfilled') {
+        allTickets.push(...result.value);
+      } else {
+        console.error(`Failed to fetch tickets from ${projects[i].name}:`, result.reason);
       }
     }
 
