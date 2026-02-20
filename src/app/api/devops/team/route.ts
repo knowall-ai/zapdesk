@@ -133,7 +133,8 @@ export async function GET() {
       }
     }
 
-    // Fetch actual response times (with caching)
+    // Use cached response times if available; otherwise trigger background fetch
+    // This avoids blocking the page load with hundreds of comment API calls
     let memberResponseTimes: Map<string, number[]>;
     if (
       responseTimeCache &&
@@ -141,8 +142,11 @@ export async function GET() {
     ) {
       memberResponseTimes = responseTimeCache.data;
     } else {
-      memberResponseTimes = await fetchResponseTimes(devopsService, tickets, internalDomain);
-      responseTimeCache = { data: memberResponseTimes, timestamp: Date.now() };
+      // Return fallback estimates now, populate cache in background for next load
+      memberResponseTimes = new Map();
+      fetchResponseTimes(devopsService, tickets, internalDomain).then((data) => {
+        responseTimeCache = { data, timestamp: Date.now() };
+      });
     }
 
     // Calculate status for each member
@@ -187,29 +191,32 @@ function calculateMemberStatus(member: TeamMember): TeamMemberStatus {
   return 'On Track';
 }
 
+function formatDuration(avgMs: number): string {
+  const avgHours = avgMs / (1000 * 60 * 60);
+  const avgDays = avgHours / 24;
+
+  if (avgDays >= 7) {
+    const weeks = Math.round(avgDays / 7);
+    return `${weeks}w`;
+  }
+  if (avgDays >= 1) {
+    const days = Math.round(avgDays);
+    return `${days}d`;
+  }
+  if (avgHours >= 1) {
+    const hours = Math.round(avgHours);
+    return `${hours}h`;
+  }
+  return '< 1h';
+}
+
 function calculateAvgResponseTime(
   responseTimesMs: number[] | undefined,
   member: TeamMember
 ): string {
-  // Use actual data when available
   if (responseTimesMs && responseTimesMs.length > 0) {
     const avgMs = responseTimesMs.reduce((sum, t) => sum + t, 0) / responseTimesMs.length;
-    const avgHours = avgMs / (1000 * 60 * 60);
-    const avgDays = avgHours / 24;
-
-    if (avgDays >= 7) {
-      const weeks = Math.round(avgDays / 7);
-      return `${weeks}w`;
-    }
-    if (avgDays >= 1) {
-      const days = Math.round(avgDays);
-      return `${days}d`;
-    }
-    if (avgHours >= 1) {
-      const hours = Math.round(avgHours);
-      return `${hours}h`;
-    }
-    return '< 1h';
+    return formatDuration(avgMs);
   }
 
   // Fallback: estimate based on workload
@@ -228,22 +235,7 @@ function calculateAvgResolutionTime(resolutionTimesMs: number[] | undefined): st
   }
 
   const avgMs = resolutionTimesMs.reduce((sum, t) => sum + t, 0) / resolutionTimesMs.length;
-  const avgHours = avgMs / (1000 * 60 * 60);
-  const avgDays = avgHours / 24;
-
-  if (avgDays >= 7) {
-    const weeks = Math.round(avgDays / 7);
-    return `${weeks}w`;
-  }
-  if (avgDays >= 1) {
-    const days = Math.round(avgDays);
-    return `${days}d`;
-  }
-  if (avgHours >= 1) {
-    const hours = Math.round(avgHours);
-    return `${hours}h`;
-  }
-  return '< 1h';
+  return formatDuration(avgMs);
 }
 
 function calculateNeedsAttention(tickets: Ticket[]): number {
@@ -284,7 +276,7 @@ async function getFirstResponseTimeMs(
       const authorEmail = comment.author?.email?.toLowerCase() || '';
       if (!authorEmail) continue;
       if (!isInternalUser(authorEmail, internalDomain)) continue;
-      if (authorEmail === requesterEmail) continue;
+      if (requesterEmail && authorEmail === requesterEmail) continue;
 
       const responseTimeMs = comment.createdAt.getTime() - ticket.createdAt.getTime();
       if (responseTimeMs <= 0) continue;
@@ -296,7 +288,11 @@ async function getFirstResponseTimeMs(
     }
 
     return null;
-  } catch {
+  } catch (error) {
+    console.error(
+      `Error computing first response time for ticket ${ticket.project}/${ticket.id}:`,
+      error
+    );
     return null;
   }
 }
@@ -309,8 +305,12 @@ async function fetchResponseTimes(
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  // Filter to recent tickets with assignees
-  const recentTickets = tickets.filter((t) => t.assignee?.email && t.createdAt >= thirtyDaysAgo);
+  // Filter to recent tickets with assignees, capped at 100 most recent
+  const MAX_TICKETS = 100;
+  const recentTickets = tickets
+    .filter((t) => t.assignee?.email && t.createdAt >= thirtyDaysAgo)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .slice(0, MAX_TICKETS);
 
   const memberResponseTimes = new Map<string, number[]>();
   const BATCH_SIZE = 10;
