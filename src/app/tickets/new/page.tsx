@@ -5,7 +5,8 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Send, Loader2 } from 'lucide-react';
-import type { DevOpsProject, User } from '@/types';
+import type { DevOpsProject, User, WorkItemType } from '@/types';
+import { useDevOpsApi } from '@/hooks';
 
 interface NewTicketForm {
   project: string;
@@ -14,15 +15,24 @@ interface NewTicketForm {
   priority: number;
   assignee: string;
   tags: string;
+  workItemType: string;
 }
 
 export default function NewTicketPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { fetchDevOps, post } = useDevOpsApi();
   const [projects, setProjects] = useState<DevOpsProject[]>([]);
   const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [workItemTypes, setWorkItemTypes] = useState<WorkItemType[]>([]);
+  const [isLoadingTypes, setIsLoadingTypes] = useState(false);
+  const [requiredFields, setRequiredFields] = useState<
+    { referenceName: string; name: string; type: string; allowedValues?: string[] }[]
+  >([]);
+  const [additionalFieldValues, setAdditionalFieldValues] = useState<Record<string, string>>({});
+  const [isLoadingRequiredFields, setIsLoadingRequiredFields] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,6 +43,7 @@ export default function NewTicketPage() {
     priority: 3,
     assignee: '',
     tags: '',
+    workItemType: 'Task',
   });
 
   // Fetch projects on load
@@ -42,20 +53,32 @@ export default function NewTicketPage() {
     }
   }, [session]);
 
-  // Fetch team members when project changes
+  // Fetch team members and work item types when project changes
   useEffect(() => {
     if (form.project && session?.accessToken) {
       fetchTeamMembers(form.project);
+      fetchWorkItemTypes(form.project);
     } else {
       setTeamMembers([]);
+      setWorkItemTypes([]);
     }
   }, [form.project, session]);
+
+  // Fetch required fields when project or work item type changes
+  useEffect(() => {
+    if (form.project && form.workItemType && session?.accessToken) {
+      fetchRequiredFields(form.project, form.workItemType);
+    } else {
+      setRequiredFields([]);
+      setAdditionalFieldValues({});
+    }
+  }, [form.project, form.workItemType, session]);
 
   const fetchProjects = async () => {
     setIsLoadingProjects(true);
     setError(null);
     try {
-      const response = await fetch('/api/devops/projects');
+      const response = await fetchDevOps('/api/devops/projects');
       if (!response.ok) throw new Error('Failed to fetch projects');
       const data = await response.json();
       setProjects(data.projects || []);
@@ -70,7 +93,7 @@ export default function NewTicketPage() {
   const fetchTeamMembers = async (projectName: string) => {
     setIsLoadingMembers(true);
     try {
-      const response = await fetch(
+      const response = await fetchDevOps(
         `/api/devops/projects/${encodeURIComponent(projectName)}/members`
       );
       if (!response.ok) throw new Error('Failed to fetch team members');
@@ -81,6 +104,47 @@ export default function NewTicketPage() {
       setTeamMembers([]);
     } finally {
       setIsLoadingMembers(false);
+    }
+  };
+
+  const fetchWorkItemTypes = async (projectName: string) => {
+    setIsLoadingTypes(true);
+    try {
+      const response = await fetchDevOps(
+        `/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`
+      );
+      if (!response.ok) throw new Error('Failed to fetch work item types');
+      const data = await response.json();
+      const types: WorkItemType[] = data.types || [];
+      setWorkItemTypes(types);
+      if (types.length > 0) {
+        const taskType = types.find((t) => t.name === 'Task');
+        setForm((prev) => ({ ...prev, workItemType: taskType?.name || types[0].name }));
+      }
+    } catch (err) {
+      console.error('Failed to fetch work item types:', err);
+      setWorkItemTypes([]);
+    } finally {
+      setIsLoadingTypes(false);
+    }
+  };
+
+  const fetchRequiredFields = async (projectName: string, workItemType: string) => {
+    setIsLoadingRequiredFields(true);
+    try {
+      const response = await fetchDevOps(
+        `/api/devops/projects/${encodeURIComponent(projectName)}/required-fields?workItemType=${encodeURIComponent(workItemType)}`
+      );
+      if (!response.ok) throw new Error('Failed to fetch required fields');
+      const data = await response.json();
+      setRequiredFields(data.fields || []);
+      setAdditionalFieldValues({});
+    } catch (err) {
+      console.error('Failed to fetch required fields:', err);
+      setRequiredFields([]);
+      setAdditionalFieldValues({});
+    } finally {
+      setIsLoadingRequiredFields(false);
     }
   };
 
@@ -95,20 +159,27 @@ export default function NewTicketPage() {
     setError(null);
 
     try {
-      const response = await fetch('/api/devops/tickets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project: form.project,
-          title: form.subject.trim(),
-          description: form.description.trim(),
-          priority: form.priority,
-          assignee: form.assignee || undefined,
-          tags: form.tags
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean),
-        }),
+      // Build additionalFields from dynamic required field values
+      const additionalFields: Record<string, string> = {};
+      for (const field of requiredFields) {
+        const value = additionalFieldValues[field.referenceName];
+        if (value) {
+          additionalFields[field.referenceName] = value;
+        }
+      }
+
+      const response = await post('/api/devops/tickets', {
+        project: form.project,
+        title: form.subject.trim(),
+        description: form.description.trim(),
+        priority: form.priority,
+        assignee: form.assignee || undefined,
+        workItemType: form.workItemType,
+        tags: form.tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
+        additionalFields: Object.keys(additionalFields).length > 0 ? additionalFields : undefined,
       });
 
       if (!response.ok) {
@@ -223,7 +294,14 @@ export default function NewTicketPage() {
             </span>
             <button
               type="submit"
-              disabled={isSubmitting || !form.project || !form.subject.trim()}
+              disabled={
+                isSubmitting ||
+                !form.project ||
+                !form.subject.trim() ||
+                requiredFields.some(
+                  (f) => !additionalFieldValues[f.referenceName]?.toString().trim()
+                )
+              }
               className="btn-primary flex items-center gap-2"
             >
               {isSubmitting ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
@@ -346,15 +424,91 @@ export default function NewTicketPage() {
             </select>
           </div>
 
-          {/* Work Item Type - fixed to Task */}
+          {/* Work Item Type */}
           <div>
             <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
               Work Item Type
             </label>
-            <select className="input w-full" disabled>
-              <option>Task</option>
-            </select>
+            {isLoadingTypes ? (
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 className="animate-spin" size={14} />
+                Loading...
+              </div>
+            ) : (
+              <select
+                value={form.workItemType}
+                onChange={(e) => setForm((prev) => ({ ...prev, workItemType: e.target.value }))}
+                className="input w-full"
+                disabled={!form.project || workItemTypes.length === 0}
+              >
+                {workItemTypes.length === 0 ? (
+                  <option value="Task">Task</option>
+                ) : (
+                  workItemTypes.map((type) => (
+                    <option key={type.name} value={type.name}>
+                      {type.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            )}
           </div>
+
+          {/* Dynamic required fields */}
+          {isLoadingRequiredFields ? (
+            <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+              <Loader2 className="animate-spin" size={14} />
+              Loading fields...
+            </div>
+          ) : (
+            requiredFields.map((field) => (
+              <div key={field.referenceName}>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  {field.name} *
+                </label>
+                {field.allowedValues ? (
+                  <select
+                    required
+                    value={additionalFieldValues[field.referenceName] || ''}
+                    onChange={(e) =>
+                      setAdditionalFieldValues((prev) => ({
+                        ...prev,
+                        [field.referenceName]: e.target.value,
+                      }))
+                    }
+                    className="input w-full"
+                  >
+                    <option value="">Select {field.name.toLowerCase()}...</option>
+                    {field.allowedValues.map((val) => (
+                      <option key={val} value={val}>
+                        {val}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    required
+                    type="text"
+                    placeholder={field.name}
+                    value={additionalFieldValues[field.referenceName] || ''}
+                    onChange={(e) =>
+                      setAdditionalFieldValues((prev) => ({
+                        ...prev,
+                        [field.referenceName]: e.target.value,
+                      }))
+                    }
+                    className="input w-full"
+                  />
+                )}
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

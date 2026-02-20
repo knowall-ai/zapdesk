@@ -16,6 +16,7 @@ interface TicketListProps {
 
 type SortField =
   | 'status'
+  | 'type'
   | 'subject'
   | 'requester'
   | 'requested'
@@ -220,6 +221,8 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
     switch (sortField) {
       case 'status':
         return multiplier * a.status.localeCompare(b.status);
+      case 'type':
+        return multiplier * (a.workItemType || '').localeCompare(b.workItemType || '');
       case 'subject':
         return multiplier * a.title.localeCompare(b.title);
       case 'requester':
@@ -422,6 +425,15 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                 </div>
               </th>
               <th
+                className="hidden cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase sm:table-cell"
+                style={{ color: 'var(--text-muted)' }}
+                onClick={() => handleSort('type')}
+              >
+                <div className="flex items-center gap-1">
+                  Type <SortIcon field="type" sortField={sortField} sortDirection={sortDirection} />
+                </div>
+              </th>
+              <th
                 className="cursor-pointer px-2 py-3 text-left text-xs font-medium uppercase sm:px-4"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('subject')}
@@ -499,7 +511,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                 {groupBy === 'assignee' && (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={10}
                       className="px-4 py-2 text-sm font-medium"
                       style={{ backgroundColor: 'var(--surface)', color: 'var(--text-secondary)' }}
                     >
@@ -519,6 +531,12 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                     </td>
                     <td className="px-2 py-3 sm:px-4">
                       <StatusBadge status={ticket.devOpsState} />
+                    </td>
+                    <td
+                      className="hidden px-4 py-3 text-sm sm:table-cell"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      {ticket.workItemType || '-'}
                     </td>
                     <td className="px-2 py-3 sm:px-4">
                       <Link
