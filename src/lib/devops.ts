@@ -247,6 +247,7 @@ export class AzureDevOpsService {
         'Microsoft.VSTS.Common.Priority',
         'System.TeamProject',
         'System.WorkItemType',
+        'System.AreaPath',
       ].join(',');
       const workItemsResponse = await fetch(
         `${this.baseUrl}/_apis/wit/workitems?ids=${batch.join(',')}&fields=${fields}&api-version=7.0`,
