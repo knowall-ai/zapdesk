@@ -13,6 +13,7 @@ import type {
   Epic,
   Feature,
   WorkItem,
+  WorkItemUpdate,
   EpicType,
   TreemapNode,
 } from '@/types';
@@ -312,6 +313,91 @@ export class AzureDevOpsService {
         })
       ) || []
     );
+  }
+
+  // Get work item update history (revisions with field changes)
+  async getWorkItemUpdates(projectName: string, workItemId: number): Promise<WorkItemUpdate[]> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/updates?api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch work item updates: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    // Fields we care about for the history view
+    const trackedFields = new Set([
+      'System.State',
+      'System.AssignedTo',
+      'System.Title',
+      'Microsoft.VSTS.Common.Priority',
+      'System.Tags',
+      'System.AreaPath',
+    ]);
+
+    return (data.value || [])
+      .filter(
+        (update: {
+          id: number;
+          fields?: Record<string, { oldValue?: unknown; newValue?: unknown }>;
+        }) => {
+          // Skip revision 1 (creation) unless it has meaningful tracked fields
+          if (update.id === 1) return true;
+          if (!update.fields) return false;
+          // Only include updates that changed tracked fields
+          return Object.keys(update.fields).some((key) => trackedFields.has(key));
+        }
+      )
+      .map(
+        (update: {
+          id: number;
+          rev: number;
+          revisedBy: {
+            displayName: string;
+            uniqueName: string;
+            id: string;
+            imageUrl?: string;
+          };
+          revisedDate: string;
+          fields?: Record<string, { oldValue?: unknown; newValue?: unknown }>;
+        }) => {
+          // Filter fields to only tracked ones and normalize identity values
+          const fields: Record<string, { oldValue?: string; newValue?: string }> = {};
+          if (update.fields) {
+            for (const [key, value] of Object.entries(update.fields)) {
+              if (trackedFields.has(key)) {
+                const normalize = (v: unknown): string | undefined => {
+                  if (v == null) return undefined;
+                  if (typeof v === 'object' && v !== null && 'displayName' in v) {
+                    return (v as { displayName: string }).displayName;
+                  }
+                  return String(v);
+                };
+                fields[key] = {
+                  oldValue: normalize(value.oldValue),
+                  newValue: normalize(value.newValue),
+                };
+              }
+            }
+          }
+
+          return {
+            id: update.id,
+            rev: update.rev,
+            revisedBy: {
+              id: update.revisedBy.id,
+              displayName: update.revisedBy.displayName,
+              email: update.revisedBy.uniqueName,
+              avatarUrl: update.revisedBy.imageUrl,
+            },
+            revisedDate: update.revisedDate,
+            fields,
+          };
+        }
+      );
   }
 
   // Create a new work item (ticket)

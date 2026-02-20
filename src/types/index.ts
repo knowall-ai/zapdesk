@@ -160,6 +160,20 @@ export const ALLOWED_ATTACHMENT_TYPES = [
   'application/x-zip-compressed',
 ];
 
+// Work item history update (from Azure DevOps Updates API)
+export interface WorkItemFieldChange {
+  oldValue?: string;
+  newValue?: string;
+}
+
+export interface WorkItemUpdate {
+  id: number;
+  rev: number;
+  revisedBy: User;
+  revisedDate: Date;
+  fields: Record<string, WorkItemFieldChange>;
+}
+
 export interface TicketFilter {
   status?: TicketStatus[];
   priority?: TicketPriority[];
