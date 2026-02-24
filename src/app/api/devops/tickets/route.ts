@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
       allTags,
       assignee,
       workItemType || 'Task',
-      priority != null && priority !== '',
+      Boolean(validatedFieldRef),
       validatedFieldRef
     );
 
