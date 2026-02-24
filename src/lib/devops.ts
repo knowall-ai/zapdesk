@@ -495,14 +495,12 @@ export class AzureDevOpsService {
       // Also set the built-in Priority field when using a custom field,
       // since workItemToTicket reads from Microsoft.VSTS.Common.Priority
       if (fieldPath !== 'Microsoft.VSTS.Common.Priority') {
-        const numPriority = priorityLabelToNumber[String(priority).toLowerCase()];
-        if (numPriority) {
-          patchDocument.push({
-            op: 'add',
-            path: '/fields/Microsoft.VSTS.Common.Priority',
-            value: numPriority,
-          });
-        }
+        const numPriority = priorityLabelToNumber[String(priority).toLowerCase()] ?? 3;
+        patchDocument.push({
+          op: 'add',
+          path: '/fields/Microsoft.VSTS.Common.Priority',
+          value: numPriority,
+        });
       }
     }
 
