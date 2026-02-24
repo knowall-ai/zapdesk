@@ -24,9 +24,9 @@ export const tMinus15Config: ProcessTemplateConfig = {
   fields: {
     priority: 'Microsoft.VSTS.Common.Priority',
     priorityValues: {
-      1: 'Urgent',
+      1: 'Critical',
       2: 'High',
-      3: 'Normal',
+      3: 'Medium',
       4: 'Low',
     },
   },

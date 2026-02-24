@@ -25,9 +25,9 @@ export const scrumConfig: ProcessTemplateConfig = {
   fields: {
     priority: 'Microsoft.VSTS.Common.Priority',
     priorityValues: {
-      1: 'Urgent',
+      1: 'Critical',
       2: 'High',
-      3: 'Normal', // Consistent with T-Minus-15 template
+      3: 'Medium',
       4: 'Low',
     },
   },

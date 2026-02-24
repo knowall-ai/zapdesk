@@ -75,9 +75,9 @@ export function mapStatusToState(status: TicketStatus): string {
 // Map priority numbers to Zendesk-like priorities
 function mapPriority(priority?: number): TicketPriority | undefined {
   if (!priority) return undefined;
-  if (priority === 1) return 'Urgent';
+  if (priority === 1) return 'Critical';
   if (priority === 2) return 'High';
-  if (priority === 3) return 'Normal';
+  if (priority === 3) return 'Medium';
   return 'Low';
 }
 
@@ -468,14 +468,42 @@ export class AzureDevOpsService {
       { op: 'add', path: '/fields/System.Tags', value: tags.join('; ') },
     ];
 
+    // Map string priority labels to numeric values for Microsoft.VSTS.Common.Priority
+    const priorityLabelToNumber: Record<string, number> = {
+      critical: 1,
+      '1': 1,
+      high: 2,
+      '2': 2,
+      medium: 3,
+      '3': 3,
+      low: 4,
+      '4': 4,
+    };
+
     // Only add Priority if the template supports it and a value was provided
     if (hasPriority && priority != null && priority !== '') {
       const fieldPath = priorityFieldRef || 'Microsoft.VSTS.Common.Priority';
+      // Convert to number for numeric fields (e.g., Microsoft.VSTS.Common.Priority is Integer)
+      const numericValue = Number(priority);
+      const priorityValue = !isNaN(numericValue) ? numericValue : priority;
       patchDocument.push({
         op: 'add',
         path: `/fields/${fieldPath}`,
-        value: priority,
+        value: priorityValue,
       });
+
+      // Also set the built-in Priority field when using a custom field,
+      // since workItemToTicket reads from Microsoft.VSTS.Common.Priority
+      if (fieldPath !== 'Microsoft.VSTS.Common.Priority') {
+        const numPriority = priorityLabelToNumber[String(priority).toLowerCase()];
+        if (numPriority) {
+          patchDocument.push({
+            op: 'add',
+            path: '/fields/Microsoft.VSTS.Common.Priority',
+            value: numPriority,
+          });
+        }
+      }
     }
 
     if (assigneeId) {

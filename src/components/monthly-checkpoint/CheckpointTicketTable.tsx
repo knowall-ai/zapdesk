@@ -23,8 +23,8 @@ const STATUS_OPTIONS: TicketStatus[] = [
   'Resolved',
   'Closed',
 ];
-const PRIORITY_OPTIONS: TicketPriority[] = ['Urgent', 'High', 'Normal', 'Low'];
-const PRIORITY_ORDER: Record<TicketPriority, number> = { Urgent: 0, High: 1, Normal: 2, Low: 3 };
+const PRIORITY_OPTIONS: TicketPriority[] = ['Critical', 'High', 'Medium', 'Low'];
+const PRIORITY_ORDER: Record<TicketPriority, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
 
 function SortIcon({
   field,
@@ -96,8 +96,8 @@ export function CheckpointTicketTable({ tickets }: CheckpointTicketTableProps) {
         case 'createdAt':
           return multiplier * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         case 'priority':
-          const aPriority = a.priority ?? 'Normal';
-          const bPriority = b.priority ?? 'Normal';
+          const aPriority = a.priority ?? 'Medium';
+          const bPriority = b.priority ?? 'Medium';
           return multiplier * (PRIORITY_ORDER[aPriority] - PRIORITY_ORDER[bPriority]);
         default:
           return 0;
@@ -303,8 +303,8 @@ export function CheckpointTicketTable({ tickets }: CheckpointTicketTableProps) {
                   {format(new Date(ticket.createdAt), 'dd MMM yyyy')}
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`priority-${(ticket.priority ?? 'Normal').toLowerCase()}`}>
-                    {ticket.priority ?? 'Normal'}
+                  <span className={`priority-${(ticket.priority ?? 'Medium').toLowerCase()}`}>
+                    {ticket.priority ?? 'Medium'}
                   </span>
                 </td>
               </tr>

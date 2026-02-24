@@ -251,9 +251,9 @@ function TicketsPageContent() {
                 className="input text-sm"
               >
                 <option value="">All Priorities</option>
-                <option value="Urgent">Urgent</option>
+                <option value="Critical">Critical</option>
                 <option value="High">High</option>
-                <option value="Normal">Normal</option>
+                <option value="Medium">Medium</option>
                 <option value="Low">Low</option>
               </select>
 

@@ -24,9 +24,9 @@ const fieldLabels: Record<string, string> = {
 function formatPriority(value?: string): string | undefined {
   if (!value) return undefined;
   const priorityMap: Record<string, string> = {
-    '1': 'Urgent',
+    '1': 'Critical',
     '2': 'High',
-    '3': 'Normal',
+    '3': 'Medium',
     '4': 'Low',
   };
   return priorityMap[value] || value;

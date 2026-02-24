@@ -9,6 +9,14 @@ interface DevOpsField {
   allowedValues?: string[];
 }
 
+// Friendly labels for numeric priority values (matches Azure DevOps naming)
+const NUMERIC_PRIORITY_LABELS: Record<string, string> = {
+  '1': 'Critical',
+  '2': 'High',
+  '3': 'Medium',
+  '4': 'Low',
+};
+
 // Allowed priority field reference names to prevent arbitrary field injection
 const ALLOWED_PRIORITY_FIELDS = new Set([
   'Microsoft.VSTS.Common.Priority',
@@ -220,7 +228,7 @@ export async function GET(
           fieldName: field.name,
           priorities: allowedValues.map((value: string) => ({
             value,
-            label: value,
+            label: NUMERIC_PRIORITY_LABELS[String(value)] || String(value),
           })),
         });
       }

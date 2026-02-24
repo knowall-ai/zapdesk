@@ -225,7 +225,7 @@ export default function TeamPage() {
       title: 'Needs Attention',
       value: teamData?.stats.needsAttention ?? 0,
       icon: <AlertCircle size={24} />,
-      color: 'var(--priority-urgent)',
+      color: 'var(--priority-critical)',
     },
   ];
 
@@ -361,7 +361,7 @@ export default function TeamPage() {
               <div className="text-center">
                 <AlertCircle
                   size={48}
-                  style={{ color: 'var(--priority-urgent)', margin: '0 auto' }}
+                  style={{ color: 'var(--priority-critical)', margin: '0 auto' }}
                 />
                 <p className="mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
                   {error}
@@ -522,7 +522,7 @@ export default function TeamPage() {
                                 style={{
                                   color: member.weeklyTrend.startsWith('+')
                                     ? 'var(--status-resolved)'
-                                    : 'var(--priority-urgent)',
+                                    : 'var(--priority-critical)',
                                 }}
                               >
                                 ({member.weeklyTrend})

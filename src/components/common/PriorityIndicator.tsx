@@ -12,20 +12,20 @@ const priorityConfig: Record<
   TicketPriority,
   { icon: React.ReactNode; className: string; label: string }
 > = {
-  Urgent: {
+  Critical: {
     icon: <AlertTriangle size={14} />,
-    className: 'priority-urgent',
-    label: 'Urgent',
+    className: 'priority-critical',
+    label: 'Critical',
   },
   High: {
     icon: <ArrowUp size={14} />,
     className: 'priority-high',
     label: 'High',
   },
-  Normal: {
+  Medium: {
     icon: <Minus size={14} />,
-    className: 'priority-normal',
-    label: 'Normal',
+    className: 'priority-medium',
+    label: 'Medium',
   },
   Low: {
     icon: <ArrowDown size={14} />,
@@ -43,7 +43,7 @@ export default function PriorityIndicator({ priority, showLabel = false }: Prior
     );
   }
 
-  const config = priorityConfig[priority] || priorityConfig['Normal'];
+  const config = priorityConfig[priority] || priorityConfig['Medium'];
 
   return (
     <span className={`flex items-center gap-1 ${config.className}`}>

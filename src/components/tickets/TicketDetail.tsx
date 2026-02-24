@@ -57,9 +57,9 @@ interface TicketDetailProps {
 }
 
 const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
-  { value: 1, label: 'Urgent' },
+  { value: 1, label: 'Critical' },
   { value: 2, label: 'High' },
-  { value: 3, label: 'Normal' },
+  { value: 3, label: 'Medium' },
   { value: 4, label: 'Low' },
 ];
 
