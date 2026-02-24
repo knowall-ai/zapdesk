@@ -155,14 +155,19 @@ export async function GET() {
 }
 
 // Team status thresholds — configurable via environment variables
-const THRESHOLD_NEEDS_ATTENTION_PENDING = Number(
-  process.env.TEAM_THRESHOLD_NEEDS_ATTENTION_PENDING ?? 5
-);
-const THRESHOLD_NEEDS_ATTENTION_ASSIGNED = Number(
-  process.env.TEAM_THRESHOLD_NEEDS_ATTENTION_ASSIGNED ?? 15
-);
-const THRESHOLD_BEHIND_PENDING = Number(process.env.TEAM_THRESHOLD_BEHIND_PENDING ?? 2);
-const THRESHOLD_BEHIND_ASSIGNED = Number(process.env.TEAM_THRESHOLD_BEHIND_ASSIGNED ?? 10);
+function getIntEnv(envName: string, defaultValue: number): number {
+  const raw = process.env[envName];
+  if (raw === undefined || raw === null || raw.trim() === '') {
+    return defaultValue;
+  }
+  const parsed = parseInt(raw, 10);
+  return Number.isNaN(parsed) ? defaultValue : parsed;
+}
+
+const THRESHOLD_NEEDS_ATTENTION_PENDING = getIntEnv('TEAM_THRESHOLD_NEEDS_ATTENTION_PENDING', 5);
+const THRESHOLD_NEEDS_ATTENTION_ASSIGNED = getIntEnv('TEAM_THRESHOLD_NEEDS_ATTENTION_ASSIGNED', 15);
+const THRESHOLD_BEHIND_PENDING = getIntEnv('TEAM_THRESHOLD_BEHIND_PENDING', 2);
+const THRESHOLD_BEHIND_ASSIGNED = getIntEnv('TEAM_THRESHOLD_BEHIND_ASSIGNED', 10);
 
 function calculateMemberStatus(member: TeamMember): TeamMemberStatus {
   if (
