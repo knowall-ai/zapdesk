@@ -17,7 +17,8 @@ export async function GET(
 
     await params; // Consume params to satisfy Next.js
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const organization = request.headers.get('x-devops-org') || undefined;
+    const devopsService = new AzureDevOpsService(session.accessToken, organization);
 
     // Get all users with entitlements (includes users not on specific teams)
     const allUsers = await devopsService.getAllUsersWithEntitlements();
