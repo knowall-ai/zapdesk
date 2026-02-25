@@ -17,6 +17,7 @@ import type {
   EpicType,
   TreemapNode,
 } from '@/types';
+import { DEFAULT_PRIORITY_LABELS, PRIORITY_LABEL_TO_NUMBER } from '@/lib/priority';
 
 const DEVOPS_ORG = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
 const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
@@ -72,13 +73,10 @@ export function mapStatusToState(status: TicketStatus): string {
   return statusMap[status] || 'Active';
 }
 
-// Map priority numbers to Zendesk-like priorities
+// Map priority numbers to display labels (falls back to centralized defaults)
 function mapPriority(priority?: number): TicketPriority | undefined {
   if (!priority) return undefined;
-  if (priority === 1) return 'Urgent';
-  if (priority === 2) return 'High';
-  if (priority === 3) return 'Normal';
-  return 'Low';
+  return DEFAULT_PRIORITY_LABELS[String(priority)] || 'Low';
 }
 
 // Convert DevOps identity to User
@@ -468,14 +466,31 @@ export class AzureDevOpsService {
       { op: 'add', path: '/fields/System.Tags', value: tags.join('; ') },
     ];
 
+    // Use centralized label-to-number mapping for Microsoft.VSTS.Common.Priority
+    const priorityLabelToNumber = PRIORITY_LABEL_TO_NUMBER;
+
     // Only add Priority if the template supports it and a value was provided
     if (hasPriority && priority != null && priority !== '') {
       const fieldPath = priorityFieldRef || 'Microsoft.VSTS.Common.Priority';
+      // Convert to number for numeric fields (e.g., Microsoft.VSTS.Common.Priority is Integer)
+      const numericValue = Number(priority);
+      const priorityValue = !isNaN(numericValue) ? numericValue : priority;
       patchDocument.push({
         op: 'add',
         path: `/fields/${fieldPath}`,
-        value: priority,
+        value: priorityValue,
       });
+
+      // Also set the built-in Priority field when using a custom field,
+      // since workItemToTicket reads from Microsoft.VSTS.Common.Priority
+      if (fieldPath !== 'Microsoft.VSTS.Common.Priority') {
+        const numPriority = priorityLabelToNumber[String(priority).toLowerCase()] ?? 3;
+        patchDocument.push({
+          op: 'add',
+          path: '/fields/Microsoft.VSTS.Common.Priority',
+          value: numPriority,
+        });
+      }
     }
 
     if (assigneeId) {

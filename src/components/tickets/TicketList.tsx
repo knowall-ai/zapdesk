@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronUp, X, Play, RotateCcw, UserCheck } from 'lucide-react';
 import type { Ticket, TicketStatus, TicketPriority } from '@/types';
+import { PRIORITY_ORDER } from '@/lib/priority';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 
@@ -167,6 +168,15 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
     };
   }, [tickets]);
 
+  // Derive available priorities from ticket data
+  const availablePriorities = useMemo(() => {
+    const seen = new Set<string>();
+    tickets.forEach((t) => {
+      if (t.priority) seen.add(t.priority);
+    });
+    return Array.from(seen).sort((a, b) => (PRIORITY_ORDER[a] ?? 99) - (PRIORITY_ORDER[b] ?? 99));
+  }, [tickets]);
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -227,7 +237,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
       case 'requested':
         return multiplier * (a.createdAt.getTime() - b.createdAt.getTime());
       case 'priority':
-        const priorityOrder: Record<string, number> = { Urgent: 0, High: 1, Normal: 2, Low: 3 };
+        const priorityOrder: Record<string, number> = PRIORITY_ORDER;
         const aPriority = a.priority ? priorityOrder[a.priority] : 4;
         const bPriority = b.priority ? priorityOrder[b.priority] : 4;
         return multiplier * (aPriority - bPriority);
@@ -348,10 +358,11 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                   className="input text-sm"
                 >
                   <option value="">All Priorities</option>
-                  <option value="Urgent">Urgent</option>
-                  <option value="High">High</option>
-                  <option value="Normal">Normal</option>
-                  <option value="Low">Low</option>
+                  {availablePriorities.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
                 </select>
 
                 <select

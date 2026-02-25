@@ -44,7 +44,7 @@ export interface Customer {
 }
 
 export type TicketStatus = 'New' | 'Open' | 'In Progress' | 'Pending' | 'Resolved' | 'Closed';
-export type TicketPriority = 'Low' | 'Normal' | 'High' | 'Urgent';
+export type TicketPriority = string;
 export type SLALevel = 'Gold' | 'Silver' | 'Bronze';
 export type SLARiskStatus = 'breached' | 'at-risk' | 'on-track';
 
@@ -55,9 +55,10 @@ export interface SLATargets {
 }
 
 export interface SLAConfig {
-  Urgent: SLATargets;
+  [priority: string]: SLATargets;
+  Critical: SLATargets;
   High: SLATargets;
-  Normal: SLATargets;
+  Medium: SLATargets;
   Low: SLATargets;
 }
 
