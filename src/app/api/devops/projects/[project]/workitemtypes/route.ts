@@ -19,7 +19,9 @@ export async function GET(
 
     if (!organization) {
       return NextResponse.json(
-        { error: 'Organization not specified. Provide x-devops-org header or set AZURE_DEVOPS_ORG.' },
+        {
+          error: 'Organization not specified. Provide x-devops-org header or set AZURE_DEVOPS_ORG.',
+        },
         { status: 400 }
       );
     }
