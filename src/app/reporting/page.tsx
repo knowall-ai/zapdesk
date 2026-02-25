@@ -62,8 +62,12 @@ export default function LiveDashboardPage() {
   }, [status, router]);
 
   const fetchData = useCallback(async () => {
-    if (!session?.accessToken || !hasOrganization) return;
+    if (!session?.accessToken || !hasOrganization) {
+      setLoading(false);
+      return;
+    }
 
+    setLoading(true);
     try {
       // Fetch stats
       const statsResponse = await devOpsGet('/api/devops/stats');
