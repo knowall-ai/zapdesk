@@ -55,6 +55,7 @@ export interface SLATargets {
 }
 
 export interface SLAConfig {
+  [priority: string]: SLATargets;
   Critical: SLATargets;
   High: SLATargets;
   Medium: SLATargets;
