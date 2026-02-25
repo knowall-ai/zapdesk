@@ -45,7 +45,7 @@ interface ProjectStats {
 export default function LiveDashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const { get: devOpsGet } = useDevOpsApi();
+  const { get: devOpsGet, hasOrganization } = useDevOpsApi();
   const [stats, setStats] = useState<LiveStats | null>(null);
   const [allTickets, setAllTickets] = useState<TicketType[]>([]);
   const [recentTickets, setRecentTickets] = useState<TicketType[]>([]);
@@ -62,7 +62,7 @@ export default function LiveDashboardPage() {
   }, [status, router]);
 
   const fetchData = useCallback(async () => {
-    if (!session?.accessToken) return;
+    if (!session?.accessToken || !hasOrganization) return;
 
     try {
       // Fetch stats
@@ -144,24 +144,24 @@ export default function LiveDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [session?.accessToken, devOpsGet]);
+  }, [session?.accessToken, hasOrganization, devOpsGet]);
 
   useEffect(() => {
-    if (session?.accessToken) {
+    if (session?.accessToken && hasOrganization) {
       fetchData();
     }
-  }, [session?.accessToken, fetchData]);
+  }, [session?.accessToken, hasOrganization, fetchData]);
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
-    if (!autoRefresh || !session?.accessToken) return;
+    if (!autoRefresh || !session?.accessToken || !hasOrganization) return;
 
     const interval = setInterval(() => {
       fetchData();
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [autoRefresh, session?.accessToken, fetchData]);
+  }, [autoRefresh, session?.accessToken, hasOrganization, fetchData]);
 
   // Compute chart data from tickets filtered by date range
   const chartData = useMemo(() => {
