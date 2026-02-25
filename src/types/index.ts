@@ -44,7 +44,7 @@ export interface Customer {
 }
 
 export type TicketStatus = 'New' | 'Open' | 'In Progress' | 'Pending' | 'Resolved' | 'Closed';
-export type TicketPriority = 'Low' | 'Medium' | 'High' | 'Critical';
+export type TicketPriority = string;
 export type SLALevel = 'Gold' | 'Silver' | 'Bronze';
 export type SLARiskStatus = 'breached' | 'at-risk' | 'on-track';
 

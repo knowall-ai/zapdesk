@@ -17,6 +17,7 @@ import type {
   EpicType,
   TreemapNode,
 } from '@/types';
+import { DEFAULT_PRIORITY_LABELS, PRIORITY_LABEL_TO_NUMBER } from '@/lib/priority';
 
 const DEVOPS_ORG = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
 const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
@@ -72,13 +73,10 @@ export function mapStatusToState(status: TicketStatus): string {
   return statusMap[status] || 'Active';
 }
 
-// Map priority numbers to Zendesk-like priorities
+// Map priority numbers to display labels (falls back to centralized defaults)
 function mapPriority(priority?: number): TicketPriority | undefined {
   if (!priority) return undefined;
-  if (priority === 1) return 'Critical';
-  if (priority === 2) return 'High';
-  if (priority === 3) return 'Medium';
-  return 'Low';
+  return DEFAULT_PRIORITY_LABELS[String(priority)] || 'Low';
 }
 
 // Convert DevOps identity to User
@@ -468,17 +466,8 @@ export class AzureDevOpsService {
       { op: 'add', path: '/fields/System.Tags', value: tags.join('; ') },
     ];
 
-    // Map string priority labels to numeric values for Microsoft.VSTS.Common.Priority
-    const priorityLabelToNumber: Record<string, number> = {
-      critical: 1,
-      '1': 1,
-      high: 2,
-      '2': 2,
-      medium: 3,
-      '3': 3,
-      low: 4,
-      '4': 4,
-    };
+    // Use centralized label-to-number mapping for Microsoft.VSTS.Common.Priority
+    const priorityLabelToNumber = PRIORITY_LABEL_TO_NUMBER;
 
     // Only add Priority if the template supports it and a value was provided
     if (hasPriority && priority != null && priority !== '') {

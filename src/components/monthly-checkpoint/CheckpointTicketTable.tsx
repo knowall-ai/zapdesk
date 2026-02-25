@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronUp, Search, Filter, X } from 'lucide-react';
 import type { Ticket, TicketStatus, TicketPriority } from '@/types';
+import { PRIORITY_ORDER, DEFAULT_PRIORITY_OPTIONS } from '@/lib/priority';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 
@@ -23,8 +24,7 @@ const STATUS_OPTIONS: TicketStatus[] = [
   'Resolved',
   'Closed',
 ];
-const PRIORITY_OPTIONS: TicketPriority[] = ['Critical', 'High', 'Medium', 'Low'];
-const PRIORITY_ORDER: Record<TicketPriority, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+const PRIORITY_OPTIONS: TicketPriority[] = DEFAULT_PRIORITY_OPTIONS.map((o) => o.label);
 
 function SortIcon({
   field,

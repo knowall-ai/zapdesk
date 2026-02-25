@@ -2,20 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
+import { DEFAULT_PRIORITY_LABELS } from '@/lib/priority';
 
 interface DevOpsField {
   referenceName: string;
   name: string;
   allowedValues?: string[];
 }
-
-// Friendly labels for numeric priority values (matches Azure DevOps naming)
-const NUMERIC_PRIORITY_LABELS: Record<string, string> = {
-  '1': 'Critical',
-  '2': 'High',
-  '3': 'Medium',
-  '4': 'Low',
-};
 
 // Allowed priority field reference names to prevent arbitrary field injection
 const ALLOWED_PRIORITY_FIELDS = new Set([
@@ -228,7 +221,7 @@ export async function GET(
           fieldName: field.name,
           priorities: allowedValues.map((value: string) => ({
             value,
-            label: NUMERIC_PRIORITY_LABELS[String(value)] || String(value),
+            label: DEFAULT_PRIORITY_LABELS[String(value)] || String(value),
           })),
         });
       }

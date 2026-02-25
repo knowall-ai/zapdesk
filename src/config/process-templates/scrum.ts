@@ -7,6 +7,7 @@
  */
 
 import type { ProcessTemplateConfig } from './index';
+import { DEFAULT_PRIORITY_LABELS } from '@/lib/priority';
 
 export const scrumConfig: ProcessTemplateConfig = {
   name: 'Scrum',
@@ -24,12 +25,9 @@ export const scrumConfig: ProcessTemplateConfig = {
 
   fields: {
     priority: 'Microsoft.VSTS.Common.Priority',
-    priorityValues: {
-      1: 'Critical',
-      2: 'High',
-      3: 'Medium',
-      4: 'Low',
-    },
+    priorityValues: Object.fromEntries(
+      Object.entries(DEFAULT_PRIORITY_LABELS).map(([k, v]) => [Number(k), v])
+    ),
   },
 
   states: {
