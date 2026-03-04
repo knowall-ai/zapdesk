@@ -9,6 +9,7 @@ import { LoadingSpinner } from '@/components/common';
 import { TicketList, KanbanBoard } from '@/components/tickets';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import type { Ticket, TicketStatus, TicketPriority } from '@/types';
+import { PRIORITY_ORDER } from '@/lib/priority';
 
 interface Filters {
   status: TicketStatus | '';
@@ -160,6 +161,15 @@ function TicketsPageContent() {
     };
   }, [tickets]);
 
+  // Derive available priorities from ticket data
+  const availablePriorities = useMemo(() => {
+    const seen = new Set<string>();
+    tickets.forEach((t) => {
+      if (t.priority) seen.add(t.priority);
+    });
+    return Array.from(seen).sort((a, b) => (PRIORITY_ORDER[a] ?? 99) - (PRIORITY_ORDER[b] ?? 99));
+  }, [tickets]);
+
   // Apply filters
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket) => {
@@ -251,10 +261,11 @@ function TicketsPageContent() {
                 className="input text-sm"
               >
                 <option value="">All Priorities</option>
-                <option value="Urgent">Urgent</option>
-                <option value="High">High</option>
-                <option value="Normal">Normal</option>
-                <option value="Low">Low</option>
+                {availablePriorities.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
               </select>
 
               <select

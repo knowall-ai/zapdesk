@@ -149,7 +149,7 @@ export default function ProfilePage() {
             className="card p-6 text-center"
             style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)' }}
           >
-            <p style={{ color: 'var(--priority-urgent)' }}>{error}</p>
+            <p style={{ color: 'var(--priority-critical)' }}>{error}</p>
           </div>
         </div>
       </MainLayout>
@@ -244,7 +244,10 @@ export default function ProfilePage() {
           {lightningError && (
             <div
               className="mb-4 rounded-md p-3 text-sm"
-              style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--priority-urgent)' }}
+              style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                color: 'var(--priority-critical)',
+              }}
             >
               {lightningError}
             </div>

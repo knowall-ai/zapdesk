@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
+import { DEFAULT_PRIORITY_LABELS } from '@/lib/priority';
 
 interface DevOpsField {
   referenceName: string;
@@ -220,7 +221,7 @@ export async function GET(
           fieldName: field.name,
           priorities: allowedValues.map((value: string) => ({
             value,
-            label: value,
+            label: DEFAULT_PRIORITY_LABELS[String(value)] || String(value),
           })),
         });
       }

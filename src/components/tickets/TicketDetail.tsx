@@ -23,7 +23,6 @@ import type {
   Ticket,
   TicketComment,
   User,
-  TicketPriority,
   WorkItemState,
   WorkItemUpdate,
   Attachment,
@@ -56,12 +55,9 @@ interface TicketDetailProps {
   onRefreshTicket?: () => Promise<void>;
 }
 
-const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
-  { value: 1, label: 'Urgent' },
-  { value: 2, label: 'High' },
-  { value: 3, label: 'Normal' },
-  { value: 4, label: 'Low' },
-];
+import { DEFAULT_PRIORITY_OPTIONS } from '@/lib/priority';
+
+const priorityOptions = DEFAULT_PRIORITY_OPTIONS;
 
 export default function TicketDetail({
   ticket,

@@ -30,9 +30,9 @@
   --status-closed: #6b7280;
 
   /* Priority colors */
-  --priority-urgent: #ef4444;
+  --priority-critical: #ef4444;
   --priority-high: #f97316;
-  --priority-normal: #3b82f6;
+  --priority-medium: #3b82f6;
   --priority-low: #6b7280;
 
   /* Text colors */
@@ -124,14 +124,14 @@ body {
   }
 
   /* Priority indicator styles */
-  .priority-urgent {
-    color: var(--priority-urgent);
+  .priority-critical {
+    color: var(--priority-critical);
   }
   .priority-high {
     color: var(--priority-high);
   }
-  .priority-normal {
-    color: var(--priority-normal);
+  .priority-medium {
+    color: var(--priority-medium);
   }
   .priority-low {
     color: var(--priority-low);
@@ -301,7 +301,7 @@ body {
 
 .sla-breached {
   background: rgba(239, 68, 68, 0.15);
-  color: var(--priority-urgent);
+  color: var(--priority-critical);
   border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
@@ -327,8 +327,8 @@ body {
 }
 
 .sla-indicator-breached {
-  background: var(--priority-urgent);
-  box-shadow: 0 0 6px var(--priority-urgent);
+  background: var(--priority-critical);
+  box-shadow: 0 0 6px var(--priority-critical);
   animation: pulse-red 2s infinite;
 }
 

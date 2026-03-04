@@ -320,7 +320,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
                   <button
                     onClick={() => signOut({ callbackUrl: '/login' })}
                     className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                    style={{ color: 'var(--priority-urgent)' }}
+                    style={{ color: 'var(--priority-critical)' }}
                   >
                     <LogOut size={16} />
                     Sign out

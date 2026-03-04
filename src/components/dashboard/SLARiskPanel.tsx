@@ -45,7 +45,7 @@ export function SLARiskPanel({ accessToken }: SLARiskPanelProps) {
     return (
       <div className="card p-6">
         <div className="mb-4 flex items-center gap-2">
-          <AlertTriangle size={20} style={{ color: 'var(--priority-urgent)' }} />
+          <AlertTriangle size={20} style={{ color: 'var(--priority-critical)' }} />
           <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
             SLA Risk
           </h2>
@@ -64,7 +64,7 @@ export function SLARiskPanel({ accessToken }: SLARiskPanelProps) {
     return (
       <div className="card p-6">
         <div className="mb-4 flex items-center gap-2">
-          <AlertTriangle size={20} style={{ color: 'var(--priority-urgent)' }} />
+          <AlertTriangle size={20} style={{ color: 'var(--priority-critical)' }} />
           <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
             SLA Risk
           </h2>
@@ -87,7 +87,7 @@ export function SLARiskPanel({ accessToken }: SLARiskPanelProps) {
       {/* Header */}
       <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
         <div className="flex items-center gap-2">
-          <AlertTriangle size={20} style={{ color: 'var(--priority-urgent)' }} />
+          <AlertTriangle size={20} style={{ color: 'var(--priority-critical)' }} />
           <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
             SLA Risk
           </h2>
@@ -158,7 +158,7 @@ function SLATicketRow({ status }: { status: TicketSLAStatus }) {
       className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
       style={{
         backgroundColor: isBreached ? 'rgba(239, 68, 68, 0.1)' : 'rgba(249, 115, 22, 0.08)',
-        borderLeft: `3px solid ${isBreached ? 'var(--priority-urgent)' : 'var(--priority-high)'}`,
+        borderLeft: `3px solid ${isBreached ? 'var(--priority-critical)' : 'var(--priority-high)'}`,
       }}
     >
       <div className="min-w-0 flex-1">
@@ -179,15 +179,15 @@ function SLATicketRow({ status }: { status: TicketSLAStatus }) {
           style={{ color: 'var(--text-muted)' }}
         >
           <span>#{ticket.id}</span>
-          <span className={`priority-${(ticket.priority ?? 'Normal').toLowerCase()}`}>
-            {ticket.priority ?? 'Normal'}
+          <span className={`priority-${(ticket.priority ?? 'Medium').toLowerCase()}`}>
+            {ticket.priority ?? 'Medium'}
           </span>
           <span>{ticket.project}</span>
         </div>
       </div>
       <div
         className="ml-3 flex items-center gap-1 text-xs font-medium whitespace-nowrap"
-        style={{ color: isBreached ? 'var(--priority-urgent)' : 'var(--priority-high)' }}
+        style={{ color: isBreached ? 'var(--priority-critical)' : 'var(--priority-high)' }}
       >
         <Clock size={12} />
         {formatTimeRemaining(timeRemaining)}
