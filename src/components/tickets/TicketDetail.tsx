@@ -17,6 +17,8 @@ import {
   Info,
   X,
   Download,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import Link from 'next/link';
 import type {
@@ -48,7 +50,7 @@ interface TicketDetailProps {
   comments: TicketComment[];
   history?: WorkItemUpdate[];
   historyLoading?: boolean;
-  onAddComment?: (comment: string) => Promise<void>;
+  onAddComment?: (comment: string, isInternal?: boolean) => Promise<void>;
   onStateChange?: (state: string) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
@@ -77,6 +79,7 @@ export default function TicketDetail({
 }: TicketDetailProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>('conversation');
   const [newComment, setNewComment] = useState('');
+  const [isInternalNote, setIsInternalNote] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
   const [isDetailsSidebarOpen, setIsDetailsSidebarOpen] = useState(false);
@@ -289,8 +292,9 @@ export default function TicketDetail({
 
       // Then add comment if there is one
       if (newComment.trim() && onAddComment) {
-        await onAddComment(newComment);
+        await onAddComment(newComment, isInternalNote);
         setNewComment('');
+        setIsInternalNote(false);
       }
 
       // Refresh ticket once after all uploads and comment
@@ -574,7 +578,10 @@ export default function TicketDetail({
         {/* Reply box */}
         <div
           className="border-t p-4"
-          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+          style={{
+            borderColor: isInternalNote ? 'rgba(234, 179, 8, 0.3)' : 'var(--border)',
+            backgroundColor: isInternalNote ? 'rgba(234, 179, 8, 0.05)' : 'var(--surface)',
+          }}
         >
           {/* Hidden file input */}
           <input
@@ -587,17 +594,26 @@ export default function TicketDetail({
           />
 
           <div className="mb-3 flex items-center gap-2">
-            <label className="flex cursor-not-allowed items-center gap-2">
-              <input
-                type="checkbox"
-                checked
-                disabled
-                className="h-4 w-4 rounded accent-[var(--primary)]"
-              />
-              <span className="text-xs" style={{ color: 'var(--primary)' }}>
-                Public reply – all comments are visible to customers in DevOps
-              </span>
-            </label>
+            <button
+              type="button"
+              onClick={() => setIsInternalNote(!isInternalNote)}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors"
+              style={{
+                backgroundColor: isInternalNote
+                  ? 'rgba(234, 179, 8, 0.15)'
+                  : 'var(--surface-hover)',
+                color: isInternalNote ? '#eab308' : 'var(--text-secondary)',
+                border: `1px solid ${isInternalNote ? 'rgba(234, 179, 8, 0.3)' : 'var(--border)'}`,
+              }}
+            >
+              {isInternalNote ? <EyeOff size={14} /> : <Eye size={14} />}
+              {isInternalNote ? 'Internal note' : 'Public reply'}
+            </button>
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {isInternalNote
+                ? 'Only visible to agents — not seen by customers'
+                : 'Visible to customers in DevOps'}
+            </span>
           </div>
 
           {/* Upload error */}

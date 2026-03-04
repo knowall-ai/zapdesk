@@ -94,12 +94,12 @@ export default function TicketDetailPage() {
     }
   }, [session, ticketId, fetchTicket, fetchHistory]);
 
-  const handleAddComment = async (comment: string) => {
+  const handleAddComment = async (comment: string, isInternal: boolean = false) => {
     try {
       const response = await fetch(`/api/devops/tickets/${ticketId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comment }),
+        body: JSON.stringify({ comment, isInternal }),
       });
 
       if (response.ok) {

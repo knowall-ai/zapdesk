@@ -299,18 +299,23 @@ export class AzureDevOpsService {
           text: string;
           createdDate: string;
           createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string };
-        }) => ({
-          id: c.id,
-          content: c.text,
-          createdAt: new Date(c.createdDate),
-          author: {
-            id: c.createdBy.id,
-            displayName: c.createdBy.displayName,
-            email: c.createdBy.uniqueName,
-            avatarUrl: c.createdBy.imageUrl,
-          },
-          isInternal: false,
-        })
+        }) => {
+          const internalPrefix = '[Internal Note] ';
+          const isInternal = c.text.startsWith(internalPrefix);
+          const content = isInternal ? c.text.slice(internalPrefix.length) : c.text;
+          return {
+            id: c.id,
+            content,
+            createdAt: new Date(c.createdDate),
+            author: {
+              id: c.createdBy.id,
+              displayName: c.createdBy.displayName,
+              email: c.createdBy.uniqueName,
+              avatarUrl: c.createdBy.imageUrl,
+            },
+            isInternal,
+          };
+        }
       ) || []
     );
   }
