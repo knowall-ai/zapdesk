@@ -533,7 +533,14 @@ export default function TicketDetail({
                 <div
                   key={comment.id}
                   className={`card mb-4 p-4 ${comment.isInternal ? 'border-l-4' : ''}`}
-                  style={comment.isInternal ? { borderLeftColor: 'var(--status-pending)' } : {}}
+                  style={
+                    comment.isInternal
+                      ? {
+                          borderLeftColor: '#eab308',
+                          backgroundColor: 'rgba(234, 179, 8, 0.08)',
+                        }
+                      : {}
+                  }
                 >
                   <div className="flex items-start gap-3">
                     <Avatar
