@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Send, Loader2 } from 'lucide-react';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
-import type { DevOpsProject, User } from '@/types';
+import type { DevOpsProject, User, WorkItemType } from '@/types';
 
 interface NewTicketForm {
   project: string;
@@ -15,6 +15,9 @@ interface NewTicketForm {
   priority: number;
   assignee: string;
   tags: string;
+  workItemType: string;
+  iterationPath: string;
+  areaPath: string;
 }
 
 export default function NewTicketPage() {
@@ -25,6 +28,16 @@ export default function NewTicketPage() {
   const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [workItemTypes, setWorkItemTypes] = useState<WorkItemType[]>([]);
+  const [isLoadingTypes, setIsLoadingTypes] = useState(false);
+  const [requiredFields, setRequiredFields] = useState<
+    { referenceName: string; name: string; type: string; allowedValues?: string[] }[]
+  >([]);
+  const [additionalFieldValues, setAdditionalFieldValues] = useState<Record<string, string>>({});
+  const [isLoadingRequiredFields, setIsLoadingRequiredFields] = useState(false);
+  const [iterations, setIterations] = useState<string[]>([]);
+  const [areas, setAreas] = useState<string[]>([]);
+  const [isLoadingClassifications, setIsLoadingClassifications] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +48,9 @@ export default function NewTicketPage() {
     priority: 3,
     assignee: '',
     tags: '',
+    workItemType: 'Task',
+    iterationPath: '',
+    areaPath: '',
   });
 
   const fetchProjects = useCallback(async () => {
@@ -73,6 +89,75 @@ export default function NewTicketPage() {
     [get]
   );
 
+  const fetchWorkItemTypes = useCallback(
+    async (projectName: string) => {
+      setIsLoadingTypes(true);
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`
+        );
+        if (!response.ok) throw new Error('Failed to fetch work item types');
+        const data = await response.json();
+        const types: WorkItemType[] = data.types || [];
+        setWorkItemTypes(types);
+        if (types.length > 0) {
+          const taskType = types.find((t) => t.name === 'Task');
+          setForm((prev) => ({ ...prev, workItemType: taskType?.name || types[0].name }));
+        }
+      } catch (err) {
+        console.error('Failed to fetch work item types:', err);
+        setWorkItemTypes([]);
+      } finally {
+        setIsLoadingTypes(false);
+      }
+    },
+    [get]
+  );
+
+  const fetchRequiredFields = useCallback(
+    async (projectName: string, workItemType: string) => {
+      setIsLoadingRequiredFields(true);
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/required-fields?workItemType=${encodeURIComponent(workItemType)}`
+        );
+        if (!response.ok) throw new Error('Failed to fetch required fields');
+        const data = await response.json();
+        setRequiredFields(data.fields || []);
+        setAdditionalFieldValues({});
+      } catch (err) {
+        console.error('Failed to fetch required fields:', err);
+        setRequiredFields([]);
+        setAdditionalFieldValues({});
+      } finally {
+        setIsLoadingRequiredFields(false);
+      }
+    },
+    [get]
+  );
+
+  const fetchClassifications = useCallback(
+    async (projectName: string) => {
+      setIsLoadingClassifications(true);
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/classifications`
+        );
+        if (!response.ok) throw new Error('Failed to fetch classifications');
+        const data = await response.json();
+        setIterations(data.iterations || []);
+        setAreas(data.areas || []);
+      } catch (err) {
+        console.error('Failed to fetch classifications:', err);
+        setIterations([]);
+        setAreas([]);
+      } finally {
+        setIsLoadingClassifications(false);
+      }
+    },
+    [get]
+  );
+
   // Fetch projects on load
   useEffect(() => {
     if (session?.accessToken && hasOrganization) {
@@ -82,14 +167,36 @@ export default function NewTicketPage() {
     }
   }, [session, hasOrganization, status, fetchProjects]);
 
-  // Fetch team members when project changes
+  // Fetch team members, work item types, and classifications when project changes
   useEffect(() => {
     if (form.project && session?.accessToken && hasOrganization) {
       fetchTeamMembers(form.project);
+      fetchWorkItemTypes(form.project);
+      fetchClassifications(form.project);
     } else {
       setTeamMembers([]);
+      setWorkItemTypes([]);
+      setIterations([]);
+      setAreas([]);
     }
-  }, [form.project, session, hasOrganization, fetchTeamMembers]);
+  }, [
+    form.project,
+    session,
+    hasOrganization,
+    fetchTeamMembers,
+    fetchWorkItemTypes,
+    fetchClassifications,
+  ]);
+
+  // Fetch required fields when project or work item type changes
+  useEffect(() => {
+    if (form.project && form.workItemType && session?.accessToken && hasOrganization) {
+      fetchRequiredFields(form.project, form.workItemType);
+    } else {
+      setRequiredFields([]);
+      setAdditionalFieldValues({});
+    }
+  }, [form.project, form.workItemType, session, hasOrganization, fetchRequiredFields]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,16 +209,29 @@ export default function NewTicketPage() {
     setError(null);
 
     try {
+      // Build additionalFields from dynamic required field values
+      const additionalFields: Record<string, string> = {};
+      for (const field of requiredFields) {
+        const value = additionalFieldValues[field.referenceName];
+        if (value) {
+          additionalFields[field.referenceName] = value;
+        }
+      }
+
       const response = await post('/api/devops/tickets', {
         project: form.project,
         title: form.subject.trim(),
         description: form.description.trim(),
         priority: form.priority,
         assignee: form.assignee || undefined,
+        workItemType: form.workItemType,
         tags: form.tags
           .split(',')
           .map((t) => t.trim())
           .filter(Boolean),
+        iterationPath: form.iterationPath || undefined,
+        areaPath: form.areaPath || undefined,
+        additionalFields: Object.keys(additionalFields).length > 0 ? additionalFields : undefined,
       });
 
       if (!response.ok) {
@@ -226,7 +346,14 @@ export default function NewTicketPage() {
             </span>
             <button
               type="submit"
-              disabled={isSubmitting || !form.project || !form.subject.trim()}
+              disabled={
+                isSubmitting ||
+                !form.project ||
+                !form.subject.trim() ||
+                requiredFields.some(
+                  (f) => !additionalFieldValues[f.referenceName]?.toString().trim()
+                )
+              }
               className="btn-primary flex items-center gap-2"
             >
               {isSubmitting ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
@@ -349,15 +476,151 @@ export default function NewTicketPage() {
             </select>
           </div>
 
-          {/* Work Item Type - fixed to Task */}
+          {/* Work Item Type */}
           <div>
             <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
               Work Item Type
             </label>
-            <select className="input w-full" disabled>
-              <option>Task</option>
-            </select>
+            {isLoadingTypes ? (
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 className="animate-spin" size={14} />
+                Loading...
+              </div>
+            ) : (
+              <select
+                value={form.workItemType}
+                onChange={(e) => setForm((prev) => ({ ...prev, workItemType: e.target.value }))}
+                className="input w-full"
+                disabled={!form.project || workItemTypes.length === 0}
+              >
+                {workItemTypes.length === 0 ? (
+                  <option value="Task">Task</option>
+                ) : (
+                  workItemTypes.map((type) => (
+                    <option key={type.name} value={type.name}>
+                      {type.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            )}
           </div>
+
+          {/* Iteration Path */}
+          <div>
+            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
+              Iteration
+            </label>
+            {isLoadingClassifications ? (
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 className="animate-spin" size={14} />
+                Loading...
+              </div>
+            ) : (
+              <select
+                value={form.iterationPath}
+                onChange={(e) => setForm((prev) => ({ ...prev, iterationPath: e.target.value }))}
+                className="input w-full"
+                disabled={!form.project || iterations.length === 0}
+              >
+                <option value="">Default</option>
+                {iterations.map((path) => (
+                  <option key={path} value={path}>
+                    {path}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Area Path */}
+          <div>
+            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
+              Area
+            </label>
+            {isLoadingClassifications ? (
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 className="animate-spin" size={14} />
+                Loading...
+              </div>
+            ) : (
+              <select
+                value={form.areaPath}
+                onChange={(e) => setForm((prev) => ({ ...prev, areaPath: e.target.value }))}
+                className="input w-full"
+                disabled={!form.project || areas.length === 0}
+              >
+                <option value="">Default</option>
+                {areas.map((path) => (
+                  <option key={path} value={path}>
+                    {path}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Dynamic required fields */}
+          {isLoadingRequiredFields ? (
+            <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+              <Loader2 className="animate-spin" size={14} />
+              Loading fields...
+            </div>
+          ) : (
+            requiredFields.map((field) => (
+              <div key={field.referenceName}>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  {field.name} *
+                </label>
+                {field.allowedValues ? (
+                  <select
+                    required
+                    value={additionalFieldValues[field.referenceName] || ''}
+                    onChange={(e) =>
+                      setAdditionalFieldValues((prev) => ({
+                        ...prev,
+                        [field.referenceName]: e.target.value,
+                      }))
+                    }
+                    className="input w-full"
+                  >
+                    <option value="">Select {field.name.toLowerCase()}...</option>
+                    {field.allowedValues.map((val) => (
+                      <option key={val} value={val}>
+                        {val}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    required
+                    type="text"
+                    placeholder={field.name}
+                    value={additionalFieldValues[field.referenceName] || ''}
+                    onChange={(e) =>
+                      setAdditionalFieldValues((prev) => ({
+                        ...prev,
+                        [field.referenceName]: e.target.value,
+                      }))
+                    }
+                    className="input w-full"
+                  />
+                )}
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
