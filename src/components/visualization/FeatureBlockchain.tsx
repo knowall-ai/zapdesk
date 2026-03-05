@@ -799,6 +799,8 @@ export default function FeatureTimechain({
               defaultTicketsOnly={false}
               onWorkItemClick={handleWorkItemClick}
               onStatusChange={handleDialogStateChange}
+              project={epic?.project}
+              organization={organization}
             />
           </div>
         </div>

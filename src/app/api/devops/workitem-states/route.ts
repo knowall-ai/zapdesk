@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const organization = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+    const organization =
+      request.headers.get('x-devops-org') || process.env.AZURE_DEVOPS_ORG || 'KnowAll';
 
     // Optional query params to filter by specific work item type and project
     const { searchParams } = new URL(request.url);

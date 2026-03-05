@@ -91,6 +91,8 @@ interface WorkItemBoardProps {
   onWorkItemClick?: (item: WorkItem) => void; // Click handler for work item subject (opens dialog instead of navigating)
   onZapClick?: (item: WorkItem) => void; // Opens ZapDialog for the work item's assignee
   defaultViewMode?: 'list' | 'kanban'; // Initial view mode
+  project?: string; // Project name for Kanban state columns
+  organization?: string; // Azure DevOps organization for API calls
 }
 
 type SortField =
@@ -227,6 +229,8 @@ export default function WorkItemBoard({
   onWorkItemClick,
   onZapClick,
   defaultViewMode = 'list',
+  project,
+  organization,
 }: WorkItemBoardProps) {
   const [sortField, setSortField] = useState<SortField>('updated');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -774,6 +778,8 @@ export default function WorkItemBoard({
             typeInfoMap={typeInfoMap}
             onItemClick={onWorkItemClick as ((item: Ticket | WorkItem) => void) | undefined}
             onZapClick={onZapClick as ((item: Ticket | WorkItem) => void) | undefined}
+            project={project}
+            organization={organization}
           />
         </div>
       )}

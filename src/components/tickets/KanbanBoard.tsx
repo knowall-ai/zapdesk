@@ -34,6 +34,8 @@ interface KanbanBoardProps {
   typeInfoMap?: Map<string, WorkItemType>; // Work item type icons/colors
   onItemClick?: (item: Ticket | WorkItem) => void; // Open detail dialog instead of navigating
   onZapClick?: (item: Ticket | WorkItem) => void; // Opens ZapDialog for the assignee
+  project?: string; // Project name for fetching correct work item states
+  organization?: string; // Azure DevOps organization for API calls
 }
 
 // Helper to get state from either Ticket or WorkItem
@@ -62,6 +64,8 @@ export default function KanbanBoard({
   typeInfoMap,
   onItemClick,
   onZapClick,
+  project,
+  organization,
 }: KanbanBoardProps) {
   // Use items if provided, otherwise fall back to tickets
   // Wrapped in useMemo to prevent reference changes on every render
@@ -76,7 +80,13 @@ export default function KanbanBoard({
   useEffect(() => {
     async function fetchStates() {
       try {
-        const response = await fetch('/api/devops/workitem-states');
+        const params = new URLSearchParams();
+        if (project) params.set('project', project);
+        const qs = params.toString();
+        const url = `/api/devops/workitem-states${qs ? `?${qs}` : ''}`;
+        const headers: HeadersInit = {};
+        if (organization) headers['x-devops-org'] = organization;
+        const response = await fetch(url, { headers });
         if (response.ok) {
           const data = await response.json();
           if (data.allStates && data.allStates.length > 0) {
@@ -92,7 +102,7 @@ export default function KanbanBoard({
       }
     }
     fetchStates();
-  }, []);
+  }, [project, organization]);
 
   // Update local items when props change
   useEffect(() => {
