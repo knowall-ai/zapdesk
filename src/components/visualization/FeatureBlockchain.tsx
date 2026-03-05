@@ -165,6 +165,7 @@ interface EpicInfo {
   completedWork: number;
   remainingWork: number;
   devOpsUrl: string;
+  project?: string;
 }
 
 interface FeatureTimechainProps {
@@ -172,6 +173,7 @@ interface FeatureTimechainProps {
   epic?: EpicInfo;
   onFeatureClick?: (feature: Feature) => void;
   availableTypes?: WorkItemType[]; // Work item types with icons from Azure DevOps
+  organization?: string; // Azure DevOps organization for API calls
 }
 
 // Map Feature state to category: New, In Progress, Done
@@ -305,6 +307,7 @@ export default function FeatureTimechain({
   epic,
   onFeatureClick,
   availableTypes,
+  organization,
 }: FeatureTimechainProps) {
   // Initialize with first Active feature, or fall back to first feature
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(() => {
@@ -348,16 +351,32 @@ export default function FeatureTimechain({
     setIsDialogOpen(true);
   }, []);
 
-  const handleDialogStateChange = useCallback(async (workItemId: number, newState: string) => {
-    const response = await fetch(`/api/devops/tickets/${workItemId}/state`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ state: newState }),
-    });
-    if (!response.ok) throw new Error('Failed to update state');
-    // Update local state so dialog reflects the change
-    setSelectedWorkItem((prev) => (prev ? { ...prev, state: newState } : null));
-  }, []);
+  const handleDialogStateChange = useCallback(
+    async (workItemId: number, newState: string) => {
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (organization) {
+        headers['x-devops-org'] = organization;
+      }
+      const response = await fetch(`/api/devops/tickets/${workItemId}/state`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ state: newState, project: epic?.project }),
+      });
+      if (!response.ok) throw new Error('Failed to update state');
+      // Update local state so dialog and feature work items reflect the change
+      setSelectedWorkItem((prev) => (prev ? { ...prev, state: newState } : null));
+      setSelectedFeature((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          workItems: prev.workItems.map((item) =>
+            item.id === workItemId ? { ...item, state: newState } : item
+          ),
+        };
+      });
+    },
+    [organization, epic?.project]
+  );
 
   const handleBlockClick = (feature: Feature) => {
     // Always select clicked feature (don't allow deselection)

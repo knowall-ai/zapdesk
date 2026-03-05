@@ -179,8 +179,10 @@ export default function EpicDetailPage() {
               completedWork: epic.completedWork || 0,
               remainingWork: epic.remainingWork || 0,
               devOpsUrl: epic.devOpsUrl,
+              project: epic.project,
             }}
             availableTypes={ticketTypes}
+            organization={selectedOrganization?.accountName}
           />
         ) : (
           <div
