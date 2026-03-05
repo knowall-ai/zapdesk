@@ -44,13 +44,13 @@ export default function ProjectsPage() {
         if (response.ok) {
           const data = await response.json();
           setProjects(
-            (data.projects || []).map(
-              (p: ProjectWithSLA & { createdAt: string; updatedAt: string }) => ({
+            (data.projects || [])
+              .map((p: ProjectWithSLA & { createdAt: string; updatedAt: string }) => ({
                 ...p,
                 createdAt: new Date(p.createdAt),
                 updatedAt: new Date(p.updatedAt),
-              })
-            )
+              }))
+              .sort((a: ProjectWithSLA, b: ProjectWithSLA) => a.name.localeCompare(b.name))
           );
         }
       } catch (error) {

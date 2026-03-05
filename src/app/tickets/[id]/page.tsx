@@ -7,7 +7,7 @@ import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { TicketDetail } from '@/components/tickets';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
-import type { Ticket, TicketComment } from '@/types';
+import type { Ticket, TicketComment, Attachment, WorkItemUpdate } from '@/types';
 
 export default function TicketDetailPage() {
   const { data: session, status } = useSession();
@@ -18,6 +18,8 @@ export default function TicketDetailPage() {
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [comments, setComments] = useState<TicketComment[]>([]);
+  const [history, setHistory] = useState<WorkItemUpdate[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Helper to build headers with org
@@ -33,6 +35,7 @@ export default function TicketDetailPage() {
   useEffect(() => {
     setTicket(null);
     setComments([]);
+    setHistory([]);
     setLoading(true);
   }, [ticketId]);
 
@@ -78,11 +81,32 @@ export default function TicketDetailPage() {
     }
   }, [ticketId, router, selectedOrganization, orgHeaders]);
 
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}/history`);
+      if (response.ok) {
+        const data = await response.json();
+        setHistory(
+          (data.updates || []).map((u: WorkItemUpdate & { revisedDate: string }) => ({
+            ...u,
+            revisedDate: new Date(u.revisedDate),
+          }))
+        );
+      }
+    } catch (error) {
+      console.error('Failed to fetch ticket history:', error);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [ticketId]);
+
   useEffect(() => {
     if (session?.accessToken && ticketId && selectedOrganization) {
       fetchTicket();
+      fetchHistory();
     }
-  }, [session, fetchTicket, ticketId, selectedOrganization]);
+  }, [session, ticketId, fetchTicket, fetchHistory, selectedOrganization]);
 
   const handleAddComment = async (comment: string) => {
     try {
@@ -156,6 +180,24 @@ export default function TicketDetailPage() {
     }
   };
 
+  const handleUploadAttachment = async (file: File): Promise<Attachment> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`/api/devops/tickets/${ticketId}/attachments`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to upload attachment');
+    }
+
+    const data = await response.json();
+    return data.attachment;
+  };
+
   if (status === 'loading' || loading) {
     return (
       <MainLayout>
@@ -176,10 +218,14 @@ export default function TicketDetailPage() {
         key={ticketId}
         ticket={ticket}
         comments={comments}
+        history={history}
+        historyLoading={historyLoading}
         onAddComment={handleAddComment}
         onStateChange={handleStateChange}
         onAssigneeChange={handleAssigneeChange}
         onPriorityChange={handlePriorityChange}
+        onUploadAttachment={handleUploadAttachment}
+        onRefreshTicket={fetchTicket}
       />
     </MainLayout>
   );

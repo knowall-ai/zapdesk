@@ -5,8 +5,26 @@ import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService, workItemToTicket, setStateCategoryCache } from '@/lib/devops';
 import type { Ticket, TicketStatus } from '@/types';
 
-// Fetch work item states and build state-to-category mapping
+// TTL cache for state categories (avoids refetching on every request)
+let stateCategoryCacheData: {
+  categories: Record<string, string>;
+  timestamp: number;
+  org: string;
+} | null = null;
+const STATE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// Fetch work item states and build state-to-category mapping (cached + parallelized)
 async function fetchAndCacheStateCategories(accessToken: string, organization: string) {
+  // Return cached data if fresh and same org
+  if (
+    stateCategoryCacheData &&
+    stateCategoryCacheData.org === organization &&
+    Date.now() - stateCategoryCacheData.timestamp < STATE_CACHE_TTL_MS
+  ) {
+    setStateCategoryCache(stateCategoryCacheData.categories);
+    return;
+  }
+
   try {
     // Get first project
     const projectsResponse = await fetch(
@@ -28,8 +46,9 @@ async function fetchAndCacheStateCategories(accessToken: string, organization: s
     const stateCategories: Record<string, string> = {};
     const workItemTypes = ['Bug', 'Task', 'Enhancement', 'Issue'];
 
-    for (const witType of workItemTypes) {
-      try {
+    // Fetch all work item type states in parallel
+    const results = await Promise.allSettled(
+      workItemTypes.map(async (witType) => {
         const statesResponse = await fetch(
           `https://dev.azure.com/${organization}/${encodeURIComponent(firstProject)}/_apis/wit/workitemtypes/${encodeURIComponent(witType)}/states?api-version=7.0`,
           {
@@ -40,17 +59,25 @@ async function fetchAndCacheStateCategories(accessToken: string, organization: s
           }
         );
 
-        if (statesResponse.ok) {
-          const statesData = await statesResponse.json();
-          for (const state of statesData.value || []) {
-            stateCategories[state.name] = state.category;
-          }
+        if (!statesResponse.ok) return [];
+        const statesData = await statesResponse.json();
+        return (statesData.value || []) as { name: string; category: string }[];
+      })
+    );
+
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        for (const state of result.value) {
+          stateCategories[state.name] = state.category;
         }
-      } catch {
-        // Continue if one work item type fails
       }
     }
 
+    stateCategoryCacheData = {
+      categories: stateCategories,
+      timestamp: Date.now(),
+      org: organization,
+    };
     setStateCategoryCache(stateCategories);
   } catch (error) {
     console.error('Failed to fetch state categories:', error);
@@ -66,7 +93,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { project, title, description, priority, assignee, tags } = body;
+    const {
+      project,
+      title,
+      description,
+      priority,
+      priorityFieldRef,
+      assignee,
+      tags,
+      workItemType,
+    } = body;
 
     if (!project || !title) {
       return NextResponse.json({ error: 'Project and title are required' }, { status: 400 });
@@ -89,6 +125,17 @@ export async function POST(request: NextRequest) {
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
 
+    // Validate priorityFieldRef to prevent arbitrary field injection
+    const allowedPriorityFields = [
+      'Microsoft.VSTS.Common.Priority',
+      'Custom.PriorityLevel',
+      'Microsoft.VSTS.CMMI.Priority',
+    ];
+    const validatedFieldRef =
+      priorityFieldRef && allowedPriorityFields.some((f) => priorityFieldRef.startsWith(f))
+        ? priorityFieldRef
+        : undefined;
+
     // Create the ticket with 'ticket' tag always included
     const allTags = ['ticket', ...(tags || [])].filter(Boolean);
     const workItem = await devopsService.createTicketWithAssignee(
@@ -96,9 +143,12 @@ export async function POST(request: NextRequest) {
       title,
       description || '',
       session.user?.email || 'unknown',
-      priority || 3,
+      priority,
       allTags,
-      assignee
+      assignee,
+      workItemType || 'Task',
+      Boolean(validatedFieldRef),
+      validatedFieldRef
     );
 
     const ticket = workItemToTicket(workItem);
@@ -160,13 +210,15 @@ export async function GET(request: NextRequest) {
 }
 
 function filterTicketsByView(tickets: Ticket[], view: string, userEmail?: string | null): Ticket[] {
-  const activeStatuses: TicketStatus[] = ['New', 'Open', 'In Progress', 'Pending'];
+  const activeStatuses: TicketStatus[] = ['New', 'Open', 'In Progress'];
+  const currentUserEmail = userEmail?.toLowerCase();
 
   switch (view) {
     case 'your-active':
     case 'your-unsolved':
       return tickets.filter(
-        (t) => activeStatuses.includes(t.status) && t.assignee?.email === userEmail
+        (t) =>
+          activeStatuses.includes(t.status) && t.assignee?.email?.toLowerCase() === currentUserEmail
       );
 
     case 'unassigned':

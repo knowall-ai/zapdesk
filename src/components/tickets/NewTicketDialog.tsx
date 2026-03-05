@@ -1,18 +1,25 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Send, Loader2, Search } from 'lucide-react';
+import { X, Send, Loader2, Search, Paperclip } from 'lucide-react';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import type { DevOpsProject, User, WorkItemType } from '@/types';
-import TicketDialogShell from './TicketDialogShell';
+import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
+import { formatFileSize, validateFile } from '@/lib/attachment-utils';
+import { FileIcon } from '@/components/common';
+
+interface PriorityOption {
+  value: number | string;
+  label: string;
+}
 
 interface NewTicketForm {
   project: string;
   title: string;
   description: string;
-  priority: number;
+  priority: number | string;
   assignee: string;
   tags: string;
   workItemType: string;
@@ -34,15 +41,24 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isLoadingTypes, setIsLoadingTypes] = useState(false);
+  const [priorityOptions, setPriorityOptions] = useState<PriorityOption[]>([]);
+  const [isLoadingPriorities, setIsLoadingPriorities] = useState(false);
+  const [hasPriority, setHasPriority] = useState(true);
+  const [priorityFieldRef, setPriorityFieldRef] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [assigneeSearch, setAssigneeSearch] = useState('');
+
+  // Attachment state
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState<NewTicketForm>({
     project: '',
     title: '',
     description: '',
-    priority: 3,
+    priority: '',
     assignee: '',
     tags: '',
     workItemType: 'Task',
@@ -115,6 +131,32 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     [get]
   );
 
+  const fetchPriorities = useCallback(
+    async (projectName: string, workItemType: string) => {
+      setIsLoadingPriorities(true);
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/priorities?workItemType=${encodeURIComponent(workItemType)}`
+        );
+        if (!response.ok) throw new Error('Failed to fetch priorities');
+        const data = await response.json();
+        setHasPriority(data.hasPriority);
+        setPriorityOptions(data.priorities || []);
+        setPriorityFieldRef(data.fieldReferenceName || null);
+        // Reset priority to blank when options change
+        setForm((prev) => ({ ...prev, priority: '' }));
+      } catch (err) {
+        console.error('Failed to fetch priorities:', err);
+        setPriorityOptions([]);
+        setHasPriority(true);
+        setPriorityFieldRef(null);
+      } finally {
+        setIsLoadingPriorities(false);
+      }
+    },
+    [get]
+  );
+
   // Reset form when dialog opens
   useEffect(() => {
     if (isOpen) {
@@ -122,7 +164,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         project: '',
         title: '',
         description: '',
-        priority: 3,
+        priority: '',
         assignee: '',
         tags: '',
         workItemType: 'Task',
@@ -130,6 +172,10 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       setError(null);
       setAssigneeSearch('');
       setWorkItemTypes([]);
+      setPriorityOptions([]);
+      setHasPriority(true);
+      setPriorityFieldRef(null);
+      setPendingFiles([]);
     }
   }, [isOpen]);
 
@@ -150,6 +196,16 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       setWorkItemTypes([]);
     }
   }, [form.project, session, hasOrganization, fetchTeamMembers, fetchWorkItemTypes]);
+
+  // Fetch priorities when project or work item type changes
+  useEffect(() => {
+    if (form.project && form.workItemType && session?.accessToken && hasOrganization) {
+      fetchPriorities(form.project, form.workItemType);
+    } else {
+      setPriorityOptions([]);
+      setHasPriority(true);
+    }
+  }, [form.project, form.workItemType, session, hasOrganization, fetchPriorities]);
 
   // Filter out Stakeholders and apply search
   const filteredMembers = useMemo(() => {
@@ -172,6 +228,38 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
   }, [teamMembers, assigneeSearch]);
 
+  // File attachment handlers
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    setError(null);
+    const newFiles: File[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const validationError = validateFile(file);
+      if (validationError) {
+        setError(validationError);
+        continue;
+      }
+      newFiles.push(file);
+    }
+
+    if (newFiles.length > 0) {
+      setPendingFiles((prev) => [...prev, ...newFiles]);
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removePendingFile = (index: number) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.project || !form.title.trim()) {
@@ -187,7 +275,8 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         project: form.project,
         title: form.title.trim(),
         description: form.description.trim(),
-        priority: form.priority,
+        priority: hasPriority ? form.priority : undefined,
+        priorityFieldRef: priorityFieldRef || undefined,
         assignee: form.assignee || undefined,
         workItemType: form.workItemType,
         tags: form.tags
@@ -202,12 +291,42 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       }
 
       const data = await response.json();
+      const ticketId = data.ticket.id;
+
+      // Upload attachments if any
+      if (pendingFiles.length > 0) {
+        setIsUploadingFiles(true);
+        const failedUploads: string[] = [];
+        for (const file of pendingFiles) {
+          const formData = new FormData();
+          formData.append('file', file);
+
+          const uploadResponse = await fetch(`/api/devops/tickets/${ticketId}/attachments`, {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!uploadResponse.ok) {
+            failedUploads.push(file.name);
+          }
+        }
+        setIsUploadingFiles(false);
+
+        if (failedUploads.length > 0) {
+          setError(
+            `Ticket created, but ${failedUploads.length} attachment(s) failed to upload: ${failedUploads.join(', ')}`
+          );
+          return;
+        }
+      }
+
       onClose();
-      router.push(`/tickets/${data.ticket.id}`);
+      router.push(`/tickets/${ticketId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create ticket');
     } finally {
       setIsSubmitting(false);
+      setIsUploadingFiles(false);
     }
   };
 
@@ -236,13 +355,20 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   };
 
   const handleTakeIt = () => {
-    if (session?.user?.email) {
-      const currentUser = filteredMembers.find(
-        (m) => m.email?.toLowerCase() === session.user?.email?.toLowerCase()
-      );
-      if (currentUser) {
-        setForm((prev) => ({ ...prev, assignee: buildIdentityString(currentUser) }));
-      }
+    const userEmail = session?.user?.email?.toLowerCase();
+    const userName = session?.user?.name?.toLowerCase();
+
+    // Try matching by email first, then fall back to display name
+    let currentUser: User | undefined;
+    if (userEmail) {
+      currentUser = teamMembers.find((m) => m.email?.toLowerCase() === userEmail);
+    }
+    if (!currentUser && userName) {
+      currentUser = teamMembers.find((m) => m.displayName?.toLowerCase() === userName);
+    }
+
+    if (currentUser) {
+      setForm((prev) => ({ ...prev, assignee: buildIdentityString(currentUser) }));
     }
   };
 
@@ -251,273 +377,429 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     setAssigneeSearch('');
   };
 
-  const headerLeft = (
-    <>
-      <span
-        className="rounded px-2 py-0.5 text-xs font-medium"
-        style={{ backgroundColor: 'var(--status-new)', color: 'white' }}
-      >
-        New
-      </span>
-      <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-        Create Ticket
-      </h2>
-    </>
-  );
-
-  const sidebarContent = (
-    <div className="space-y-4 p-4">
-      {/* Project */}
-      <div>
-        <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-          Project *
-        </label>
-        {isLoadingProjects ? (
-          <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-            <Loader2 className="animate-spin" size={14} />
-            Loading projects...
-          </div>
-        ) : (
-          <select
-            value={form.project}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, project: e.target.value, assignee: '' }))
-            }
-            className="input w-full"
-            required
-          >
-            <option value="">Select a project...</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.name}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-
-      {/* Work Item Type */}
-      <div>
-        <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-          Type
-        </label>
-        {isLoadingTypes ? (
-          <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-            <Loader2 className="animate-spin" size={14} />
-            Loading...
-          </div>
-        ) : (
-          <select
-            value={form.workItemType}
-            onChange={(e) => setForm((prev) => ({ ...prev, workItemType: e.target.value }))}
-            className="input w-full"
-            disabled={!form.project || workItemTypes.length === 0}
-          >
-            {workItemTypes.length === 0 ? (
-              <option value="Task">Task</option>
-            ) : (
-              workItemTypes.map((type) => (
-                <option key={type.name} value={type.name}>
-                  {type.name}
-                </option>
-              ))
-            )}
-          </select>
-        )}
-      </div>
-
-      {/* Assignee with search */}
-      <div>
-        <div className="mb-1 flex items-center justify-between">
-          <label className="text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-            Assignee
-          </label>
-          <button
-            type="button"
-            onClick={handleTakeIt}
-            className="text-xs hover:underline"
-            style={{ color: 'var(--primary)', cursor: 'pointer' }}
-            disabled={!form.project || filteredMembers.length === 0}
-          >
-            take it
-          </button>
-        </div>
-        {isLoadingMembers ? (
-          <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-            <Loader2 className="animate-spin" size={14} />
-            Loading...
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {/* Search input */}
-            <div className="relative">
-              <Search
-                size={14}
-                className="absolute top-1/2 left-2 -translate-y-1/2"
-                style={{ color: 'var(--text-muted)' }}
-              />
-              <input
-                type="text"
-                placeholder="Search users..."
-                value={assigneeSearch}
-                onChange={(e) => setAssigneeSearch(e.target.value)}
-                className="input w-full pl-7 text-sm"
-                disabled={!form.project}
-              />
-            </div>
-            {/* Selected assignee or dropdown */}
-            {form.assignee && form.assignee.trim() ? (
-              <div
-                className="flex items-center justify-between rounded p-2"
-                style={{ backgroundColor: 'var(--surface-hover)' }}
-              >
-                <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                  {getDisplayNameFromIdentity(form.assignee)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setForm((prev) => ({ ...prev, assignee: '' }))}
-                  className="text-xs hover:underline"
-                  style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
-                >
-                  clear
-                </button>
-              </div>
-            ) : (
-              <div
-                className="max-h-32 overflow-auto rounded"
-                style={{ border: '1px solid var(--border)' }}
-              >
-                {filteredMembers.length === 0 ? (
-                  <p className="p-2 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {form.project ? 'No users found' : 'Select a project first'}
-                  </p>
-                ) : (
-                  filteredMembers.map((member) => (
-                    <button
-                      key={member.id}
-                      type="button"
-                      onClick={() => handleSelectAssignee(member)}
-                      className="block w-full px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                      style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
-                    >
-                      {member.displayName}
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Tags */}
-      <div>
-        <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-          Tags
-        </label>
-        <input
-          type="text"
-          placeholder="tag1, tag2, tag3"
-          value={form.tags}
-          onChange={(e) => setForm((prev) => ({ ...prev, tags: e.target.value }))}
-          className="input w-full"
-        />
-        <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-          Comma-separated. &quot;ticket&quot; tag added automatically.
-        </p>
-      </div>
-
-      {/* Priority */}
-      <div>
-        <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-          Priority
-        </label>
-        <select
-          value={form.priority}
-          onChange={(e) => setForm((prev) => ({ ...prev, priority: parseInt(e.target.value) }))}
-          className="input w-full"
-        >
-          <option value={1}>Urgent</option>
-          <option value={2}>High</option>
-          <option value={3}>Normal</option>
-          <option value={4}>Low</option>
-        </select>
-      </div>
-    </div>
-  );
+  if (!isOpen) return null;
 
   return (
-    <TicketDialogShell
-      isOpen={isOpen}
-      onClose={onClose}
-      headerLeft={headerLeft}
-      sidebar={sidebarContent}
-      asForm
-      onSubmit={handleSubmit}
-    >
-      <div className="flex-1 overflow-auto p-4">
-        {error && (
-          <div
-            className="mb-4 rounded-md p-3 text-sm"
-            style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}
-          >
-            {error}
-          </div>
-        )}
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
-        {/* Title */}
-        <div className="mb-4">
-          <input
-            type="text"
-            placeholder="Title"
-            value={form.title}
-            onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
-            className="input w-full text-lg"
-            required
-            autoFocus
-          />
-        </div>
-
-        {/* Description */}
-        <div>
-          <textarea
-            placeholder="Description..."
-            value={form.description}
-            onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-            className="input min-h-[200px] w-full resize-none"
-          />
-        </div>
-      </div>
-
-      {/* Submit bar */}
+      {/* Dialog */}
       <div
-        className="flex items-center justify-between border-t p-4"
-        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+        className="relative z-10 flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg"
+        style={{ backgroundColor: 'var(--background)', border: '1px solid var(--border)' }}
       >
-        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-          Public reply
-        </span>
-        <div className="flex gap-2">
+        {/* Header */}
+        <div
+          className="flex items-center justify-between border-b p-4"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          <div className="flex items-center gap-2">
+            <span
+              className="rounded px-2 py-0.5 text-xs font-medium"
+              style={{ backgroundColor: 'var(--status-new)', color: 'white' }}
+            >
+              New
+            </span>
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Create Ticket
+            </h2>
+          </div>
           <button
-            type="button"
             onClick={onClose}
-            className="btn-secondary"
-            style={{ cursor: 'pointer' }}
+            className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
+            style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
           >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={isSubmitting || !form.project || !form.title.trim()}
-            className="btn-primary flex items-center gap-2"
-            style={{ cursor: 'pointer' }}
-          >
-            {isSubmitting ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
-            Submit as New
+            <X size={20} />
           </button>
         </div>
+
+        {/* Content */}
+        <form onSubmit={handleSubmit} className="flex flex-1 overflow-hidden">
+          {/* Main form area */}
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex-1 overflow-auto p-4">
+              {error && (
+                <div
+                  className="mb-4 rounded-md p-3 text-sm"
+                  style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}
+                >
+                  {error}
+                </div>
+              )}
+
+              {/* Title */}
+              <div className="mb-4">
+                <input
+                  type="text"
+                  placeholder="Title"
+                  value={form.title}
+                  onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
+                  className="input w-full text-lg"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <textarea
+                  placeholder="Description..."
+                  value={form.description}
+                  onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+                  className="input min-h-[200px] w-full resize-none"
+                />
+              </div>
+
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                onChange={handleFileSelect}
+                accept={ALLOWED_ATTACHMENT_TYPES.join(',')}
+                className="hidden"
+              />
+
+              {/* Pending files */}
+              {pendingFiles.length > 0 && (
+                <div className="mt-3">
+                  <label
+                    className="mb-2 block text-xs uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Attachments ({pendingFiles.length})
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {pendingFiles.map((file, index) => (
+                      <div
+                        key={`${file.name}-${index}`}
+                        className="flex items-center gap-2 rounded-md px-2 py-1 text-sm"
+                        style={{
+                          backgroundColor: 'var(--surface)',
+                          color: 'var(--text-secondary)',
+                        }}
+                      >
+                        <FileIcon contentType={file.type} size={14} />
+                        <span className="max-w-[150px] truncate">{file.name}</span>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          ({formatFileSize(file.size)})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removePendingFile(index)}
+                          className="ml-1 hover:opacity-70"
+                          style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Submit bar */}
+            <div
+              className="flex items-center justify-between border-t p-4"
+              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+            >
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-1 rounded p-2 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                  style={{
+                    color: pendingFiles.length > 0 ? 'var(--primary)' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                  }}
+                  title="Attach files"
+                >
+                  <Paperclip size={18} />
+                  {pendingFiles.length > 0 && <span>{pendingFiles.length}</span>}
+                </button>
+                <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  Public reply
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="btn-secondary"
+                  style={{ cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !form.project || !form.title.trim()}
+                  className="btn-primary flex items-center gap-2"
+                  style={{ cursor: 'pointer' }}
+                >
+                  {isUploadingFiles ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} />
+                      Uploading...
+                    </>
+                  ) : isSubmitting ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Send size={16} />
+                      Submit as New
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Sidebar */}
+          <div
+            className="w-72 overflow-auto border-l"
+            style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+          >
+            <div className="space-y-4 p-4">
+              {/* Project */}
+              <div>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Project *
+                </label>
+                {isLoadingProjects ? (
+                  <div
+                    className="flex items-center gap-2 text-sm"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <Loader2 className="animate-spin" size={14} />
+                    Loading projects...
+                  </div>
+                ) : (
+                  <select
+                    value={form.project}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, project: e.target.value, assignee: '' }))
+                    }
+                    className="input w-full"
+                    required
+                  >
+                    <option value="">Select a project...</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.name}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Work Item Type */}
+              <div>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Type
+                </label>
+                {isLoadingTypes ? (
+                  <div
+                    className="flex items-center gap-2 text-sm"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <Loader2 className="animate-spin" size={14} />
+                    Loading...
+                  </div>
+                ) : (
+                  <select
+                    value={form.workItemType}
+                    onChange={(e) => setForm((prev) => ({ ...prev, workItemType: e.target.value }))}
+                    className="input w-full"
+                    disabled={!form.project || workItemTypes.length === 0}
+                  >
+                    {workItemTypes.length === 0 ? (
+                      <option value="Task">Task</option>
+                    ) : (
+                      workItemTypes.map((type) => (
+                        <option key={type.name} value={type.name}>
+                          {type.name}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                )}
+              </div>
+
+              {/* Assignee with search */}
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
+                    Assignee
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleTakeIt}
+                    className="text-xs hover:underline"
+                    style={{ color: 'var(--primary)', cursor: 'pointer' }}
+                    disabled={!form.project || filteredMembers.length === 0}
+                  >
+                    take it
+                  </button>
+                </div>
+                {isLoadingMembers ? (
+                  <div
+                    className="flex items-center gap-2 text-sm"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <Loader2 className="animate-spin" size={14} />
+                    Loading...
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {/* Search input */}
+                    <div className="relative">
+                      <Search
+                        size={14}
+                        className="absolute top-1/2 left-2 -translate-y-1/2"
+                        style={{ color: 'var(--text-muted)' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Search users..."
+                        value={assigneeSearch}
+                        onChange={(e) => setAssigneeSearch(e.target.value)}
+                        className="input w-full pl-7 text-sm"
+                        disabled={!form.project}
+                      />
+                    </div>
+                    {/* Selected assignee or dropdown */}
+                    {form.assignee && form.assignee.trim() ? (
+                      <div
+                        className="flex items-center justify-between rounded p-2"
+                        style={{ backgroundColor: 'var(--surface-hover)' }}
+                      >
+                        <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                          {getDisplayNameFromIdentity(form.assignee)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setForm((prev) => ({ ...prev, assignee: '' }))}
+                          className="text-xs hover:underline"
+                          style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
+                        >
+                          clear
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className="max-h-32 overflow-auto rounded"
+                        style={{ border: '1px solid var(--border)' }}
+                      >
+                        {filteredMembers.length === 0 ? (
+                          <p
+                            className="p-2 text-center text-xs"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            {form.project ? 'No users found' : 'Select a project first'}
+                          </p>
+                        ) : (
+                          filteredMembers.map((member) => (
+                            <button
+                              key={member.id}
+                              type="button"
+                              onClick={() => handleSelectAssignee(member)}
+                              className="block w-full px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                              style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
+                            >
+                              {member.displayName}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Tags */}
+              <div>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Tags
+                </label>
+                <input
+                  type="text"
+                  placeholder="tag1, tag2, tag3"
+                  value={form.tags}
+                  onChange={(e) => setForm((prev) => ({ ...prev, tags: e.target.value }))}
+                  className="input w-full"
+                />
+                <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Comma-separated. &quot;ticket&quot; tag added automatically.
+                </p>
+              </div>
+
+              {/* Priority */}
+              {hasPriority && (
+                <div>
+                  <label
+                    className="mb-1 block text-xs uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Priority
+                  </label>
+                  {isLoadingPriorities ? (
+                    <div
+                      className="flex items-center gap-2 text-sm"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <Loader2 className="animate-spin" size={14} />
+                      Loading...
+                    </div>
+                  ) : priorityOptions.length > 0 ? (
+                    <select
+                      value={String(form.priority)}
+                      onChange={(e) =>
+                        setForm((prev) => {
+                          const selected = priorityOptions.find(
+                            (opt) => String(opt.value) === e.target.value
+                          );
+                          return { ...prev, priority: selected ? selected.value : e.target.value };
+                        })
+                      }
+                      className="input w-full"
+                    >
+                      <option value="">Select priority...</option>
+                      {priorityOptions.map((opt) => (
+                        <option key={String(opt.value)} value={String(opt.value)}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <select
+                      value={String(form.priority)}
+                      onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value }))}
+                      className="input w-full"
+                      disabled={!form.project}
+                    >
+                      <option value="">Select priority...</option>
+                    </select>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </form>
       </div>
-    </TicketDialogShell>
+    </div>
   );
 }
