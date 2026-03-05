@@ -777,6 +777,7 @@ export default function FeatureTimechain({
               compact
               maxHeight="500px"
               availableTypes={availableTypes}
+              defaultTicketsOnly={false}
               onWorkItemClick={handleWorkItemClick}
               onStatusChange={handleDialogStateChange}
             />
