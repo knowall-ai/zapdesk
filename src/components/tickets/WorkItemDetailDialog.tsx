@@ -7,6 +7,7 @@ import type { WorkItem, TicketComment } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import TicketDialogShell from './TicketDialogShell';
 import { useWorkItemActions } from '@/hooks/useWorkItemActions';
+import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import WorkItemDetailContent from './WorkItemDetailContent';
 import WorkItemDetailSidebar from './WorkItemDetailSidebar';
 
@@ -33,6 +34,7 @@ export default function WorkItemDetailDialog({
   onUpdate,
 }: WorkItemDetailDialogProps) {
   const router = useRouter();
+  const { fetchDevOps, hasOrganization } = useDevOpsApi();
 
   // Comments state (dialog fetches its own comments)
   const [comments, setComments] = useState<TicketComment[]>([]);
@@ -76,10 +78,10 @@ export default function WorkItemDetailDialog({
 
   // Fetch comments when dialog opens
   const fetchComments = useCallback(async () => {
-    if (!workItem?.project) return;
+    if (!workItem?.project || !hasOrganization) return;
     setIsLoadingComments(true);
     try {
-      const response = await fetch(`/api/devops/tickets/${workItem.id}/comments`);
+      const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}/comments`);
       if (response.ok) {
         const data = await response.json();
         setComments(
@@ -98,12 +100,12 @@ export default function WorkItemDetailDialog({
     } finally {
       setIsLoadingComments(false);
     }
-  }, [workItem?.id, workItem?.project]);
+  }, [workItem?.id, workItem?.project, fetchDevOps, hasOrganization]);
 
   const handleAddComment = useCallback(
     async (comment: string) => {
-      if (!workItem) return;
-      const response = await fetch(`/api/devops/tickets/${workItem.id}/comments`, {
+      if (!workItem || !hasOrganization) return;
+      const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ comment }),
@@ -112,7 +114,7 @@ export default function WorkItemDetailDialog({
         await fetchComments();
       }
     },
-    [workItem, fetchComments]
+    [workItem, fetchComments, fetchDevOps, hasOrganization]
   );
 
   const handleUpdate = useCallback(

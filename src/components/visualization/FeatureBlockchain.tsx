@@ -401,13 +401,9 @@ export default function FeatureTimechain({
     <div className="space-y-6">
       {/* Epic description above timechain */}
       {epic?.description && (
-        <p
-          className="text-sm leading-relaxed"
-          style={{ color: 'var(--text-secondary)' }}
-          dangerouslySetInnerHTML={{
-            __html: epic.description.replace(/<[^>]*>/g, ''),
-          }}
-        />
+        <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+          {epic.description.replace(/<[^>]*>/g, '')}
+        </p>
       )}
 
       {/* Timechain */}
@@ -638,13 +634,9 @@ export default function FeatureTimechain({
 
             {/* Feature description */}
             {selectedFeature.description && (
-              <p
-                className="mb-4 text-sm leading-relaxed"
-                style={{ color: 'var(--text-muted)' }}
-                dangerouslySetInnerHTML={{
-                  __html: selectedFeature.description.replace(/<[^>]*>/g, '').slice(0, 300),
-                }}
-              />
+              <p className="mb-4 text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                {selectedFeature.description.replace(/<[^>]*>/g, '').slice(0, 300)}
+              </p>
             )}
 
             {/* Feature stats */}

@@ -34,6 +34,7 @@ export default function TicketDetail({
 
   const actions = useWorkItemActions({
     project: ticket.project,
+    workItemType: ticket.workItemType,
     onStateChange,
     onAssigneeChange,
     onPriorityChange,
