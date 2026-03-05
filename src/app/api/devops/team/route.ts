@@ -154,12 +154,32 @@ export async function GET() {
   }
 }
 
+// Team status thresholds — configurable via environment variables
+function getIntEnv(envName: string, defaultValue: number): number {
+  const raw = process.env[envName];
+  if (raw === undefined || raw === null || raw.trim() === '') {
+    return defaultValue;
+  }
+  const parsed = parseInt(raw, 10);
+  return Number.isNaN(parsed) ? defaultValue : parsed;
+}
+
+const THRESHOLD_NEEDS_ATTENTION_PENDING = getIntEnv('TEAM_THRESHOLD_NEEDS_ATTENTION_PENDING', 5);
+const THRESHOLD_NEEDS_ATTENTION_ASSIGNED = getIntEnv('TEAM_THRESHOLD_NEEDS_ATTENTION_ASSIGNED', 15);
+const THRESHOLD_BEHIND_PENDING = getIntEnv('TEAM_THRESHOLD_BEHIND_PENDING', 2);
+const THRESHOLD_BEHIND_ASSIGNED = getIntEnv('TEAM_THRESHOLD_BEHIND_ASSIGNED', 10);
+
 function calculateMemberStatus(member: TeamMember): TeamMemberStatus {
-  // Heuristics for member status
-  if (member.pendingTickets > 5 || member.ticketsAssigned > 15) {
+  if (
+    member.pendingTickets > THRESHOLD_NEEDS_ATTENTION_PENDING ||
+    member.ticketsAssigned > THRESHOLD_NEEDS_ATTENTION_ASSIGNED
+  ) {
     return 'Needs Attention';
   }
-  if (member.pendingTickets > 2 || member.ticketsAssigned > 10) {
+  if (
+    member.pendingTickets > THRESHOLD_BEHIND_PENDING ||
+    member.ticketsAssigned > THRESHOLD_BEHIND_ASSIGNED
+  ) {
     return 'Behind';
   }
   return 'On Track';

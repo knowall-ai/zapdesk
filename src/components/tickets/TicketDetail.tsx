@@ -17,7 +17,6 @@ import {
   Info,
   X,
   Download,
-  History,
 } from 'lucide-react';
 import Link from 'next/link';
 import type {
@@ -39,11 +38,16 @@ import PriorityIndicator from '../common/PriorityIndicator';
 import MentionInput from '../common/MentionInput';
 import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
+import TicketHistory from './TicketHistory';
 import { useClickOutside } from '@/hooks';
+
+type DetailTab = 'conversation' | 'history';
 
 interface TicketDetailProps {
   ticket: Ticket;
   comments: TicketComment[];
+  history?: WorkItemUpdate[];
+  historyLoading?: boolean;
   onAddComment?: (comment: string) => Promise<void>;
   onStateChange?: (state: string) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
@@ -62,6 +66,8 @@ const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
 export default function TicketDetail({
   ticket,
   comments,
+  history = [],
+  historyLoading = false,
   onAddComment,
   onStateChange,
   onAssigneeChange,
@@ -69,6 +75,7 @@ export default function TicketDetail({
   onUploadAttachment,
   onRefreshTicket,
 }: TicketDetailProps) {
+  const [activeTab, setActiveTab] = useState<DetailTab>('conversation');
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
@@ -101,11 +108,6 @@ export default function TicketDetail({
   // Priority editing state
   const [isPriorityDropdownOpen, setIsPriorityDropdownOpen] = useState(false);
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
-
-  // History state
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [historyUpdates, setHistoryUpdates] = useState<WorkItemUpdate[] | null>(null);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   // Attachment state
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -233,69 +235,6 @@ export default function TicketDetail({
       setIsPriorityDropdownOpen(false);
     } finally {
       setIsUpdatingPriority(false);
-    }
-  };
-
-  // History helpers
-  const MEANINGFUL_FIELDS: Record<string, string> = {
-    'System.State': 'State',
-    'System.AssignedTo': 'Assignee',
-    'System.Title': 'Title',
-    'Microsoft.VSTS.Common.Priority': 'Priority',
-    'System.Tags': 'Tags',
-    'System.AreaPath': 'Area Path',
-    'System.IterationPath': 'Iteration',
-    'System.Reason': 'Reason',
-    'System.WorkItemType': 'Type',
-    'Microsoft.VSTS.Common.Severity': 'Severity',
-  };
-
-  const formatPriority = (val: string | undefined): string => {
-    if (!val) return 'None';
-    const map: Record<string, string> = { '1': 'Urgent', '2': 'High', '3': 'Normal', '4': 'Low' };
-    return map[val] || val;
-  };
-
-  const formatFieldValue = (fieldKey: string, value: string | undefined): string => {
-    if (!value) return 'None';
-    if (fieldKey === 'Microsoft.VSTS.Common.Priority') return formatPriority(value);
-    // Identity fields come as "Display Name <email>" — extract just the name
-    if (fieldKey === 'System.AssignedTo') {
-      const match = value.match(/^(.+?)\s*<.*>$/);
-      return match ? match[1] : value;
-    }
-    return value;
-  };
-
-  const fetchHistory = async () => {
-    setIsLoadingHistory(true);
-    try {
-      const response = await fetch(`/api/devops/tickets/${ticket.workItemId}/history`);
-      if (response.ok) {
-        const data = await response.json();
-        const normalizedUpdates = (data.updates || []).map(
-          (update: WorkItemUpdate & { revisedDate: string | Date }) => ({
-            ...update,
-            revisedDate: update.revisedDate ? new Date(update.revisedDate) : undefined,
-          })
-        );
-        setHistoryUpdates(normalizedUpdates);
-      } else {
-        setHistoryUpdates([]);
-      }
-    } catch (err) {
-      console.error('Failed to fetch history:', err);
-      setHistoryUpdates([]);
-    } finally {
-      setIsLoadingHistory(false);
-    }
-  };
-
-  const handleToggleHistory = () => {
-    const opening = !isHistoryOpen;
-    setIsHistoryOpen(opening);
-    if (opening && historyUpdates === null) {
-      fetchHistory();
     }
   };
 
@@ -481,201 +420,156 @@ export default function TicketDetail({
           </div>
         </div>
 
-        {/* Conversation */}
-        <div className="flex-1 overflow-auto p-4">
-          {/* Original ticket */}
-          <div className="card mb-4 p-4">
-            <div className="flex items-start gap-3">
-              <Avatar
-                name={ticket.requester.displayName}
-                image={ticket.requester.avatarUrl}
-                size="md"
+        {/* Tab bar */}
+        <div className="flex gap-0 border-b px-4" style={{ borderColor: 'var(--border)' }}>
+          <button
+            onClick={() => setActiveTab('conversation')}
+            className="relative px-4 py-2.5 text-sm font-medium transition-colors"
+            style={{
+              color: activeTab === 'conversation' ? 'var(--primary)' : 'var(--text-muted)',
+            }}
+          >
+            Conversation
+            {activeTab === 'conversation' && (
+              <span
+                className="absolute right-0 bottom-0 left-0 h-0.5"
+                style={{ backgroundColor: 'var(--primary)' }}
               />
-              <div className="flex-1">
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                    {ticket.requester.displayName}
-                  </span>
-                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {format(ticket.createdAt, 'dd MMM yyyy, HH:mm')}
-                  </span>
-                </div>
-                <div
-                  className="prose prose-sm prose-invert user-content max-w-none"
-                  style={{ color: 'var(--text-secondary)' }}
-                  dangerouslySetInnerHTML={{
-                    __html: ticket.description || '<em>No description provided</em>',
-                  }}
-                />
-                {/* Attachments */}
-                {ticket.attachments && ticket.attachments.length > 0 && (
-                  <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
-                    <div
-                      className="mb-2 flex items-center gap-1 text-xs"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      <Paperclip size={12} />
-                      <span>Attachments ({ticket.attachments.length})</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {ticket.attachments.map((attachment) => (
-                        <a
-                          key={attachment.id}
-                          href={attachment.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                          style={{
-                            backgroundColor: 'var(--surface)',
-                            color: 'var(--text-secondary)',
-                          }}
-                          title={`Download ${attachment.fileName}`}
-                        >
-                          <FileIcon contentType={attachment.contentType} />
-                          <span className="max-w-[150px] truncate">{attachment.fileName}</span>
-                          {attachment.size > 0 && (
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                              ({formatFileSize(attachment.size)})
-                            </span>
-                          )}
-                          <Download size={12} style={{ color: 'var(--text-muted)' }} />
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className="relative px-4 py-2.5 text-sm font-medium transition-colors"
+            style={{
+              color: activeTab === 'history' ? 'var(--primary)' : 'var(--text-muted)',
+            }}
+          >
+            History
+            {activeTab === 'history' && (
+              <span
+                className="absolute right-0 bottom-0 left-0 h-0.5"
+                style={{ backgroundColor: 'var(--primary)' }}
+              />
+            )}
+          </button>
+        </div>
 
-          {/* Comments */}
-          {comments.map((comment) => (
-            <div
-              key={comment.id}
-              className={`card mb-4 p-4 ${comment.isInternal ? 'border-l-4' : ''}`}
-              style={comment.isInternal ? { borderLeftColor: 'var(--status-pending)' } : {}}
-            >
-              <div className="flex items-start gap-3">
-                <Avatar
-                  name={comment.author.displayName}
-                  image={comment.author.avatarUrl}
-                  size="md"
-                />
-                <div className="flex-1">
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                      {comment.author.displayName}
-                    </span>
-                    {comment.isInternal && (
-                      <span
-                        className="rounded px-1.5 py-0.5 text-xs"
-                        style={{ backgroundColor: 'var(--status-pending)', color: 'white' }}
-                      >
-                        Internal note
-                      </span>
-                    )}
-                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      {format(comment.createdAt, 'dd MMM yyyy, HH:mm')}
-                    </span>
-                  </div>
-                  <div
-                    className="user-content text-sm"
-                    style={{ color: 'var(--text-secondary)' }}
-                    dangerouslySetInnerHTML={{ __html: highlightMentions(comment.content) }}
+        {/* Tab content */}
+        {activeTab === 'conversation' ? (
+          <>
+            {/* Conversation */}
+            <div className="flex-1 overflow-auto p-4">
+              {/* Original ticket */}
+              <div className="card mb-4 p-4">
+                <div className="flex items-start gap-3">
+                  <Avatar
+                    name={ticket.requester.displayName}
+                    image={ticket.requester.avatarUrl}
+                    size="md"
                   />
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {/* History section */}
-          <div className="mb-4">
-            <button
-              onClick={handleToggleHistory}
-              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              <History size={16} />
-              {isHistoryOpen ? 'Hide History' : 'Show History'}
-              {isLoadingHistory && <Loader2 size={14} className="animate-spin" />}
-            </button>
-
-            {isHistoryOpen && (
-              <div className="mt-2 space-y-3">
-                {isLoadingHistory && !historyUpdates && (
-                  <div
-                    className="flex items-center gap-2 p-4 text-sm"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    <Loader2 size={16} className="animate-spin" />
-                    Loading history...
-                  </div>
-                )}
-
-                {historyUpdates && historyUpdates.length === 0 && (
-                  <p className="p-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-                    No field changes recorded.
-                  </p>
-                )}
-
-                {historyUpdates?.map((update) => {
-                  const meaningfulChanges = Object.entries(update.fields).filter(
-                    ([key]) => key in MEANINGFUL_FIELDS
-                  );
-                  if (meaningfulChanges.length === 0) return null;
-
-                  return (
-                    <div key={update.id} className="card flex items-start gap-3 p-3">
-                      <Avatar
-                        name={update.revisedBy.displayName}
-                        image={update.revisedBy.avatarUrl}
-                        size="sm"
-                      />
-                      <div className="flex-1">
-                        <div className="mb-1 flex items-center gap-2">
-                          <span
-                            className="text-sm font-medium"
-                            style={{ color: 'var(--text-primary)' }}
-                          >
-                            {update.revisedBy.displayName}
-                          </span>
-                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                            {format(new Date(update.revisedDate), 'dd MMM yyyy, HH:mm')}
-                          </span>
+                  <div className="flex-1">
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                        {ticket.requester.displayName}
+                      </span>
+                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        {format(ticket.createdAt, 'dd MMM yyyy, HH:mm')}
+                      </span>
+                    </div>
+                    <div
+                      className="prose prose-sm prose-invert user-content max-w-none"
+                      style={{ color: 'var(--text-secondary)' }}
+                      dangerouslySetInnerHTML={{
+                        __html: ticket.description || '<em>No description provided</em>',
+                      }}
+                    />
+                    {/* Attachments */}
+                    {ticket.attachments && ticket.attachments.length > 0 && (
+                      <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+                        <div
+                          className="mb-2 flex items-center gap-1 text-xs"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          <Paperclip size={12} />
+                          <span>Attachments ({ticket.attachments.length})</span>
                         </div>
-                        <div className="space-y-1">
-                          {meaningfulChanges.map(([key, change]) => (
-                            <div
-                              key={key}
-                              className="text-sm"
-                              style={{ color: 'var(--text-secondary)' }}
+                        <div className="flex flex-wrap gap-2">
+                          {ticket.attachments.map((attachment) => (
+                            <a
+                              key={attachment.id}
+                              href={attachment.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                              style={{
+                                backgroundColor: 'var(--surface)',
+                                color: 'var(--text-secondary)',
+                              }}
+                              title={`Download ${attachment.fileName}`}
                             >
-                              <span style={{ color: 'var(--text-muted)' }}>
-                                {MEANINGFUL_FIELDS[key]}:
-                              </span>{' '}
-                              {change.oldValue != null && (
-                                <>
-                                  <span
-                                    className="line-through"
-                                    style={{ color: 'var(--text-muted)' }}
-                                  >
-                                    {formatFieldValue(key, change.oldValue)}
-                                  </span>
-                                  {' → '}
-                                </>
+                              <FileIcon contentType={attachment.contentType} />
+                              <span className="max-w-[150px] truncate">{attachment.fileName}</span>
+                              {attachment.size > 0 && (
+                                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                  ({formatFileSize(attachment.size)})
+                                </span>
                               )}
-                              <span>{formatFieldValue(key, change.newValue)}</span>
-                            </div>
+                              <Download size={12} style={{ color: 'var(--text-muted)' }} />
+                            </a>
                           ))}
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    )}
+                  </div>
+                </div>
               </div>
-            )}
+
+              {/* Comments */}
+              {comments.map((comment) => (
+                <div
+                  key={comment.id}
+                  className={`card mb-4 p-4 ${comment.isInternal ? 'border-l-4' : ''}`}
+                  style={comment.isInternal ? { borderLeftColor: 'var(--status-pending)' } : {}}
+                >
+                  <div className="flex items-start gap-3">
+                    <Avatar
+                      name={comment.author.displayName}
+                      image={comment.author.avatarUrl}
+                      size="md"
+                    />
+                    <div className="flex-1">
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                          {comment.author.displayName}
+                        </span>
+                        {comment.isInternal && (
+                          <span
+                            className="rounded px-1.5 py-0.5 text-xs"
+                            style={{ backgroundColor: 'var(--status-pending)', color: 'white' }}
+                          >
+                            Internal note
+                          </span>
+                        )}
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {format(comment.createdAt, 'dd MMM yyyy, HH:mm')}
+                        </span>
+                      </div>
+                      <div
+                        className="user-content text-sm"
+                        style={{ color: 'var(--text-secondary)' }}
+                        dangerouslySetInnerHTML={{ __html: highlightMentions(comment.content) }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 overflow-auto p-4">
+            <TicketHistory updates={history} loading={historyLoading} />
           </div>
-        </div>
+        )}
 
         {/* Reply box */}
         <div

@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { TicketDetail } from '@/components/tickets';
-import type { Ticket, TicketComment, Attachment } from '@/types';
+import type { Ticket, TicketComment, Attachment, WorkItemUpdate } from '@/types';
 
 export default function TicketDetailPage() {
   const { data: session, status } = useSession();
@@ -16,12 +16,15 @@ export default function TicketDetailPage() {
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [comments, setComments] = useState<TicketComment[]>([]);
+  const [history, setHistory] = useState<WorkItemUpdate[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Reset state when navigating to a different ticket
   useEffect(() => {
     setTicket(null);
     setComments([]);
+    setHistory([]);
     setLoading(true);
   }, [ticketId]);
 
@@ -64,11 +67,32 @@ export default function TicketDetailPage() {
     }
   }, [ticketId, router]);
 
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}/history`);
+      if (response.ok) {
+        const data = await response.json();
+        setHistory(
+          (data.updates || []).map((u: WorkItemUpdate & { revisedDate: string }) => ({
+            ...u,
+            revisedDate: new Date(u.revisedDate),
+          }))
+        );
+      }
+    } catch (error) {
+      console.error('Failed to fetch ticket history:', error);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [ticketId]);
+
   useEffect(() => {
     if (session?.accessToken && ticketId) {
       fetchTicket();
+      fetchHistory();
     }
-  }, [session, ticketId, fetchTicket]);
+  }, [session, ticketId, fetchTicket, fetchHistory]);
 
   const handleAddComment = async (comment: string) => {
     try {
@@ -180,6 +204,8 @@ export default function TicketDetailPage() {
         key={ticketId}
         ticket={ticket}
         comments={comments}
+        history={history}
+        historyLoading={historyLoading}
         onAddComment={handleAddComment}
         onStateChange={handleStateChange}
         onAssigneeChange={handleAssigneeChange}

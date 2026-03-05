@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Send, Loader2 } from 'lucide-react';
+import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import type { DevOpsProject, User } from '@/types';
 
 interface NewTicketForm {
@@ -19,6 +20,7 @@ interface NewTicketForm {
 export default function NewTicketPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { get, post, hasOrganization } = useDevOpsApi();
   const [projects, setProjects] = useState<DevOpsProject[]>([]);
   const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
@@ -35,27 +37,11 @@ export default function NewTicketPage() {
     tags: '',
   });
 
-  // Fetch projects on load
-  useEffect(() => {
-    if (session?.accessToken) {
-      fetchProjects();
-    }
-  }, [session]);
-
-  // Fetch team members when project changes
-  useEffect(() => {
-    if (form.project && session?.accessToken) {
-      fetchTeamMembers(form.project);
-    } else {
-      setTeamMembers([]);
-    }
-  }, [form.project, session]);
-
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     setIsLoadingProjects(true);
     setError(null);
     try {
-      const response = await fetch('/api/devops/projects');
+      const response = await get('/api/devops/projects');
       if (!response.ok) throw new Error('Failed to fetch projects');
       const data = await response.json();
       setProjects(data.projects || []);
@@ -65,24 +51,45 @@ export default function NewTicketPage() {
     } finally {
       setIsLoadingProjects(false);
     }
-  };
+  }, [get]);
 
-  const fetchTeamMembers = async (projectName: string) => {
-    setIsLoadingMembers(true);
-    try {
-      const response = await fetch(
-        `/api/devops/projects/${encodeURIComponent(projectName)}/members`
-      );
-      if (!response.ok) throw new Error('Failed to fetch team members');
-      const data = await response.json();
-      setTeamMembers(data.members || []);
-    } catch (err) {
-      console.error('Failed to fetch team members:', err);
-      setTeamMembers([]);
-    } finally {
-      setIsLoadingMembers(false);
+  const fetchTeamMembers = useCallback(
+    async (projectName: string) => {
+      setIsLoadingMembers(true);
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/members`
+        );
+        if (!response.ok) throw new Error('Failed to fetch team members');
+        const data = await response.json();
+        setTeamMembers(data.members || []);
+      } catch (err) {
+        console.error('Failed to fetch team members:', err);
+        setTeamMembers([]);
+      } finally {
+        setIsLoadingMembers(false);
+      }
+    },
+    [get]
+  );
+
+  // Fetch projects on load
+  useEffect(() => {
+    if (session?.accessToken && hasOrganization) {
+      fetchProjects();
+    } else if (!hasOrganization && status === 'authenticated') {
+      setIsLoadingProjects(false);
     }
-  };
+  }, [session, hasOrganization, status, fetchProjects]);
+
+  // Fetch team members when project changes
+  useEffect(() => {
+    if (form.project && session?.accessToken && hasOrganization) {
+      fetchTeamMembers(form.project);
+    } else {
+      setTeamMembers([]);
+    }
+  }, [form.project, session, hasOrganization, fetchTeamMembers]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,20 +102,16 @@ export default function NewTicketPage() {
     setError(null);
 
     try {
-      const response = await fetch('/api/devops/tickets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project: form.project,
-          title: form.subject.trim(),
-          description: form.description.trim(),
-          priority: form.priority,
-          assignee: form.assignee || undefined,
-          tags: form.tags
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean),
-        }),
+      const response = await post('/api/devops/tickets', {
+        project: form.project,
+        title: form.subject.trim(),
+        description: form.description.trim(),
+        priority: form.priority,
+        assignee: form.assignee || undefined,
+        tags: form.tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
       });
 
       if (!response.ok) {

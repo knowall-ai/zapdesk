@@ -1,9 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -19,17 +19,17 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     }
 
     const devopsService = new AzureDevOpsService(session.accessToken);
-    const result = await devopsService.findProjectForWorkItem(ticketId);
+    const found = await devopsService.findProjectForWorkItem(ticketId);
 
-    if (!result) {
+    if (!found) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
     }
 
-    const updates = await devopsService.getWorkItemUpdates(result.project.name, ticketId);
+    const updates = await devopsService.getWorkItemUpdates(found.project.name, ticketId);
 
-    return NextResponse.json({ updates });
+    return NextResponse.json({ updates: updates.reverse() });
   } catch (error) {
-    console.error('Error fetching work item history:', error);
-    return NextResponse.json({ error: 'Failed to fetch history' }, { status: 500 });
+    console.error('Error fetching ticket history:', error);
+    return NextResponse.json({ error: 'Failed to fetch ticket history' }, { status: 500 });
   }
 }
