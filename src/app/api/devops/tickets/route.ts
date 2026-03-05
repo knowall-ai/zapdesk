@@ -102,6 +102,8 @@ export async function POST(request: NextRequest) {
       assignee,
       tags,
       workItemType,
+      iterationPath,
+      areaPath,
       additionalFields,
     } = body;
 
@@ -169,6 +171,12 @@ export async function POST(request: NextRequest) {
 
     // Create the ticket with 'ticket' tag always included
     const allTags = ['ticket', ...(tags || [])].filter(Boolean);
+    // Validate iterationPath and areaPath (must be strings, no path traversal)
+    const validatedIterationPath =
+      typeof iterationPath === 'string' && !/[/]/.test(iterationPath) ? iterationPath : undefined;
+    const validatedAreaPath =
+      typeof areaPath === 'string' && !/[/]/.test(areaPath) ? areaPath : undefined;
+
     const workItem = await devopsService.createTicketWithAssignee(
       project,
       title,
@@ -180,7 +188,9 @@ export async function POST(request: NextRequest) {
       workItemType || 'Task',
       Boolean(validatedFieldRef),
       validatedFieldRef,
-      validatedAdditionalFields
+      validatedAdditionalFields,
+      validatedIterationPath,
+      validatedAreaPath
     );
 
     const ticket = workItemToTicket(workItem);

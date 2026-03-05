@@ -462,7 +462,9 @@ export class AzureDevOpsService {
     workItemType: string = 'Task',
     hasPriority: boolean = true,
     priorityFieldRef?: string,
-    additionalFields?: Record<string, string | number>
+    additionalFields?: Record<string, string | number>,
+    iterationPath?: string,
+    areaPath?: string
   ): Promise<DevOpsWorkItem> {
     const patchDocument: Array<{ op: string; path: string; value: string | number }> = [
       { op: 'add', path: '/fields/System.Title', value: title },
@@ -482,6 +484,14 @@ export class AzureDevOpsService {
 
     if (assigneeId) {
       patchDocument.push({ op: 'add', path: '/fields/System.AssignedTo', value: assigneeId });
+    }
+
+    if (iterationPath) {
+      patchDocument.push({ op: 'add', path: '/fields/System.IterationPath', value: iterationPath });
+    }
+
+    if (areaPath) {
+      patchDocument.push({ op: 'add', path: '/fields/System.AreaPath', value: areaPath });
     }
 
     // Append any additional required fields, excluding fields already set above

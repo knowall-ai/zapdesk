@@ -16,6 +16,8 @@ interface NewTicketForm {
   assignee: string;
   tags: string;
   workItemType: string;
+  iterationPath: string;
+  areaPath: string;
 }
 
 export default function NewTicketPage() {
@@ -33,6 +35,9 @@ export default function NewTicketPage() {
   >([]);
   const [additionalFieldValues, setAdditionalFieldValues] = useState<Record<string, string>>({});
   const [isLoadingRequiredFields, setIsLoadingRequiredFields] = useState(false);
+  const [iterations, setIterations] = useState<string[]>([]);
+  const [areas, setAreas] = useState<string[]>([]);
+  const [isLoadingClassifications, setIsLoadingClassifications] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +49,8 @@ export default function NewTicketPage() {
     assignee: '',
     tags: '',
     workItemType: 'Task',
+    iterationPath: '',
+    areaPath: '',
   });
 
   const fetchProjects = useCallback(async () => {
@@ -129,6 +136,28 @@ export default function NewTicketPage() {
     [get]
   );
 
+  const fetchClassifications = useCallback(
+    async (projectName: string) => {
+      setIsLoadingClassifications(true);
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/classifications`
+        );
+        if (!response.ok) throw new Error('Failed to fetch classifications');
+        const data = await response.json();
+        setIterations(data.iterations || []);
+        setAreas(data.areas || []);
+      } catch (err) {
+        console.error('Failed to fetch classifications:', err);
+        setIterations([]);
+        setAreas([]);
+      } finally {
+        setIsLoadingClassifications(false);
+      }
+    },
+    [get]
+  );
+
   // Fetch projects on load
   useEffect(() => {
     if (session?.accessToken && hasOrganization) {
@@ -138,16 +167,26 @@ export default function NewTicketPage() {
     }
   }, [session, hasOrganization, status, fetchProjects]);
 
-  // Fetch team members and work item types when project changes
+  // Fetch team members, work item types, and classifications when project changes
   useEffect(() => {
     if (form.project && session?.accessToken && hasOrganization) {
       fetchTeamMembers(form.project);
       fetchWorkItemTypes(form.project);
+      fetchClassifications(form.project);
     } else {
       setTeamMembers([]);
       setWorkItemTypes([]);
+      setIterations([]);
+      setAreas([]);
     }
-  }, [form.project, session, hasOrganization, fetchTeamMembers, fetchWorkItemTypes]);
+  }, [
+    form.project,
+    session,
+    hasOrganization,
+    fetchTeamMembers,
+    fetchWorkItemTypes,
+    fetchClassifications,
+  ]);
 
   // Fetch required fields when project or work item type changes
   useEffect(() => {
@@ -190,6 +229,8 @@ export default function NewTicketPage() {
           .split(',')
           .map((t) => t.trim())
           .filter(Boolean),
+        iterationPath: form.iterationPath || undefined,
+        areaPath: form.areaPath || undefined,
         additionalFields: Object.keys(additionalFields).length > 0 ? additionalFields : undefined,
       });
 
@@ -464,6 +505,66 @@ export default function NewTicketPage() {
                     </option>
                   ))
                 )}
+              </select>
+            )}
+          </div>
+
+          {/* Iteration Path */}
+          <div>
+            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
+              Iteration
+            </label>
+            {isLoadingClassifications ? (
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 className="animate-spin" size={14} />
+                Loading...
+              </div>
+            ) : (
+              <select
+                value={form.iterationPath}
+                onChange={(e) => setForm((prev) => ({ ...prev, iterationPath: e.target.value }))}
+                className="input w-full"
+                disabled={!form.project || iterations.length === 0}
+              >
+                <option value="">Default</option>
+                {iterations.map((path) => (
+                  <option key={path} value={path}>
+                    {path}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Area Path */}
+          <div>
+            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
+              Area
+            </label>
+            {isLoadingClassifications ? (
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 className="animate-spin" size={14} />
+                Loading...
+              </div>
+            ) : (
+              <select
+                value={form.areaPath}
+                onChange={(e) => setForm((prev) => ({ ...prev, areaPath: e.target.value }))}
+                className="input w-full"
+                disabled={!form.project || areas.length === 0}
+              >
+                <option value="">Default</option>
+                {areas.map((path) => (
+                  <option key={path} value={path}>
+                    {path}
+                  </option>
+                ))}
               </select>
             )}
           </div>
