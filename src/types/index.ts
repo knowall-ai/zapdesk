@@ -46,6 +46,32 @@ export interface Customer {
 export type TicketStatus = 'New' | 'Open' | 'In Progress' | 'Pending' | 'Resolved' | 'Closed';
 export type TicketPriority = 'Low' | 'Normal' | 'High' | 'Urgent';
 export type SLALevel = 'Gold' | 'Silver' | 'Bronze';
+export type SLARiskStatus = 'breached' | 'at-risk' | 'on-track';
+
+// SLA Configuration per priority
+export interface SLATargets {
+  responseTimeHours: number;
+  resolutionTimeHours: number;
+}
+
+export interface SLAConfig {
+  Urgent: SLATargets;
+  High: SLATargets;
+  Normal: SLATargets;
+  Low: SLATargets;
+}
+
+// SLA status for a ticket
+export interface TicketSLAStatus {
+  ticket: Ticket;
+  riskStatus: SLARiskStatus;
+  resolutionTarget: Date;
+  responseTarget: Date;
+  timeRemaining: number; // milliseconds, negative if breached
+  percentageRemaining: number; // 0-100 percentage of SLA time remaining
+  isResponseBreached: boolean;
+  isResolutionBreached: boolean;
+}
 
 // Azure DevOps work item state
 export interface WorkItemState {
@@ -93,6 +119,7 @@ export interface Ticket {
   devOpsUrl: string;
   project: string;
   comments: TicketComment[];
+  attachments?: Attachment[];
 }
 
 export interface TicketComment {
@@ -101,6 +128,53 @@ export interface TicketComment {
   content: string;
   createdAt: Date;
   isInternal: boolean;
+}
+
+// Attachment types for tickets and comments
+export interface Attachment {
+  id: string;
+  fileName: string;
+  url: string;
+  contentType: string;
+  size: number;
+  createdAt: Date;
+  createdBy?: User;
+}
+
+// Maximum file size for attachments (25MB)
+export const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
+
+// Allowed file types for attachments
+export const ALLOWED_ATTACHMENT_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/csv',
+  'application/zip',
+  'application/x-zip-compressed',
+];
+
+// Work item history update (from Azure DevOps Updates API)
+export interface WorkItemFieldChange {
+  oldValue?: string;
+  newValue?: string;
+}
+
+export interface WorkItemUpdate {
+  id: number;
+  rev: number;
+  revisedBy: User;
+  revisedDate: Date;
+  fields: Record<string, WorkItemFieldChange>;
 }
 
 export interface TicketFilter {
@@ -205,6 +279,16 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
   page: number;
   pageSize: number;
   hasMore: boolean;
+}
+
+// SLA API response
+export interface SLAStatusResponse {
+  summary: {
+    breached: number;
+    atRisk: number;
+    onTrack: number;
+  };
+  tickets: TicketSLAStatus[];
 }
 
 // Monthly Checkpoint Dashboard Types

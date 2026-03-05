@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useState, useEffect, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner, ProjectList } from '@/components/common';
+import { SLARiskPanel } from '@/components/dashboard';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import LandingPage from '@/components/LandingPage';
 import {
@@ -52,13 +53,15 @@ export default function HomePage() {
   const [projectsLoading, setProjectsLoading] = useState(true);
 
   const fetchDashboardStats = useCallback(async () => {
+    if (!selectedOrganization?.accountName) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const headers: HeadersInit = {};
-      if (selectedOrganization?.accountName) {
-        headers['x-devops-org'] = selectedOrganization.accountName;
-      }
-      const response = await fetch('/api/devops/stats', { headers });
+      const response = await fetch('/api/devops/stats', {
+        headers: { 'x-devops-org': selectedOrganization.accountName },
+      });
       if (response.ok) {
         const data = await response.json();
         setStats(data);
@@ -71,12 +74,14 @@ export default function HomePage() {
   }, [selectedOrganization]);
 
   const fetchProjects = useCallback(async () => {
+    if (!selectedOrganization?.accountName) {
+      setProjectsLoading(false);
+      return;
+    }
     try {
-      const headers: HeadersInit = {};
-      if (selectedOrganization?.accountName) {
-        headers['x-devops-org'] = selectedOrganization.accountName;
-      }
-      const response = await fetch('/api/devops/projects', { headers });
+      const response = await fetch('/api/devops/projects', {
+        headers: { 'x-devops-org': selectedOrganization.accountName },
+      });
       if (response.ok) {
         const data = await response.json();
         setProjects(data.projects || []);
@@ -197,9 +202,12 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* Quick actions */}
-        <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {/* Recent activity */}
+        {/* SLA Risk Panel and Quick actions */}
+        <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {/* SLA Risk Panel */}
+          <SLARiskPanel accessToken={session.accessToken} />
+
+          {/* Quick Actions */}
           <div className="card">
             <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
               <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
