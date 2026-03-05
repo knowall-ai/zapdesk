@@ -22,6 +22,8 @@ import {
   X,
 } from 'lucide-react';
 import ZapDeskIcon from '@/components/common/ZapDeskIcon';
+import { usePermissions } from '@/components/providers/PermissionProvider';
+import type { Permission } from '@/types';
 
 interface ViewItem {
   id: string;
@@ -31,30 +33,59 @@ interface ViewItem {
   count?: number;
 }
 
-const mainNavItems = [
+interface NavItem {
+  id: string;
+  name: string;
+  icon: React.ReactNode;
+  href: string;
+  permission?: Permission;
+}
+
+const allNavItems: NavItem[] = [
   { id: 'home', name: 'Home', icon: <Home size={20} />, href: '/' },
   { id: 'tickets', name: 'Tickets', icon: <Ticket size={20} />, href: '/tickets' },
-  { id: 'users', name: 'Users', icon: <Users size={20} />, href: '/users' },
+  {
+    id: 'users',
+    name: 'Users',
+    icon: <Users size={20} />,
+    href: '/users',
+    permission: 'users:view',
+  },
   {
     id: 'projects',
     name: 'Projects',
     icon: <Building2 size={20} />,
     href: '/projects',
+    permission: 'projects:view',
   },
-  { id: 'team', name: 'Team', icon: <Users2 size={20} />, href: '/team' },
+  {
+    id: 'team',
+    name: 'Team',
+    icon: <Users2 size={20} />,
+    href: '/team',
+    permission: 'team:view',
+  },
   {
     id: 'live-dashboard',
     name: 'Live Dashboard',
     icon: <Activity size={20} />,
     href: '/reporting',
+    permission: 'reporting:view',
   },
   {
     id: 'monthly-checkpoint',
     name: 'Monthly Checkpoint',
     icon: <CalendarCheck size={20} />,
     href: '/monthly-checkpoint',
+    permission: 'reporting:monthly_checkpoint',
   },
-  { id: 'admin', name: 'Admin', icon: <Settings size={20} />, href: '/admin' },
+  {
+    id: 'admin',
+    name: 'Admin',
+    icon: <Settings size={20} />,
+    href: '/admin',
+    permission: 'admin:access',
+  },
 ];
 
 interface SidebarProps {
@@ -80,6 +111,12 @@ export default function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { hasPermission, isClient } = usePermissions();
+
+  // Filter navigation items based on user permissions
+  const mainNavItems = allNavItems.filter(
+    (item) => !item.permission || hasPermission(item.permission)
+  );
 
   const counts = ticketCounts || {
     yourActive: 0,
@@ -202,8 +239,11 @@ export default function Sidebar({
         })}
       </nav>
 
-      {/* Views section */}
-      <div className="flex-1 overflow-y-auto border-t" style={{ borderColor: 'var(--border)' }}>
+      {/* Views section - hidden for clients */}
+      <div
+        className={`flex-1 overflow-y-auto border-t ${isClient ? 'hidden' : ''}`}
+        style={{ borderColor: 'var(--border)' }}
+      >
         <div className="p-3">
           <div className="mb-2 flex items-center justify-between">
             <span

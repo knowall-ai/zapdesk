@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requireAuth, isAuthed } from '@/lib/api-auth';
+import { hasPermission } from '@/lib/permissions';
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAuth();
+    if (!isAuthed(auth)) return auth;
+    const { session, permissions } = auth;
 
     const { id } = await params;
     const ticketId = parseInt(id, 10);
@@ -25,7 +23,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: 'Comment is required' }, { status: 400 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    // Block internal notes for users without permission
+    if (isInternal && !hasPermission(permissions, 'tickets:create_internal_notes')) {
+      return NextResponse.json(
+        { error: 'You do not have permission to create internal notes' },
+        { status: 403 }
+      );
+    }
+
+    const devopsService = new AzureDevOpsService(session.accessToken!);
 
     // Get all projects to find the ticket
     const projects = await devopsService.getProjects();

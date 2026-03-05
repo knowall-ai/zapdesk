@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { format, subDays, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { Calendar, Download, Plus, Loader2, RefreshCw } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
+import { AccessDenied } from '@/components/common';
+import { usePermissions } from '@/components/providers/PermissionProvider';
 import { KPICards, TrendCharts, CheckpointTicketTable } from '@/components/monthly-checkpoint';
 import { NewTicketModal } from '@/components/tickets';
 import type { MonthlyCheckpointStats, DevOpsProject, Ticket } from '@/types';
@@ -15,6 +17,7 @@ type DatePreset = 'last30' | 'thisMonth' | 'lastMonth' | 'custom';
 function MonthlyCheckpointContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { hasPermission } = usePermissions();
   const searchParams = useSearchParams();
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -156,6 +159,14 @@ function MonthlyCheckpointContent() {
   if (status === 'unauthenticated') {
     router.push('/login');
     return null;
+  }
+
+  if (!hasPermission('reporting:monthly_checkpoint')) {
+    return (
+      <MainLayout>
+        <AccessDenied message="You do not have permission to view the Monthly Checkpoint." />
+      </MainLayout>
+    );
   }
 
   return (

@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { TicketDetail } from '@/components/tickets';
+import { usePermissions } from '@/components/providers/PermissionProvider';
 import type { Ticket, TicketComment, Attachment, WorkItemUpdate } from '@/types';
 
 export default function TicketDetailPage() {
@@ -13,6 +14,7 @@ export default function TicketDetailPage() {
   const router = useRouter();
   const params = useParams();
   const ticketId = params.id as string;
+  const { hasPermission } = usePermissions();
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [comments, setComments] = useState<TicketComment[]>([]);
@@ -198,19 +200,27 @@ export default function TicketDetailPage() {
     return null;
   }
 
+  const canChangeStatus = hasPermission('tickets:change_status');
+  const canAssign = hasPermission('tickets:assign');
+  const canEdit = hasPermission('tickets:edit');
+  const canSeeInternalNotes = hasPermission('tickets:create_internal_notes');
+
+  // Filter internal notes for users without permission
+  const visibleComments = canSeeInternalNotes ? comments : comments.filter((c) => !c.isInternal);
+
   return (
     <MainLayout>
       <TicketDetail
         key={ticketId}
         ticket={ticket}
-        comments={comments}
+        comments={visibleComments}
         history={history}
         historyLoading={historyLoading}
         onAddComment={handleAddComment}
-        onStateChange={handleStateChange}
-        onAssigneeChange={handleAssigneeChange}
-        onPriorityChange={handlePriorityChange}
-        onUploadAttachment={handleUploadAttachment}
+        onStateChange={canChangeStatus ? handleStateChange : undefined}
+        onAssigneeChange={canAssign ? handleAssigneeChange : undefined}
+        onPriorityChange={canEdit ? handlePriorityChange : undefined}
+        onUploadAttachment={canEdit ? handleUploadAttachment : undefined}
         onRefreshTicket={fetchTicket}
       />
     </MainLayout>

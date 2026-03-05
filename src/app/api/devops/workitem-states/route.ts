@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { requireAuth, isAuthed } from '@/lib/api-auth';
 
 interface WorkItemState {
   name: string;
@@ -15,11 +14,9 @@ interface WorkItemTypeStates {
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAuth();
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const organization = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
 
@@ -28,7 +25,7 @@ export async function GET() {
       `https://dev.azure.com/${organization}/_apis/projects?api-version=7.0`,
       {
         headers: {
-          Authorization: `Bearer ${session.accessToken}`,
+          Authorization: `Bearer ${session.accessToken!}`,
           'Content-Type': 'application/json',
         },
       }
@@ -57,7 +54,7 @@ export async function GET() {
           `https://dev.azure.com/${organization}/${encodeURIComponent(firstProject)}/_apis/wit/workitemtypes/${encodeURIComponent(witType)}/states?api-version=7.0`,
           {
             headers: {
-              Authorization: `Bearer ${session.accessToken}`,
+              Authorization: `Bearer ${session.accessToken!}`,
               'Content-Type': 'application/json',
             },
           }

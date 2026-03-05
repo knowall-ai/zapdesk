@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import SessionProvider from '@/components/providers/SessionProvider';
 import OrganizationProvider from '@/components/providers/OrganizationProvider';
+import PermissionProvider from '@/components/providers/PermissionProvider';
 import './globals.css';
 
 const siteUrl = process.env.NEXTAUTH_URL || 'https://zapdesk.knowall.ai';
@@ -73,7 +74,9 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className="antialiased">
         <SessionProvider>
-          <OrganizationProvider>{children}</OrganizationProvider>
+          <PermissionProvider>
+            <OrganizationProvider>{children}</OrganizationProvider>
+          </PermissionProvider>
         </SessionProvider>
       </body>
     </html>

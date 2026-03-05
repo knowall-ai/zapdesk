@@ -1,0 +1,61 @@
+{
+  "defaultRole": "agent",
+  "roles": [
+    {
+      "name": "admin",
+      "label": "Admin",
+      "description": "Full access to all features including role management",
+      "permissions": [
+        "admin:access",
+        "admin:manage_roles",
+        "tickets:view_all",
+        "tickets:view_own",
+        "tickets:create",
+        "tickets:edit",
+        "tickets:assign",
+        "tickets:change_status",
+        "tickets:create_internal_notes",
+        "team:view",
+        "users:view",
+        "projects:view",
+        "reporting:view",
+        "reporting:monthly_checkpoint"
+      ]
+    },
+    {
+      "name": "agent",
+      "label": "Agent",
+      "description": "Access to tickets, team, and reporting features",
+      "permissions": [
+        "tickets:view_all",
+        "tickets:view_own",
+        "tickets:create",
+        "tickets:edit",
+        "tickets:assign",
+        "tickets:change_status",
+        "tickets:create_internal_notes",
+        "team:view",
+        "users:view",
+        "projects:view",
+        "reporting:view",
+        "reporting:monthly_checkpoint"
+      ]
+    },
+    {
+      "name": "client",
+      "label": "Client",
+      "description": "View and create own tickets only",
+      "permissions": ["tickets:view_own", "tickets:create"]
+    }
+  ],
+  "users": [
+    {
+      "userId": "akash.jadhav@knowall.ai",
+      "email": "Akash.Jadhav@knowall.ai",
+      "displayName": "Akash Jadhav",
+      "role": "admin",
+      "updatedAt": "2026-03-05T00:00:00.000Z",
+      "updatedBy": "system"
+    }
+  ]
+}

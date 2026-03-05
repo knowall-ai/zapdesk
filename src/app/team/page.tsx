@@ -4,7 +4,8 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout';
-import { LoadingSpinner, Avatar } from '@/components/common';
+import { LoadingSpinner, Avatar, AccessDenied } from '@/components/common';
+import { usePermissions } from '@/components/providers/PermissionProvider';
 import {
   Users2,
   Ticket,
@@ -41,6 +42,7 @@ type SortDirection = 'asc' | 'desc';
 export default function TeamPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { hasPermission } = usePermissions();
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [activityData, setActivityData] = useState<ActivityData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -228,6 +230,14 @@ export default function TeamPage() {
       color: 'var(--priority-urgent)',
     },
   ];
+
+  if (!hasPermission('team:view')) {
+    return (
+      <MainLayout>
+        <AccessDenied message="You do not have permission to view the Team page." />
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>

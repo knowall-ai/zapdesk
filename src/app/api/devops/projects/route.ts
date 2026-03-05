@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
+import { requirePermission, isAuthed } from '@/lib/api-auth';
 import type { Organization, SLALevel } from '@/types';
 import { isTemplateSupported, getTemplateConfig } from '@/config/process-templates';
 import type { ProcessTemplateConfig } from '@/config/process-templates';
@@ -185,11 +184,9 @@ async function fetchProjectProcess(
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requirePermission('projects:view');
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     // Get organization from header (client sends from localStorage selection)
     const devOpsOrg = request.headers.get('x-devops-org');
@@ -199,7 +196,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Validate user has access to the requested organization
-    const hasAccess = await validateOrganizationAccess(session.accessToken, devOpsOrg);
+    const hasAccess = await validateOrganizationAccess(session.accessToken!, devOpsOrg);
     if (!hasAccess) {
       return NextResponse.json(
         { error: 'Access denied to the specified organization' },
@@ -212,7 +209,7 @@ export async function GET(request: NextRequest) {
     // Fetch projects with description expanded
     const response = await fetch(`${baseUrl}/_apis/projects?api-version=7.0&$expand=description`, {
       headers: {
-        Authorization: `Bearer ${session.accessToken}`,
+        Authorization: `Bearer ${session.accessToken!}`,
         'Content-Type': 'application/json',
       },
     });
