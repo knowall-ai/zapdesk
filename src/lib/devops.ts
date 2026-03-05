@@ -13,6 +13,7 @@ import type {
   Epic,
   Feature,
   WorkItem,
+  WorkItemUpdate,
   EpicType,
   TreemapNode,
 } from '@/types';
@@ -35,6 +36,10 @@ function mapCategoryToStatus(category: string): TicketStatus {
 
 // Cache for state-to-category mapping (populated by fetchStateCategories)
 let stateCategoryCache: Record<string, string> = {};
+
+// Cache for project list per organization (avoids redundant fetches)
+const projectListCache: Map<string, { data: DevOpsProject[]; timestamp: number }> = new Map();
+const PROJECT_CACHE_TTL_MS = 30 * 1000; // 30 seconds
 
 // Set the state category cache (called from API routes after fetching states)
 export function setStateCategoryCache(stateCategories: Record<string, string>) {
@@ -160,8 +165,13 @@ export class AzureDevOpsService {
     };
   }
 
-  // Get all projects the user has access to
+  // Get all projects the user has access to (cached for 30s per org)
   async getProjects(): Promise<DevOpsProject[]> {
+    const cached = projectListCache.get(this.organization);
+    if (cached && Date.now() - cached.timestamp < PROJECT_CACHE_TTL_MS) {
+      return cached.data;
+    }
+
     const response = await fetch(`${this.baseUrl}/_apis/projects?api-version=7.0`, {
       headers: this.headers,
     });
@@ -171,7 +181,9 @@ export class AzureDevOpsService {
     }
 
     const data = await response.json();
-    return data.value;
+    const projects: DevOpsProject[] = data.value;
+    projectListCache.set(this.organization, { data: projects, timestamp: Date.now() });
+    return projects;
   }
 
   // Get work items from a specific project
@@ -225,8 +237,22 @@ export class AzureDevOpsService {
 
     for (let i = 0; i < workItemIds.length; i += batchSize) {
       const batch = workItemIds.slice(i, i + batchSize);
+      const fields = [
+        'System.Title',
+        'System.Description',
+        'System.State',
+        'System.CreatedDate',
+        'System.ChangedDate',
+        'System.CreatedBy',
+        'System.AssignedTo',
+        'System.Tags',
+        'Microsoft.VSTS.Common.Priority',
+        'System.TeamProject',
+        'System.WorkItemType',
+        'System.AreaPath',
+      ].join(',');
       const workItemsResponse = await fetch(
-        `${this.baseUrl}/_apis/wit/workitems?ids=${batch.join(',')}&$expand=all&api-version=7.0`,
+        `${this.baseUrl}/_apis/wit/workitems?ids=${batch.join(',')}&fields=${fields}&api-version=7.0`,
         { headers: this.headers }
       );
 
@@ -288,6 +314,91 @@ export class AzureDevOpsService {
         })
       ) || []
     );
+  }
+
+  // Get work item update history (revisions with field changes)
+  async getWorkItemUpdates(projectName: string, workItemId: number): Promise<WorkItemUpdate[]> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/updates?api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch work item updates: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    // Fields we care about for the history view
+    const trackedFields = new Set([
+      'System.State',
+      'System.AssignedTo',
+      'System.Title',
+      'Microsoft.VSTS.Common.Priority',
+      'System.Tags',
+      'System.AreaPath',
+    ]);
+
+    return (data.value || [])
+      .filter(
+        (update: {
+          id: number;
+          fields?: Record<string, { oldValue?: unknown; newValue?: unknown }>;
+        }) => {
+          // Skip revision 1 (creation) unless it has meaningful tracked fields
+          if (update.id === 1) return true;
+          if (!update.fields) return false;
+          // Only include updates that changed tracked fields
+          return Object.keys(update.fields).some((key) => trackedFields.has(key));
+        }
+      )
+      .map(
+        (update: {
+          id: number;
+          rev: number;
+          revisedBy: {
+            displayName: string;
+            uniqueName: string;
+            id: string;
+            imageUrl?: string;
+          };
+          revisedDate: string;
+          fields?: Record<string, { oldValue?: unknown; newValue?: unknown }>;
+        }) => {
+          // Filter fields to only tracked ones and normalize identity values
+          const fields: Record<string, { oldValue?: string; newValue?: string }> = {};
+          if (update.fields) {
+            for (const [key, value] of Object.entries(update.fields)) {
+              if (trackedFields.has(key)) {
+                const normalize = (v: unknown): string | undefined => {
+                  if (v == null) return undefined;
+                  if (typeof v === 'object' && v !== null && 'displayName' in v) {
+                    return (v as { displayName: string }).displayName;
+                  }
+                  return String(v);
+                };
+                fields[key] = {
+                  oldValue: normalize(value.oldValue),
+                  newValue: normalize(value.newValue),
+                };
+              }
+            }
+          }
+
+          return {
+            id: update.id,
+            rev: update.rev,
+            revisedBy: {
+              id: update.revisedBy.id,
+              displayName: update.revisedBy.displayName,
+              email: update.revisedBy.uniqueName,
+              avatarUrl: update.revisedBy.imageUrl,
+            },
+            revisedDate: update.revisedDate,
+            fields,
+          };
+        }
+      );
   }
 
   // Create a new work item (ticket)
@@ -672,14 +783,13 @@ export class AzureDevOpsService {
     return null;
   }
 
-  // Get all tickets from all accessible projects
+  // Get all tickets from all accessible projects (fetches in parallel)
   // Set ticketsOnly=false to get all work items (not just those tagged as "ticket")
   async getAllTickets(ticketsOnly: boolean = true): Promise<Ticket[]> {
     const projects = await this.getProjects();
-    const allTickets: Ticket[] = [];
 
-    for (const project of projects) {
-      try {
+    const results = await Promise.allSettled(
+      projects.map(async (project) => {
         const workItems = await this.getTickets(project.name, { ticketsOnly });
         const organization: Organization = {
           id: project.id,
@@ -690,10 +800,17 @@ export class AzureDevOpsService {
           createdAt: new Date(),
           updatedAt: new Date(),
         };
-        const tickets = workItems.map((wi) => workItemToTicket(wi, organization));
-        allTickets.push(...tickets);
-      } catch (error) {
-        console.error(`Failed to fetch tickets from ${project.name}:`, error);
+        return workItems.map((wi) => workItemToTicket(wi, organization));
+      })
+    );
+
+    const allTickets: Ticket[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      if (result.status === 'fulfilled') {
+        allTickets.push(...result.value);
+      } else {
+        console.error(`Failed to fetch tickets from ${projects[i].name}:`, result.reason);
       }
     }
 

@@ -25,6 +25,7 @@ import type {
   User,
   TicketPriority,
   WorkItemState,
+  WorkItemUpdate,
   Attachment,
 } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
@@ -37,11 +38,16 @@ import PriorityIndicator from '../common/PriorityIndicator';
 import MentionInput from '../common/MentionInput';
 import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
+import TicketHistory from './TicketHistory';
 import { useClickOutside } from '@/hooks';
+
+type DetailTab = 'conversation' | 'history';
 
 interface TicketDetailProps {
   ticket: Ticket;
   comments: TicketComment[];
+  history?: WorkItemUpdate[];
+  historyLoading?: boolean;
   onAddComment?: (comment: string) => Promise<void>;
   onStateChange?: (state: string) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
@@ -60,6 +66,8 @@ const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
 export default function TicketDetail({
   ticket,
   comments,
+  history = [],
+  historyLoading = false,
   onAddComment,
   onStateChange,
   onAssigneeChange,
@@ -67,6 +75,7 @@ export default function TicketDetail({
   onUploadAttachment,
   onRefreshTicket,
 }: TicketDetailProps) {
+  const [activeTab, setActiveTab] = useState<DetailTab>('conversation');
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
@@ -411,113 +420,156 @@ export default function TicketDetail({
           </div>
         </div>
 
-        {/* Conversation */}
-        <div className="flex-1 overflow-auto p-4">
-          {/* Original ticket */}
-          <div className="card mb-4 p-4">
-            <div className="flex items-start gap-3">
-              <Avatar
-                name={ticket.requester.displayName}
-                image={ticket.requester.avatarUrl}
-                size="md"
+        {/* Tab bar */}
+        <div className="flex gap-0 border-b px-4" style={{ borderColor: 'var(--border)' }}>
+          <button
+            onClick={() => setActiveTab('conversation')}
+            className="relative px-4 py-2.5 text-sm font-medium transition-colors"
+            style={{
+              color: activeTab === 'conversation' ? 'var(--primary)' : 'var(--text-muted)',
+            }}
+          >
+            Conversation
+            {activeTab === 'conversation' && (
+              <span
+                className="absolute right-0 bottom-0 left-0 h-0.5"
+                style={{ backgroundColor: 'var(--primary)' }}
               />
-              <div className="flex-1">
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                    {ticket.requester.displayName}
-                  </span>
-                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {format(ticket.createdAt, 'dd MMM yyyy, HH:mm')}
-                  </span>
-                </div>
-                <div
-                  className="prose prose-sm prose-invert user-content max-w-none"
-                  style={{ color: 'var(--text-secondary)' }}
-                  dangerouslySetInnerHTML={{
-                    __html: ticket.description || '<em>No description provided</em>',
-                  }}
-                />
-                {/* Attachments */}
-                {ticket.attachments && ticket.attachments.length > 0 && (
-                  <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
-                    <div
-                      className="mb-2 flex items-center gap-1 text-xs"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      <Paperclip size={12} />
-                      <span>Attachments ({ticket.attachments.length})</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {ticket.attachments.map((attachment) => (
-                        <a
-                          key={attachment.id}
-                          href={attachment.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                          style={{
-                            backgroundColor: 'var(--surface)',
-                            color: 'var(--text-secondary)',
-                          }}
-                          title={`Download ${attachment.fileName}`}
-                        >
-                          <FileIcon contentType={attachment.contentType} />
-                          <span className="max-w-[150px] truncate">{attachment.fileName}</span>
-                          {attachment.size > 0 && (
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                              ({formatFileSize(attachment.size)})
-                            </span>
-                          )}
-                          <Download size={12} style={{ color: 'var(--text-muted)' }} />
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Comments */}
-          {comments.map((comment) => (
-            <div
-              key={comment.id}
-              className={`card mb-4 p-4 ${comment.isInternal ? 'border-l-4' : ''}`}
-              style={comment.isInternal ? { borderLeftColor: 'var(--status-pending)' } : {}}
-            >
-              <div className="flex items-start gap-3">
-                <Avatar
-                  name={comment.author.displayName}
-                  image={comment.author.avatarUrl}
-                  size="md"
-                />
-                <div className="flex-1">
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                      {comment.author.displayName}
-                    </span>
-                    {comment.isInternal && (
-                      <span
-                        className="rounded px-1.5 py-0.5 text-xs"
-                        style={{ backgroundColor: 'var(--status-pending)', color: 'white' }}
-                      >
-                        Internal note
-                      </span>
-                    )}
-                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      {format(comment.createdAt, 'dd MMM yyyy, HH:mm')}
-                    </span>
-                  </div>
-                  <div
-                    className="user-content text-sm"
-                    style={{ color: 'var(--text-secondary)' }}
-                    dangerouslySetInnerHTML={{ __html: highlightMentions(comment.content) }}
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className="relative px-4 py-2.5 text-sm font-medium transition-colors"
+            style={{
+              color: activeTab === 'history' ? 'var(--primary)' : 'var(--text-muted)',
+            }}
+          >
+            History
+            {activeTab === 'history' && (
+              <span
+                className="absolute right-0 bottom-0 left-0 h-0.5"
+                style={{ backgroundColor: 'var(--primary)' }}
+              />
+            )}
+          </button>
         </div>
+
+        {/* Tab content */}
+        {activeTab === 'conversation' ? (
+          <>
+            {/* Conversation */}
+            <div className="flex-1 overflow-auto p-4">
+              {/* Original ticket */}
+              <div className="card mb-4 p-4">
+                <div className="flex items-start gap-3">
+                  <Avatar
+                    name={ticket.requester.displayName}
+                    image={ticket.requester.avatarUrl}
+                    size="md"
+                  />
+                  <div className="flex-1">
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                        {ticket.requester.displayName}
+                      </span>
+                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        {format(ticket.createdAt, 'dd MMM yyyy, HH:mm')}
+                      </span>
+                    </div>
+                    <div
+                      className="prose prose-sm prose-invert user-content max-w-none"
+                      style={{ color: 'var(--text-secondary)' }}
+                      dangerouslySetInnerHTML={{
+                        __html: ticket.description || '<em>No description provided</em>',
+                      }}
+                    />
+                    {/* Attachments */}
+                    {ticket.attachments && ticket.attachments.length > 0 && (
+                      <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+                        <div
+                          className="mb-2 flex items-center gap-1 text-xs"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          <Paperclip size={12} />
+                          <span>Attachments ({ticket.attachments.length})</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {ticket.attachments.map((attachment) => (
+                            <a
+                              key={attachment.id}
+                              href={attachment.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                              style={{
+                                backgroundColor: 'var(--surface)',
+                                color: 'var(--text-secondary)',
+                              }}
+                              title={`Download ${attachment.fileName}`}
+                            >
+                              <FileIcon contentType={attachment.contentType} />
+                              <span className="max-w-[150px] truncate">{attachment.fileName}</span>
+                              {attachment.size > 0 && (
+                                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                  ({formatFileSize(attachment.size)})
+                                </span>
+                              )}
+                              <Download size={12} style={{ color: 'var(--text-muted)' }} />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Comments */}
+              {comments.map((comment) => (
+                <div
+                  key={comment.id}
+                  className={`card mb-4 p-4 ${comment.isInternal ? 'border-l-4' : ''}`}
+                  style={comment.isInternal ? { borderLeftColor: 'var(--status-pending)' } : {}}
+                >
+                  <div className="flex items-start gap-3">
+                    <Avatar
+                      name={comment.author.displayName}
+                      image={comment.author.avatarUrl}
+                      size="md"
+                    />
+                    <div className="flex-1">
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                          {comment.author.displayName}
+                        </span>
+                        {comment.isInternal && (
+                          <span
+                            className="rounded px-1.5 py-0.5 text-xs"
+                            style={{ backgroundColor: 'var(--status-pending)', color: 'white' }}
+                          >
+                            Internal note
+                          </span>
+                        )}
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {format(comment.createdAt, 'dd MMM yyyy, HH:mm')}
+                        </span>
+                      </div>
+                      <div
+                        className="user-content text-sm"
+                        style={{ color: 'var(--text-secondary)' }}
+                        dangerouslySetInnerHTML={{ __html: highlightMentions(comment.content) }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 overflow-auto p-4">
+            <TicketHistory updates={history} loading={historyLoading} />
+          </div>
+        )}
 
         {/* Reply box */}
         <div
