@@ -6,7 +6,8 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { format, subDays, startOfWeek } from 'date-fns';
 import Link from 'next/link';
 import { MainLayout } from '@/components/layout';
-import { LoadingSpinner } from '@/components/common';
+import { LoadingSpinner, AccessDenied } from '@/components/common';
+import { usePermissions } from '@/components/providers/PermissionProvider';
 import { useDevOpsApi } from '@/hooks';
 import {
   RefreshCw,
@@ -45,6 +46,7 @@ interface ProjectStats {
 export default function LiveDashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { hasPermission } = usePermissions();
   const { get: devOpsGet, hasOrganization } = useDevOpsApi();
   const [stats, setStats] = useState<LiveStats | null>(null);
   const [allTickets, setAllTickets] = useState<TicketType[]>([]);
@@ -313,6 +315,14 @@ export default function LiveDashboardPage() {
       subtitle: 'First response',
     },
   ];
+
+  if (!hasPermission('reporting:view')) {
+    return (
+      <MainLayout>
+        <AccessDenied message="You do not have permission to view the Live Dashboard." />
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>

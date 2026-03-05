@@ -2,6 +2,8 @@
 import type { NextAuthOptions } from 'next-auth';
 import type { JWT } from 'next-auth/jwt';
 import AzureADProvider from 'next-auth/providers/azure-ad';
+import { resolveUserPermissions } from '@/lib/permissions';
+import type { UserRole, Permission } from '@/types';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -36,6 +38,8 @@ declare module 'next-auth' {
     accessToken?: string;
     refreshToken?: string;
     error?: string;
+    role?: UserRole;
+    permissions?: Permission[];
     user: {
       id: string;
       name?: string | null;
@@ -53,6 +57,8 @@ declare module 'next-auth/jwt' {
     error?: string;
     id?: string;
     picture?: string;
+    role?: UserRole;
+    permissions?: Permission[];
   }
 }
 
@@ -87,6 +93,10 @@ export const authOptions: NextAuthOptions = {
       try {
         // Initial sign in
         if (account && user) {
+          // Resolve permissions from config file
+          const userEmail = user.email ?? '';
+          const resolved = resolveUserPermissions(userEmail, user.id);
+
           return {
             ...token,
             accessToken: account.access_token,
@@ -94,6 +104,8 @@ export const authOptions: NextAuthOptions = {
             accessTokenExpires: account.expires_at ? account.expires_at * 1000 : undefined,
             id: user.id,
             picture: user.image ?? undefined,
+            role: resolved.role,
+            permissions: resolved.permissions,
           } as JWT;
         }
 
@@ -113,6 +125,8 @@ export const authOptions: NextAuthOptions = {
       session.accessToken = token.accessToken;
       session.refreshToken = token.refreshToken;
       session.error = token.error;
+      session.role = token.role;
+      session.permissions = token.permissions;
       if (token.id) {
         session.user.id = token.id;
       }

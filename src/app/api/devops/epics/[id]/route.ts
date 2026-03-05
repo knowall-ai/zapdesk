@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requirePermission, isAuthed } from '@/lib/api-auth';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requirePermission('projects:view');
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const { id } = await params;
     const epicId = parseInt(id, 10);
@@ -25,7 +22,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'Project parameter is required' }, { status: 400 });
     }
 
-    const devOpsService = new AzureDevOpsService(session.accessToken);
+    const devOpsService = new AzureDevOpsService(session.accessToken!);
     const epic = await devOpsService.getEpicHierarchy(project, epicId);
     const treemapData = devOpsService.epicToTreemap(epic);
 

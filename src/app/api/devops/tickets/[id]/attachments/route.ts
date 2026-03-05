@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requireAnyPermission, requirePermission, isAuthed } from '@/lib/api-auth';
 import { MAX_ATTACHMENT_SIZE, ALLOWED_ATTACHMENT_TYPES } from '@/types';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -9,11 +8,9 @@ type RouteParams = { params: Promise<{ id: string }> };
 // GET - Fetch attachments for a ticket
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAnyPermission(['tickets:view_all', 'tickets:view_own']);
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const { id } = await params;
     const ticketId = parseInt(id, 10);
@@ -22,7 +19,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken!);
     const result = await devopsService.findProjectForWorkItem(ticketId);
 
     if (!result) {
@@ -41,11 +38,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // POST - Upload attachment to a ticket
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requirePermission('tickets:edit');
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const { id } = await params;
     const ticketId = parseInt(id, 10);
@@ -82,7 +77,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken!);
     const found = await devopsService.findProjectForWorkItem(ticketId);
 
     if (!found) {

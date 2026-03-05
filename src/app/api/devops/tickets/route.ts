@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService, workItemToTicket, setStateCategoryCache } from '@/lib/devops';
+import { requireAnyPermission, requirePermission, isAuthed } from '@/lib/api-auth';
+import { hasPermission } from '@/lib/permissions';
 import type { Ticket, TicketStatus } from '@/types';
 
 // TTL cache for state categories (avoids refetching on every request)
@@ -86,11 +86,9 @@ async function fetchAndCacheStateCategories(accessToken: string, organization: s
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requirePermission('tickets:create');
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const body = await request.json();
     const {
@@ -115,7 +113,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate user has access to the requested organization
-    const hasAccess = await validateOrganizationAccess(session.accessToken, organization);
+    const hasAccess = await validateOrganizationAccess(session.accessToken!, organization);
     if (!hasAccess) {
       return NextResponse.json(
         { error: 'Access denied to the specified organization' },
@@ -123,7 +121,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken, organization);
+    const devopsService = new AzureDevOpsService(session.accessToken!, organization);
 
     // Validate priorityFieldRef to prevent arbitrary field injection
     const allowedPriorityFields = [
@@ -163,11 +161,9 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAnyPermission(['tickets:view_all', 'tickets:view_own']);
+    if (!isAuthed(auth)) return auth;
+    const { session, permissions } = auth;
 
     const searchParams = request.nextUrl.searchParams;
     const view = searchParams.get('view') || 'all-unsolved';
@@ -182,7 +178,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Validate user has access to the requested organization
-    const hasAccess = await validateOrganizationAccess(session.accessToken, organization);
+    const hasAccess = await validateOrganizationAccess(session.accessToken!, organization);
     if (!hasAccess) {
       return NextResponse.json(
         { error: 'Access denied to the specified organization' },
@@ -191,13 +187,21 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch and cache state categories before getting tickets
-    await fetchAndCacheStateCategories(session.accessToken, organization);
+    await fetchAndCacheStateCategories(session.accessToken!, organization);
 
-    const devopsService = new AzureDevOpsService(session.accessToken, organization);
+    const devopsService = new AzureDevOpsService(session.accessToken!, organization);
     const tickets = await devopsService.getAllTickets(ticketsOnly);
 
     // Filter tickets based on view
-    const filteredTickets = filterTicketsByView(tickets, view, session.user?.email);
+    let filteredTickets = filterTicketsByView(tickets, view, session.user?.email);
+
+    // If user only has view_own (client role), filter to their tickets only
+    if (!hasPermission(permissions, 'tickets:view_all')) {
+      const userEmail = session.user?.email?.toLowerCase();
+      filteredTickets = filteredTickets.filter(
+        (t) => t.requester.email?.toLowerCase() === userEmail
+      );
+    }
 
     return NextResponse.json({
       tickets: filteredTickets,

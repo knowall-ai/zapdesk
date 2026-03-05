@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requirePermission, isAuthed } from '@/lib/api-auth';
 import type { Ticket, TicketStatus } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requirePermission('reporting:view');
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     // Get organization from header (client sends from localStorage selection)
     const organization = request.headers.get('x-devops-org');
@@ -19,7 +16,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No organization specified' }, { status: 400 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken, organization);
+    const devopsService = new AzureDevOpsService(session.accessToken!, organization);
     const tickets = await devopsService.getAllTickets();
 
     const today = new Date();

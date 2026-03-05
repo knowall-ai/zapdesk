@@ -4,7 +4,8 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout';
-import { Avatar, LoadingSpinner } from '@/components/common';
+import { Avatar, LoadingSpinner, AccessDenied } from '@/components/common';
+import { usePermissions } from '@/components/providers/PermissionProvider';
 import { Search, Plus, Upload, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -13,6 +14,7 @@ import type { Customer } from '@/types';
 export default function UsersPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { hasPermission } = usePermissions();
   const [users, setUsers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -87,6 +89,14 @@ export default function UsersPage() {
 
   if (!session) {
     return null;
+  }
+
+  if (!hasPermission('users:view')) {
+    return (
+      <MainLayout>
+        <AccessDenied message="You do not have permission to view the Users page." />
+      </MainLayout>
+    );
   }
 
   return (

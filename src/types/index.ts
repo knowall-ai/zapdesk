@@ -426,6 +426,65 @@ export interface WorkItem {
   priority?: TicketPriority;
 }
 
+// ===== Permissions & RBAC Types =====
+
+export type UserRole = 'admin' | 'agent' | 'client';
+
+export type Permission =
+  | 'admin:access'
+  | 'admin:manage_roles'
+  | 'tickets:view_all'
+  | 'tickets:view_own'
+  | 'tickets:create'
+  | 'tickets:edit'
+  | 'tickets:assign'
+  | 'tickets:change_status'
+  | 'tickets:create_internal_notes'
+  | 'team:view'
+  | 'users:view'
+  | 'projects:view'
+  | 'reporting:view'
+  | 'reporting:monthly_checkpoint';
+
+export interface RoleDefinition {
+  name: UserRole;
+  label: string;
+  description: string;
+  permissions: Permission[];
+}
+
+export interface UserPermissionOverride {
+  userId: string;
+  email: string;
+  displayName?: string;
+  role: UserRole;
+  permissions?: Permission[]; // Additional permissions beyond role defaults
+  revokedPermissions?: Permission[]; // Permissions removed from role defaults
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface PermissionsConfig {
+  defaultRole: UserRole;
+  roles: RoleDefinition[];
+  users: UserPermissionOverride[];
+}
+
+export interface PermissionAuditEntry {
+  timestamp: string;
+  action: 'role_changed' | 'permission_added' | 'permission_revoked' | 'config_updated';
+  targetUserId: string;
+  targetEmail: string;
+  performedBy: string;
+  performedByEmail: string;
+  details: string;
+}
+
+export interface SessionPermissions {
+  role: UserRole;
+  permissions: Permission[];
+}
+
 // Treemap data structure for visualization
 export interface TreemapNode {
   name: string;

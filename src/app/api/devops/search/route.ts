@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requireAuth, isAuthed } from '@/lib/api-auth';
 
 interface SearchResult {
   type: 'ticket' | 'user' | 'organization';
@@ -14,11 +13,9 @@ interface SearchResult {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAuth();
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.get('q')?.toLowerCase().trim();
@@ -27,7 +24,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ results: [] });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken!);
     const results: SearchResult[] = [];
 
     // Search tickets

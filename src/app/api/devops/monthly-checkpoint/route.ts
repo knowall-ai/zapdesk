@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService, workItemToTicket } from '@/lib/devops';
+import { requirePermission, isAuthed } from '@/lib/api-auth';
 import type {
   Ticket,
   TicketStatus,
@@ -12,11 +11,9 @@ import type {
 
 export async function GET(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requirePermission('reporting:monthly_checkpoint');
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const { searchParams } = new URL(request.url);
     const projectName = searchParams.get('project');
@@ -39,7 +36,7 @@ export async function GET(request: Request) {
     const endDate = new Date(endDateRaw);
     endDate.setHours(23, 59, 59, 999);
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken!);
 
     // Fetch all tickets for the project
     const workItems = await devopsService.getTickets(projectName);
