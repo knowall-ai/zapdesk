@@ -172,7 +172,7 @@ export function calculateTicketSLA(
   slaLevel: SLALevel = DEFAULT_SLA_LEVEL
 ): TicketSLAInfo {
   const policy = getSLAPolicy(slaLevel);
-  const targets = getSLATargets(policy, ticket.priority);
+  const targets = getSLATargets(policy, ticket.priority ?? 'Normal');
 
   // Calculate first response SLA
   const firstResponseMet = !!ticket.firstResponseAt;

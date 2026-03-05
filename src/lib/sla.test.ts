@@ -165,6 +165,7 @@ describe('calculateTicketSLA', () => {
       title: 'Test Ticket',
       description: 'Test description',
       status: 'Open',
+      devOpsState: 'Active',
       priority: 'Normal' as TicketPriority,
       requester: {
         id: '1',
