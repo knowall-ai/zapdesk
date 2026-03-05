@@ -4,7 +4,7 @@ import { AlertTriangle, ArrowUp, Minus, ArrowDown } from 'lucide-react';
 import type { TicketPriority } from '@/types';
 
 interface PriorityIndicatorProps {
-  priority: TicketPriority;
+  priority?: TicketPriority;
   showLabel?: boolean;
 }
 
@@ -35,6 +35,14 @@ const priorityConfig: Record<
 };
 
 export default function PriorityIndicator({ priority, showLabel = false }: PriorityIndicatorProps) {
+  if (!priority) {
+    return (
+      <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+        -
+      </span>
+    );
+  }
+
   const config = priorityConfig[priority] || priorityConfig['Normal'];
 
   return (

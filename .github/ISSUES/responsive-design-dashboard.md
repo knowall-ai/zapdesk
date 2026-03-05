@@ -7,7 +7,7 @@
 
 ## Summary
 
-The DevDesk dashboard (authenticated app experience) lacks responsive design support. While the landing page is properly responsive, the main application layout has significant issues on mobile and tablet devices.
+The ZapDesk dashboard (authenticated app experience) lacks responsive design support. While the landing page is properly responsive, the main application layout has significant issues on mobile and tablet devices.
 
 ## Issues Found
 

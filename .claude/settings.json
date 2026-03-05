@@ -9,5 +9,8 @@
     "archie": {
       "description": "Archie the Architect - Solution architect who reviews code for best practices"
     }
+  },
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true
   }
 }

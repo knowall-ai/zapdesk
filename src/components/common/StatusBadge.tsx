@@ -1,23 +1,32 @@
 'use client';
 
-import type { TicketStatus } from '@/types';
-
 interface StatusBadgeProps {
-  status: TicketStatus;
+  status: string;
   size?: 'sm' | 'md';
 }
 
-const statusConfig: Record<TicketStatus, { label: string; className: string }> = {
+// Map DevOps states to CSS classes
+const stateConfig: Record<string, { label: string; className: string }> = {
+  // Proposed states
   New: { label: 'New', className: 'status-new' },
-  Open: { label: 'Open', className: 'status-open' },
+  Approved: { label: 'Approved', className: 'status-new' },
+  'To Do': { label: 'To Do', className: 'status-new' },
+  // InProgress states
+  Active: { label: 'Active', className: 'status-in-progress' },
   'In Progress': { label: 'In Progress', className: 'status-in-progress' },
-  Pending: { label: 'Pending', className: 'status-pending' },
+  Committed: { label: 'Committed', className: 'status-in-progress' },
+  // Resolved/Completed states
   Resolved: { label: 'Resolved', className: 'status-resolved' },
+  Done: { label: 'Done', className: 'status-closed' },
   Closed: { label: 'Closed', className: 'status-closed' },
+  // Other states
+  Pending: { label: 'Pending', className: 'status-pending' },
+  Open: { label: 'Open', className: 'status-open' },
+  Removed: { label: 'Removed', className: 'status-closed' },
 };
 
 export default function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
-  const config = statusConfig[status] || statusConfig['Open'];
+  const config = stateConfig[status] || { label: status, className: 'status-open' };
 
   return (
     <span

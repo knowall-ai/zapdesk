@@ -4,8 +4,8 @@ test.describe('Authentication', () => {
   test('should display login page', async ({ page }) => {
     await page.goto('/login');
 
-    // Check for DevDesk branding
-    await expect(page.locator('text=DevDesk')).toBeVisible();
+    // Check for ZapDesk branding
+    await expect(page.getByRole('heading', { name: 'ZapDesk' })).toBeVisible();
 
     // Check for Microsoft sign-in button
     await expect(page.locator('text=Sign in with Microsoft')).toBeVisible();
@@ -14,11 +14,11 @@ test.describe('Authentication', () => {
     await expect(page.locator('text=Welcome back')).toBeVisible();
   });
 
-  test('should redirect unauthenticated users to login', async ({ page }) => {
+  test('home page shows landing page for unauthenticated users', async ({ page }) => {
     await page.goto('/');
 
-    // Should redirect to login page
-    await expect(page).toHaveURL(/\/login/);
+    // Should show landing page with sign in option
+    await expect(page.getByRole('button', { name: 'Sign in with Microsoft' })).toBeVisible();
   });
 
   test('should redirect unauthenticated users from tickets page', async ({ page }) => {

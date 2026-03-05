@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { AzureDevOpsService, workItemToTicket } from '@/lib/devops';
+import { AzureDevOpsService, workItemToTicket, mapStatusToState } from '@/lib/devops';
+import type { TicketStatus } from '@/types';
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -25,6 +26,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: 'Status is required' }, { status: 400 });
     }
 
+    // Map frontend status to Azure DevOps state
+    const devOpsState = mapStatusToState(status as TicketStatus);
+
     const devopsService = new AzureDevOpsService(session.accessToken);
 
     // Get all projects to find the ticket
@@ -37,7 +41,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           const updatedWorkItem = await devopsService.updateTicketState(
             project.name,
             ticketId,
-            status
+            devOpsState
           );
 
           const ticket = workItemToTicket(updatedWorkItem, {

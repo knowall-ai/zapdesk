@@ -1,13 +1,13 @@
-= DevDesk Email Integration Setup
+= ZapDesk Email Integration Setup
 :toc: left
 :toclevels: 3
 :icons: font
 
 == Overview
 
-DevDesk integrates with Exchange Online to provide:
+ZapDesk integrates with Exchange Online to provide:
 
-* **Inbound**: Customers email devdesk@knowall.ai to create tickets
+* **Inbound**: Customers email your configured support mailbox to create tickets
 * **Outbound**: Agent replies are emailed to the ticket requester
 
 == Exchange Online Configuration
@@ -17,8 +17,8 @@ DevDesk integrates with Exchange Online to provide:
 1. Go to Microsoft 365 Admin Center
 2. Navigate to Teams & Groups > Shared mailboxes
 3. Click "Add a shared mailbox"
-4. Set display name: "DevDesk Support"
-5. Set email: devdesk@knowall.ai
+4. Set display name: "ZapDesk Support"
+5. Set email: your-support-email@yourdomain.com
 6. Click "Create"
 
 === Enable SMTP Authentication
@@ -31,10 +31,10 @@ SMTP AUTH is disabled by default for new mailboxes:
 Connect-ExchangeOnline
 
 # Enable SMTP AUTH for the mailbox
-Set-CASMailbox -Identity "devdesk@knowall.ai" -SmtpClientAuthenticationDisabled $false
+Set-CASMailbox -Identity "your-support-email@yourdomain.com" -SmtpClientAuthenticationDisabled $false
 
 # Verify
-Get-CASMailbox -Identity "devdesk@knowall.ai" | Select SmtpClientAuthenticationDisabled
+Get-CASMailbox -Identity "your-support-email@yourdomain.com" | Select SmtpClientAuthenticationDisabled
 ----
 
 === Create App Password (Basic Auth)
@@ -44,7 +44,7 @@ If using basic authentication:
 1. Sign in as a user with access to the shared mailbox
 2. Go to https://mysignins.microsoft.com/security-info
 3. Click "Add sign-in method" > "App password"
-4. Name it "DevDesk SMTP"
+4. Name it "ZapDesk SMTP"
 5. Copy the generated password
 
 === Configure OAuth (Recommended)
@@ -64,11 +64,11 @@ Create a Power Automate flow:
 
 1. **Trigger**: "When a new email arrives (V3)"
    - Folder: Inbox
-   - To: devdesk@knowall.ai
+   - To: your-support-email@yourdomain.com
 
 2. **Action**: "HTTP"
    - Method: POST
-   - URI: https://devdesk.knowall.ai/api/email/webhook
+   - URI: https://zapdesk.yourdomain.com/api/email/webhook
    - Headers:
      - x-webhook-secret: <EMAIL_WEBHOOK_SECRET>
    - Body:
@@ -108,10 +108,10 @@ Add to `.env`:
 # SMTP Configuration (Basic Auth)
 SMTP_HOST=smtp.office365.com
 SMTP_PORT=587
-SMTP_USER=devdesk@knowall.ai
+SMTP_USER=your-support-email@yourdomain.com
 SMTP_PASSWORD=<app-password>
-SMTP_FROM=devdesk@knowall.ai
-SMTP_FROM_NAME=DevDesk Support
+SMTP_FROM=your-support-email@yourdomain.com
+SMTP_FROM_NAME=ZapDesk Support
 
 # Or OAuth Configuration
 SMTP_OAUTH_CLIENT_ID=<client-id>
@@ -124,13 +124,13 @@ SMTP_OAUTH_TENANT_ID=<tenant-id>
 Outbound emails include:
 
 * Ticket reference number for threading
-* Link back to ticket in DevDesk
+* Link back to ticket in ZapDesk
 * Requester's original message (quoted)
 * Agent's response
 
 Example format:
 ----
-Subject: Re: [DevDesk #123] Original Subject
+Subject: Re: [ZapDesk #123] Original Subject
 
 Hi {RequesterName},
 
@@ -139,7 +139,7 @@ Hi {RequesterName},
 ---
 Ticket: #123
 Status: {Status}
-View online: https://devdesk.knowall.ai/tickets/123
+View online: https://zapdesk.yourdomain.com/tickets/123
 
 --- Original Message ---
 {OriginalMessage}
@@ -149,7 +149,7 @@ View online: https://devdesk.knowall.ai/tickets/123
 
 Emails are threaded using:
 
-* Subject prefix: `[DevDesk #123]`
+* Subject prefix: `[ZapDesk #123]`
 * In-Reply-To header
 * References header
 * Message-ID stored in DevOps work item
@@ -176,12 +176,12 @@ Emails are threaded using:
 
 [source,bash]
 ----
-curl -X POST https://devdesk.knowall.ai/api/email/webhook \
+curl -X POST https://zapdesk.yourdomain.com/api/email/webhook \
   -H "Content-Type: application/json" \
   -H "x-webhook-secret: your-secret" \
   -d '{
     "from": "test@cairnhomes.com",
-    "to": "devdesk@knowall.ai",
+    "to": "your-support-email@yourdomain.com",
     "subject": "Test ticket",
     "body": "This is a test"
   }'
@@ -191,13 +191,13 @@ curl -X POST https://devdesk.knowall.ai/api/email/webhook \
 
 [source,bash]
 ----
-# Via DevDesk UI
+# Via ZapDesk UI
 1. Open a ticket
 2. Add a reply
 3. Check requester's inbox
 
 # Via API
-curl -X POST https://devdesk.knowall.ai/api/devops/tickets/123/reply \
+curl -X POST https://zapdesk.yourdomain.com/api/devops/tickets/123/reply \
   -H "Authorization: Bearer <token>" \
   -d '{"message": "Test reply"}'
 ----

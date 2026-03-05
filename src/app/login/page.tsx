@@ -38,10 +38,10 @@ export default function LoginPage() {
             className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
             style={{ backgroundColor: 'var(--primary)' }}
           >
-            <span className="text-3xl font-bold text-white">D</span>
+            <span className="text-3xl font-bold text-white">⚡</span>
           </div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--primary)' }}>
-            DevDesk
+            ZapDesk
           </h1>
           <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
             by KnowAll
@@ -66,6 +66,7 @@ export default function LoginPage() {
             backgroundColor: 'var(--surface-hover)',
             color: 'var(--text-primary)',
             border: '1px solid var(--border)',
+            cursor: 'pointer',
           }}
         >
           <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
@@ -80,7 +81,7 @@ export default function LoginPage() {
         {/* Info */}
         <div className="mt-8 border-t pt-6" style={{ borderColor: 'var(--border)' }}>
           <p className="text-center text-xs" style={{ color: 'var(--text-muted)' }}>
-            DevDesk connects to Azure DevOps to display work items tagged as tickets. You&apos;ll
+            ZapDesk connects to Azure DevOps to display work items tagged as tickets. You&apos;ll
             only see tickets from projects you have access to.
           </p>
         </div>

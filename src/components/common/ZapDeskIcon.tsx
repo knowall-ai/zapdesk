@@ -2,27 +2,21 @@
 
 import { useId } from 'react';
 
-interface DevDeskIconProps {
+interface ZapDeskIconProps {
   size?: number;
   className?: string;
 }
 
 /**
- * DevDesk Logo Icon
+ * ZapDesk Logo Icon
  *
- * A stylized "D" with an arrow/triangle cutout on the left stroke,
- * pointing into the center - suggesting forward movement and direction.
- *
- * The icon features:
- * - Bold geometric "D" letterform
- * - Arrow on left vertical stroke pointing right into the D
- * - Metallic gradient for modern depth
- * - Brand green (#22c55e) as primary color
+ * A lightning bolt symbolizing speed and energy.
+ * Neon green (#B8FF00) bolt on a rounded background.
  */
-export default function DevDeskIcon({ size = 32, className = '' }: DevDeskIconProps) {
+export default function ZapDeskIcon({ size = 32, className = '' }: ZapDeskIconProps) {
   const id = useId();
-  const metalGradientId = `devdesk-metal-${id}`;
-  const shineGradientId = `devdesk-shine-${id}`;
+  const metalGradientId = `zapdesk-metal-${id}`;
+  const shineGradientId = `zapdesk-shine-${id}`;
 
   return (
     <svg
@@ -31,7 +25,7 @@ export default function DevDeskIcon({ size = 32, className = '' }: DevDeskIconPr
       width={size}
       height={size}
       className={className}
-      aria-label="DevDesk"
+      aria-label="ZapDesk"
     >
       <defs>
         {/* Gradient for metallic effect */}
@@ -53,27 +47,8 @@ export default function DevDeskIcon({ size = 32, className = '' }: DevDeskIconPr
       {/* Subtle shine overlay */}
       <rect x="0" y="0" width="64" height="64" rx="8" ry="8" fill={`url(#${shineGradientId})`} />
 
-      {/* Stylized "D" with arrow cutout on left stroke */}
-      <path
-        d="M 14 12
-           L 14 26
-           L 22 32
-           L 14 38
-           L 14 52
-           L 28 52
-           C 48 52 54 42 54 32
-           C 54 22 48 12 28 12
-           Z
-
-           M 24 20
-           L 28 20
-           C 42 20 46 26 46 32
-           C 46 38 42 44 28 44
-           L 24 44
-           Z"
-        fill="#ffffff"
-        fillRule="evenodd"
-      />
+      {/* Lightning bolt - scaled from 512x512 to 64x64 (divide by 8) */}
+      <polygon points="37,5 17,35.5 29.5,35.5 24.5,59 47,28 34.5,28" fill="#ffffff" />
     </svg>
   );
 }

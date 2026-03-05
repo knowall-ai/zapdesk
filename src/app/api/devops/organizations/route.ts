@@ -29,16 +29,18 @@ export async function GET() {
     const devopsService = new AzureDevOpsService(session.accessToken);
     const projects = await devopsService.getProjects();
 
-    const organizations: Organization[] = projects.map((project) => ({
-      id: project.id,
-      name: project.name,
-      domain: DOMAIN_MAP[project.name] || undefined,
-      devOpsProject: project.name,
-      devOpsOrg: 'KnowAll',
-      tags: TAG_MAP[project.name] || [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }));
+    const organizations: Organization[] = projects.map(
+      (project: { id: string; name: string; lastUpdateTime?: string; revision?: number }) => ({
+        id: project.id,
+        name: project.name,
+        domain: DOMAIN_MAP[project.name] || undefined,
+        devOpsProject: project.name,
+        devOpsOrg: 'KnowAll',
+        tags: TAG_MAP[project.name] || [],
+        createdAt: project.lastUpdateTime ? new Date(project.lastUpdateTime) : new Date(),
+        updatedAt: project.lastUpdateTime ? new Date(project.lastUpdateTime) : new Date(),
+      })
+    );
 
     return NextResponse.json({ organizations });
   } catch (error) {

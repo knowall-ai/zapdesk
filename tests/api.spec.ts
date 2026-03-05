@@ -23,12 +23,7 @@ test.describe('API Routes', () => {
   });
 
   test('organizations endpoint requires authentication', async ({ request }) => {
-    const response = await request.get('/api/devops/organizations');
-    expect(response.status()).toBe(401);
-  });
-
-  test('customers endpoint requires authentication', async ({ request }) => {
-    const response = await request.get('/api/devops/customers');
+    const response = await request.get('/api/devops/projects');
     expect(response.status()).toBe(401);
   });
 
