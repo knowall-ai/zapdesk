@@ -1188,7 +1188,8 @@ export class AzureDevOpsService {
     const featuresData = await featuresResponse.json();
     return featuresData.value
       .filter((wi: DevOpsWorkItem) => wi.fields['System.WorkItemType'] === 'Feature')
-      .map((wi: DevOpsWorkItem) => this.mapToFeature(wi, epicId));
+      .map((wi: DevOpsWorkItem) => this.mapToFeature(wi, epicId))
+      .sort((a: Feature, b: Feature) => a.id - b.id);
   }
 
   // Get Work Items under a Feature
@@ -1230,7 +1231,9 @@ export class AzureDevOpsService {
     }
 
     const workItemsData = await workItemsResponse.json();
-    return workItemsData.value.map((wi: DevOpsWorkItem) => this.mapToWorkItem(wi, featureId));
+    return workItemsData.value
+      .map((wi: DevOpsWorkItem) => this.mapToWorkItem(wi, featureId))
+      .sort((a: WorkItem, b: WorkItem) => a.id - b.id);
   }
 
   // Get full Epic hierarchy with Features and Work Items for treemap
