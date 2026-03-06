@@ -35,6 +35,7 @@ import { formatFileSize, validateFile } from '@/lib/attachment-utils';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
+import SLABadge from '../common/SLABadge';
 import MentionInput from '../common/MentionInput';
 import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
@@ -904,6 +905,19 @@ export default function TicketDetail({
                 </div>
               )}
             </div>
+
+            {/* SLA */}
+            {ticket.slaInfo && (
+              <div>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  SLA Status
+                </label>
+                <SLABadge slaInfo={ticket.slaInfo} variant="full" showLevel />
+              </div>
+            )}
 
             {/* Project */}
             {ticket.project && (

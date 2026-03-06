@@ -7,6 +7,7 @@ import { ChevronDown, ChevronUp, X, Play, RotateCcw, UserCheck } from 'lucide-re
 import type { Ticket, TicketStatus, TicketPriority } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
+import SLABadge from '../common/SLABadge';
 
 interface TicketListProps {
   tickets: Ticket[];
@@ -472,6 +473,12 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                 </div>
               </th>
               <th
+                className="px-4 py-3 text-left text-xs font-medium uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <div className="flex items-center gap-1">SLA</div>
+              </th>
+              <th
                 className="hidden cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase lg:table-cell"
                 style={{ color: 'var(--text-muted)' }}
                 onClick={() => handleSort('updated')}
@@ -564,6 +571,9 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                       style={{ color: 'var(--text-secondary)' }}
                     >
                       {ticket.priority || '-'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <SLABadge slaInfo={ticket.slaInfo} variant="compact" />
                     </td>
                     <td
                       className="hidden px-4 py-3 text-sm lg:table-cell"
