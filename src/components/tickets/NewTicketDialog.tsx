@@ -324,7 +324,13 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.project || !form.title.trim() || !form.workItemType || !form.iterationPath || !form.areaPath) {
+    if (
+      !form.project ||
+      !form.title.trim() ||
+      !form.workItemType ||
+      !form.iterationPath ||
+      !form.areaPath
+    ) {
       setError('Please fill in all required fields: Project, Title, Type, Iteration, and Area');
       return;
     }
@@ -598,7 +604,14 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting || !form.project || !form.title.trim() || !form.workItemType || !form.iterationPath || !form.areaPath}
+                  disabled={
+                    isSubmitting ||
+                    !form.project ||
+                    !form.title.trim() ||
+                    !form.workItemType ||
+                    !form.iterationPath ||
+                    !form.areaPath
+                  }
                   className="btn-primary flex items-center gap-2"
                   style={{ cursor: 'pointer' }}
                 >

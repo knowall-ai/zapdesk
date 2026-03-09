@@ -278,7 +278,13 @@ export default function NewTicketPage() {
             </span>
             <button
               type="submit"
-              disabled={isSubmitting || !form.project || !form.subject.trim() || !form.iterationPath || !form.areaPath}
+              disabled={
+                isSubmitting ||
+                !form.project ||
+                !form.subject.trim() ||
+                !form.iterationPath ||
+                !form.areaPath
+              }
               className="btn-primary flex items-center gap-2"
             >
               {isSubmitting ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
