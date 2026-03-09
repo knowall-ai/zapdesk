@@ -662,7 +662,13 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                   <select
                     value={form.project}
                     onChange={(e) =>
-                      setForm((prev) => ({ ...prev, project: e.target.value, assignee: '' }))
+                      setForm((prev) => ({
+                        ...prev,
+                        project: e.target.value,
+                        assignee: '',
+                        iterationPath: '',
+                        areaPath: '',
+                      }))
                     }
                     className="input w-full"
                     required
@@ -677,15 +683,15 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                 )}
               </div>
 
-              {/* Work Item Type */}
+              {/* Area */}
               <div>
                 <label
                   className="mb-1 block text-xs uppercase"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  Type *
+                  Area *
                 </label>
-                {isLoadingTypes ? (
+                {isLoadingAreas ? (
                   <div
                     className="flex items-center gap-2 text-sm"
                     style={{ color: 'var(--text-muted)' }}
@@ -695,20 +701,18 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                   </div>
                 ) : (
                   <select
-                    value={form.workItemType}
-                    onChange={(e) => setForm((prev) => ({ ...prev, workItemType: e.target.value }))}
+                    value={form.areaPath}
+                    onChange={(e) => setForm((prev) => ({ ...prev, areaPath: e.target.value }))}
                     className="input w-full"
-                    disabled={!form.project || workItemTypes.length === 0}
+                    disabled={!form.project || areas.length === 0}
+                    required
                   >
-                    {workItemTypes.length === 0 ? (
-                      <option value="Task">Task</option>
-                    ) : (
-                      workItemTypes.map((type) => (
-                        <option key={type.name} value={type.name}>
-                          {type.name}
-                        </option>
-                      ))
-                    )}
+                    <option value="">Select area...</option>
+                    {areas.map((node) => (
+                      <option key={node.id} value={node.path}>
+                        {node.path}
+                      </option>
+                    ))}
                   </select>
                 )}
               </div>
@@ -749,15 +753,15 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                 )}
               </div>
 
-              {/* Area */}
+              {/* Work Item Type */}
               <div>
                 <label
                   className="mb-1 block text-xs uppercase"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  Area *
+                  Type *
                 </label>
-                {isLoadingAreas ? (
+                {isLoadingTypes ? (
                   <div
                     className="flex items-center gap-2 text-sm"
                     style={{ color: 'var(--text-muted)' }}
@@ -767,18 +771,20 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                   </div>
                 ) : (
                   <select
-                    value={form.areaPath}
-                    onChange={(e) => setForm((prev) => ({ ...prev, areaPath: e.target.value }))}
+                    value={form.workItemType}
+                    onChange={(e) => setForm((prev) => ({ ...prev, workItemType: e.target.value }))}
                     className="input w-full"
-                    disabled={!form.project || areas.length === 0}
-                    required
+                    disabled={!form.project || workItemTypes.length === 0}
                   >
-                    <option value="">Select area...</option>
-                    {areas.map((node) => (
-                      <option key={node.id} value={node.path}>
-                        {node.path}
-                      </option>
-                    ))}
+                    {workItemTypes.length === 0 ? (
+                      <option value="Task">Task</option>
+                    ) : (
+                      workItemTypes.map((type) => (
+                        <option key={type.name} value={type.name}>
+                          {type.name}
+                        </option>
+                      ))
+                    )}
                   </select>
                 )}
               </div>

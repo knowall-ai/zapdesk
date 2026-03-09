@@ -518,7 +518,7 @@ export default function TicketList({ tickets, title, hideFilters = false }: Tick
                 {groupBy === 'assignee' && (
                   <tr>
                     <td
-                      colSpan={10}
+                      colSpan={11}
                       className="px-4 py-2 text-sm font-medium"
                       style={{ backgroundColor: 'var(--surface)', color: 'var(--text-secondary)' }}
                     >

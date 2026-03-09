@@ -128,6 +128,7 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     description: fields['System.Description'] || '',
     status: mapStateToStatus(fields['System.State']),
     devOpsState: fields['System.State'], // Preserve original DevOps state
+    workItemType: fields['System.WorkItemType'],
     priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
     requester: identityToCustomer(fields['System.CreatedBy']),
     assignee: identityToUser(fields['System.AssignedTo']),
@@ -538,23 +539,31 @@ export class AzureDevOpsService {
   }
 
   // Create a new work item (ticket) with assignee and custom tags
-  // workItemType: the type to create (e.g., "Task", "Issue") - depends on process template
-  // hasPriority: whether the process template supports Priority field
-  // priorityFieldRef: the DevOps field reference name for priority (e.g., "Microsoft.VSTS.Common.Priority")
   async createTicketWithAssignee(
     projectName: string,
     title: string,
     description: string,
-    _requesterEmail: string,
-    priority?: number | string,
-    tags: string[] = ['ticket'],
-    assigneeId?: string,
-    workItemType: string = 'Task',
-    hasPriority: boolean = true,
-    priorityFieldRef?: string,
-    iterationPath?: string,
-    areaPath?: string
+    options: {
+      priority?: number | string;
+      tags?: string[];
+      assigneeId?: string;
+      workItemType?: string;
+      hasPriority?: boolean;
+      priorityFieldRef?: string;
+      iterationPath?: string;
+      areaPath?: string;
+    } = {}
   ): Promise<DevOpsWorkItem> {
+    const {
+      priority,
+      tags = ['ticket'],
+      assigneeId,
+      workItemType = 'Task',
+      hasPriority = true,
+      priorityFieldRef,
+      iterationPath,
+      areaPath,
+    } = options;
     const patchDocument: Array<{ op: string; path: string; value: string | number }> = [
       { op: 'add', path: '/fields/System.Title', value: title },
       { op: 'add', path: '/fields/System.Description', value: description },

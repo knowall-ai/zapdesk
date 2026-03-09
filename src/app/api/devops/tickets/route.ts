@@ -144,15 +144,16 @@ export async function POST(request: NextRequest) {
       project,
       title,
       description || '',
-      session.user?.email || 'unknown',
-      priority,
-      allTags,
-      assignee,
-      workItemType || 'Task',
-      Boolean(validatedFieldRef),
-      validatedFieldRef,
-      iterationPath || undefined,
-      areaPath || undefined
+      {
+        priority,
+        tags: allTags,
+        assigneeId: assignee,
+        workItemType: workItemType || 'Task',
+        hasPriority: Boolean(validatedFieldRef),
+        priorityFieldRef: validatedFieldRef,
+        iterationPath: iterationPath || undefined,
+        areaPath: areaPath || undefined,
+      }
     );
 
     const ticket = workItemToTicket(workItem);
