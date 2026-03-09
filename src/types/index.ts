@@ -491,3 +491,48 @@ export interface TreemapConfig {
   showLabels: boolean;
   minBlockSize: number;
 }
+
+// Daily Standup Types
+
+/** A single work item in the standup view */
+export interface StandupWorkItem {
+  id: number;
+  title: string;
+  state: string;
+  stateCategory: string;
+  workItemType: string;
+  assignee?: User;
+  priority?: TicketPriority;
+  updatedAt: string;
+  createdAt: string;
+  project: string;
+  devOpsUrl: string;
+  tags: string[];
+}
+
+/** A column definition pulled from DevOps state configuration */
+export interface StandupColumn {
+  /** The DevOps state name (e.g. "New", "Active", "Resolved") */
+  name: string;
+  /** The DevOps state category (e.g. "Proposed", "InProgress", "Resolved", "Completed") */
+  category: string;
+  items: StandupWorkItem[];
+}
+
+/** Per-project standup data */
+export interface ProjectStandupData {
+  projectName: string;
+  columns: StandupColumn[];
+}
+
+/** Full standup response */
+export interface StandupData {
+  date: string;
+  projects: ProjectStandupData[];
+  /** Column definitions in display order (from DevOps state categories) */
+  columns: { name: string; category: string }[];
+  summary: {
+    columnCounts: Record<string, number>;
+    projectCount: number;
+  };
+}

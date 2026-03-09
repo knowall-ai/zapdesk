@@ -1399,6 +1399,155 @@ export class AzureDevOpsService {
     };
   }
 
+  // Daily Standup: fetch work items across all projects for a given date
+  // Uses org-level WIQL queries (no project scope) for performance
+  async getStandupData(
+    targetDate: Date,
+    stateCategories: Record<string, string>
+  ): Promise<{ doneItems: DevOpsWorkItem[]; activeItems: DevOpsWorkItem[] }> {
+    const dateStr = targetDate.toISOString().split('T')[0];
+
+    // "Yesterday" relative to the target date
+    const yesterday = new Date(targetDate);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    // Build state lists dynamically from categories
+    const doneStates: string[] = [];
+    const activeStates: string[] = [];
+    for (const [state, category] of Object.entries(stateCategories)) {
+      if (category === 'Resolved' || category === 'Completed' || category === 'Removed') {
+        doneStates.push(state);
+      } else {
+        activeStates.push(state);
+      }
+    }
+
+    if (doneStates.length === 0 || activeStates.length === 0) {
+      return { doneItems: [], activeItems: [] };
+    }
+
+    const escapeState = (s: string) => s.replace(/'/g, "''");
+    const doneStatesList = doneStates.map((s) => `'${escapeState(s)}'`).join(', ');
+    const activeStatesList = activeStates.map((s) => `'${escapeState(s)}'`).join(', ');
+
+    // Only show actionable work item types (exclude Epic, Feature, User Story)
+    const allowedTypes = ['Task', 'Bug', 'Enhancement', 'Question', 'Issue', 'Risk'];
+    const allowedTypesList = allowedTypes.map((t) => `'${t}'`).join(', ');
+
+    const fields = [
+      'System.Id',
+      'System.Title',
+      'System.State',
+      'System.WorkItemType',
+      'System.AssignedTo',
+      'System.ChangedDate',
+      'System.CreatedDate',
+      'System.TeamProject',
+      'System.Tags',
+      'Microsoft.VSTS.Common.Priority',
+    ].join(', ');
+
+    // Query 1: Items moved to done states on the previous day
+    const doneQuery = {
+      query: `
+        SELECT ${fields}
+        FROM WorkItems
+        WHERE [System.State] IN (${doneStatesList})
+          AND [System.WorkItemType] IN (${allowedTypesList})
+          AND [System.ChangedDate] >= '${yesterdayStr}'
+          AND [System.ChangedDate] < '${dateStr}'
+        ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
+      `,
+    };
+
+    // Query 2: Active items (not completed), touched in last 90 days
+    const ninetyDaysAgo = new Date(targetDate);
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split('T')[0];
+
+    const activeQuery = {
+      query: `
+        SELECT ${fields}
+        FROM WorkItems
+        WHERE [System.State] IN (${activeStatesList})
+          AND [System.WorkItemType] IN (${allowedTypesList})
+          AND [System.ChangedDate] >= '${ninetyDaysAgoStr}'
+        ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
+      `,
+    };
+
+    // Execute both WIQL queries in parallel at org level
+    const [doneResponse, activeResponse] = await Promise.all([
+      fetch(`${this.baseUrl}/_apis/wit/wiql?api-version=7.0`, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify(doneQuery),
+      }),
+      fetch(`${this.baseUrl}/_apis/wit/wiql?api-version=7.0`, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify(activeQuery),
+      }),
+    ]);
+
+    if (!doneResponse.ok) {
+      throw new Error(`Standup done query failed: ${doneResponse.statusText}`);
+    }
+    if (!activeResponse.ok) {
+      throw new Error(`Standup active query failed: ${activeResponse.statusText}`);
+    }
+
+    const doneData = await doneResponse.json();
+    const activeData = await activeResponse.json();
+
+    // Batch-fetch work item details
+    const doneItems = await this.fetchWorkItemBatch(
+      doneData.workItems?.map((wi: { id: number }) => wi.id) || []
+    );
+    const activeItems = await this.fetchWorkItemBatch(
+      activeData.workItems?.map((wi: { id: number }) => wi.id) || []
+    );
+
+    return { doneItems, activeItems };
+  }
+
+  // Fetch work item details in batches of 200
+  private async fetchWorkItemBatch(workItemIds: number[]): Promise<DevOpsWorkItem[]> {
+    if (workItemIds.length === 0) return [];
+
+    const batchSize = 200;
+    const allWorkItems: DevOpsWorkItem[] = [];
+    const fields = [
+      'System.Title',
+      'System.State',
+      'System.WorkItemType',
+      'System.AssignedTo',
+      'System.ChangedDate',
+      'System.CreatedDate',
+      'System.TeamProject',
+      'System.Tags',
+      'Microsoft.VSTS.Common.Priority',
+    ].join(',');
+
+    for (let i = 0; i < workItemIds.length; i += batchSize) {
+      const batch = workItemIds.slice(i, i + batchSize);
+      const response = await fetch(
+        `${this.baseUrl}/_apis/wit/workitems?ids=${batch.join(',')}&fields=${fields}&api-version=7.0`,
+        { headers: this.headers }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch work items batch: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      allWorkItems.push(...data.value);
+    }
+
+    return allWorkItems;
+  }
+
   // Git API Methods
 
   // Get all repositories in a project
