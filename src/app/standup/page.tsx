@@ -25,7 +25,10 @@ export default function StandupPage() {
 
   const fetchStandupData = useCallback(
     async (isAutoRefresh = false) => {
-      if (!session?.accessToken || !hasOrganization) return;
+      if (!session?.accessToken || !hasOrganization) {
+        setLoading(false);
+        return;
+      }
 
       if (isAutoRefresh) {
         setRefreshing(true);

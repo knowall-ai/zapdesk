@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -35,7 +35,7 @@ import type { ProjectStandupData, StandupWorkItem } from '@/types';
 // Map DevOps state categories to icons and colors
 const categoryConfig: Record<string, { icon: React.ReactNode; color: string }> = {
   Proposed: { icon: <Circle size={14} />, color: 'var(--status-new)' },
-  InProgress: { icon: <Loader2 size={14} />, color: 'var(--status-in-progress)' },
+  InProgress: { icon: <Loader2 size={14} />, color: 'var(--status-progress)' },
   Resolved: { icon: <CheckCircle2 size={14} />, color: 'var(--status-resolved)' },
   Completed: { icon: <CheckCircle2 size={14} />, color: 'var(--status-resolved)' },
   Removed: { icon: <XCircle size={14} />, color: 'var(--text-muted)' },
@@ -130,7 +130,7 @@ export default function ProjectStandupSection({
   });
 
   // Sync with prop changes (e.g. after refresh)
-  useMemo(() => {
+  useEffect(() => {
     const map: Record<string, StandupWorkItem[]> = {};
     for (const col of project.columns) {
       map[col.name] = col.items;

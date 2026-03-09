@@ -5,7 +5,7 @@ import { CheckCircle2, Loader2, ListTodo, FolderOpen, Circle, Ban, XCircle } fro
 // Map DevOps state categories to display config
 const categoryDisplay: Record<string, { icon: React.ReactNode; color: string }> = {
   Proposed: { icon: <Circle size={20} />, color: 'var(--status-new)' },
-  InProgress: { icon: <Loader2 size={20} />, color: 'var(--status-in-progress)' },
+  InProgress: { icon: <Loader2 size={20} />, color: 'var(--status-progress)' },
   Resolved: { icon: <CheckCircle2 size={20} />, color: 'var(--status-resolved)' },
   Completed: { icon: <CheckCircle2 size={20} />, color: 'var(--status-resolved)' },
   Removed: { icon: <XCircle size={20} />, color: 'var(--text-muted)' },

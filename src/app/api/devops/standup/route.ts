@@ -134,7 +134,7 @@ function mapWorkItemToStandupItem(
     id: wi.id,
     title: fields['System.Title'],
     state: fields['System.State'],
-    stateCategory: stateCategories[fields['System.State']] || 'Unknown',
+    stateCategory: stateCategories[fields['System.State']] || 'Proposed',
     workItemType: fields['System.WorkItemType'],
     assignee: assignedTo
       ? {
