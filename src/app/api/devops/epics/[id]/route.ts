@@ -25,7 +25,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'Project parameter is required' }, { status: 400 });
     }
 
-    const devOpsService = new AzureDevOpsService(session.accessToken);
+    const organization = request.headers.get('x-devops-org') || undefined;
+    const devOpsService = new AzureDevOpsService(session.accessToken, organization);
     const epic = await devOpsService.getEpicHierarchy(project, epicId);
     const treemapData = devOpsService.epicToTreemap(epic);
 

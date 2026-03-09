@@ -18,7 +18,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Project parameter is required' }, { status: 400 });
     }
 
-    const devOpsService = new AzureDevOpsService(session.accessToken);
+    const organization = request.headers.get('x-devops-org') || undefined;
+    const devOpsService = new AzureDevOpsService(session.accessToken, organization);
     const epics = await devOpsService.getEpics(project);
 
     return NextResponse.json({
