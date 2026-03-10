@@ -50,7 +50,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
     };
 
     fetchTicketCounts();
-  }, [session, selectedOrganization]);
+    // Use session?.accessToken instead of session to avoid refetch on tab focus
+  }, [session?.accessToken, selectedOrganization]);
 
   return (
     <div className="flex h-screen overflow-hidden">
