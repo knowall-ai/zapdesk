@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import type { User, WorkItemState } from '@/types';
+import type { User, WorkItemState, WorkItemType } from '@/types';
 import { ensureActiveState } from '@/types';
 
 interface UseWorkItemActionsOptions {
@@ -10,6 +10,7 @@ interface UseWorkItemActionsOptions {
   onStateChange?: (state: string) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
+  onTypeChange?: (type: string) => Promise<void>;
 }
 
 export interface WorkItemActions {
@@ -37,6 +38,14 @@ export interface WorkItemActions {
   isUpdatingPriority: boolean;
   handlePrioritySelect: (priority: number) => Promise<void>;
 
+  // Type dropdown
+  isTypeDropdownOpen: boolean;
+  setIsTypeDropdownOpen: (open: boolean) => void;
+  availableTypes: WorkItemType[];
+  isLoadingTypes: boolean;
+  isUpdatingType: boolean;
+  handleTypeSelect: (type: string) => Promise<void>;
+
   // Reset all dropdowns
   resetAll: () => void;
   // Reset available states (for when work item type changes)
@@ -49,6 +58,7 @@ export function useWorkItemActions({
   onStateChange,
   onAssigneeChange,
   onPriorityChange,
+  onTypeChange,
 }: UseWorkItemActionsOptions): WorkItemActions {
   // State dropdown
   const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
@@ -66,6 +76,12 @@ export function useWorkItemActions({
   // Priority dropdown
   const [isPriorityDropdownOpen, setIsPriorityDropdownOpen] = useState(false);
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
+
+  // Type dropdown
+  const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
+  const [availableTypes, setAvailableTypes] = useState<WorkItemType[]>([]);
+  const [isLoadingTypes, setIsLoadingTypes] = useState(false);
+  const [isUpdatingType, setIsUpdatingType] = useState(false);
 
   // Fetch available states when dropdown opens
   useEffect(() => {
@@ -180,10 +196,49 @@ export function useWorkItemActions({
     [onPriorityChange]
   );
 
+  // Fetch available types when type dropdown opens
+  useEffect(() => {
+    if (isTypeDropdownOpen && availableTypes.length === 0 && project) {
+      const fetchTypes = async () => {
+        setIsLoadingTypes(true);
+        try {
+          const response = await fetch(
+            `/api/devops/projects/${encodeURIComponent(project)}/workitemtypes`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            setAvailableTypes(data.types || []);
+          }
+        } catch (err) {
+          console.error('Failed to fetch work item types:', err);
+        } finally {
+          setIsLoadingTypes(false);
+        }
+      };
+      fetchTypes();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTypeDropdownOpen, project]);
+
+  const handleTypeSelect = useCallback(
+    async (type: string) => {
+      if (!onTypeChange) return;
+      setIsUpdatingType(true);
+      try {
+        await onTypeChange(type);
+        setIsTypeDropdownOpen(false);
+      } finally {
+        setIsUpdatingType(false);
+      }
+    },
+    [onTypeChange]
+  );
+
   const resetAll = useCallback(() => {
     setIsStateDropdownOpen(false);
     setIsAssigneeDropdownOpen(false);
     setIsPriorityDropdownOpen(false);
+    setIsTypeDropdownOpen(false);
     setAssigneeSearch('');
   }, []);
 
@@ -212,6 +267,13 @@ export function useWorkItemActions({
     setIsPriorityDropdownOpen,
     isUpdatingPriority,
     handlePrioritySelect,
+
+    isTypeDropdownOpen,
+    setIsTypeDropdownOpen,
+    availableTypes,
+    isLoadingTypes,
+    isUpdatingType,
+    handleTypeSelect,
 
     resetAll,
     resetStates,

@@ -153,6 +153,28 @@ function TicketsPageContent() {
     [handleTicketStateChange]
   );
 
+  const handleDialogTypeChange = useCallback(
+    async (workItemId: number, newType: string) => {
+      const ticket = tickets.find((t) => t.id === workItemId);
+      if (!ticket || !selectedOrganization) return;
+      const response = await fetch(`/api/devops/tickets/${workItemId}/type`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-devops-org': selectedOrganization.accountName,
+        },
+        body: JSON.stringify({ type: newType, project: ticket.project }),
+      });
+      if (response.ok) {
+        setTickets((prev) =>
+          prev.map((t) => (t.id === workItemId ? { ...t, workItemType: newType } : t))
+        );
+        setSelectedTicket((prev) => (prev ? { ...prev, workItemType: newType } : null));
+      }
+    },
+    [tickets, selectedOrganization]
+  );
+
   const handleZapClick = useCallback((item: WorkItem) => {
     if (item.assignee) {
       setZapTarget({ agent: item.assignee, ticketId: item.id });
@@ -241,6 +263,7 @@ function TicketsPageContent() {
           isOpen={!!selectedTicket}
           onClose={() => setSelectedTicket(null)}
           onStateChange={handleDialogStateChange}
+          onTypeChange={handleDialogTypeChange}
           onUpdate={handleWorkItemUpdate}
         />
 
