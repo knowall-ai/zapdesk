@@ -1409,7 +1409,8 @@ export class AzureDevOpsService {
     const featuresData = await featuresResponse.json();
     return featuresData.value
       .filter((wi: DevOpsWorkItem) => wi.fields['System.WorkItemType'] === 'Feature')
-      .map((wi: DevOpsWorkItem) => this.mapToFeature(wi, epicId));
+      .map((wi: DevOpsWorkItem) => this.mapToFeature(wi, epicId))
+      .sort((a: Feature, b: Feature) => a.id - b.id);
   }
 
   // Get Tasks under a Feature (handles both direct Tasks and Tasks under User Stories)
@@ -1493,7 +1494,8 @@ export class AzureDevOpsService {
       }
     }
 
-    return allWorkItems;
+    // Sort by ID for consistent ordering
+    return allWorkItems.sort((a, b) => a.id - b.id);
   }
 
   // Get full Epic hierarchy with Features and Work Items for treemap
