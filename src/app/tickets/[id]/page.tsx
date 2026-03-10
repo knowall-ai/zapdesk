@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { TicketDetail } from '@/components/tickets';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 import type { Ticket, TicketComment, Attachment, WorkItemUpdate } from '@/types';
 
 export default function TicketDetailPage() {
@@ -13,12 +14,22 @@ export default function TicketDetailPage() {
   const router = useRouter();
   const params = useParams();
   const ticketId = params.id as string;
+  const { selectedOrganization } = useOrganization();
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [comments, setComments] = useState<TicketComment[]>([]);
   const [history, setHistory] = useState<WorkItemUpdate[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Helper to build headers with org
+  const orgHeaders = useCallback(
+    (extra?: Record<string, string>) => ({
+      ...(selectedOrganization && { 'x-devops-org': selectedOrganization.accountName }),
+      ...extra,
+    }),
+    [selectedOrganization]
+  );
 
   // Reset state when navigating to a different ticket
   useEffect(() => {
@@ -35,9 +46,12 @@ export default function TicketDetailPage() {
   }, [status, router]);
 
   const fetchTicket = useCallback(async () => {
+    if (!selectedOrganization) return;
     setLoading(true);
     try {
-      const response = await fetch(`/api/devops/tickets/${ticketId}`);
+      const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+        headers: orgHeaders(),
+      });
       if (response.ok) {
         const data = await response.json();
         setTicket({
@@ -65,7 +79,7 @@ export default function TicketDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [ticketId, router]);
+  }, [ticketId, router, selectedOrganization, orgHeaders]);
 
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -88,17 +102,17 @@ export default function TicketDetailPage() {
   }, [ticketId]);
 
   useEffect(() => {
-    if (session?.accessToken && ticketId) {
+    if (session?.accessToken && ticketId && selectedOrganization) {
       fetchTicket();
       fetchHistory();
     }
-  }, [session, ticketId, fetchTicket, fetchHistory]);
+  }, [session, ticketId, fetchTicket, fetchHistory, selectedOrganization]);
 
   const handleAddComment = async (comment: string) => {
     try {
       const response = await fetch(`/api/devops/tickets/${ticketId}/comments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ comment }),
       });
 
@@ -114,7 +128,7 @@ export default function TicketDetailPage() {
     try {
       const response = await fetch(`/api/devops/tickets/${ticketId}/state`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ state: newState }),
       });
 
@@ -131,7 +145,7 @@ export default function TicketDetailPage() {
     try {
       const response = await fetch(`/api/devops/tickets/${ticketId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           assignee: assigneeId,
           project: ticket.project,
@@ -151,7 +165,7 @@ export default function TicketDetailPage() {
     try {
       const response = await fetch(`/api/devops/tickets/${ticketId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           priority,
           project: ticket.project,

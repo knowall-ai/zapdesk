@@ -82,7 +82,9 @@ export default function ProjectEpicsPage() {
     if (session?.accessToken && projectId) {
       fetchEpics();
     }
-  }, [session, projectId, fetchEpics]);
+    // Use session?.accessToken instead of session to avoid refetch on tab focus
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.accessToken, projectId]);
 
   const handleEpicSelect = useCallback(
     (epicId: number) => {
