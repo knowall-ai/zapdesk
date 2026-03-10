@@ -24,6 +24,7 @@ export interface Organization {
   devOpsProject: string;
   devOpsOrg: string;
   tags: string[];
+  slaLevel?: SLALevel;
   createdAt: Date;
   updatedAt: Date;
   processTemplate?: string; // Azure DevOps process template (e.g., "T-Minus-15", "Basic")
@@ -46,19 +47,60 @@ export interface Customer {
 export type TicketStatus = 'New' | 'Open' | 'In Progress' | 'Pending' | 'Resolved' | 'Closed';
 export type TicketPriority = 'Low' | 'Normal' | 'High' | 'Urgent';
 export type SLALevel = 'Gold' | 'Silver' | 'Bronze';
+export type SLAStatus = 'within_sla' | 'at_risk' | 'breached';
+
+// SLA target times in minutes
+export interface SLATargets {
+  firstResponseMinutes: number; // Time to first response
+  resolutionMinutes: number; // Time to resolution
+}
+
+// SLA policy with targets per priority
+export interface SLAPolicy {
+  level: SLALevel;
+  name: string;
+  description: string;
+  targets: {
+    urgent: SLATargets;
+    high: SLATargets;
+    normal: SLATargets;
+    low: SLATargets;
+  };
+}
+
+// SLA status information for a ticket
+export interface TicketSLAInfo {
+  level: SLALevel;
+  policy: SLAPolicy;
+  firstResponse: {
+    targetMinutes: number;
+    elapsedMinutes: number;
+    remainingMinutes: number;
+    status: SLAStatus;
+    met?: boolean; // true if first response has been made
+  };
+  resolution: {
+    targetMinutes: number;
+    elapsedMinutes: number;
+    remainingMinutes: number;
+    status: SLAStatus;
+    met?: boolean; // true if ticket is resolved
+  };
+}
+
 export type SLARiskStatus = 'breached' | 'at-risk' | 'on-track';
 
-// SLA Configuration per priority
-export interface SLATargets {
+// SLA Configuration per priority (hours-based, for config-driven SLA)
+export interface SLAPriorityTargets {
   responseTimeHours: number;
   resolutionTimeHours: number;
 }
 
 export interface SLAConfig {
-  Urgent: SLATargets;
-  High: SLATargets;
-  Normal: SLATargets;
-  Low: SLATargets;
+  Urgent: SLAPriorityTargets;
+  High: SLAPriorityTargets;
+  Normal: SLAPriorityTargets;
+  Low: SLAPriorityTargets;
 }
 
 // SLA status for a ticket
@@ -105,6 +147,7 @@ export interface Ticket {
   description: string;
   status: TicketStatus;
   devOpsState: string; // Original Azure DevOps state (e.g., 'New', 'Approved', 'To Do', etc.)
+  workItemType: string; // Azure DevOps work item type (e.g., 'Task', 'Bug', 'User Story')
   priority?: TicketPriority;
   requester: Customer;
   assignee?: User;
@@ -113,6 +156,8 @@ export interface Ticket {
   createdAt: Date;
   updatedAt: Date;
   resolvedAt?: Date;
+  firstResponseAt?: Date;
+  slaInfo?: TicketSLAInfo;
   devOpsUrl: string;
   project: string;
   comments: TicketComment[];
@@ -237,6 +282,15 @@ export interface DevOpsOrganization {
   accountId: string;
   accountName: string;
   accountUri: string;
+}
+
+export interface ClassificationNode {
+  id: number;
+  name: string;
+  structureType: 'area' | 'iteration';
+  hasChildren: boolean;
+  path: string;
+  children?: ClassificationNode[];
 }
 
 export interface EmailWebhookPayload {
@@ -399,11 +453,15 @@ export interface Feature {
   updatedAt: Date;
   completedWork: number;
   remainingWork: number;
+  originalEstimate: number;
+  effort?: number; // Original effort estimate for the Feature (Microsoft.VSTS.Scheduling.Effort)
   totalWork: number;
   workItems: WorkItem[];
   devOpsUrl: string;
   tags: string[];
   priority?: TicketPriority;
+  stackRank?: number; // For ordering features (some templates)
+  backlogPriority?: number; // For ordering features (Agile/Scrum templates)
 }
 
 export interface WorkItem {
@@ -424,6 +482,9 @@ export interface WorkItem {
   devOpsUrl: string;
   tags: string[];
   priority?: TicketPriority;
+  // Optional ticket-specific fields (populated when item is a ticket)
+  requester?: Customer;
+  organization?: Organization;
 }
 
 // Treemap data structure for visualization

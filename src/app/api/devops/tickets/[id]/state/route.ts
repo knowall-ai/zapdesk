@@ -25,16 +25,23 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: 'State is required' }, { status: 400 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const organization = request.headers.get('x-devops-org') || undefined;
+    const devopsService = new AzureDevOpsService(session.accessToken, organization);
 
-    // Get all projects to find the ticket
+    // If project is provided in the body, use it directly
+    if (body.project) {
+      const updatedWorkItem = await devopsService.updateTicketState(body.project, ticketId, state);
+      const ticket = workItemToTicket(updatedWorkItem);
+      return NextResponse.json({ ticket });
+    }
+
+    // Fallback: search all projects to find the ticket
     const projects = await devopsService.getProjects();
 
     for (const project of projects) {
       try {
         const workItem = await devopsService.getWorkItem(project.name, ticketId);
         if (workItem) {
-          // Use the state directly without mapping
           const updatedWorkItem = await devopsService.updateTicketState(
             project.name,
             ticketId,
@@ -45,7 +52,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             id: project.id,
             name: project.name,
             devOpsProject: project.name,
-            devOpsOrg: 'KnowAll',
+            devOpsOrg: organization || '',
             tags: [],
             createdAt: new Date(),
             updatedAt: new Date(),
