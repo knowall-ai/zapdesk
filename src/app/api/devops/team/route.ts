@@ -1,10 +1,10 @@
-import { NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import type { TeamMember, TeamMemberStatus, TeamStats, TicketStatus, Ticket } from '@/types';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -41,8 +41,18 @@ export async function GET() {
       }
     }
 
+    // Parse time period filter (days)
+    const daysParam = request.nextUrl.searchParams.get('days');
+    const days = daysParam ? parseInt(daysParam, 10) : null;
+    const cutoffDate = days ? new Date(Date.now() - days * 24 * 60 * 60 * 1000) : null;
+
     // Get all tickets to calculate metrics
-    const tickets = await devopsService.getAllTickets();
+    const allTickets = await devopsService.getAllTickets();
+
+    // Filter tickets by time period if specified
+    const tickets = cutoffDate
+      ? allTickets.filter((t) => t.createdAt >= cutoffDate || t.updatedAt >= cutoffDate)
+      : allTickets;
     const now = new Date();
     const oneWeekAgo = new Date(now);
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);

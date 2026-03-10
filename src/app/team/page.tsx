@@ -15,6 +15,7 @@ import {
   ChevronUp,
   ChevronDown,
   Tag,
+  Calendar,
 } from 'lucide-react';
 import { ActivityCalendar, type Activity as CalendarActivity } from 'react-activity-calendar';
 import { Tooltip } from 'react-tooltip';
@@ -51,6 +52,7 @@ export default function TeamPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [isMobile, setIsMobile] = useState(false);
   const [ticketsOnly, setTicketsOnly] = useState(true);
+  const [timePeriod, setTimePeriod] = useState<number | null>(30);
 
   // Detect mobile screen size
   useEffect(() => {
@@ -74,6 +76,9 @@ export default function TeamPage() {
       if (!ticketsOnly) {
         params.set('ticketsOnly', 'false');
       }
+      if (timePeriod) {
+        params.set('days', String(timePeriod));
+      }
       const response = await fetch(`/api/devops/team?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
@@ -88,7 +93,7 @@ export default function TeamPage() {
     } finally {
       setLoading(false);
     }
-  }, [ticketsOnly]);
+  }, [ticketsOnly, timePeriod]);
 
   const fetchActivityData = useCallback(async () => {
     setActivityLoading(true);
@@ -96,6 +101,9 @@ export default function TeamPage() {
       const params = new URLSearchParams();
       if (!ticketsOnly) {
         params.set('ticketsOnly', 'false');
+      }
+      if (timePeriod) {
+        params.set('days', String(timePeriod));
       }
       const response = await fetch(`/api/devops/team-activity?${params.toString()}`);
       if (response.ok) {
@@ -107,7 +115,7 @@ export default function TeamPage() {
     } finally {
       setActivityLoading(false);
     }
-  }, [ticketsOnly]);
+  }, [ticketsOnly, timePeriod]);
 
   useEffect(() => {
     if (session?.accessToken) {
@@ -116,7 +124,7 @@ export default function TeamPage() {
     }
     // Use session?.accessToken instead of session to avoid refetch on tab focus
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken]);
+  }, [session?.accessToken, fetchTeamData, fetchActivityData]);
 
   // Pre-calculate max values once for workload distribution (must be before conditional returns)
   const maxAssigned = React.useMemo(() => {
@@ -255,18 +263,43 @@ export default function TeamPage() {
                 Monitor team performance, workload distribution, and individual KPIs.
               </p>
             </div>
-            <button
-              onClick={() => setTicketsOnly(!ticketsOnly)}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                ticketsOnly
-                  ? 'bg-[var(--primary)] text-white'
-                  : 'bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-              }`}
-              title={ticketsOnly ? 'Showing only items tagged "ticket"' : 'Showing all work items'}
-            >
-              <Tag size={14} />
-              Tickets Only
-            </button>
+            <div className="flex items-center gap-2">
+              <select
+                value={timePeriod ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setTimePeriod(val ? Number(val) : null);
+                }}
+                className="input cursor-pointer text-sm"
+              >
+                <option value="7" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  Last 7 days
+                </option>
+                <option value="30" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  Last 30 days
+                </option>
+                <option value="90" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  Last 90 days
+                </option>
+                <option value="" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  All time
+                </option>
+              </select>
+              <button
+                onClick={() => setTicketsOnly(!ticketsOnly)}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  ticketsOnly
+                    ? 'bg-[var(--primary)] text-white'
+                    : 'bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+                title={
+                  ticketsOnly ? 'Showing only items tagged "ticket"' : 'Showing all work items'
+                }
+              >
+                <Tag size={14} />
+                Tickets Only
+              </button>
+            </div>
           </div>
         </div>
 
@@ -377,6 +410,7 @@ export default function TeamPage() {
             </h2>
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
               Individual performance metrics and workload
+              {timePeriod ? ` — last ${timePeriod} days` : ' — all time'}
             </p>
           </div>
 
