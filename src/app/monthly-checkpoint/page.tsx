@@ -8,6 +8,7 @@ import { Calendar, Download, Plus, Loader2, RefreshCw } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
 import { KPICards, TrendCharts, CheckpointTicketTable } from '@/components/monthly-checkpoint';
 import { NewTicketModal } from '@/components/tickets';
+import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import type { MonthlyCheckpointStats, DevOpsProject, Ticket } from '@/types';
 
 type DatePreset = 'last30' | 'thisMonth' | 'lastMonth' | 'custom';
@@ -16,6 +17,7 @@ function MonthlyCheckpointContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { get: devOpsGet, hasOrganization } = useDevOpsApi();
   const printRef = useRef<HTMLDivElement>(null);
 
   const [projects, setProjects] = useState<DevOpsProject[]>([]);
@@ -68,25 +70,25 @@ function MonthlyCheckpointContent() {
   }, [searchParams]);
 
   const fetchProjects = useCallback(async () => {
+    if (!hasOrganization) return;
     setIsLoadingProjects(true);
     try {
-      const response = await fetch('/api/devops/projects');
+      const response = await devOpsGet('/api/devops/projects');
       if (!response.ok) throw new Error('Failed to fetch projects');
       const data = await response.json();
-      setProjects(data.projects || []);
-
-      // Auto-select first project if none selected
-      if (!selectedProject && data.projects?.length > 0) {
-        setSelectedProject(data.projects[0].name);
-      }
+      const sorted = (data.projects || []).sort((a: DevOpsProject, b: DevOpsProject) =>
+        a.name.localeCompare(b.name)
+      );
+      setProjects(sorted);
     } catch (err) {
       console.error('Failed to fetch projects:', err);
     } finally {
       setIsLoadingProjects(false);
     }
-  }, [selectedProject]);
+  }, [devOpsGet, hasOrganization]);
 
   const fetchStats = useCallback(async () => {
+    if (!hasOrganization) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -96,7 +98,7 @@ function MonthlyCheckpointContent() {
         endDate,
       });
 
-      const response = await fetch(`/api/devops/monthly-checkpoint?${params}`);
+      const response = await devOpsGet(`/api/devops/monthly-checkpoint?${params}`);
       if (!response.ok) throw new Error('Failed to fetch checkpoint data');
 
       const data: MonthlyCheckpointStats = await response.json();
@@ -115,7 +117,7 @@ function MonthlyCheckpointContent() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedProject, startDate, endDate]);
+  }, [selectedProject, startDate, endDate, devOpsGet, hasOrganization]);
 
   // Fetch projects
   useEffect(() => {
