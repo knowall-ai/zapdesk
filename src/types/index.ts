@@ -145,6 +145,9 @@ export interface Ticket {
   workItemId: number;
   title: string;
   description: string;
+  reproSteps?: string;
+  systemInfo?: string;
+  resolvedReason?: string;
   status: TicketStatus;
   devOpsState: string; // Original Azure DevOps state (e.g., 'New', 'Approved', 'To Do', etc.)
   workItemType: string; // Azure DevOps work item type (e.g., 'Task', 'Bug', 'User Story')
