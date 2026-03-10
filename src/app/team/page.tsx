@@ -266,6 +266,9 @@ export default function TeamPage() {
                 }}
                 className="input cursor-pointer text-sm"
               >
+                <option value="1" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  Today
+                </option>
                 <option value="7" className="bg-[var(--surface)] text-[var(--text-primary)]">
                   Last 7 days
                 </option>
@@ -404,7 +407,11 @@ export default function TeamPage() {
             </h2>
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
               Individual performance metrics and workload
-              {timePeriod ? ` — last ${timePeriod} days` : ' — all time'}
+              {timePeriod === 1
+                ? ' — today'
+                : timePeriod
+                  ? ` — last ${timePeriod} days`
+                  : ' — all time'}
             </p>
           </div>
 

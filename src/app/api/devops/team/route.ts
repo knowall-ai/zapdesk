@@ -47,7 +47,14 @@ export async function GET(request: NextRequest) {
     if (daysParam !== null) {
       const days = Number(daysParam);
       if (Number.isFinite(days) && Number.isInteger(days) && days > 0) {
-        cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        if (days === 1) {
+          // "Today" — use start of today
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          cutoffDate = today;
+        } else {
+          cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        }
       }
     }
 
