@@ -22,6 +22,7 @@ import type {
   WorkItemUpdate,
   EpicType,
   TreemapNode,
+  ClassificationNode,
 } from '@/types';
 import { parseSLAFromDescription, calculateTicketSLA, DEFAULT_SLA_LEVEL } from './sla';
 
@@ -544,22 +545,120 @@ export class AzureDevOpsService {
     return response.json();
   }
 
+  // Get classification nodes (iterations or areas) for a project
+  private async getClassificationNodes(
+    projectName: string,
+    structureType: 'iterations' | 'areas',
+    depth: number = 10
+  ): Promise<ClassificationNode[]> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/classificationnodes/${structureType}?$depth=${depth}&api-version=7.0`,
+      { headers: this.headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ${structureType}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return this.flattenClassificationNodes(
+      data,
+      structureType === 'iterations' ? 'iteration' : 'area'
+    );
+  }
+
+  // Flatten nested classification nodes into a flat list with full paths
+  private flattenClassificationNodes(
+    node: {
+      id: number;
+      name: string;
+      hasChildren: boolean;
+      children?: Array<{
+        id: number;
+        name: string;
+        hasChildren: boolean;
+        children?: unknown[];
+        path?: string;
+      }>;
+      path?: string;
+    },
+    structureType: 'area' | 'iteration',
+    parentPath: string = ''
+  ): ClassificationNode[] {
+    const currentPath = parentPath ? `${parentPath}\\${node.name}` : node.name;
+    const result: ClassificationNode[] = [
+      {
+        id: node.id,
+        name: node.name,
+        structureType,
+        hasChildren: node.hasChildren,
+        path: currentPath,
+      },
+    ];
+
+    if (node.children) {
+      for (const child of node.children) {
+        result.push(
+          ...this.flattenClassificationNodes(
+            child as {
+              id: number;
+              name: string;
+              hasChildren: boolean;
+              children?: Array<{
+                id: number;
+                name: string;
+                hasChildren: boolean;
+                children?: unknown[];
+                path?: string;
+              }>;
+              path?: string;
+            },
+            structureType,
+            currentPath
+          )
+        );
+      }
+    }
+
+    return result;
+  }
+
+  // Get all iterations for a project (flat list with paths)
+  async getIterations(projectName: string): Promise<ClassificationNode[]> {
+    return this.getClassificationNodes(projectName, 'iterations');
+  }
+
+  // Get all areas for a project (flat list with paths)
+  async getAreas(projectName: string): Promise<ClassificationNode[]> {
+    return this.getClassificationNodes(projectName, 'areas');
+  }
+
   // Create a new work item (ticket) with assignee and custom tags
-  // workItemType: the type to create (e.g., "Task", "Issue") - depends on process template
-  // hasPriority: whether the process template supports Priority field
-  // priorityFieldRef: the DevOps field reference name for priority (e.g., "Microsoft.VSTS.Common.Priority")
   async createTicketWithAssignee(
     projectName: string,
     title: string,
     description: string,
-    _requesterEmail: string,
-    priority?: number | string,
-    tags: string[] = ['ticket'],
-    assigneeId?: string,
-    workItemType: string = 'Task',
-    hasPriority: boolean = true,
-    priorityFieldRef?: string
+    options: {
+      priority?: number | string;
+      tags?: string[];
+      assigneeId?: string;
+      workItemType?: string;
+      hasPriority?: boolean;
+      priorityFieldRef?: string;
+      iterationPath?: string;
+      areaPath?: string;
+    } = {}
   ): Promise<DevOpsWorkItem> {
+    const {
+      priority,
+      tags = ['ticket'],
+      assigneeId,
+      workItemType = 'Task',
+      hasPriority = true,
+      priorityFieldRef,
+      iterationPath,
+      areaPath,
+    } = options;
     const patchDocument: Array<{ op: string; path: string; value: string | number }> = [
       { op: 'add', path: '/fields/System.Title', value: title },
       { op: 'add', path: '/fields/System.Description', value: description },
@@ -578,6 +677,14 @@ export class AzureDevOpsService {
 
     if (assigneeId) {
       patchDocument.push({ op: 'add', path: '/fields/System.AssignedTo', value: assigneeId });
+    }
+
+    if (iterationPath) {
+      patchDocument.push({ op: 'add', path: '/fields/System.IterationPath', value: iterationPath });
+    }
+
+    if (areaPath) {
+      patchDocument.push({ op: 'add', path: '/fields/System.AreaPath', value: areaPath });
     }
 
     const response = await fetch(

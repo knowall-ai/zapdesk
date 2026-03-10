@@ -284,6 +284,15 @@ export interface DevOpsOrganization {
   accountUri: string;
 }
 
+export interface ClassificationNode {
+  id: number;
+  name: string;
+  structureType: 'area' | 'iteration';
+  hasChildren: boolean;
+  path: string;
+  children?: ClassificationNode[];
+}
+
 export interface EmailWebhookPayload {
   from: string;
   to: string;
