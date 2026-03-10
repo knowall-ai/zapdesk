@@ -10,7 +10,6 @@ import {
   Ticket,
   AlertCircle,
   Clock,
-  TrendingUp,
   Activity,
   ChevronUp,
   ChevronDown,
@@ -51,6 +50,7 @@ export default function TeamPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [isMobile, setIsMobile] = useState(false);
   const [ticketsOnly, setTicketsOnly] = useState(true);
+  const [timePeriod, setTimePeriod] = useState<number | null>(30);
 
   // Detect mobile screen size
   useEffect(() => {
@@ -74,6 +74,9 @@ export default function TeamPage() {
       if (!ticketsOnly) {
         params.set('ticketsOnly', 'false');
       }
+      if (timePeriod) {
+        params.set('days', String(timePeriod));
+      }
       const response = await fetch(`/api/devops/team?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
@@ -88,7 +91,7 @@ export default function TeamPage() {
     } finally {
       setLoading(false);
     }
-  }, [ticketsOnly]);
+  }, [ticketsOnly, timePeriod]);
 
   const fetchActivityData = useCallback(async () => {
     setActivityLoading(true);
@@ -114,9 +117,7 @@ export default function TeamPage() {
       fetchTeamData();
       fetchActivityData();
     }
-    // Use session?.accessToken instead of session to avoid refetch on tab focus
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken]);
+  }, [session?.accessToken, fetchTeamData, fetchActivityData]);
 
   // Pre-calculate max values once for workload distribution (must be before conditional returns)
   const maxAssigned = React.useMemo(() => {
@@ -372,12 +373,40 @@ export default function TeamPage() {
         {/* Team Members Table */}
         <div className="card">
           <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
-            <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Team Members
-            </h2>
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              Individual performance metrics and workload
-            </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Team Members
+                </h2>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  Individual performance metrics and workload
+                </p>
+              </div>
+              <select
+                value={timePeriod ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setTimePeriod(val ? Number(val) : null);
+                }}
+                className="input cursor-pointer text-sm"
+              >
+                <option value="1" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  Today
+                </option>
+                <option value="7" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  Last 7 days
+                </option>
+                <option value="30" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  Last 30 days
+                </option>
+                <option value="90" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  Last 90 days
+                </option>
+                <option value="" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  All time
+                </option>
+              </select>
+            </div>
           </div>
 
           {loading ? (
@@ -449,7 +478,7 @@ export default function TeamPage() {
                       className="hidden cursor-pointer px-4 py-3 text-center text-xs font-medium tracking-wider uppercase hover:bg-[var(--surface-hover)] md:table-cell"
                       onClick={() => handleSort('weeklyResolved')}
                     >
-                      Weekly Resolved
+                      Resolved
                       <SortIcon column="weeklyResolved" />
                     </th>
                     <th
@@ -540,7 +569,6 @@ export default function TeamPage() {
                         </td>
                         <td className="hidden px-4 py-4 text-center md:table-cell">
                           <div className="flex items-center justify-center gap-2">
-                            <TrendingUp size={16} style={{ color: 'var(--status-resolved)' }} />
                             <span style={{ color: 'var(--text-primary)' }}>
                               {member.weeklyResolutions}
                             </span>
