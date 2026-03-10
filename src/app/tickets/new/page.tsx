@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Send, Loader2 } from 'lucide-react';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
-import type { DevOpsProject, User } from '@/types';
+import type { DevOpsProject, User, ClassificationNode } from '@/types';
 
 interface NewTicketForm {
   project: string;
@@ -15,6 +15,8 @@ interface NewTicketForm {
   priority: number;
   assignee: string;
   tags: string;
+  iterationPath: string;
+  areaPath: string;
 }
 
 export default function NewTicketPage() {
@@ -23,8 +25,12 @@ export default function NewTicketPage() {
   const { get, post, hasOrganization } = useDevOpsApi();
   const [projects, setProjects] = useState<DevOpsProject[]>([]);
   const [teamMembers, setTeamMembers] = useState<User[]>([]);
+  const [iterations, setIterations] = useState<ClassificationNode[]>([]);
+  const [areas, setAreas] = useState<ClassificationNode[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [isLoadingIterations, setIsLoadingIterations] = useState(false);
+  const [isLoadingAreas, setIsLoadingAreas] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +41,8 @@ export default function NewTicketPage() {
     priority: 3,
     assignee: '',
     tags: '',
+    iterationPath: '',
+    areaPath: '',
   });
 
   const fetchProjects = useCallback(async () => {
@@ -73,6 +81,44 @@ export default function NewTicketPage() {
     [get]
   );
 
+  const fetchIterations = useCallback(
+    async (projectName: string) => {
+      setIsLoadingIterations(true);
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/iterations`
+        );
+        if (!response.ok) throw new Error('Failed to fetch iterations');
+        const data = await response.json();
+        setIterations(data.iterations || []);
+      } catch (err) {
+        console.error('Failed to fetch iterations:', err);
+        setIterations([]);
+      } finally {
+        setIsLoadingIterations(false);
+      }
+    },
+    [get]
+  );
+
+  const fetchAreas = useCallback(
+    async (projectName: string) => {
+      setIsLoadingAreas(true);
+      try {
+        const response = await get(`/api/devops/projects/${encodeURIComponent(projectName)}/areas`);
+        if (!response.ok) throw new Error('Failed to fetch areas');
+        const data = await response.json();
+        setAreas(data.areas || []);
+      } catch (err) {
+        console.error('Failed to fetch areas:', err);
+        setAreas([]);
+      } finally {
+        setIsLoadingAreas(false);
+      }
+    },
+    [get]
+  );
+
   // Fetch projects on load
   useEffect(() => {
     if (session?.accessToken && hasOrganization) {
@@ -82,19 +128,23 @@ export default function NewTicketPage() {
     }
   }, [session, hasOrganization, status, fetchProjects]);
 
-  // Fetch team members when project changes
+  // Fetch team members, iterations, and areas when project changes
   useEffect(() => {
     if (form.project && session?.accessToken && hasOrganization) {
       fetchTeamMembers(form.project);
+      fetchIterations(form.project);
+      fetchAreas(form.project);
     } else {
       setTeamMembers([]);
+      setIterations([]);
+      setAreas([]);
     }
-  }, [form.project, session, hasOrganization, fetchTeamMembers]);
+  }, [form.project, session, hasOrganization, fetchTeamMembers, fetchIterations, fetchAreas]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.project || !form.subject.trim()) {
-      setError('Please select a project and enter a subject');
+    if (!form.project || !form.subject.trim() || !form.iterationPath || !form.areaPath) {
+      setError('Please fill in all required fields: Project, Subject, Iteration, and Area');
       return;
     }
 
@@ -108,6 +158,8 @@ export default function NewTicketPage() {
         description: form.description.trim(),
         priority: form.priority,
         assignee: form.assignee || undefined,
+        iterationPath: form.iterationPath || undefined,
+        areaPath: form.areaPath || undefined,
         tags: form.tags
           .split(',')
           .map((t) => t.trim())
@@ -226,7 +278,13 @@ export default function NewTicketPage() {
             </span>
             <button
               type="submit"
-              disabled={isSubmitting || !form.project || !form.subject.trim()}
+              disabled={
+                isSubmitting ||
+                !form.project ||
+                !form.subject.trim() ||
+                !form.iterationPath ||
+                !form.areaPath
+              }
               className="btn-primary flex items-center gap-2"
             >
               {isSubmitting ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
@@ -259,7 +317,13 @@ export default function NewTicketPage() {
               <select
                 value={form.project}
                 onChange={(e) =>
-                  setForm((prev) => ({ ...prev, project: e.target.value, assignee: '' }))
+                  setForm((prev) => ({
+                    ...prev,
+                    project: e.target.value,
+                    assignee: '',
+                    iterationPath: '',
+                    areaPath: '',
+                  }))
                 }
                 className="input w-full"
                 required
@@ -272,6 +336,78 @@ export default function NewTicketPage() {
                 ))}
               </select>
             )}
+          </div>
+
+          {/* Area */}
+          <div>
+            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
+              Area *
+            </label>
+            {isLoadingAreas ? (
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 className="animate-spin" size={14} />
+                Loading...
+              </div>
+            ) : (
+              <select
+                value={form.areaPath}
+                onChange={(e) => setForm((prev) => ({ ...prev, areaPath: e.target.value }))}
+                className="input w-full"
+                disabled={!form.project || areas.length === 0}
+                required
+              >
+                <option value="">Select area...</option>
+                {areas.map((node) => (
+                  <option key={node.id} value={node.path}>
+                    {node.path}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Iteration */}
+          <div>
+            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
+              Iteration *
+            </label>
+            {isLoadingIterations ? (
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 className="animate-spin" size={14} />
+                Loading...
+              </div>
+            ) : (
+              <select
+                value={form.iterationPath}
+                onChange={(e) => setForm((prev) => ({ ...prev, iterationPath: e.target.value }))}
+                className="input w-full"
+                disabled={!form.project || iterations.length === 0}
+                required
+              >
+                <option value="">Select iteration...</option>
+                {iterations.map((node) => (
+                  <option key={node.id} value={node.path}>
+                    {node.path}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Work Item Type - fixed to Task */}
+          <div>
+            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
+              Type
+            </label>
+            <select className="input w-full" disabled>
+              <option>Task</option>
+            </select>
           </div>
 
           {/* Assignee */}
@@ -346,16 +482,6 @@ export default function NewTicketPage() {
               <option value={2}>High</option>
               <option value={3}>Normal</option>
               <option value={4}>Low</option>
-            </select>
-          </div>
-
-          {/* Work Item Type - fixed to Task */}
-          <div>
-            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-              Work Item Type
-            </label>
-            <select className="input w-full" disabled>
-              <option>Task</option>
             </select>
           </div>
         </div>

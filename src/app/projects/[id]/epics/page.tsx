@@ -38,7 +38,7 @@ export default function ProjectEpicsPage() {
     async (epicId: number) => {
       setLoadingHierarchy(true);
       try {
-        const headers: HeadersInit = {};
+        const headers: Record<string, string> = {};
         if (selectedOrganization?.accountName) {
           headers['x-devops-org'] = selectedOrganization.accountName;
         }
@@ -94,8 +94,10 @@ export default function ProjectEpicsPage() {
   useEffect(() => {
     if (session?.accessToken && projectId && selectedOrganization) {
       fetchEpics();
+    } else if (status !== 'loading') {
+      setLoading(false);
     }
-  }, [session, projectId, selectedOrganization, fetchEpics]);
+  }, [session?.accessToken, projectId, selectedOrganization, fetchEpics, status]);
 
   const handleEpicSelect = useCallback(
     (epicId: number) => {
