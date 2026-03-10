@@ -26,7 +26,7 @@ function MonthlyCheckpointContent() {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [stats, setStats] = useState<MonthlyCheckpointStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showNewTicketModal, setShowNewTicketModal] = useState(false);
