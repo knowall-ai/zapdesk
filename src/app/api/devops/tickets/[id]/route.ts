@@ -91,8 +91,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     } = {};
 
     if (assignToMe) {
-      // Use the authenticated user's email for "assign to me"
-      updates.assignee = session.user?.email || null;
+      // Use the Azure DevOps profile API to get the authenticated user's email
+      const profile = await devopsService.getUserProfile();
+      updates.assignee = profile.emailAddress;
     } else if (assignee !== undefined) {
       updates.assignee = assignee; // Can be null to unassign
     }
