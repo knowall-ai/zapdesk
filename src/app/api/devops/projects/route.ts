@@ -145,19 +145,29 @@ async function fetchProjectProcess(
     const propsData = await propsResponse.json();
     const properties = propsData.value || [];
 
-    // Get the CurrentProcessTemplateId - this is the actual process GUID
-    const currentProcessIdProp = properties.find(
-      (p: { name: string; value: string }) => p.name === 'System.CurrentProcessTemplateId'
+    // Get the ProcessTemplateType - this is the base process type GUID that matches available processes
+    const processTemplateTypeProp = properties.find(
+      (p: { name: string; value: string }) => p.name === 'System.ProcessTemplateType'
     );
 
     let processTemplate = 'Unknown';
 
-    if (currentProcessIdProp?.value) {
-      // Look up the process name from the ID
-      processTemplate = processMap.get(currentProcessIdProp.value) || 'Unknown';
+    if (processTemplateTypeProp?.value) {
+      // Look up the process name from the ProcessTemplateType ID
+      processTemplate = processMap.get(processTemplateTypeProp.value) || 'Unknown';
     }
 
-    // Fallback to System.Process Template if lookup failed
+    // Fallback to CurrentProcessTemplateId if ProcessTemplateType lookup failed
+    if (processTemplate === 'Unknown') {
+      const currentProcessIdProp = properties.find(
+        (p: { name: string; value: string }) => p.name === 'System.CurrentProcessTemplateId'
+      );
+      if (currentProcessIdProp?.value) {
+        processTemplate = processMap.get(currentProcessIdProp.value) || 'Unknown';
+      }
+    }
+
+    // Final fallback to System.Process Template name if all lookups failed
     if (processTemplate === 'Unknown') {
       const templateNameProp = properties.find(
         (p: { name: string; value: string }) => p.name === 'System.Process Template'
@@ -180,6 +190,41 @@ async function fetchProjectProcess(
       processTemplate: 'Unknown',
       isSupported: false,
     };
+  }
+}
+
+// Fetch Epic count for a project using WIQL
+async function fetchEpicCount(
+  baseUrl: string,
+  projectName: string,
+  accessToken: string
+): Promise<number> {
+  try {
+    const wiqlQuery = {
+      query: `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '${projectName.replace(/'/g, "''")}' AND [System.WorkItemType] = 'Epic'`,
+    };
+
+    const response = await fetch(
+      `${baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/wiql?api-version=7.0`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(wiqlQuery),
+      }
+    );
+
+    if (!response.ok) {
+      return 0;
+    }
+
+    const data = await response.json();
+    return data.workItems?.length || 0;
+  } catch (error) {
+    console.error(`[fetchEpicCount] Failed to fetch Epic count for ${projectName}:`, error);
+    return 0;
   }
 }
 
@@ -227,25 +272,35 @@ export async function GET(request: NextRequest) {
     // First fetch all available processes to get ID->name mapping
     const processMap = await fetchProcesses(baseUrl, session.accessToken!);
 
-    // Fetch process template info for all projects in parallel
+    // Fetch process template info and Epic counts for all projects in parallel
     const processInfoPromises = devopsProjects.map((project) =>
       fetchProjectProcess(baseUrl, project.id, session.accessToken!, processMap)
     );
-    const processInfos = await Promise.all(processInfoPromises);
+    const epicCountPromises = devopsProjects.map((project) =>
+      fetchEpicCount(baseUrl, project.name, session.accessToken!)
+    );
 
-    // Create a map for quick lookup
+    const [processInfos, epicCounts] = await Promise.all([
+      Promise.all(processInfoPromises),
+      Promise.all(epicCountPromises),
+    ]);
+
+    // Create maps for quick lookup
     const processInfoMap = new Map(processInfos.map((p) => [p.projectId, p]));
+    const epicCountMap = new Map(devopsProjects.map((p, i) => [p.id, epicCounts[i]]));
 
-    // Transform to Organization[] format with parsed domain, SLA, and process template
+    // Transform to Organization[] format with parsed domain, SLA, process template, and Epic count
     const projects: (Organization & {
       sla?: SLALevel;
       processTemplate?: string;
       isTemplateSupported?: boolean;
+      epicCount?: number;
     })[] = devopsProjects.map((project) => {
       const processInfo = processInfoMap.get(project.id);
       return {
         id: project.id,
         name: project.name,
+        description: project.description,
         domain: parseEmailDomains(project.description),
         devOpsProject: project.name,
         devOpsOrg,
@@ -253,6 +308,7 @@ export async function GET(request: NextRequest) {
         sla: parseSLA(project.description),
         processTemplate: processInfo?.processTemplate,
         isTemplateSupported: processInfo?.isSupported ?? false,
+        epicCount: epicCountMap.get(project.id) ?? 0,
         createdAt: new Date(), // DevOps doesn't expose project creation date
         updatedAt: project.lastUpdateTime ? new Date(project.lastUpdateTime) : new Date(),
       };
