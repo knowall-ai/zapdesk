@@ -724,29 +724,56 @@ export class AzureDevOpsService {
   }
 
   // Change work item type (e.g., Task → Bug)
-  // Uses the Azure DevOps "Change Type" API which requires the type query parameter
+  // Azure DevOps supports this via PATCH with System.WorkItemType in the JSON patch body
   async changeWorkItemType(
     projectName: string,
     workItemId: number,
     newType: string
   ): Promise<DevOpsWorkItem> {
-    // The Change Type API requires a PATCH with ?type= query param and an empty JSON patch body
-    // Must use api-version 7.1-preview.3 or later for type change support
-    const response = await fetch(
-      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?type=${encodeURIComponent(newType)}&api-version=7.1-preview.3`,
+    const patchDoc = [
       {
+        op: 'add',
+        path: '/fields/System.WorkItemType',
+        value: newType,
+      },
+    ];
+
+    // Try with bypassRules to allow type field change
+    const url = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?bypassRules=true&api-version=7.0`;
+
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        ...this.headers,
+        'Content-Type': 'application/json-patch+json',
+      },
+      body: JSON.stringify(patchDoc),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Change type API response:', response.status, errorText);
+
+      // If bypassRules approach fails, try the type query parameter approach
+      const fallbackUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?type=${encodeURIComponent(newType)}&api-version=7.1-preview.3`;
+      const fallbackResponse = await fetch(fallbackUrl, {
         method: 'PATCH',
         headers: {
           ...this.headers,
           'Content-Type': 'application/json-patch+json',
         },
         body: JSON.stringify([]),
-      }
-    );
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to change work item type: ${response.statusText} - ${errorText}`);
+      if (!fallbackResponse.ok) {
+        const fallbackError = await fallbackResponse.text();
+        console.error('Change type fallback response:', fallbackResponse.status, fallbackError);
+        throw new Error(
+          `Failed to change work item type: ${fallbackResponse.statusText} - ${fallbackError}`
+        );
+      }
+
+      return fallbackResponse.json();
     }
 
     return response.json();
