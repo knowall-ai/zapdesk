@@ -7,9 +7,11 @@ import {
   ChevronDown,
   ChevronUp,
   X,
-  Play,
   RotateCcw,
   UserCheck,
+  PlayCircle,
+  CheckCircle,
+  Search,
   List,
   LayoutGrid,
   Tag,
@@ -90,6 +92,7 @@ interface WorkItemBoardProps {
   onStatusChange?: (itemId: number, newState: string) => Promise<void>; // For drag-and-drop
   onWorkItemClick?: (item: WorkItem) => void; // Click handler for work item subject (opens dialog instead of navigating)
   onZapClick?: (item: WorkItem) => void; // Opens ZapDialog for the work item's assignee
+  onRefresh?: () => void; // Called after bulk actions to refresh data without full page reload
   defaultViewMode?: 'list' | 'kanban'; // Initial view mode
   project?: string; // Project name for Kanban state columns
   organization?: string; // Azure DevOps organization for API calls
@@ -228,6 +231,7 @@ export default function WorkItemBoard({
   onStatusChange,
   onWorkItemClick,
   onZapClick,
+  onRefresh,
   defaultViewMode = 'list',
   project,
   organization,
@@ -238,6 +242,7 @@ export default function WorkItemBoard({
   const [groupBy, setGroupBy] = useState<GroupByOption>(initialGroupBy);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>(defaultViewMode);
   const [ticketsOnly, setTicketsOnly] = useState(defaultTicketsOnly);
+  const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<Filters>({
     status: [],
     priority: [],
@@ -282,7 +287,7 @@ export default function WorkItemBoard({
     try {
       await action.handler(itemIds);
       setSelectedItems(new Set());
-      window.location.reload();
+      onRefresh?.();
     } catch (error) {
       console.error(`Bulk action ${action.id} failed:`, error);
       alert(`Failed to ${action.label.toLowerCase()}. Please try again.`);
@@ -294,11 +299,31 @@ export default function WorkItemBoard({
   // Define bulk actions
   const bulkActions: BulkAction[] = [
     {
+      id: 'set-in-progress',
+      label: 'Set to In Progress',
+      icon: <PlayCircle size={16} />,
+      handler: async (itemIds) => {
+        const results = await Promise.all(
+          itemIds.map((id) =>
+            fetch(`/api/devops/tickets/${id}/status`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: 'In Progress' }),
+            })
+          )
+        );
+        const failed = results.filter((r) => !r.ok);
+        if (failed.length > 0) {
+          throw new Error(`${failed.length} of ${results.length} updates failed`);
+        }
+      },
+    },
+    {
       id: 'reopen',
       label: 'Re-open',
       icon: <RotateCcw size={16} />,
       handler: async (itemIds) => {
-        await Promise.all(
+        const results = await Promise.all(
           itemIds.map((id) =>
             fetch(`/api/devops/tickets/${id}/status`, {
               method: 'PATCH',
@@ -307,6 +332,31 @@ export default function WorkItemBoard({
             })
           )
         );
+        const failed = results.filter((r) => !r.ok);
+        if (failed.length > 0) {
+          throw new Error(`${failed.length} of ${results.length} updates failed`);
+        }
+      },
+    },
+    {
+      id: 'close',
+      label: 'Close',
+      icon: <CheckCircle size={16} />,
+      confirmMessage: 'Are you sure you want to close the selected items?',
+      handler: async (itemIds) => {
+        const results = await Promise.all(
+          itemIds.map((id) =>
+            fetch(`/api/devops/tickets/${id}/status`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: 'Closed' }),
+            })
+          )
+        );
+        const failed = results.filter((r) => !r.ok);
+        if (failed.length > 0) {
+          throw new Error(`${failed.length} of ${results.length} updates failed`);
+        }
       },
     },
     {
@@ -314,7 +364,7 @@ export default function WorkItemBoard({
       label: 'Assign to me',
       icon: <UserCheck size={16} />,
       handler: async (itemIds) => {
-        await Promise.all(
+        const results = await Promise.all(
           itemIds.map((id) =>
             fetch(`/api/devops/tickets/${id}`, {
               method: 'PATCH',
@@ -323,6 +373,10 @@ export default function WorkItemBoard({
             })
           )
         );
+        const failed = results.filter((r) => !r.ok);
+        if (failed.length > 0) {
+          throw new Error(`${failed.length} of ${results.length} updates failed`);
+        }
       },
     },
   ];
@@ -372,6 +426,7 @@ export default function WorkItemBoard({
   };
 
   const hasActiveFilters =
+    searchQuery.trim() !== '' ||
     filters.status.length > 0 ||
     filters.priority.length > 0 ||
     filters.assignee.length > 0 ||
@@ -380,11 +435,23 @@ export default function WorkItemBoard({
 
   // Apply filters
   const filteredItems = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
     return items.filter((item) => {
       // Tickets only filter - check for "ticket" tag (case-insensitive)
       if (ticketsOnly) {
         const hasTicketTag = item.tags?.some((tag) => tag.toLowerCase() === 'ticket');
         if (!hasTicketTag) return false;
+      }
+      // Text search filter
+      if (query) {
+        const matchesSearch =
+          item.title.toLowerCase().includes(query) ||
+          item.id.toString().includes(query) ||
+          item.assignee?.displayName?.toLowerCase().includes(query) ||
+          item.requester?.displayName?.toLowerCase().includes(query) ||
+          item.state.toLowerCase().includes(query) ||
+          item.workItemType?.toLowerCase().includes(query);
+        if (!matchesSearch) return false;
       }
       if (filters.status.length > 0 && !filters.status.includes(item.state)) return false;
       if (
@@ -409,7 +476,7 @@ export default function WorkItemBoard({
         return false;
       return true;
     });
-  }, [items, filters, ticketsOnly]);
+  }, [items, filters, ticketsOnly, searchQuery]);
 
   const toggleItemSelection = (itemId: number) => {
     const newSelection = new Set(selectedItems);
@@ -599,15 +666,37 @@ export default function WorkItemBoard({
                       </div>
                     )}
                   </div>
-                  <button className="btn-secondary flex items-center gap-2">
-                    <Play size={16} /> Play
-                  </button>
                 </>
               )}
 
               {/* Filter dropdowns */}
               {!hideFilters && (
                 <>
+                  {/* Search input */}
+                  <div className="relative">
+                    <Search
+                      size={14}
+                      className="absolute top-1/2 left-3 -translate-y-1/2"
+                      style={{ color: 'var(--text-muted)' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Search items..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="input pl-8 text-sm"
+                      style={{ minWidth: '160px' }}
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="absolute top-1/2 right-2 -translate-y-1/2"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
                   <MultiSelectFilter
                     label="Statuses"
                     selected={filters.status}
@@ -1046,8 +1135,26 @@ export default function WorkItemBoard({
           {filteredItems.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16">
               <p className="mb-2 text-lg" style={{ color: 'var(--text-muted)' }}>
-                No items found
+                {hasActiveFilters ? 'No items match your filters' : 'No items found'}
               </p>
+              {hasActiveFilters && (
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setFilters({
+                      status: [],
+                      priority: [],
+                      assignee: [],
+                      requester: [],
+                      type: [],
+                    });
+                  }}
+                  className="mt-2 text-sm transition-colors hover:underline"
+                  style={{ color: 'var(--primary)' }}
+                >
+                  Clear all filters
+                </button>
+              )}
             </div>
           )}
         </div>

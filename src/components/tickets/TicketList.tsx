@@ -11,6 +11,7 @@ interface TicketListProps {
   onWorkItemClick?: (item: WorkItem) => void;
   onZapClick?: (item: WorkItem) => void;
   onStatusChange?: (itemId: number, newState: string) => Promise<void>;
+  onRefresh?: () => void;
   availableTypes?: WorkItemType[];
   defaultViewMode?: 'list' | 'kanban';
 }
@@ -29,6 +30,7 @@ export default function TicketList({
   onWorkItemClick,
   onZapClick,
   onStatusChange,
+  onRefresh,
   availableTypes,
   defaultViewMode,
 }: TicketListProps) {
@@ -67,6 +69,7 @@ export default function TicketList({
       onStatusChange={onStatusChange}
       onWorkItemClick={onWorkItemClick}
       onZapClick={onZapClick}
+      onRefresh={onRefresh}
       defaultViewMode={defaultViewMode}
     />
   );
