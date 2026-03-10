@@ -15,7 +15,6 @@ import {
   ChevronUp,
   ChevronDown,
   Tag,
-  Calendar,
 } from 'lucide-react';
 import { ActivityCalendar, type Activity as CalendarActivity } from 'react-activity-calendar';
 import { Tooltip } from 'react-tooltip';
@@ -102,9 +101,6 @@ export default function TeamPage() {
       if (!ticketsOnly) {
         params.set('ticketsOnly', 'false');
       }
-      if (timePeriod) {
-        params.set('days', String(timePeriod));
-      }
       const response = await fetch(`/api/devops/team-activity?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
@@ -115,15 +111,13 @@ export default function TeamPage() {
     } finally {
       setActivityLoading(false);
     }
-  }, [ticketsOnly, timePeriod]);
+  }, [ticketsOnly]);
 
   useEffect(() => {
     if (session?.accessToken) {
       fetchTeamData();
       fetchActivityData();
     }
-    // Use session?.accessToken instead of session to avoid refetch on tab focus
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.accessToken, fetchTeamData, fetchActivityData]);
 
   // Pre-calculate max values once for workload distribution (must be before conditional returns)

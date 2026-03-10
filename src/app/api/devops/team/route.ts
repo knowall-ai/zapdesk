@@ -43,11 +43,19 @@ export async function GET(request: NextRequest) {
 
     // Parse time period filter (days)
     const daysParam = request.nextUrl.searchParams.get('days');
-    const days = daysParam ? parseInt(daysParam, 10) : null;
-    const cutoffDate = days ? new Date(Date.now() - days * 24 * 60 * 60 * 1000) : null;
+    let cutoffDate: Date | null = null;
+    if (daysParam !== null) {
+      const days = Number(daysParam);
+      if (Number.isFinite(days) && Number.isInteger(days) && days > 0) {
+        cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      }
+    }
+
+    // Parse ticketsOnly filter
+    const ticketsOnly = request.nextUrl.searchParams.get('ticketsOnly') !== 'false';
 
     // Get all tickets to calculate metrics
-    const allTickets = await devopsService.getAllTickets();
+    const allTickets = await devopsService.getAllTickets(ticketsOnly);
 
     // Filter tickets by time period if specified
     const tickets = cutoffDate
