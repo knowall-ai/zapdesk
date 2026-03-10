@@ -369,17 +369,22 @@ export default function WorkItemBoard({
           headers['x-devops-org'] = organization;
         }
         const results = await Promise.all(
-          itemIds.map((id) =>
-            fetch(`/api/devops/tickets/${id}`, {
+          itemIds.map((id) => {
+            const item = items.find((i) => i.id === id);
+            return fetch(`/api/devops/tickets/${id}`, {
               method: 'PATCH',
               headers,
-              body: JSON.stringify({ assignToMe: true }),
-            })
-          )
+              body: JSON.stringify({ assignToMe: true, project: item?.project }),
+            });
+          })
         );
         const failed = results.filter((r) => !r.ok);
         if (failed.length > 0) {
-          throw new Error(`${failed.length} of ${results.length} updates failed`);
+          const errorBodies = await Promise.all(
+            failed.map((r) => r.json().catch(() => ({ error: r.statusText })))
+          );
+          const messages = errorBodies.map((b) => b.error || 'Unknown error').join('; ');
+          throw new Error(`${failed.length} of ${results.length} updates failed: ${messages}`);
         }
       },
     },

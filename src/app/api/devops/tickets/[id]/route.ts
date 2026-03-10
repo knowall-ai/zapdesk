@@ -91,9 +91,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     } = {};
 
     if (assignToMe) {
-      // Use the Azure DevOps profile API to get the authenticated user's email
+      // Use the Azure DevOps profile API to get the authenticated user's identity
+      // Format as "Display Name <email>" to avoid ambiguous identity errors
       const profile = await devopsService.getUserProfile();
-      updates.assignee = profile.emailAddress;
+      updates.assignee = `${profile.displayName} <${profile.emailAddress}>`;
     } else if (assignee !== undefined) {
       updates.assignee = assignee; // Can be null to unassign
     }
@@ -125,10 +126,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ ticket });
   } catch (error) {
-    console.error('Error updating ticket:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to update ticket' },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : 'Failed to update ticket';
+    console.error('Error updating ticket:', message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
