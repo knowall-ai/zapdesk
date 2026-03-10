@@ -17,11 +17,13 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import type { Epic, TreemapNode, TreemapColorScheme } from '@/types';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 
 export default function ProjectEpicsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const params = useParams();
+  const { selectedOrganization } = useOrganization();
   const [epics, setEpics] = useState<Epic[]>([]);
   const [selectedEpic, setSelectedEpic] = useState<Epic | null>(null);
   const [treemapData, setTreemapData] = useState<TreemapNode | null>(null);
@@ -36,8 +38,13 @@ export default function ProjectEpicsPage() {
     async (epicId: number) => {
       setLoadingHierarchy(true);
       try {
+        const headers: Record<string, string> = {};
+        if (selectedOrganization?.accountName) {
+          headers['x-devops-org'] = selectedOrganization.accountName;
+        }
         const response = await fetch(
-          `/api/devops/epics/${epicId}?project=${encodeURIComponent(projectId)}`
+          `/api/devops/epics/${epicId}?project=${encodeURIComponent(projectId)}`,
+          { headers }
         );
         if (response.ok) {
           const data = await response.json();
@@ -50,13 +57,19 @@ export default function ProjectEpicsPage() {
         setLoadingHierarchy(false);
       }
     },
-    [projectId]
+    [projectId, selectedOrganization]
   );
 
   const fetchEpics = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/devops/epics?project=${encodeURIComponent(projectId)}`);
+      const headers: HeadersInit = {};
+      if (selectedOrganization?.accountName) {
+        headers['x-devops-org'] = selectedOrganization.accountName;
+      }
+      const response = await fetch(`/api/devops/epics?project=${encodeURIComponent(projectId)}`, {
+        headers,
+      });
       if (response.ok) {
         const data = await response.json();
         setEpics(data.epics || []);
@@ -70,7 +83,7 @@ export default function ProjectEpicsPage() {
     } finally {
       setLoading(false);
     }
-  }, [projectId, fetchEpicHierarchy]);
+  }, [projectId, selectedOrganization, fetchEpicHierarchy]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -79,12 +92,12 @@ export default function ProjectEpicsPage() {
   }, [status, router]);
 
   useEffect(() => {
-    if (session?.accessToken && projectId) {
+    if (session?.accessToken && projectId && selectedOrganization) {
       fetchEpics();
+    } else if (status !== 'loading') {
+      setLoading(false);
     }
-    // Use session?.accessToken instead of session to avoid refetch on tab focus
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken, projectId]);
+  }, [session?.accessToken, projectId, selectedOrganization, fetchEpics, status]);
 
   const handleEpicSelect = useCallback(
     (epicId: number) => {
