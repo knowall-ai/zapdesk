@@ -10,7 +10,6 @@ import {
   Ticket,
   AlertCircle,
   Clock,
-  TrendingUp,
   Activity,
   ChevronUp,
   ChevronDown,
@@ -257,46 +256,18 @@ export default function TeamPage() {
                 Monitor team performance, workload distribution, and individual KPIs.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <select
-                value={timePeriod ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setTimePeriod(val ? Number(val) : null);
-                }}
-                className="input cursor-pointer text-sm"
-              >
-                <option value="1" className="bg-[var(--surface)] text-[var(--text-primary)]">
-                  Today
-                </option>
-                <option value="7" className="bg-[var(--surface)] text-[var(--text-primary)]">
-                  Last 7 days
-                </option>
-                <option value="30" className="bg-[var(--surface)] text-[var(--text-primary)]">
-                  Last 30 days
-                </option>
-                <option value="90" className="bg-[var(--surface)] text-[var(--text-primary)]">
-                  Last 90 days
-                </option>
-                <option value="" className="bg-[var(--surface)] text-[var(--text-primary)]">
-                  All time
-                </option>
-              </select>
-              <button
-                onClick={() => setTicketsOnly(!ticketsOnly)}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  ticketsOnly
-                    ? 'bg-[var(--primary)] text-white'
-                    : 'bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                }`}
-                title={
-                  ticketsOnly ? 'Showing only items tagged "ticket"' : 'Showing all work items'
-                }
-              >
-                <Tag size={14} />
-                Tickets Only
-              </button>
-            </div>
+            <button
+              onClick={() => setTicketsOnly(!ticketsOnly)}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                ticketsOnly
+                  ? 'bg-[var(--primary)] text-white'
+                  : 'bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+              title={ticketsOnly ? 'Showing only items tagged "ticket"' : 'Showing all work items'}
+            >
+              <Tag size={14} />
+              Tickets Only
+            </button>
           </div>
         </div>
 
@@ -402,17 +373,40 @@ export default function TeamPage() {
         {/* Team Members Table */}
         <div className="card">
           <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
-            <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Team Members
-            </h2>
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              Individual performance metrics and workload
-              {timePeriod === 1
-                ? ' — today'
-                : timePeriod
-                  ? ` — last ${timePeriod} days`
-                  : ' — all time'}
-            </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Team Members
+                </h2>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  Individual performance metrics and workload
+                </p>
+              </div>
+              <select
+                value={timePeriod ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setTimePeriod(val ? Number(val) : null);
+                }}
+                className="input cursor-pointer text-sm"
+              >
+                <option value="1" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  Today
+                </option>
+                <option value="7" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  Last 7 days
+                </option>
+                <option value="30" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  Last 30 days
+                </option>
+                <option value="90" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  Last 90 days
+                </option>
+                <option value="" className="bg-[var(--surface)] text-[var(--text-primary)]">
+                  All time
+                </option>
+              </select>
+            </div>
           </div>
 
           {loading ? (
@@ -484,7 +478,7 @@ export default function TeamPage() {
                       className="hidden cursor-pointer px-4 py-3 text-center text-xs font-medium tracking-wider uppercase hover:bg-[var(--surface-hover)] md:table-cell"
                       onClick={() => handleSort('weeklyResolved')}
                     >
-                      Weekly Resolved
+                      Resolved
                       <SortIcon column="weeklyResolved" />
                     </th>
                     <th
@@ -575,7 +569,6 @@ export default function TeamPage() {
                         </td>
                         <td className="hidden px-4 py-4 text-center md:table-cell">
                           <div className="flex items-center justify-center gap-2">
-                            <TrendingUp size={16} style={{ color: 'var(--status-resolved)' }} />
                             <span style={{ color: 'var(--text-primary)' }}>
                               {member.weeklyResolutions}
                             </span>

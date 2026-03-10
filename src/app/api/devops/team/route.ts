@@ -164,12 +164,12 @@ export async function GET(request: NextRequest) {
     // Sort by tickets assigned (descending)
     teamMembers.sort((a, b) => b.ticketsAssigned - a.ticketsAssigned);
 
-    // Calculate team stats
+    // Calculate team stats from ALL tickets (unfiltered by time period)
     const stats: TeamStats = {
       totalMembers: teamMembers.length,
-      openTickets: tickets.filter((t) => t.status === 'Open' || t.status === 'New').length,
-      inProgressTickets: tickets.filter((t) => t.status === 'In Progress').length,
-      needsAttention: calculateNeedsAttention(tickets),
+      openTickets: allTickets.filter((t) => t.status === 'Open' || t.status === 'New').length,
+      inProgressTickets: allTickets.filter((t) => t.status === 'In Progress').length,
+      needsAttention: calculateNeedsAttention(allTickets),
     };
 
     return NextResponse.json({ members: teamMembers, stats });
