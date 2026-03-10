@@ -364,11 +364,15 @@ export default function WorkItemBoard({
       label: 'Assign to me',
       icon: <UserCheck size={16} />,
       handler: async (itemIds) => {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (organization) {
+          headers['x-devops-org'] = organization;
+        }
         const results = await Promise.all(
           itemIds.map((id) =>
             fetch(`/api/devops/tickets/${id}`, {
               method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
+              headers,
               body: JSON.stringify({ assignToMe: true }),
             })
           )

@@ -14,6 +14,7 @@ interface TicketListProps {
   onRefresh?: () => void;
   availableTypes?: WorkItemType[];
   defaultViewMode?: 'list' | 'kanban';
+  organization?: string;
 }
 
 /**
@@ -33,6 +34,7 @@ export default function TicketList({
   onRefresh,
   availableTypes,
   defaultViewMode,
+  organization,
 }: TicketListProps) {
   // Convert Ticket[] to WorkItem[] format
   const workItems = tickets.map((ticket) => ({
@@ -71,6 +73,7 @@ export default function TicketList({
       onZapClick={onZapClick}
       onRefresh={onRefresh}
       defaultViewMode={defaultViewMode}
+      organization={organization}
     />
   );
 }
