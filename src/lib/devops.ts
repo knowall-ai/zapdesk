@@ -724,6 +724,33 @@ export class AzureDevOpsService {
   }
 
   // Update work item state
+  // Change work item type (e.g., Task → Bug)
+  async changeWorkItemType(
+    projectName: string,
+    workItemId: number,
+    newType: string
+  ): Promise<DevOpsWorkItem> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?type=${encodeURIComponent(newType)}&api-version=7.0`,
+      {
+        method: 'PATCH',
+        headers: {
+          ...this.headers,
+          'Content-Type': 'application/json-patch+json',
+        },
+        body: JSON.stringify([]),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to change work item type: ${response.statusText} - ${errorText}`);
+    }
+
+    return response.json();
+  }
+
+  // Update work item state
   async updateTicketState(
     projectName: string,
     workItemId: number,

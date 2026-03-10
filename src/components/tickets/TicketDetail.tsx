@@ -25,6 +25,7 @@ import type {
   User,
   TicketPriority,
   WorkItemState,
+  WorkItemType,
   WorkItemUpdate,
   Attachment,
 } from '@/types';
@@ -53,6 +54,7 @@ interface TicketDetailProps {
   onStateChange?: (state: string) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
+  onTypeChange?: (type: string) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onRefreshTicket?: () => Promise<void>;
 }
@@ -73,6 +75,7 @@ export default function TicketDetail({
   onStateChange,
   onAssigneeChange,
   onPriorityChange,
+  onTypeChange,
   onUploadAttachment,
   onRefreshTicket,
 }: TicketDetailProps) {
@@ -110,6 +113,12 @@ export default function TicketDetail({
   const [isPriorityDropdownOpen, setIsPriorityDropdownOpen] = useState(false);
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
 
+  // Type editing state
+  const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
+  const [availableTypes, setAvailableTypes] = useState<WorkItemType[]>([]);
+  const [isLoadingTypes, setIsLoadingTypes] = useState(false);
+  const [isUpdatingType, setIsUpdatingType] = useState(false);
+
   // Attachment state
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -123,6 +132,7 @@ export default function TicketDetail({
     setAssigneeSearch('');
   }, []);
   const closePriorityDropdown = useCallback(() => setIsPriorityDropdownOpen(false), []);
+  const closeTypeDropdown = useCallback(() => setIsTypeDropdownOpen(false), []);
 
   const stateDropdownRef = useClickOutside<HTMLDivElement>(closeStateDropdown, isStateDropdownOpen);
   const assigneeDropdownRef = useClickOutside<HTMLDivElement>(
@@ -133,6 +143,7 @@ export default function TicketDetail({
     closePriorityDropdown,
     isPriorityDropdownOpen
   );
+  const typeDropdownRef = useClickOutside<HTMLDivElement>(closeTypeDropdown, isTypeDropdownOpen);
 
   // Fetch available states when state dropdown opens
   useEffect(() => {
@@ -167,6 +178,43 @@ export default function TicketDetail({
       setIsStateDropdownOpen(false);
     } finally {
       setIsUpdatingState(false);
+    }
+  };
+
+  // Fetch available types when type dropdown opens
+  useEffect(() => {
+    if (isTypeDropdownOpen && availableTypes.length === 0 && ticket.project) {
+      fetchAvailableTypes();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTypeDropdownOpen, ticket.project]);
+
+  const fetchAvailableTypes = async () => {
+    if (!ticket.project) return;
+    setIsLoadingTypes(true);
+    try {
+      const response = await fetch(
+        `/api/devops/projects/${encodeURIComponent(ticket.project)}/workitemtypes`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableTypes(data.types || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch work item types:', err);
+    } finally {
+      setIsLoadingTypes(false);
+    }
+  };
+
+  const handleTypeSelect = async (typeName: string) => {
+    if (!onTypeChange || typeName === ticket.workItemType) return;
+    setIsUpdatingType(true);
+    try {
+      await onTypeChange(typeName);
+      setIsTypeDropdownOpen(false);
+    } finally {
+      setIsUpdatingType(false);
     }
   };
 
@@ -939,16 +987,69 @@ export default function TicketDetail({
 
             {/* Type */}
             {ticket.workItemType && (
-              <div>
+              <div className="relative" ref={typeDropdownRef}>
                 <label
                   className="mb-1 block text-xs uppercase"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   Type
                 </label>
-                <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                  {ticket.workItemType}
-                </span>
+                {onTypeChange ? (
+                  <>
+                    <button
+                      onClick={() => setIsTypeDropdownOpen(!isTypeDropdownOpen)}
+                      disabled={isUpdatingType}
+                      className="flex w-full items-center justify-between rounded-md px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {isUpdatingType ? <Loader2 size={14} className="animate-spin" /> : null}
+                        {ticket.workItemType}
+                      </span>
+                      <ChevronDown size={14} style={{ color: 'var(--text-muted)' }} />
+                    </button>
+                    {isTypeDropdownOpen && (
+                      <div
+                        className="absolute top-full left-0 z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border shadow-lg"
+                        style={{
+                          backgroundColor: 'var(--surface)',
+                          borderColor: 'var(--border)',
+                        }}
+                      >
+                        {isLoadingTypes ? (
+                          <div className="flex items-center justify-center py-3">
+                            <Loader2
+                              size={16}
+                              className="animate-spin"
+                              style={{ color: 'var(--text-muted)' }}
+                            />
+                          </div>
+                        ) : (
+                          availableTypes.map((type) => (
+                            <button
+                              key={type.name}
+                              onClick={() => handleTypeSelect(type.name)}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                              style={{
+                                color:
+                                  type.name === ticket.workItemType
+                                    ? 'var(--primary)'
+                                    : 'var(--text-primary)',
+                              }}
+                            >
+                              {type.icon && <img src={type.icon} alt="" className="h-4 w-4" />}
+                              {type.name}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                    {ticket.workItemType}
+                  </span>
+                )}
               </div>
             )}
 
