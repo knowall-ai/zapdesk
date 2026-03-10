@@ -723,15 +723,17 @@ export class AzureDevOpsService {
     }
   }
 
-  // Update work item state
   // Change work item type (e.g., Task → Bug)
+  // Uses the Azure DevOps "Change Type" API which requires the type query parameter
   async changeWorkItemType(
     projectName: string,
     workItemId: number,
     newType: string
   ): Promise<DevOpsWorkItem> {
+    // The Change Type API requires a PATCH with ?type= query param and an empty JSON patch body
+    // Must use api-version 7.1-preview.3 or later for type change support
     const response = await fetch(
-      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?type=${encodeURIComponent(newType)}&api-version=7.0`,
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?type=${encodeURIComponent(newType)}&api-version=7.1-preview.3`,
       {
         method: 'PATCH',
         headers: {
