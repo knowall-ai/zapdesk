@@ -730,50 +730,154 @@ export class AzureDevOpsService {
     workItemId: number,
     newType: string
   ): Promise<DevOpsWorkItem> {
+    // First, get the current work item to read its current state
+    const currentItem = await this.getWorkItem(projectName, workItemId);
+    const currentState = currentItem.fields['System.State'];
+
+    // Get valid states for the target work item type
+    let targetState = currentState;
+    try {
+      const statesUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(newType)}/states?api-version=7.1`;
+      const statesResponse = await fetch(statesUrl, { headers: this.headers });
+      if (statesResponse.ok) {
+        const statesData = await statesResponse.json();
+        const validStates: { name: string; category: string }[] = statesData.value;
+        const validStateNames = validStates.map((s) => s.name);
+
+        if (!validStateNames.includes(currentState)) {
+          // Try to find a state in the same category as the current state
+          const currentTypeStatesUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(currentItem.fields['System.WorkItemType'])}/states?api-version=7.1`;
+          const currentStatesResponse = await fetch(currentTypeStatesUrl, {
+            headers: this.headers,
+          });
+          let currentCategory = 'Proposed';
+          if (currentStatesResponse.ok) {
+            const currentStatesData = await currentStatesResponse.json();
+            const currentStateInfo = currentStatesData.value.find(
+              (s: { name: string }) => s.name === currentState
+            );
+            if (currentStateInfo) {
+              currentCategory = currentStateInfo.category;
+            }
+          }
+
+          // Find a matching state by category, or fall back to first state
+          const matchByCategory = validStates.find((s) => s.category === currentCategory);
+          targetState = matchByCategory ? matchByCategory.name : validStates[0]?.name || 'New';
+        }
+
+        console.log(
+          `Type change: ${currentItem.fields['System.WorkItemType']} → ${newType}, state: ${currentState} → ${targetState}, valid states: [${validStateNames.join(', ')}]`
+        );
+      } else {
+        console.warn('Failed to fetch states for target type:', statesResponse.status);
+      }
+    } catch (err) {
+      console.warn('Could not fetch valid states for target type, keeping current state:', err);
+    }
+
+    // Per Microsoft docs: use org-level URL (no project), set both WorkItemType and State
+    // See: https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/work-items/update
     const patchDoc = [
       {
         op: 'add',
         path: '/fields/System.WorkItemType',
         value: newType,
       },
+      {
+        op: 'add',
+        path: '/fields/System.State',
+        value: targetState,
+      },
     ];
 
-    // Try with bypassRules to allow type field change
-    const url = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?bypassRules=true&api-version=7.0`;
+    console.log(`Changing work item ${workItemId} type to ${newType} with state ${targetState}`);
+
+    const url = `${this.baseUrl}/_apis/wit/workitems/${workItemId}?api-version=7.1`;
+    const patchHeaders = {
+      ...this.headers,
+      'Content-Type': 'application/json-patch+json',
+    };
 
     const response = await fetch(url, {
       method: 'PATCH',
-      headers: {
-        ...this.headers,
-        'Content-Type': 'application/json-patch+json',
-      },
+      headers: patchHeaders,
       body: JSON.stringify(patchDoc),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Change type API response:', response.status, errorText);
 
-      // If bypassRules approach fails, try the type query parameter approach
-      const fallbackUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?type=${encodeURIComponent(newType)}&api-version=7.1-preview.3`;
-      const fallbackResponse = await fetch(fallbackUrl, {
-        method: 'PATCH',
-        headers: {
-          ...this.headers,
-          'Content-Type': 'application/json-patch+json',
-        },
-        body: JSON.stringify([]),
-      });
+      // Check for required field validation errors and retry with defaults
+      try {
+        const errorData = JSON.parse(errorText);
+        const ruleErrors = errorData?.customProperties?.RuleValidationErrors;
+        if (ruleErrors && Array.isArray(ruleErrors) && ruleErrors.length > 0) {
+          console.log('Type change has required field errors, fetching defaults...');
+          const retryPatchDoc = [...patchDoc];
 
-      if (!fallbackResponse.ok) {
-        const fallbackError = await fallbackResponse.text();
-        console.error('Change type fallback response:', fallbackResponse.status, fallbackError);
-        throw new Error(
-          `Failed to change work item type: ${fallbackResponse.statusText} - ${fallbackError}`
-        );
+          for (const ruleError of ruleErrors) {
+            const fieldRef: string = ruleError.fieldReferenceName;
+            if (!fieldRef) continue;
+
+            // Skip fields we already set
+            if (fieldRef === 'System.WorkItemType' || fieldRef === 'System.State') continue;
+
+            // Fetch allowed values for this field
+            try {
+              const fieldUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(newType)}/fields/${encodeURIComponent(fieldRef)}?$expand=allowedValues&api-version=7.1`;
+              const fieldResponse = await fetch(fieldUrl, {
+                headers: this.headers,
+              });
+              if (fieldResponse.ok) {
+                const fieldData = await fieldResponse.json();
+                const allowedValues: string[] = fieldData.allowedValues || [];
+                if (allowedValues.length > 0) {
+                  // Use the first allowed value as default
+                  retryPatchDoc.push({
+                    op: 'add',
+                    path: `/fields/${fieldRef}`,
+                    value: allowedValues[0],
+                  });
+                  console.log(
+                    `Setting default for ${fieldRef}: "${allowedValues[0]}" (from ${allowedValues.length} options)`
+                  );
+                }
+              }
+            } catch (fieldErr) {
+              console.warn(`Could not fetch allowed values for ${fieldRef}:`, fieldErr);
+            }
+          }
+
+          // Retry with defaults for required fields
+          if (retryPatchDoc.length > patchDoc.length) {
+            console.log('Retrying type change with required field defaults...');
+            const retryResponse = await fetch(url, {
+              method: 'PATCH',
+              headers: patchHeaders,
+              body: JSON.stringify(retryPatchDoc),
+            });
+
+            if (retryResponse.ok) {
+              return retryResponse.json();
+            }
+
+            const retryError = await retryResponse.text();
+            console.error('Retry also failed:', retryResponse.status, retryError);
+            throw new Error(
+              `Failed to change work item type: ${retryResponse.statusText} - ${retryError}`
+            );
+          }
+        }
+      } catch (parseErr) {
+        // If error isn't JSON or retry logic fails, fall through to original error
+        if (parseErr instanceof Error && parseErr.message.startsWith('Failed to change')) {
+          throw parseErr;
+        }
       }
 
-      return fallbackResponse.json();
+      console.error('Change type API response:', response.status, errorText);
+      throw new Error(`Failed to change work item type: ${response.statusText} - ${errorText}`);
     }
 
     return response.json();
