@@ -1,10 +1,10 @@
-import { NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import type { TeamMember, TeamMemberStatus, TeamStats, TicketStatus, Ticket } from '@/types';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -41,8 +41,33 @@ export async function GET() {
       }
     }
 
+    // Parse time period filter (days)
+    const daysParam = request.nextUrl.searchParams.get('days');
+    let cutoffDate: Date | null = null;
+    if (daysParam !== null) {
+      const days = Number(daysParam);
+      if (Number.isFinite(days) && Number.isInteger(days) && days > 0) {
+        if (days === 1) {
+          // "Today" — use start of today
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          cutoffDate = today;
+        } else {
+          cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        }
+      }
+    }
+
+    // Parse ticketsOnly filter
+    const ticketsOnly = request.nextUrl.searchParams.get('ticketsOnly') !== 'false';
+
     // Get all tickets to calculate metrics
-    const tickets = await devopsService.getAllTickets();
+    const allTickets = await devopsService.getAllTickets(ticketsOnly);
+
+    // Filter tickets by time period if specified
+    const tickets = cutoffDate
+      ? allTickets.filter((t) => t.createdAt >= cutoffDate || t.updatedAt >= cutoffDate)
+      : allTickets;
     const now = new Date();
     const oneWeekAgo = new Date(now);
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
@@ -139,12 +164,12 @@ export async function GET() {
     // Sort by tickets assigned (descending)
     teamMembers.sort((a, b) => b.ticketsAssigned - a.ticketsAssigned);
 
-    // Calculate team stats
+    // Calculate team stats from ALL tickets (unfiltered by time period)
     const stats: TeamStats = {
       totalMembers: teamMembers.length,
-      openTickets: tickets.filter((t) => t.status === 'Open' || t.status === 'New').length,
-      inProgressTickets: tickets.filter((t) => t.status === 'In Progress').length,
-      needsAttention: calculateNeedsAttention(tickets),
+      openTickets: allTickets.filter((t) => t.status === 'Open' || t.status === 'New').length,
+      inProgressTickets: allTickets.filter((t) => t.status === 'In Progress').length,
+      needsAttention: calculateNeedsAttention(allTickets),
     };
 
     return NextResponse.json({ members: teamMembers, stats });

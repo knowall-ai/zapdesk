@@ -2,57 +2,89 @@
 
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import KanbanCard from './KanbanCard';
+import type { Ticket, WorkItem, WorkItemType } from '@/types';
+
+// KanbanColumn can work with either Ticket[] or WorkItem[]
+type KanbanItem = Ticket | WorkItem;
 
 interface KanbanColumnProps {
-  id: string;
-  label: string;
-  color: string;
-  icon?: React.ReactNode;
-  count: number;
-  itemIds: (string | number)[];
-  children: React.ReactNode;
-  emptyText?: string;
+  stateName: string; // DevOps state name (e.g., 'New', 'Approved', 'In Progress')
+  stateColor?: string; // Hex color from DevOps (without #)
+  items: KanbanItem[];
+  activeId?: number | null;
+  itemsWithUnrecognizedState?: Set<number>;
+  readOnly?: boolean;
+  typeInfoMap?: Map<string, WorkItemType>;
+  onItemClick?: (item: KanbanItem) => void;
+  onZapClick?: (item: KanbanItem) => void;
 }
 
 export default function KanbanColumn({
-  id,
-  label,
-  color,
-  icon,
-  count,
-  itemIds,
-  children,
-  emptyText = 'No items',
+  stateName,
+  stateColor,
+  items,
+  activeId,
+  itemsWithUnrecognizedState,
+  readOnly = false,
+  typeInfoMap,
+  onItemClick,
+  onZapClick,
 }: KanbanColumnProps) {
-  const { setNodeRef, isOver } = useDroppable({ id });
+  const color = stateColor ? `#${stateColor}` : 'var(--text-muted)';
+
+  // Only use droppable in interactive mode
+  const { setNodeRef, isOver } = useDroppable({
+    id: stateName,
+    disabled: readOnly,
+  });
+
+  // Render cards
+  const cards = items.map((item) => {
+    const itemType = 'workItemType' in item ? item.workItemType : undefined;
+    return (
+      <KanbanCard
+        key={item.id}
+        item={item}
+        isDragging={activeId === item.id}
+        hasUnrecognizedState={itemsWithUnrecognizedState?.has(item.id)}
+        readOnly={readOnly}
+        typeInfo={itemType && typeInfoMap ? typeInfoMap.get(itemType) : undefined}
+        onItemClick={onItemClick}
+        onZapClick={onZapClick}
+      />
+    );
+  });
 
   return (
     <div className="kanban-column">
       <div className="kanban-column-header">
         <div className="flex items-center gap-2">
-          {icon ? (
-            <span style={{ color }}>{icon}</span>
-          ) : (
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-          )}
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">{label}</h3>
+          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">{stateName}</h3>
         </div>
         <span className="rounded-full bg-[var(--surface-hover)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
-          {count}
+          {items.length}
         </span>
       </div>
 
       <div
-        ref={setNodeRef}
-        className={`kanban-column-content ${isOver ? 'kanban-column-over' : ''}`}
+        ref={readOnly ? undefined : setNodeRef}
+        className={`kanban-column-content ${isOver && !readOnly ? 'kanban-column-over' : ''}`}
       >
-        <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
-          {children}
-        </SortableContext>
+        {readOnly ? (
+          // Read-only mode: render cards without sortable context
+          cards
+        ) : (
+          // Interactive mode: wrap with SortableContext
+          <SortableContext items={items.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+            {cards}
+          </SortableContext>
+        )}
 
-        {count === 0 && (
-          <div className="flex h-20 items-center justify-center text-xs text-[var(--text-muted)]">
-            {emptyText}
+        {items.length === 0 && (
+          <div className="flex h-24 items-center justify-center text-sm text-[var(--text-muted)]">
+            No items
           </div>
         )}
       </div>

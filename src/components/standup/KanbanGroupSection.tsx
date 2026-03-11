@@ -13,12 +13,60 @@ import {
   type DragEndEvent,
   type DragOverEvent,
 } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { useDroppable } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import KanbanColumn from '@/components/tickets/KanbanColumn';
 import StandupKanbanCard from './StandupKanbanCard';
 import { getColumnIcon, getColumnColor } from './columnConfig';
 import type { StandupColumn, StandupWorkItem } from '@/types';
+
+/** Simple droppable column for the standup kanban */
+function DroppableColumn({
+  name,
+  category,
+  items,
+  activeId,
+}: {
+  name: string;
+  category: string;
+  items: StandupWorkItem[];
+  activeId: number | null;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: name });
+  const color = getColumnColor(name, category);
+
+  return (
+    <div className="kanban-column">
+      <div className="kanban-column-header">
+        <div className="flex items-center gap-2">
+          <span style={{ color }}>{getColumnIcon(name, category)}</span>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">{name}</h3>
+        </div>
+        <span className="rounded-full bg-[var(--surface-hover)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
+          {items.length}
+        </span>
+      </div>
+
+      <div
+        ref={setNodeRef}
+        className={`kanban-column-content ${isOver ? 'kanban-column-over' : ''}`}
+      >
+        <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+          {items.map((item) => (
+            <StandupKanbanCard key={item.id} item={item} isDragging={activeId === item.id} />
+          ))}
+        </SortableContext>
+
+        {items.length === 0 && (
+          <div className="flex h-20 items-center justify-center text-xs text-[var(--text-muted)]">
+            No items
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 interface KanbanGroupSectionProps {
   groupName: string;
@@ -199,23 +247,13 @@ export default function KanbanGroupSection({
               {columns.map((col) => {
                 const items = localItems[col.name] || [];
                 return (
-                  <KanbanColumn
+                  <DroppableColumn
                     key={col.name}
-                    id={col.name}
-                    label={col.name}
-                    color={getColumnColor(col.name, col.category)}
-                    icon={getColumnIcon(col.name, col.category)}
-                    count={items.length}
-                    itemIds={items.map((i) => i.id)}
-                  >
-                    {items.map((item) => (
-                      <StandupKanbanCard
-                        key={item.id}
-                        item={item}
-                        isDragging={activeId === item.id}
-                      />
-                    ))}
-                  </KanbanColumn>
+                    name={col.name}
+                    category={col.category}
+                    items={items}
+                    activeId={activeId}
+                  />
                 );
               })}
             </div>

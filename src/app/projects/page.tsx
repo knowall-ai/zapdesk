@@ -15,6 +15,7 @@ interface ProjectWithSLA extends Organization {
   sla?: SLALevel;
   processTemplate?: string;
   isTemplateSupported?: boolean;
+  epicCount?: number;
 }
 
 export default function ProjectsPage() {
@@ -60,7 +61,8 @@ export default function ProjectsPage() {
     };
 
     fetchProjects();
-  }, [session, selectedOrganization]);
+    // Use session?.accessToken instead of session to avoid refetch on tab focus
+  }, [session?.accessToken, selectedOrganization]);
 
   if (status === 'loading') {
     return (
@@ -131,7 +133,13 @@ export default function ProjectsPage() {
                   Process Template
                 </th>
                 <th
-                  className="hidden px-4 py-3 text-left text-xs font-medium uppercase md:table-cell"
+                  className="px-4 py-3 text-center text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Epics
+                </th>
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium uppercase"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   Last updated
@@ -147,14 +155,14 @@ export default function ProjectsPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12">
+                  <td colSpan={7} className="px-4 py-12">
                     <LoadingSpinner size="lg" message="Loading projects..." />
                   </td>
                 </tr>
               ) : projects.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-4 py-8 text-center"
                     style={{ color: 'var(--text-muted)' }}
                   >
@@ -227,10 +235,22 @@ export default function ProjectsPage() {
                         <span style={{ color: 'var(--text-muted)' }}>-</span>
                       )}
                     </td>
-                    <td
-                      className="hidden px-4 py-3 text-sm md:table-cell"
-                      style={{ color: 'var(--text-secondary)' }}
-                    >
+                    <td className="px-4 py-3 text-center">
+                      {project.epicCount !== undefined && project.epicCount > 0 ? (
+                        <Link
+                          href={`/projects/${project.id}/epics`}
+                          className="inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-sm font-medium transition-colors hover:opacity-80"
+                          style={{ backgroundColor: 'var(--primary)', color: 'white' }}
+                        >
+                          {project.epicCount}
+                        </Link>
+                      ) : (
+                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                          0
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
                       {project.updatedAt && !isNaN(project.updatedAt.getTime())
                         ? format(project.updatedAt, 'dd MMM yyyy')
                         : '-'}
