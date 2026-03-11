@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { Suspense, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { RefreshCw, FolderOpen, User } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
@@ -64,6 +64,20 @@ function regroupByPerson(data: StandupData): GroupData[] {
 }
 
 export default function StandupPage() {
+  return (
+    <Suspense
+      fallback={
+        <MainLayout>
+          <LoadingSpinner />
+        </MainLayout>
+      }
+    >
+      <StandupPageContent />
+    </Suspense>
+  );
+}
+
+function StandupPageContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
