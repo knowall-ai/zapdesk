@@ -529,20 +529,42 @@ export class AzureDevOpsService {
       });
     }
 
-    const response = await fetch(
-      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`,
-      {
-        method: 'POST',
-        headers: {
-          ...this.headers,
-          'Content-Type': 'application/json-patch+json',
-        },
-        body: JSON.stringify(patchDocument),
-      }
-    );
+    const createUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`;
+    const createHeaders = {
+      ...this.headers,
+      'Content-Type': 'application/json-patch+json',
+    };
+
+    const response = await fetch(createUrl, {
+      method: 'POST',
+      headers: createHeaders,
+      body: JSON.stringify(patchDocument),
+    });
 
     if (!response.ok) {
-      throw new Error(`Failed to create work item: ${response.statusText}`);
+      const errorText = await response.text();
+
+      // Handle required field validation errors by fetching defaults and retrying
+      const retryDoc = await this.resolveRequiredFieldErrors(
+        errorText,
+        patchDocument,
+        projectName,
+        workItemType
+      );
+      if (retryDoc) {
+        const retryResponse = await fetch(createUrl, {
+          method: 'POST',
+          headers: createHeaders,
+          body: JSON.stringify(retryDoc),
+        });
+        if (retryResponse.ok) {
+          return retryResponse.json();
+        }
+        const retryError = await retryResponse.text();
+        throw new Error(`Failed to create work item: ${retryResponse.statusText} - ${retryError}`);
+      }
+
+      throw new Error(`Failed to create work item: ${response.statusText} - ${errorText}`);
     }
 
     return response.json();
@@ -690,24 +712,99 @@ export class AzureDevOpsService {
       patchDocument.push({ op: 'add', path: '/fields/System.AreaPath', value: areaPath });
     }
 
-    const response = await fetch(
-      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`,
-      {
-        method: 'POST',
-        headers: {
-          ...this.headers,
-          'Content-Type': 'application/json-patch+json',
-        },
-        body: JSON.stringify(patchDocument),
-      }
-    );
+    const createUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`;
+    const createHeaders = {
+      ...this.headers,
+      'Content-Type': 'application/json-patch+json',
+    };
+
+    const response = await fetch(createUrl, {
+      method: 'POST',
+      headers: createHeaders,
+      body: JSON.stringify(patchDocument),
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
+
+      // Handle required field validation errors by fetching defaults and retrying
+      const retryDoc = await this.resolveRequiredFieldErrors(
+        errorText,
+        patchDocument,
+        projectName,
+        workItemType
+      );
+      if (retryDoc) {
+        const retryResponse = await fetch(createUrl, {
+          method: 'POST',
+          headers: createHeaders,
+          body: JSON.stringify(retryDoc),
+        });
+        if (retryResponse.ok) {
+          return retryResponse.json();
+        }
+        const retryError = await retryResponse.text();
+        throw new Error(`Failed to create work item: ${retryResponse.statusText} - ${retryError}`);
+      }
+
       throw new Error(`Failed to create work item: ${response.statusText} - ${errorText}`);
     }
 
     return response.json();
+  }
+
+  /**
+   * Parse RuleValidationException errors, fetch allowed values for required fields,
+   * and return an updated patch document with defaults. Returns null if not applicable.
+   */
+  private async resolveRequiredFieldErrors(
+    errorText: string,
+    patchDocument: Array<{ op: string; path: string; value: string | number }>,
+    projectName: string,
+    workItemType: string
+  ): Promise<Array<{ op: string; path: string; value: string | number }> | null> {
+    try {
+      const errorData = JSON.parse(errorText);
+      const ruleErrors = errorData?.customProperties?.RuleValidationErrors;
+      if (!ruleErrors || !Array.isArray(ruleErrors) || ruleErrors.length === 0) {
+        return null;
+      }
+
+      const existingFields = new Set(patchDocument.map((d) => d.path));
+      const retryDoc = [...patchDocument];
+      let addedFields = 0;
+
+      for (const ruleError of ruleErrors) {
+        const fieldRef: string = ruleError.fieldReferenceName;
+        if (!fieldRef || existingFields.has(`/fields/${fieldRef}`)) continue;
+
+        try {
+          const fieldUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/fields/${encodeURIComponent(fieldRef)}?$expand=allowedValues&api-version=7.1`;
+          const fieldResponse = await fetch(fieldUrl, { headers: this.headers });
+          if (fieldResponse.ok) {
+            const fieldData = await fieldResponse.json();
+            const allowedValues: string[] = fieldData.allowedValues || [];
+            if (allowedValues.length > 0) {
+              retryDoc.push({
+                op: 'add',
+                path: `/fields/${fieldRef}`,
+                value: allowedValues[0],
+              });
+              addedFields++;
+              console.log(
+                `Auto-filling required field ${fieldRef}: "${allowedValues[0]}" (${allowedValues.length} options)`
+              );
+            }
+          }
+        } catch (fieldErr) {
+          console.warn(`Could not fetch allowed values for ${fieldRef}:`, fieldErr);
+        }
+      }
+
+      return addedFields > 0 ? retryDoc : null;
+    } catch {
+      return null;
+    }
   }
 
   // Add a comment to a work item
