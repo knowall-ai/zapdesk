@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
@@ -11,7 +11,7 @@ let responseTimeCache: {
 } | null = null;
 const RESPONSE_TIME_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -48,8 +48,33 @@ export async function GET() {
       }
     }
 
+    // Parse time period filter (days)
+    const daysParam = request.nextUrl.searchParams.get('days');
+    let cutoffDate: Date | null = null;
+    if (daysParam !== null) {
+      const days = Number(daysParam);
+      if (Number.isFinite(days) && Number.isInteger(days) && days > 0) {
+        if (days === 1) {
+          // "Today" — use start of today
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          cutoffDate = today;
+        } else {
+          cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        }
+      }
+    }
+
+    // Parse ticketsOnly filter
+    const ticketsOnly = request.nextUrl.searchParams.get('ticketsOnly') !== 'false';
+
     // Get all tickets to calculate metrics
-    const tickets = await devopsService.getAllTickets();
+    const allTickets = await devopsService.getAllTickets(ticketsOnly);
+
+    // Filter tickets by time period if specified
+    const tickets = cutoffDate
+      ? allTickets.filter((t) => t.createdAt >= cutoffDate || t.updatedAt >= cutoffDate)
+      : allTickets;
     const now = new Date();
     const oneWeekAgo = new Date(now);
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
@@ -165,12 +190,12 @@ export async function GET() {
     // Sort by tickets assigned (descending)
     teamMembers.sort((a, b) => b.ticketsAssigned - a.ticketsAssigned);
 
-    // Calculate team stats
+    // Calculate team stats from ALL tickets (unfiltered by time period)
     const stats: TeamStats = {
       totalMembers: teamMembers.length,
-      openTickets: tickets.filter((t) => t.status === 'Open' || t.status === 'New').length,
-      inProgressTickets: tickets.filter((t) => t.status === 'In Progress').length,
-      needsAttention: calculateNeedsAttention(tickets),
+      openTickets: allTickets.filter((t) => t.status === 'Open' || t.status === 'New').length,
+      inProgressTickets: allTickets.filter((t) => t.status === 'In Progress').length,
+      needsAttention: calculateNeedsAttention(allTickets),
     };
 
     return NextResponse.json({ members: teamMembers, stats });
@@ -180,12 +205,32 @@ export async function GET() {
   }
 }
 
+// Team status thresholds — configurable via environment variables
+function getIntEnv(envName: string, defaultValue: number): number {
+  const raw = process.env[envName];
+  if (raw === undefined || raw === null || raw.trim() === '') {
+    return defaultValue;
+  }
+  const parsed = parseInt(raw, 10);
+  return Number.isNaN(parsed) ? defaultValue : parsed;
+}
+
+const THRESHOLD_NEEDS_ATTENTION_PENDING = getIntEnv('TEAM_THRESHOLD_NEEDS_ATTENTION_PENDING', 5);
+const THRESHOLD_NEEDS_ATTENTION_ASSIGNED = getIntEnv('TEAM_THRESHOLD_NEEDS_ATTENTION_ASSIGNED', 15);
+const THRESHOLD_BEHIND_PENDING = getIntEnv('TEAM_THRESHOLD_BEHIND_PENDING', 2);
+const THRESHOLD_BEHIND_ASSIGNED = getIntEnv('TEAM_THRESHOLD_BEHIND_ASSIGNED', 10);
+
 function calculateMemberStatus(member: TeamMember): TeamMemberStatus {
-  // Heuristics for member status
-  if (member.pendingTickets > 5 || member.ticketsAssigned > 15) {
+  if (
+    member.pendingTickets > THRESHOLD_NEEDS_ATTENTION_PENDING ||
+    member.ticketsAssigned > THRESHOLD_NEEDS_ATTENTION_ASSIGNED
+  ) {
     return 'Needs Attention';
   }
-  if (member.pendingTickets > 2 || member.ticketsAssigned > 10) {
+  if (
+    member.pendingTickets > THRESHOLD_BEHIND_PENDING ||
+    member.ticketsAssigned > THRESHOLD_BEHIND_ASSIGNED
+  ) {
     return 'Behind';
   }
   return 'On Track';
