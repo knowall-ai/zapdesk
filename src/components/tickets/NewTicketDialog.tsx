@@ -20,6 +20,7 @@ interface NewTicketForm {
   title: string;
   description: string;
   priority: number | string;
+  severity: string;
   assignee: string;
   tags: string;
   workItemType: string;
@@ -60,11 +61,15 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [severityOptions, setSeverityOptions] = useState<string[]>([]);
+  const [isLoadingSeverity, setIsLoadingSeverity] = useState(false);
+
   const [form, setForm] = useState<NewTicketForm>({
     project: '',
     title: '',
     description: '',
     priority: '',
+    severity: '',
     assignee: '',
     tags: '',
     workItemType: 'Task',
@@ -211,6 +216,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         title: '',
         description: '',
         priority: '',
+        severity: '',
         assignee: '',
         tags: '',
         workItemType: 'Task',
@@ -221,6 +227,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       setAssigneeSearch('');
       setWorkItemTypes([]);
       setPriorityOptions([]);
+      setSeverityOptions([]);
       setHasPriority(true);
       setPriorityFieldRef(null);
       setIterations([]);
@@ -268,6 +275,43 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       setHasPriority(true);
     }
   }, [form.project, form.workItemType, session, hasOrganization, fetchPriorities]);
+
+  // Fetch severity options when work item type requires it
+  useEffect(() => {
+    if (!form.project || !form.workItemType || !hasOrganization) {
+      setSeverityOptions([]);
+      setForm((prev) => ({ ...prev, severity: '' }));
+      return;
+    }
+
+    const fetchSeverity = async () => {
+      setIsLoadingSeverity(true);
+      try {
+        const fieldUrl = `/api/devops/projects/${encodeURIComponent(form.project)}/workitemtypes/${encodeURIComponent(form.workItemType)}/fields/Microsoft.VSTS.Common.Severity`;
+        const response = await get(fieldUrl);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.required && data.allowedValues?.length > 0) {
+            setSeverityOptions(data.allowedValues);
+            setForm((prev) => ({ ...prev, severity: prev.severity || data.allowedValues[0] }));
+          } else {
+            setSeverityOptions([]);
+            setForm((prev) => ({ ...prev, severity: '' }));
+          }
+        } else {
+          setSeverityOptions([]);
+          setForm((prev) => ({ ...prev, severity: '' }));
+        }
+      } catch {
+        setSeverityOptions([]);
+      } finally {
+        setIsLoadingSeverity(false);
+      }
+    };
+
+    fetchSeverity();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.project, form.workItemType, hasOrganization]);
 
   // Filter out Stakeholders and apply search
   const filteredMembers = useMemo(() => {
@@ -345,6 +389,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         description: form.description.trim(),
         priority: hasPriority ? form.priority : undefined,
         priorityFieldRef: priorityFieldRef || undefined,
+        severity: form.severity || undefined,
         assignee: form.assignee || undefined,
         workItemType: form.workItemType,
         iterationPath: form.iterationPath || undefined,
@@ -899,6 +944,39 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                   Comma-separated. &quot;ticket&quot; tag added automatically.
                 </p>
               </div>
+
+              {/* Severity - shown when required by the work item type */}
+              {severityOptions.length > 0 && (
+                <div>
+                  <label
+                    className="mb-1 block text-xs uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Severity *
+                  </label>
+                  {isLoadingSeverity ? (
+                    <div
+                      className="flex items-center gap-2 text-sm"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <Loader2 className="animate-spin" size={14} />
+                      Loading...
+                    </div>
+                  ) : (
+                    <select
+                      value={form.severity}
+                      onChange={(e) => setForm((prev) => ({ ...prev, severity: e.target.value }))}
+                      className="input w-full"
+                    >
+                      {severityOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
 
               {/* Priority */}
               {hasPriority && (

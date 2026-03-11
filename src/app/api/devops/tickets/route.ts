@@ -99,6 +99,7 @@ export async function POST(request: NextRequest) {
       description,
       priority,
       priorityFieldRef,
+      severity,
       assignee,
       tags,
       workItemType,
@@ -151,6 +152,7 @@ export async function POST(request: NextRequest) {
         workItemType: workItemType || 'Task',
         hasPriority: Boolean(validatedFieldRef),
         priorityFieldRef: validatedFieldRef,
+        severity: severity || undefined,
         iterationPath: iterationPath || undefined,
         areaPath: areaPath || undefined,
       }

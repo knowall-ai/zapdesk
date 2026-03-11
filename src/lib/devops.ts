@@ -670,6 +670,7 @@ export class AzureDevOpsService {
       workItemType?: string;
       hasPriority?: boolean;
       priorityFieldRef?: string;
+      severity?: string;
       iterationPath?: string;
       areaPath?: string;
     } = {}
@@ -681,6 +682,7 @@ export class AzureDevOpsService {
       workItemType = 'Task',
       hasPriority = true,
       priorityFieldRef,
+      severity,
       iterationPath,
       areaPath,
     } = options;
@@ -697,6 +699,14 @@ export class AzureDevOpsService {
         op: 'add',
         path: `/fields/${fieldPath}`,
         value: priority,
+      });
+    }
+
+    if (severity) {
+      patchDocument.push({
+        op: 'add',
+        path: '/fields/Microsoft.VSTS.Common.Severity',
+        value: severity,
       });
     }
 
@@ -805,6 +815,27 @@ export class AzureDevOpsService {
     } catch {
       return null;
     }
+  }
+
+  // Get field info for a work item type (including allowed values and whether it's required)
+  async getWorkItemTypeField(
+    projectName: string,
+    workItemType: string,
+    fieldRef: string
+  ): Promise<{ required: boolean; allowedValues: string[]; name: string }> {
+    const url = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/fields/${encodeURIComponent(fieldRef)}?$expand=allowedValues&api-version=7.1`;
+    const response = await fetch(url, { headers: this.headers });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch field info: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return {
+      required: data.alwaysRequired || false,
+      allowedValues: data.allowedValues || [],
+      name: data.name || fieldRef,
+    };
   }
 
   // Add a comment to a work item
