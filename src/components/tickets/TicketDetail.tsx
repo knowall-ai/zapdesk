@@ -332,9 +332,11 @@ export default function TicketDetail({
         <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
           <div className="mb-3 flex items-center gap-4">
             <button
-              onClick={() => router.back()}
+              type="button"
+              onClick={() => (window.history.length > 1 ? router.back() : router.push('/tickets'))}
               className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
               style={{ color: 'var(--text-muted)' }}
+              aria-label="Go back"
             >
               <ArrowLeft size={20} />
             </button>

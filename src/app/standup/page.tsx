@@ -81,7 +81,7 @@ function StandupPageContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { get: devOpsGet, hasOrganization } = useDevOpsApi();
+  const { get: devOpsGet, patch: devOpsPatch, hasOrganization } = useDevOpsApi();
 
   // Derive from URL — single source of truth
   const groupBy: GroupBy = (searchParams.get('groupBy') as GroupBy) || 'project';
@@ -150,10 +150,8 @@ function StandupPageContent() {
 
   const handleStateChange = useCallback(
     async (itemId: number, targetState: string) => {
-      const response = await fetch(`/api/devops/tickets/${itemId}/state`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ state: targetState }),
+      const response = await devOpsPatch(`/api/devops/tickets/${itemId}/state`, {
+        state: targetState,
       });
 
       if (!response.ok) {
@@ -162,7 +160,7 @@ function StandupPageContent() {
 
       fetchStandupData(true);
     },
-    [fetchStandupData]
+    [fetchStandupData, devOpsPatch]
   );
 
   const groups: GroupData[] = useMemo(() => {

@@ -205,7 +205,8 @@ export async function GET(request: NextRequest) {
       const project = wi.fields['System.TeamProject'];
       const iterationPath = wi.fields['System.IterationPath'] as string | undefined;
       const currentIteration = currentIterations.get(project);
-      if (!currentIteration || !iterationPath) return false;
+      // If we can't determine the iteration, don't filter the item out
+      if (!currentIteration || !iterationPath) return true;
       return iterationPath.startsWith(currentIteration);
     }
 

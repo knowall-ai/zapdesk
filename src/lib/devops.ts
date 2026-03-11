@@ -1686,27 +1686,44 @@ export class AzureDevOpsService {
     const result = new Map<string, string>();
 
     try {
-      const projectsResponse = await fetch(`${this.baseUrl}/_apis/projects?api-version=7.0`, {
-        headers: this.headers,
-      });
-      if (!projectsResponse.ok) return result;
-
-      const projectsData = await projectsResponse.json();
-      const projects: { name: string }[] = projectsData.value || [];
+      const projects = await this.getProjects();
+      if (!projects || projects.length === 0) return result;
 
       const iterationResults = await Promise.allSettled(
         projects.map(async (project) => {
-          const response = await fetch(
-            `${this.baseUrl}/${encodeURIComponent(project.name)}/${encodeURIComponent(project.name + ' Team')}/_apis/work/teamsettings/iterations?$timeframe=current&api-version=7.0`,
-            { headers: this.headers }
-          );
-          if (!response.ok) return null;
-          const data = await response.json();
-          const iterations = data.value || [];
-          if (iterations.length > 0) {
-            return { project: project.name, path: iterations[0].path as string };
+          try {
+            // Resolve the default team for this project
+            let teamName = project.name;
+            try {
+              const teamsResponse = await fetch(
+                `${this.baseUrl}/_apis/projects/${encodeURIComponent(project.name)}/teams?api-version=7.0`,
+                { headers: this.headers }
+              );
+              if (teamsResponse.ok) {
+                const teamsData = await teamsResponse.json();
+                const teams: { name: string }[] = teamsData.value || [];
+                if (teams.length > 0) {
+                  teamName = teams[0].name;
+                }
+              }
+            } catch {
+              // Fall back to project name as team name
+            }
+
+            const response = await fetch(
+              `${this.baseUrl}/${encodeURIComponent(project.name)}/${encodeURIComponent(teamName)}/_apis/work/teamsettings/iterations?$timeframe=current&api-version=7.0`,
+              { headers: this.headers }
+            );
+            if (!response.ok) return null;
+            const data = await response.json();
+            const iterations = data.value || [];
+            if (iterations.length > 0) {
+              return { project: project.name, path: iterations[0].path as string };
+            }
+            return null;
+          } catch {
+            return null;
           }
-          return null;
         })
       );
 

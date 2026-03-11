@@ -5,7 +5,6 @@ import { useParams, usePathname, useRouter } from 'next/navigation';
 
 /**
  * Hook for generating organization-prefixed URLs and navigating between orgs.
- * Used throughout the app to ensure all internal links include the org context.
  */
 export function useOrgUrl() {
   const params = useParams();

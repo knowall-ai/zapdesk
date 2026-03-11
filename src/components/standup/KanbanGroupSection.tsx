@@ -167,7 +167,15 @@ export default function KanbanGroupSection({
       const { active } = event;
       setActiveId(null);
 
-      if (!event.over || !onStateChange) return;
+      if (!event.over || !onStateChange) {
+        // Rollback visual state if no handler
+        const map: Record<string, StandupWorkItem[]> = {};
+        for (const col of columns) {
+          map[col.name] = col.items;
+        }
+        setLocalItems(map);
+        return;
+      }
 
       const activeItemId = active.id as number;
       const targetCol = findColumn(activeItemId);
