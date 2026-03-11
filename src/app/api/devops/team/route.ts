@@ -324,8 +324,6 @@ async function getFirstResponseTimeMs(
       if (requesterEmail && authorEmail === requesterEmail) continue;
 
       const responseTimeMs = comment.createdAt.getTime() - ticket.createdAt.getTime();
-      if (responseTimeMs <= 0) continue;
-
       const assigneeEmail = ticket.assignee?.email?.toLowerCase();
       if (!assigneeEmail) return null;
 
