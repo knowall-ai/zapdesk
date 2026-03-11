@@ -31,7 +31,6 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
   const [kanbanStates, setKanbanStates] = useState<WorkItemState[]>([]);
   const [isLoadingStates, setIsLoadingStates] = useState(true);
 
-  // Fetch work item states from API
   useEffect(() => {
     async function fetchStates() {
       try {
@@ -39,7 +38,6 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
         if (response.ok) {
           const data = await response.json();
           if (data.allStates && data.allStates.length > 0) {
-            // Use shared utility to ensure "Active" state exists
             const states = ensureActiveState(data.allStates);
             setKanbanStates(states);
           }
@@ -53,45 +51,32 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
     fetchStates();
   }, []);
 
-  // Update local tickets when props change
   useEffect(() => {
     setLocalTickets(tickets);
   }, [tickets]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Group tickets by their original DevOps state and track unrecognized states
   const { ticketsByState, ticketsWithUnrecognizedState } = useMemo(() => {
     const grouped: Record<string, Ticket[]> = {};
     const unrecognizedTicketIds = new Set<number>();
 
-    // Initialize all state columns
     kanbanStates.forEach((state) => {
       grouped[state.name] = [];
     });
 
-    // Track unmatched states
     const unmatchedStates = new Set<string>();
 
-    // Group tickets by their DevOps state
     localTickets.forEach((ticket) => {
       const state = ticket.devOpsState;
       if (grouped[state]) {
         grouped[state].push(ticket);
       } else {
-        // Track tickets with states not in our columns
         unmatchedStates.add(state);
         unrecognizedTicketIds.add(ticket.id);
-        // Put them in the first column (usually "New") as fallback
         const firstColumn = kanbanStates[0]?.name;
         if (firstColumn && grouped[firstColumn]) {
           grouped[firstColumn].push(ticket);
@@ -99,7 +84,6 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
       }
     });
 
-    // Log any unmatched states for debugging
     if (unmatchedStates.size > 0) {
       console.warn(
         '[KanbanBoard] Tickets with unrecognized states placed in first column:',
@@ -119,7 +103,6 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
     setActiveId(event.active.id as number);
   }, []);
 
-  // Get list of state names for checking if dropping on a column
   const stateNames = useMemo(() => kanbanStates.map((s) => s.name), [kanbanStates]);
 
   const handleDragOver = useCallback(
@@ -130,25 +113,20 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
       const activeTicketId = active.id as number;
       const overId = over.id as string;
 
-      // Find the ticket being dragged
       const ticket = localTickets.find((t) => t.id === activeTicketId);
       if (!ticket) return;
 
-      // Determine the target state (DevOps state name)
       let targetState: string | null = null;
 
-      // Check if we're over a column (state name)
       if (stateNames.includes(overId)) {
         targetState = overId;
       } else {
-        // We're over another ticket - find its DevOps state
         const overTicket = localTickets.find((t) => t.id === Number(overId));
         if (overTicket) {
           targetState = overTicket.devOpsState;
         }
       }
 
-      // If moving to a different state, update locally for visual feedback
       if (targetState && ticket.devOpsState !== targetState) {
         setLocalTickets((prev) =>
           prev.map((t) => (t.id === activeTicketId ? { ...t, devOpsState: targetState } : t))
@@ -168,11 +146,9 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
       const activeTicketId = active.id as number;
       const overId = over.id as string;
 
-      // Find the original ticket (from props, not local state)
       const originalTicket = tickets.find((t) => t.id === activeTicketId);
       if (!originalTicket) return;
 
-      // Determine the target state (DevOps state name)
       let targetState: string | null = null;
 
       if (stateNames.includes(overId)) {
@@ -184,20 +160,17 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
         }
       }
 
-      // If state hasn't changed, reset to original
       if (!targetState || originalTicket.devOpsState === targetState) {
         setLocalTickets(tickets);
         return;
       }
 
-      // Persist the state change
       if (onTicketStateChange) {
         setIsUpdating(true);
         try {
           await onTicketStateChange(activeTicketId, targetState);
         } catch (error) {
           console.error('Failed to update ticket state:', error);
-          // Rollback on failure
           setLocalTickets(tickets);
         } finally {
           setIsUpdating(false);
@@ -237,16 +210,29 @@ export default function KanbanBoard({ tickets, onTicketStateChange }: KanbanBoar
         onDragCancel={handleDragCancel}
       >
         <div className="kanban-columns">
-          {kanbanStates.map((state) => (
-            <KanbanColumn
-              key={state.name}
-              stateName={state.name}
-              stateColor={state.color}
-              tickets={ticketsByState[state.name] || []}
-              activeId={activeId}
-              ticketsWithUnrecognizedState={ticketsWithUnrecognizedState}
-            />
-          ))}
+          {kanbanStates.map((state) => {
+            const columnTickets = ticketsByState[state.name] || [];
+            return (
+              <KanbanColumn
+                key={state.name}
+                id={state.name}
+                label={state.name}
+                color={state.color ? `#${state.color}` : 'var(--text-muted)'}
+                count={columnTickets.length}
+                itemIds={columnTickets.map((t) => t.id)}
+                emptyText="No tickets"
+              >
+                {columnTickets.map((ticket) => (
+                  <KanbanCard
+                    key={ticket.id}
+                    ticket={ticket}
+                    isDragging={activeId === ticket.id}
+                    hasUnrecognizedState={ticketsWithUnrecognizedState.has(ticket.id)}
+                  />
+                ))}
+              </KanbanColumn>
+            );
+          })}
         </div>
 
         <DragOverlay>

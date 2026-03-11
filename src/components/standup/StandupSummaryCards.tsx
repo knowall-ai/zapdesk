@@ -1,28 +1,7 @@
 'use client';
 
-import { CheckCircle2, Loader2, ListTodo, FolderOpen, Circle, Ban, XCircle } from 'lucide-react';
-
-// Map DevOps state categories to display config
-const categoryDisplay: Record<string, { icon: React.ReactNode; color: string }> = {
-  Proposed: { icon: <Circle size={20} />, color: 'var(--status-new)' },
-  InProgress: { icon: <Loader2 size={20} />, color: 'var(--status-progress)' },
-  Resolved: { icon: <CheckCircle2 size={20} />, color: 'var(--status-resolved)' },
-  Completed: { icon: <CheckCircle2 size={20} />, color: 'var(--status-resolved)' },
-  Removed: { icon: <XCircle size={20} />, color: 'var(--text-muted)' },
-};
-
-function getIcon(name: string, category: string): React.ReactNode {
-  if (name === 'To Do') return <ListTodo size={20} />;
-  if (name === 'Blocked') return <Ban size={20} />;
-  return categoryDisplay[category]?.icon || <Circle size={20} />;
-}
-
-function getColor(name: string, category: string): string {
-  if (name === 'To Do') return '#eab308';
-  if (name === 'Blocked') return '#ef4444';
-  if (name === 'Resolved') return '#f97316';
-  return categoryDisplay[category]?.color || 'var(--text-muted)';
-}
+import { FolderOpen } from 'lucide-react';
+import { getColumnIcon, getColumnColor } from './columnConfig';
 
 interface StandupSummaryCardsProps {
   columns: { name: string; category: string }[];
@@ -36,11 +15,10 @@ export default function StandupSummaryCards({ columns, summary }: StandupSummary
   const cards = columns.map((col) => ({
     label: col.name,
     value: summary.columnCounts[col.name] || 0,
-    icon: getIcon(col.name, col.category),
-    color: getColor(col.name, col.category),
+    icon: getColumnIcon(col.name, col.category, 20),
+    color: getColumnColor(col.name, col.category),
   }));
 
-  // Add projects count card
   cards.push({
     label: 'Projects',
     value: summary.projectCount,
@@ -48,7 +26,6 @@ export default function StandupSummaryCards({ columns, summary }: StandupSummary
     color: 'var(--text-muted)',
   });
 
-  // Dynamic grid: up to 7 cards per row
   const gridCols = Math.min(cards.length, 7);
 
   return (

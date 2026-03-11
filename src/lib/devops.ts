@@ -1399,6 +1399,47 @@ export class AzureDevOpsService {
     };
   }
 
+  // Fetch current iteration path for each project
+  async getCurrentIterations(): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+
+    try {
+      const projectsResponse = await fetch(`${this.baseUrl}/_apis/projects?api-version=7.0`, {
+        headers: this.headers,
+      });
+      if (!projectsResponse.ok) return result;
+
+      const projectsData = await projectsResponse.json();
+      const projects: { name: string }[] = projectsData.value || [];
+
+      const iterationResults = await Promise.allSettled(
+        projects.map(async (project) => {
+          const response = await fetch(
+            `${this.baseUrl}/${encodeURIComponent(project.name)}/${encodeURIComponent(project.name + ' Team')}/_apis/work/teamsettings/iterations?$timeframe=current&api-version=7.0`,
+            { headers: this.headers }
+          );
+          if (!response.ok) return null;
+          const data = await response.json();
+          const iterations = data.value || [];
+          if (iterations.length > 0) {
+            return { project: project.name, path: iterations[0].path as string };
+          }
+          return null;
+        })
+      );
+
+      for (const r of iterationResults) {
+        if (r.status === 'fulfilled' && r.value) {
+          result.set(r.value.project, r.value.path);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch current iterations:', error);
+    }
+
+    return result;
+  }
+
   // Daily Standup: fetch work items across all projects for a given date
   // Uses org-level WIQL queries (no project scope) for performance
   async getStandupData(
@@ -1527,6 +1568,7 @@ export class AzureDevOpsService {
       'System.CreatedDate',
       'System.TeamProject',
       'System.Tags',
+      'System.IterationPath',
       'Microsoft.VSTS.Common.Priority',
     ].join(',');
 

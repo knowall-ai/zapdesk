@@ -508,6 +508,7 @@ export interface StandupWorkItem {
   project: string;
   devOpsUrl: string;
   tags: string[];
+  iterationPath?: string;
 }
 
 /** A column definition pulled from DevOps state configuration */

@@ -51,7 +51,7 @@ const mainNavItems = [
   },
   {
     id: 'standup',
-    name: 'Daily Standup',
+    name: 'Kanban Board',
     icon: <ClipboardList size={20} />,
     href: '/standup',
   },

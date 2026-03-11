@@ -154,6 +154,7 @@ function mapWorkItemToStandupItem(
         ?.split(';')
         .map((t: string) => t.trim())
         .filter(Boolean) || [],
+    iterationPath: (fields['System.IterationPath'] as string) || undefined,
   };
 }
 
@@ -176,6 +177,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const dateParam = searchParams.get('date');
+    const currentSprintOnly = searchParams.get('currentSprintOnly') === 'true';
     const targetDate = dateParam ? new Date(dateParam + 'T12:00:00Z') : new Date();
 
     // Step 1: Fetch state categories dynamically from DevOps
@@ -191,6 +193,24 @@ export async function GET(request: NextRequest) {
       targetDate,
       stateCategories
     );
+
+    // Step 2b: If currentSprintOnly, fetch current iterations and filter
+    let currentIterations: Map<string, string> | null = null;
+    if (currentSprintOnly) {
+      currentIterations = await devopsService.getCurrentIterations();
+    }
+
+    function isInCurrentSprint(wi: DevOpsWorkItem): boolean {
+      if (!currentIterations) return true;
+      const project = wi.fields['System.TeamProject'];
+      const iterationPath = wi.fields['System.IterationPath'] as string | undefined;
+      const currentIteration = currentIterations.get(project);
+      if (!currentIteration || !iterationPath) return false;
+      return iterationPath.startsWith(currentIteration);
+    }
+
+    const filteredDoneItems = doneItems.filter(isInCurrentSprint);
+    const filteredActiveItems = activeItems.filter(isInCurrentSprint);
 
     // Step 3: Define the 6 display columns and map DevOps states to them
     // Items in states not matching a column are bucketed by their category.
@@ -236,14 +256,14 @@ export async function GET(request: NextRequest) {
     };
 
     // Place done items into their resolved column
-    for (const wi of doneItems) {
+    for (const wi of filteredDoneItems) {
       const colMap = ensureProject(wi.fields['System.TeamProject']);
       const column = resolveColumn(wi.fields['System.State']);
       colMap.get(column)!.push(mapWorkItemToStandupItem(wi, organization, stateCategories));
     }
 
     // Place active items into their resolved column
-    for (const wi of activeItems) {
+    for (const wi of filteredActiveItems) {
       const colMap = ensureProject(wi.fields['System.TeamProject']);
       const column = resolveColumn(wi.fields['System.State']);
       colMap.get(column)!.push(mapWorkItemToStandupItem(wi, organization, stateCategories));

@@ -1,19 +1,77 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import Link from 'next/link';
+import { RefreshCw, FolderOpen, User } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
-import { StandupSummaryCards, ProjectStandupSection } from '@/components/standup';
+import { StandupSummaryCards, KanbanGroupSection } from '@/components/standup';
 import { useDevOpsApi } from '@/hooks';
-import type { StandupData } from '@/types';
+import type { StandupData, StandupColumn, StandupWorkItem } from '@/types';
+
+type GroupBy = 'project' | 'person';
+
+/** Build /standup URL with the given params */
+function buildStandupUrl(groupBy: GroupBy, sprint: boolean): string {
+  const params = new URLSearchParams();
+  if (groupBy !== 'project') params.set('groupBy', groupBy);
+  if (sprint) params.set('sprint', 'true');
+  const qs = params.toString();
+  return `/standup${qs ? `?${qs}` : ''}`;
+}
+
+interface GroupData {
+  groupName: string;
+  columns: StandupColumn[];
+}
+
+function regroupByPerson(data: StandupData): GroupData[] {
+  const columnDefs = data.columns;
+  const personMap = new Map<string, Map<string, StandupWorkItem[]>>();
+
+  for (const project of data.projects) {
+    for (const col of project.columns) {
+      for (const item of col.items) {
+        const personName = item.assignee?.displayName || 'Unassigned';
+        if (!personMap.has(personName)) {
+          const colMap = new Map<string, StandupWorkItem[]>();
+          for (const def of columnDefs) {
+            colMap.set(def.name, []);
+          }
+          personMap.set(personName, colMap);
+        }
+        personMap.get(personName)!.get(col.name)?.push(item);
+      }
+    }
+  }
+
+  return Array.from(personMap.entries())
+    .sort(([a], [b]) => {
+      if (a === 'Unassigned') return 1;
+      if (b === 'Unassigned') return -1;
+      return a.localeCompare(b);
+    })
+    .map(([personName, colMap]) => ({
+      groupName: personName,
+      columns: columnDefs.map((def) => ({
+        name: def.name,
+        category: def.category,
+        items: colMap.get(def.name) || [],
+      })),
+    }));
+}
 
 export default function StandupPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { get: devOpsGet, hasOrganization } = useDevOpsApi();
+
+  // Derive from URL — single source of truth
+  const groupBy: GroupBy = (searchParams.get('groupBy') as GroupBy) || 'project';
+  const currentSprintOnly = searchParams.get('sprint') === 'true';
 
   const [standupData, setStandupData] = useState<StandupData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,7 +96,13 @@ export default function StandupPage() {
       setError(null);
 
       try {
-        const response = await devOpsGet('/api/devops/standup');
+        const params = new URLSearchParams();
+        if (currentSprintOnly) {
+          params.set('currentSprintOnly', 'true');
+        }
+        const queryString = params.toString();
+        const url = `/api/devops/standup${queryString ? `?${queryString}` : ''}`;
+        const response = await devOpsGet(url);
         if (!response.ok) {
           throw new Error('Failed to fetch standup data');
         }
@@ -51,17 +115,15 @@ export default function StandupPage() {
         setRefreshing(false);
       }
     },
-    [session?.accessToken, hasOrganization, devOpsGet]
+    [session?.accessToken, hasOrganization, devOpsGet, currentSprintOnly]
   );
 
-  // Initial fetch
   useEffect(() => {
     if (session?.accessToken && hasOrganization) {
       fetchStandupData();
     }
   }, [session?.accessToken, hasOrganization, fetchStandupData]);
 
-  // Auto-refresh interval
   useEffect(() => {
     if (!autoRefresh) return;
     const interval = setInterval(() => {
@@ -72,10 +134,8 @@ export default function StandupPage() {
     return () => clearInterval(interval);
   }, [autoRefresh, fetchStandupData]);
 
-  // Handle drag-and-drop state change
-  // Column name IS the DevOps state name — no mapping needed
   const handleStateChange = useCallback(
-    async (itemId: number, _project: string, targetState: string) => {
+    async (itemId: number, targetState: string) => {
       const response = await fetch(`/api/devops/tickets/${itemId}/state`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -86,13 +146,24 @@ export default function StandupPage() {
         throw new Error('Failed to update state');
       }
 
-      // Refresh data after successful state change
       fetchStandupData(true);
     },
     [fetchStandupData]
   );
 
-  // Auth guard
+  const groups: GroupData[] = useMemo(() => {
+    if (!standupData) return [];
+
+    if (groupBy === 'person') {
+      return regroupByPerson(standupData);
+    }
+
+    return standupData.projects.map((p) => ({
+      groupName: p.projectName,
+      columns: p.columns,
+    }));
+  }, [standupData, groupBy]);
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login');
@@ -115,7 +186,7 @@ export default function StandupPage() {
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                Daily Standup
+                Kanban Board
               </h1>
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                 All projects &middot;{' '}
@@ -128,7 +199,53 @@ export default function StandupPage() {
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Group By toggle */}
+              <div className="flex rounded-md border" style={{ borderColor: 'var(--border)' }}>
+                <Link
+                  href={buildStandupUrl('project', currentSprintOnly)}
+                  replace
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                    groupBy === 'project'
+                      ? 'bg-[var(--primary)] text-white'
+                      : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
+                  }`}
+                  style={{ borderRadius: '0.375rem 0 0 0.375rem' }}
+                >
+                  <FolderOpen size={14} />
+                  Project
+                </Link>
+                <Link
+                  href={buildStandupUrl('person', currentSprintOnly)}
+                  replace
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                    groupBy === 'person'
+                      ? 'bg-[var(--primary)] text-white'
+                      : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
+                  }`}
+                  style={{ borderRadius: '0 0.375rem 0.375rem 0' }}
+                >
+                  <User size={14} />
+                  Person
+                </Link>
+              </div>
+
+              {/* Current Sprint Only toggle */}
+              <label
+                className="flex cursor-pointer items-center gap-2 text-xs"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <input
+                  type="checkbox"
+                  checked={currentSprintOnly}
+                  onChange={(e) =>
+                    router.replace(buildStandupUrl(groupBy, e.target.checked), { scroll: false })
+                  }
+                  className="accent-[var(--primary)]"
+                />
+                Current Sprint
+              </label>
+
               {/* Auto-refresh toggle */}
               <label
                 className="flex cursor-pointer items-center gap-2 text-xs"
@@ -179,11 +296,12 @@ export default function StandupPage() {
             <div className="space-y-6">
               <StandupSummaryCards columns={standupData.columns} summary={standupData.summary} />
 
-              {standupData.projects.length > 0 ? (
-                standupData.projects.map((project) => (
-                  <ProjectStandupSection
-                    key={project.projectName}
-                    project={project}
+              {groups.length > 0 ? (
+                groups.map((group) => (
+                  <KanbanGroupSection
+                    key={group.groupName}
+                    groupName={group.groupName}
+                    columns={group.columns}
                     onStateChange={handleStateChange}
                   />
                 ))
