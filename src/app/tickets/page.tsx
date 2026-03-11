@@ -170,6 +170,9 @@ function TicketsPageContent() {
           prev.map((t) => (t.id === workItemId ? { ...t, workItemType: newType } : t))
         );
         setSelectedTicket((prev) => (prev ? { ...prev, workItemType: newType } : null));
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Type change failed:', response.status, errorData);
       }
     },
     [tickets, selectedOrganization]
