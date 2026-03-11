@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { User, WorkItemState, WorkItemType } from '@/types';
 import { ensureActiveState } from '@/types';
+import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 
 interface UseWorkItemActionsOptions {
   project?: string;
@@ -82,6 +83,9 @@ export function useWorkItemActions({
   const [availableTypes, setAvailableTypes] = useState<WorkItemType[]>([]);
   const [isLoadingTypes, setIsLoadingTypes] = useState(false);
   const [isUpdatingType, setIsUpdatingType] = useState(false);
+  const typesProjectRef = useRef<string | undefined>(undefined);
+
+  const { get: devOpsGet } = useDevOpsApi();
 
   // Fetch available states when dropdown opens
   useEffect(() => {
@@ -196,13 +200,21 @@ export function useWorkItemActions({
     [onPriorityChange]
   );
 
+  // Reset available types when project changes
+  useEffect(() => {
+    if (project !== typesProjectRef.current) {
+      setAvailableTypes([]);
+      typesProjectRef.current = project;
+    }
+  }, [project]);
+
   // Fetch available types when type dropdown opens
   useEffect(() => {
     if (isTypeDropdownOpen && availableTypes.length === 0 && project) {
       const fetchTypes = async () => {
         setIsLoadingTypes(true);
         try {
-          const response = await fetch(
+          const response = await devOpsGet(
             `/api/devops/projects/${encodeURIComponent(project)}/workitemtypes`
           );
           if (response.ok) {
@@ -222,7 +234,10 @@ export function useWorkItemActions({
 
   const handleTypeSelect = useCallback(
     async (type: string) => {
-      if (!onTypeChange) return;
+      if (!onTypeChange || type === workItemType) {
+        setIsTypeDropdownOpen(false);
+        return;
+      }
       setIsUpdatingType(true);
       try {
         await onTypeChange(type);
@@ -231,7 +246,7 @@ export function useWorkItemActions({
         setIsUpdatingType(false);
       }
     },
-    [onTypeChange]
+    [onTypeChange, workItemType]
   );
 
   const resetAll = useCallback(() => {

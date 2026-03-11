@@ -267,8 +267,7 @@ export default function WorkItemDetailSidebar({
               <button
                 onClick={() => actions.setIsTypeDropdownOpen(!actions.isTypeDropdownOpen)}
                 disabled={actions.isUpdatingType}
-                className="flex w-full items-center justify-between rounded p-2 text-left transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-                style={{ cursor: 'pointer' }}
+                className="flex w-full cursor-pointer items-center justify-between rounded p-2 text-left transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {actions.isUpdatingType ? (
                   <div className="flex items-center gap-2">

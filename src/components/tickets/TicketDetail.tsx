@@ -42,6 +42,7 @@ import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
 import TicketHistory from './TicketHistory';
 import { useClickOutside } from '@/hooks';
+import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 
 type DetailTab = 'conversation' | 'history';
 
@@ -84,6 +85,7 @@ export default function TicketDetail({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
   const [isDetailsSidebarOpen, setIsDetailsSidebarOpen] = useState(false);
+  const { get: devOpsGet } = useDevOpsApi();
 
   // State editing
   const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
@@ -193,7 +195,7 @@ export default function TicketDetail({
     if (!ticket.project) return;
     setIsLoadingTypes(true);
     try {
-      const response = await fetch(
+      const response = await devOpsGet(
         `/api/devops/projects/${encodeURIComponent(ticket.project)}/workitemtypes`
       );
       if (response.ok) {

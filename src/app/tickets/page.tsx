@@ -166,13 +166,24 @@ function TicketsPageContent() {
         body: JSON.stringify({ type: newType, project: ticket.project }),
       });
       if (response.ok) {
-        setTickets((prev) =>
-          prev.map((t) => (t.id === workItemId ? { ...t, workItemType: newType } : t))
-        );
-        setSelectedTicket((prev) => (prev ? { ...prev, workItemType: newType } : null));
+        const data = await response.json();
+        const updatedTicket = data.ticket;
+        if (updatedTicket) {
+          setTickets((prev) => prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)));
+          setSelectedTicket((prev) =>
+            prev && prev.id === updatedTicket.id ? updatedTicket : prev
+          );
+        } else {
+          // Fallback: update just the type field
+          setTickets((prev) =>
+            prev.map((t) => (t.id === workItemId ? { ...t, workItemType: newType } : t))
+          );
+          setSelectedTicket((prev) => (prev ? { ...prev, workItemType: newType } : null));
+        }
       } else {
         const errorData = await response.json().catch(() => ({}));
         console.error('Type change failed:', response.status, errorData);
+        throw new Error(errorData.error || 'Failed to update work item type');
       }
     },
     [tickets, selectedOrganization]

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService, workItemToTicket } from '@/lib/devops';
+import { validateOrganizationAccess } from '@/lib/devops-auth';
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -25,7 +26,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: 'Type is required' }, { status: 400 });
     }
 
-    const organization = request.headers.get('x-devops-org') || undefined;
+    const organization = request.headers.get('x-devops-org');
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization specified' }, { status: 400 });
+    }
+
+    const hasAccess = await validateOrganizationAccess(session.accessToken, organization);
+    if (!hasAccess) {
+      return NextResponse.json(
+        { error: 'Access denied to the specified organization' },
+        { status: 403 }
+      );
+    }
+
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
 
     // If project is provided, use it directly
