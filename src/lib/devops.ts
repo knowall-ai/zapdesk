@@ -80,6 +80,30 @@ export function mapStatusToState(status: TicketStatus): string {
   return statusMap[status] || 'Active';
 }
 
+// All effort estimate fields on Features (all stored in days in Azure DevOps)
+const FEATURE_EFFORT_FIELDS = [
+  'Microsoft.VSTS.Scheduling.Effort',
+  'Custom.StrategicEffortDays',
+  'Custom.PrepEffortDays',
+  'Custom.DesignEffortDays',
+  'Custom.Engineereffort',
+  'Custom.TestEffortDays',
+  'Custom.PlanningEffortDays',
+  'Custom.OperateEffortDays',
+  'Custom.Architecteffort',
+  'Custom.Managereffort',
+];
+
+// Sum all effort fields and convert from days to hours (8h/day)
+function sumEffortFields(fields: Record<string, unknown>): number | undefined {
+  let total = 0;
+  for (const field of FEATURE_EFFORT_FIELDS) {
+    const value = fields[field] as number | undefined;
+    if (value) total += value;
+  }
+  return total > 0 ? total * 8 : undefined;
+}
+
 // Map priority numbers to Zendesk-like priorities
 function mapPriority(priority?: number): TicketPriority | undefined {
   if (!priority) return undefined;
@@ -1634,10 +1658,8 @@ export class AzureDevOpsService {
       completedWork: (fields['Microsoft.VSTS.Scheduling.CompletedWork'] as number) || 0,
       remainingWork: (fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number) || 0,
       originalEstimate: (fields['Microsoft.VSTS.Scheduling.OriginalEstimate'] as number) || 0,
-      // Effort is stored in days in Azure DevOps — convert to hours (8h/day) to match completedWork
-      effort: (fields['Microsoft.VSTS.Scheduling.Effort'] as number | undefined)
-        ? (fields['Microsoft.VSTS.Scheduling.Effort'] as number) * 8
-        : undefined,
+      // Sum all effort fields (stored in days in Azure DevOps) and convert to hours (8h/day)
+      effort: sumEffortFields(fields),
       totalWork: 0,
       workItems: [],
       devOpsUrl:
