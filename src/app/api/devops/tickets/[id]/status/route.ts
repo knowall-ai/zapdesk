@@ -34,7 +34,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     // If project is provided in the body, use it directly
     if (body.project) {
-      const updatedWorkItem = await devopsService.updateTicketState(body.project, ticketId, devOpsState);
+      const updatedWorkItem = await devopsService.updateTicketState(
+        body.project,
+        ticketId,
+        devOpsState
+      );
       const ticket = workItemToTicket(updatedWorkItem);
       return NextResponse.json({ ticket });
     }
