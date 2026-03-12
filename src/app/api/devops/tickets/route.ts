@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
       priority,
       priorityFieldRef,
       severity,
+      foundBy,
       assignee,
       tags,
       workItemType,
@@ -153,6 +154,7 @@ export async function POST(request: NextRequest) {
         hasPriority: Boolean(validatedFieldRef),
         priorityFieldRef: validatedFieldRef,
         severity: severity || undefined,
+        foundBy: foundBy || undefined,
         iterationPath: iterationPath || undefined,
         areaPath: areaPath || undefined,
       }

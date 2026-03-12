@@ -671,6 +671,7 @@ export class AzureDevOpsService {
       hasPriority?: boolean;
       priorityFieldRef?: string;
       severity?: string;
+      foundBy?: string;
       iterationPath?: string;
       areaPath?: string;
     } = {}
@@ -683,6 +684,7 @@ export class AzureDevOpsService {
       hasPriority = true,
       priorityFieldRef,
       severity,
+      foundBy,
       iterationPath,
       areaPath,
     } = options;
@@ -707,6 +709,14 @@ export class AzureDevOpsService {
         op: 'add',
         path: '/fields/Microsoft.VSTS.Common.Severity',
         value: severity,
+      });
+    }
+
+    if (foundBy) {
+      patchDocument.push({
+        op: 'add',
+        path: '/fields/Custom.FoundBy',
+        value: foundBy,
       });
     }
 

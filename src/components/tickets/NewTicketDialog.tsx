@@ -21,6 +21,7 @@ interface NewTicketForm {
   description: string;
   priority: number | string;
   severity: string;
+  foundBy: string;
   assignee: string;
   tags: string;
   workItemType: string;
@@ -63,6 +64,9 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
 
   const [severityOptions, setSeverityOptions] = useState<string[]>([]);
   const [isLoadingSeverity, setIsLoadingSeverity] = useState(false);
+  const [foundByOptions, setFoundByOptions] = useState<string[]>([]);
+  const [isLoadingFoundBy, setIsLoadingFoundBy] = useState(false);
+  const [foundBySearch, setFoundBySearch] = useState('');
 
   const [form, setForm] = useState<NewTicketForm>({
     project: '',
@@ -70,6 +74,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     description: '',
     priority: '',
     severity: '',
+    foundBy: '',
     assignee: '',
     tags: '',
     workItemType: 'Task',
@@ -217,6 +222,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         description: '',
         priority: '',
         severity: '',
+        foundBy: '',
         assignee: '',
         tags: '',
         workItemType: 'Task',
@@ -225,6 +231,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       });
       setError(null);
       setAssigneeSearch('');
+      setFoundBySearch('');
       setWorkItemTypes([]);
       setPriorityOptions([]);
       setSeverityOptions([]);
@@ -291,9 +298,9 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         const response = await get(fieldUrl);
         if (response.ok) {
           const data = await response.json();
-          if (data.required && data.allowedValues?.length > 0) {
+          if (data.allowedValues?.length > 0) {
             setSeverityOptions(data.allowedValues);
-            setForm((prev) => ({ ...prev, severity: prev.severity || data.allowedValues[0] }));
+            setForm((prev) => ({ ...prev, severity: '' }));
           } else {
             setSeverityOptions([]);
             setForm((prev) => ({ ...prev, severity: '' }));
@@ -312,6 +319,51 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     fetchSeverity();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.project, form.workItemType, hasOrganization]);
+
+  // Fetch Found By options when work item type requires it
+  useEffect(() => {
+    if (!form.project || !form.workItemType || !hasOrganization) {
+      setFoundByOptions([]);
+      setForm((prev) => ({ ...prev, foundBy: '' }));
+      setFoundBySearch('');
+      return;
+    }
+
+    const fetchFoundBy = async () => {
+      setIsLoadingFoundBy(true);
+      try {
+        const fieldUrl = `/api/devops/projects/${encodeURIComponent(form.project)}/workitemtypes/${encodeURIComponent(form.workItemType)}/fields/Custom.FoundBy`;
+        const response = await get(fieldUrl);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.allowedValues?.length > 0) {
+            setFoundByOptions(data.allowedValues);
+            setForm((prev) => ({ ...prev, foundBy: '' }));
+          } else {
+            setFoundByOptions([]);
+            setForm((prev) => ({ ...prev, foundBy: '' }));
+          }
+        } else {
+          setFoundByOptions([]);
+          setForm((prev) => ({ ...prev, foundBy: '' }));
+        }
+      } catch {
+        setFoundByOptions([]);
+      } finally {
+        setIsLoadingFoundBy(false);
+      }
+    };
+
+    fetchFoundBy();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.project, form.workItemType, hasOrganization]);
+
+  // Filter Found By options by search
+  const filteredFoundByOptions = useMemo(() => {
+    if (!foundBySearch) return foundByOptions;
+    const search = foundBySearch.toLowerCase();
+    return foundByOptions.filter((opt) => opt.toLowerCase().includes(search));
+  }, [foundByOptions, foundBySearch]);
 
   // Filter out Stakeholders and apply search
   const filteredMembers = useMemo(() => {
@@ -368,14 +420,22 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const extraFields = [
+      severityOptions.length > 0 && !form.severity ? 'Severity' : '',
+      foundByOptions.length > 0 && !form.foundBy ? 'Found By' : '',
+    ].filter(Boolean);
     if (
       !form.project ||
       !form.title.trim() ||
       !form.workItemType ||
       !form.iterationPath ||
-      !form.areaPath
+      !form.areaPath ||
+      extraFields.length > 0
     ) {
-      setError('Please fill in all required fields: Project, Title, Type, Iteration, and Area');
+      setError(
+        'Please fill in all required fields: Project, Title, Type, Iteration, Area' +
+          (extraFields.length > 0 ? `, ${extraFields.join(', ')}` : '')
+      );
       return;
     }
 
@@ -390,6 +450,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         priority: hasPriority ? form.priority : undefined,
         priorityFieldRef: priorityFieldRef || undefined,
         severity: form.severity || undefined,
+        foundBy: form.foundBy || undefined,
         assignee: form.assignee || undefined,
         workItemType: form.workItemType,
         iterationPath: form.iterationPath || undefined,
@@ -655,7 +716,9 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     !form.title.trim() ||
                     !form.workItemType ||
                     !form.iterationPath ||
-                    !form.areaPath
+                    !form.areaPath ||
+                    (severityOptions.length > 0 && !form.severity) ||
+                    (foundByOptions.length > 0 && !form.foundBy)
                   }
                   className="btn-primary flex items-center gap-2"
                   style={{ cursor: 'pointer' }}
@@ -967,13 +1030,105 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                       value={form.severity}
                       onChange={(e) => setForm((prev) => ({ ...prev, severity: e.target.value }))}
                       className="input w-full"
+                      required
                     >
+                      <option value="">Select Severity...</option>
                       {severityOptions.map((opt) => (
                         <option key={opt} value={opt}>
                           {opt}
                         </option>
                       ))}
                     </select>
+                  )}
+                </div>
+              )}
+
+              {/* Found By - shown when required by the work item type (Assignee-style search) */}
+              {foundByOptions.length > 0 && (
+                <div>
+                  <label
+                    className="mb-1 block text-xs uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Found By *
+                  </label>
+                  {isLoadingFoundBy ? (
+                    <div
+                      className="flex items-center gap-2 text-sm"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <Loader2 className="animate-spin" size={14} />
+                      Loading...
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {/* Search input */}
+                      <div className="relative">
+                        <Search
+                          size={14}
+                          className="absolute top-1/2 left-2 -translate-y-1/2"
+                          style={{ color: 'var(--text-muted)' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Search..."
+                          value={foundBySearch}
+                          onChange={(e) => setFoundBySearch(e.target.value)}
+                          className="input w-full pl-7 text-sm"
+                        />
+                      </div>
+                      {/* Selected value or dropdown list */}
+                      {form.foundBy ? (
+                        <div
+                          className="flex items-center justify-between rounded p-2"
+                          style={{ backgroundColor: 'var(--surface-hover)' }}
+                        >
+                          <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                            {form.foundBy}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForm((prev) => ({ ...prev, foundBy: '' }));
+                              setFoundBySearch('');
+                            }}
+                            className="text-xs hover:underline"
+                            style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
+                          >
+                            clear
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          className="max-h-32 overflow-auto rounded"
+                          style={{ border: '1px solid var(--border)' }}
+                        >
+                          {filteredFoundByOptions.length === 0 ? (
+                            <p
+                              className="p-2 text-center text-xs"
+                              style={{ color: 'var(--text-muted)' }}
+                            >
+                              No options found
+                            </p>
+                          ) : (
+                            filteredFoundByOptions.map((opt) => (
+                              <button
+                                key={opt}
+                                type="button"
+                                onClick={() => {
+                                  setForm((prev) => ({ ...prev, foundBy: opt }));
+                                  setFoundBySearch('');
+                                }}
+                                className="block w-full px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                                style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
+                              >
+                                {opt}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
