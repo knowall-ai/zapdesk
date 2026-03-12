@@ -97,11 +97,15 @@ const FEATURE_EFFORT_FIELDS = [
 // Sum all effort fields and convert from days to hours (8h/day)
 function sumEffortFields(fields: Record<string, unknown>): number | undefined {
   let total = 0;
+  let hasValue = false;
   for (const field of FEATURE_EFFORT_FIELDS) {
-    const value = fields[field] as number | undefined;
-    if (value) total += value;
+    const raw = fields[field];
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      total += raw;
+      hasValue = true;
+    }
   }
-  return total > 0 ? total * 8 : undefined;
+  return hasValue ? total * 8 : undefined;
 }
 
 // Map priority numbers to Zendesk-like priorities
