@@ -300,7 +300,7 @@ export default function WorkItemBoard({
   const bulkActions: BulkAction[] = [
     {
       id: 'set-in-progress',
-      label: 'Set to In Progress',
+      label: 'Set to Active',
       icon: <PlayCircle size={16} />,
       handler: async (itemIds) => {
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
