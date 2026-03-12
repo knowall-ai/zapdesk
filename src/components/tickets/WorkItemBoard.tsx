@@ -303,14 +303,19 @@ export default function WorkItemBoard({
       label: 'Set to In Progress',
       icon: <PlayCircle size={16} />,
       handler: async (itemIds) => {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (organization) {
+          headers['x-devops-org'] = organization;
+        }
         const results = await Promise.all(
-          itemIds.map((id) =>
-            fetch(`/api/devops/tickets/${id}/status`, {
+          itemIds.map((id) => {
+            const item = items.find((i) => i.id === id);
+            return fetch(`/api/devops/tickets/${id}/status`, {
               method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ status: 'In Progress' }),
-            })
-          )
+              headers,
+              body: JSON.stringify({ status: 'In Progress', project: item?.project }),
+            });
+          })
         );
         const failed = results.filter((r) => !r.ok);
         if (failed.length > 0) {
@@ -323,14 +328,19 @@ export default function WorkItemBoard({
       label: 'Re-open',
       icon: <RotateCcw size={16} />,
       handler: async (itemIds) => {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (organization) {
+          headers['x-devops-org'] = organization;
+        }
         const results = await Promise.all(
-          itemIds.map((id) =>
-            fetch(`/api/devops/tickets/${id}/status`, {
+          itemIds.map((id) => {
+            const item = items.find((i) => i.id === id);
+            return fetch(`/api/devops/tickets/${id}/status`, {
               method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ status: 'Open' }),
-            })
-          )
+              headers,
+              body: JSON.stringify({ status: 'Open', project: item?.project }),
+            });
+          })
         );
         const failed = results.filter((r) => !r.ok);
         if (failed.length > 0) {
@@ -344,14 +354,19 @@ export default function WorkItemBoard({
       icon: <CheckCircle size={16} />,
       confirmMessage: 'Are you sure you want to close the selected items?',
       handler: async (itemIds) => {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (organization) {
+          headers['x-devops-org'] = organization;
+        }
         const results = await Promise.all(
-          itemIds.map((id) =>
-            fetch(`/api/devops/tickets/${id}/status`, {
+          itemIds.map((id) => {
+            const item = items.find((i) => i.id === id);
+            return fetch(`/api/devops/tickets/${id}/status`, {
               method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ status: 'Closed' }),
-            })
-          )
+              headers,
+              body: JSON.stringify({ status: 'Closed', project: item?.project }),
+            });
+          })
         );
         const failed = results.filter((r) => !r.ok);
         if (failed.length > 0) {

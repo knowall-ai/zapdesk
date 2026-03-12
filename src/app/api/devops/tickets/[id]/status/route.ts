@@ -29,9 +29,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     // Map frontend status to Azure DevOps state
     const devOpsState = mapStatusToState(status as TicketStatus);
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const organization = request.headers.get('x-devops-org') || undefined;
+    const devopsService = new AzureDevOpsService(session.accessToken, organization);
 
-    // Get all projects to find the ticket
+    // If project is provided in the body, use it directly
+    if (body.project) {
+      const updatedWorkItem = await devopsService.updateTicketState(body.project, ticketId, devOpsState);
+      const ticket = workItemToTicket(updatedWorkItem);
+      return NextResponse.json({ ticket });
+    }
+
+    // Fallback: search all projects to find the ticket
     const projects = await devopsService.getProjects();
 
     for (const project of projects) {
@@ -48,7 +56,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             id: project.id,
             name: project.name,
             devOpsProject: project.name,
-            devOpsOrg: 'KnowAll',
+            devOpsOrg: organization || '',
             tags: [],
             createdAt: new Date(),
             updatedAt: new Date(),
