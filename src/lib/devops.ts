@@ -80,6 +80,34 @@ export function mapStatusToState(status: TicketStatus): string {
   return statusMap[status] || 'Active';
 }
 
+// All effort estimate fields on Features (all stored in days in Azure DevOps)
+const FEATURE_EFFORT_FIELDS = [
+  'Microsoft.VSTS.Scheduling.Effort',
+  'Custom.StrategicEffortDays',
+  'Custom.PrepEffortDays',
+  'Custom.DesignEffortDays',
+  'Custom.Engineereffort',
+  'Custom.TestEffortDays',
+  'Custom.PlanningEffortDays',
+  'Custom.OperateEffortDays',
+  'Custom.Architecteffort',
+  'Custom.Managereffort',
+];
+
+// Sum all effort fields and convert from days to hours (8h/day)
+function sumEffortFields(fields: Record<string, unknown>): number | undefined {
+  let total = 0;
+  let hasValue = false;
+  for (const field of FEATURE_EFFORT_FIELDS) {
+    const raw = fields[field];
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      total += raw;
+      hasValue = true;
+    }
+  }
+  return hasValue ? total * 8 : undefined;
+}
+
 // Map priority numbers to Zendesk-like priorities
 function mapPriority(priority?: number): TicketPriority | undefined {
   if (!priority) return undefined;
@@ -284,6 +312,28 @@ export class AzureDevOpsService {
     } catch (error) {
       console.error(`Failed to get process template for project ${projectName}:`, error);
       return null;
+    }
+  }
+
+  // Get state definitions for a work item type (name, color, category from DevOps)
+  async getWorkItemTypeStates(
+    projectName: string,
+    typeName: string
+  ): Promise<{ name: string; color: string; category: string }[]> {
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(typeName)}/states?api-version=7.0`,
+        { headers: this.headers }
+      );
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (data.value || []).map((s: { name: string; color: string; category: string }) => ({
+        name: s.name,
+        color: s.color,
+        category: s.category,
+      }));
+    } catch {
+      return [];
     }
   }
 
@@ -1634,7 +1684,8 @@ export class AzureDevOpsService {
       completedWork: (fields['Microsoft.VSTS.Scheduling.CompletedWork'] as number) || 0,
       remainingWork: (fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number) || 0,
       originalEstimate: (fields['Microsoft.VSTS.Scheduling.OriginalEstimate'] as number) || 0,
-      effort: fields['Microsoft.VSTS.Scheduling.Effort'] as number | undefined,
+      // Sum all effort fields (stored in days in Azure DevOps) and convert to hours (8h/day)
+      effort: sumEffortFields(fields),
       totalWork: 0,
       workItems: [],
       devOpsUrl:
