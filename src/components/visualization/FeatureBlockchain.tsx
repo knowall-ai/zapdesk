@@ -168,38 +168,47 @@ interface EpicInfo {
   project?: string;
 }
 
+interface DevOpsState {
+  name: string;
+  color: string;
+  category: string; // Proposed, InProgress, Resolved, Completed, Removed
+}
+
 interface FeatureTimechainProps {
   features: Feature[];
   epic?: EpicInfo;
   onFeatureClick?: (feature: Feature) => void;
   availableTypes?: WorkItemType[]; // Work item types with icons from Azure DevOps
   organization?: string; // Azure DevOps organization for API calls
+  featureStates?: DevOpsState[]; // State definitions from Azure DevOps
 }
 
-// Map Feature state to DevOps category: Proposed (new), InProgress, Completed (done)
-function getStateCategory(state: string): 'new' | 'inProgress' | 'done' {
-  const normalizedState = state.toLowerCase();
-  // Completed / Resolved states
-  if (
-    normalizedState === 'done' ||
-    normalizedState === 'closed' ||
-    normalizedState === 'operate' ||
-    normalizedState === 'resolved' ||
-    normalizedState === 'removed'
-  ) {
-    return 'done';
+// Build a lookup map from state name → DevOps category
+function buildStateCategoryMap(featureStates?: DevOpsState[]): Map<string, string> {
+  const map = new Map<string, string>();
+  if (featureStates) {
+    for (const s of featureStates) {
+      map.set(s.name.toLowerCase(), s.category);
+    }
   }
-  // InProgress states
-  if (
-    normalizedState === 'active' ||
-    normalizedState === 'in progress' ||
-    normalizedState === 'doing' ||
-    normalizedState === 'engineer' ||
-    normalizedState === 'test'
-  ) {
-    return 'inProgress';
+  return map;
+}
+
+// Map DevOps state category to color group
+function getStateCategory(
+  state: string,
+  stateCategoryMap: Map<string, string>
+): 'new' | 'inProgress' | 'done' {
+  const devOpsCategory = stateCategoryMap.get(state.toLowerCase());
+  if (devOpsCategory) {
+    // Completed and Resolved → done (green)
+    if (devOpsCategory === 'Completed' || devOpsCategory === 'Resolved') return 'done';
+    // InProgress → inProgress (blue)
+    if (devOpsCategory === 'InProgress') return 'inProgress';
+    // Proposed, Removed, or anything else → new (grey)
+    return 'new';
   }
-  // Proposed states (New, Prep, Design, and any other)
+  // Fallback if no DevOps state data available
   return 'new';
 }
 
@@ -214,8 +223,8 @@ interface BlockColors {
   subtext: string;
 }
 
-function getStateColors(state: string): BlockColors {
-  const category = getStateCategory(state);
+function getStateColors(state: string, stateCategoryMap: Map<string, string>): BlockColors {
+  const category = getStateCategory(state, stateCategoryMap);
   switch (category) {
     case 'done':
       // Green for Completed
@@ -321,10 +330,16 @@ export default function FeatureTimechain({
   onFeatureClick,
   availableTypes,
   organization,
+  featureStates,
 }: FeatureTimechainProps) {
+  const stateCategoryMap = useMemo(() => buildStateCategoryMap(featureStates), [featureStates]);
+
   // Initialize with first In Progress feature, or fall back to first feature
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(() => {
-    const firstInProgress = features.find((f) => getStateCategory(f.state) === 'inProgress');
+    const initMap = buildStateCategoryMap(featureStates);
+    const firstInProgress = features.find(
+      (f) => getStateCategory(f.state, initMap) === 'inProgress'
+    );
     return firstInProgress || features[0] || null;
   });
   const [selectedWorkItem, setSelectedWorkItem] = useState<WorkItem | null>(null);
@@ -462,8 +477,8 @@ export default function FeatureTimechain({
           {features.map((feature) => {
             const fillPercentage = calculateFillPercentage(feature);
             const isSelected = selectedFeature?.id === feature.id;
-            const colors = getStateColors(feature.state);
-            const category = getStateCategory(feature.state);
+            const colors = getStateColors(feature.state, stateCategoryMap);
+            const category = getStateCategory(feature.state, stateCategoryMap);
             const selectedColors = getSelectedColors(category);
 
             return (
@@ -630,15 +645,17 @@ export default function FeatureTimechain({
                     className="rounded px-2 py-0.5 text-xs font-medium"
                     style={{
                       backgroundColor:
-                        getStateCategory(selectedFeature.state) === 'done'
+                        getStateCategory(selectedFeature.state, stateCategoryMap) === 'done'
                           ? 'rgba(34, 197, 94, 0.2)'
-                          : getStateCategory(selectedFeature.state) === 'inProgress'
+                          : getStateCategory(selectedFeature.state, stateCategoryMap) ===
+                              'inProgress'
                             ? 'rgba(59, 130, 246, 0.2)'
                             : 'rgba(156, 163, 175, 0.2)',
                       color:
-                        getStateCategory(selectedFeature.state) === 'done'
+                        getStateCategory(selectedFeature.state, stateCategoryMap) === 'done'
                           ? '#4ade80'
-                          : getStateCategory(selectedFeature.state) === 'inProgress'
+                          : getStateCategory(selectedFeature.state, stateCategoryMap) ===
+                              'inProgress'
                             ? '#60a5fa'
                             : '#9ca3af',
                     }}
@@ -692,9 +709,9 @@ export default function FeatureTimechain({
                   className="text-lg font-bold"
                   style={{
                     color:
-                      getStateCategory(selectedFeature.state) === 'done'
+                      getStateCategory(selectedFeature.state, stateCategoryMap) === 'done'
                         ? '#22c55e'
-                        : getStateCategory(selectedFeature.state) === 'inProgress'
+                        : getStateCategory(selectedFeature.state, stateCategoryMap) === 'inProgress'
                           ? '#3b82f6'
                           : '#9ca3af',
                   }}
@@ -749,7 +766,7 @@ export default function FeatureTimechain({
                       {blockRects.map((rect) => {
                         const totalWork =
                           (rect.item.completedWork || 0) + (rect.item.remainingWork || 0);
-                        const blockColor = getBlockColor(selectedFeature.state, rect.item.priority);
+                        const blockColor = getBlockColor(selectedFeature.state, stateCategoryMap, rect.item.priority);
 
                         return (
                           <rect
@@ -781,7 +798,7 @@ export default function FeatureTimechain({
                         <div
                           className="h-3 w-3 rounded-sm"
                           style={{
-                            backgroundColor: getBlockColor(selectedFeature.state, priority),
+                            backgroundColor: getBlockColor(selectedFeature.state, stateCategoryMap, priority),
                           }}
                         />
                         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -895,8 +912,12 @@ function getGreyPriorityColor(priority?: TicketPriority | 'Not set'): string {
 }
 
 // Get block color based on feature state and priority
-function getBlockColor(featureState: string, priority?: TicketPriority | 'Not set'): string {
-  const category = getStateCategory(featureState);
+function getBlockColor(
+  featureState: string,
+  stateCategoryMap: Map<string, string>,
+  priority?: TicketPriority | 'Not set'
+): string {
+  const category = getStateCategory(featureState, stateCategoryMap);
   if (category === 'done') {
     return getGreenPriorityColor(priority);
   }

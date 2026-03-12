@@ -315,6 +315,28 @@ export class AzureDevOpsService {
     }
   }
 
+  // Get state definitions for a work item type (name, color, category from DevOps)
+  async getWorkItemTypeStates(
+    projectName: string,
+    typeName: string
+  ): Promise<{ name: string; color: string; category: string }[]> {
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(typeName)}/states?api-version=7.0`,
+        { headers: this.headers }
+      );
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (data.value || []).map((s: { name: string; color: string; category: string }) => ({
+        name: s.name,
+        color: s.color,
+        category: s.category,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
   // Get work items from a specific project
   // By default, filters to work items with "ticket" tag
   // Set ticketsOnly=false to get all work items regardless of tags
