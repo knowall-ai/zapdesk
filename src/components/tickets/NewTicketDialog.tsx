@@ -65,6 +65,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   const [severityOptions, setSeverityOptions] = useState<string[]>([]);
   const [isLoadingSeverity, setIsLoadingSeverity] = useState(false);
   const [foundByOptions, setFoundByOptions] = useState<string[]>([]);
+  const [showFoundBy, setShowFoundBy] = useState(false);
   const [isLoadingFoundBy, setIsLoadingFoundBy] = useState(false);
   const [foundBySearch, setFoundBySearch] = useState('');
 
@@ -324,6 +325,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   useEffect(() => {
     if (!form.project || !form.workItemType || !hasOrganization) {
       setFoundByOptions([]);
+      setShowFoundBy(false);
       setForm((prev) => ({ ...prev, foundBy: '' }));
       setFoundBySearch('');
       return;
@@ -336,18 +338,18 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         const response = await get(fieldUrl);
         if (response.ok) {
           const data = await response.json();
-          if (data.allowedValues?.length > 0) {
-            setFoundByOptions(data.allowedValues);
-            setForm((prev) => ({ ...prev, foundBy: '' }));
-          } else {
-            setFoundByOptions([]);
-            setForm((prev) => ({ ...prev, foundBy: '' }));
-          }
+          // Field exists for this type — show it
+          setShowFoundBy(true);
+          setFoundByOptions(data.allowedValues || []);
+          setForm((prev) => ({ ...prev, foundBy: '' }));
         } else {
+          // Field doesn't exist for this type (404)
+          setShowFoundBy(false);
           setFoundByOptions([]);
           setForm((prev) => ({ ...prev, foundBy: '' }));
         }
       } catch {
+        setShowFoundBy(false);
         setFoundByOptions([]);
       } finally {
         setIsLoadingFoundBy(false);
@@ -422,7 +424,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     e.preventDefault();
     const extraFields = [
       severityOptions.length > 0 && !form.severity ? 'Severity' : '',
-      foundByOptions.length > 0 && !form.foundBy ? 'Found By' : '',
+      showFoundBy && !form.foundBy ? 'Found By' : '',
     ].filter(Boolean);
     if (
       !form.project ||
@@ -718,7 +720,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     !form.iterationPath ||
                     !form.areaPath ||
                     (severityOptions.length > 0 && !form.severity) ||
-                    (foundByOptions.length > 0 && !form.foundBy)
+                    (showFoundBy && !form.foundBy)
                   }
                   className="btn-primary flex items-center gap-2"
                   style={{ cursor: 'pointer' }}
@@ -1044,7 +1046,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
               )}
 
               {/* Found By - shown when required by the work item type (Assignee-style search) */}
-              {foundByOptions.length > 0 && (
+              {showFoundBy && (
                 <div>
                   <label
                     className="mb-1 block text-xs uppercase"
@@ -1062,71 +1064,87 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {/* Search input */}
-                      <div className="relative">
-                        <Search
-                          size={14}
-                          className="absolute top-1/2 left-2 -translate-y-1/2"
-                          style={{ color: 'var(--text-muted)' }}
-                        />
-                        <input
-                          type="text"
-                          placeholder="Search..."
-                          value={foundBySearch}
-                          onChange={(e) => setFoundBySearch(e.target.value)}
-                          className="input w-full pl-7 text-sm"
-                        />
-                      </div>
-                      {/* Selected value or dropdown list */}
-                      {form.foundBy ? (
-                        <div
-                          className="flex items-center justify-between rounded p-2"
-                          style={{ backgroundColor: 'var(--surface-hover)' }}
-                        >
-                          <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                            {form.foundBy}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setForm((prev) => ({ ...prev, foundBy: '' }));
-                              setFoundBySearch('');
-                            }}
-                            className="text-xs hover:underline"
-                            style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
-                          >
-                            clear
-                          </button>
-                        </div>
-                      ) : (
-                        <div
-                          className="max-h-32 overflow-auto rounded"
-                          style={{ border: '1px solid var(--border)' }}
-                        >
-                          {filteredFoundByOptions.length === 0 ? (
-                            <p
-                              className="p-2 text-center text-xs"
+                      {foundByOptions.length > 0 ? (
+                        <>
+                          {/* Search input */}
+                          <div className="relative">
+                            <Search
+                              size={14}
+                              className="absolute top-1/2 left-2 -translate-y-1/2"
                               style={{ color: 'var(--text-muted)' }}
+                            />
+                            <input
+                              type="text"
+                              placeholder="Search..."
+                              value={foundBySearch}
+                              onChange={(e) => setFoundBySearch(e.target.value)}
+                              className="input w-full pl-7 text-sm"
+                            />
+                          </div>
+                          {/* Selected value or dropdown list */}
+                          {form.foundBy ? (
+                            <div
+                              className="flex items-center justify-between rounded p-2"
+                              style={{ backgroundColor: 'var(--surface-hover)' }}
                             >
-                              No options found
-                            </p>
-                          ) : (
-                            filteredFoundByOptions.map((opt) => (
+                              <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                                {form.foundBy}
+                              </span>
                               <button
-                                key={opt}
                                 type="button"
                                 onClick={() => {
-                                  setForm((prev) => ({ ...prev, foundBy: opt }));
+                                  setForm((prev) => ({ ...prev, foundBy: '' }));
                                   setFoundBySearch('');
                                 }}
-                                className="block w-full px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                                style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
+                                className="text-xs hover:underline"
+                                style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
                               >
-                                {opt}
+                                clear
                               </button>
-                            ))
+                            </div>
+                          ) : (
+                            <div
+                              className="max-h-32 overflow-auto rounded"
+                              style={{ border: '1px solid var(--border)' }}
+                            >
+                              {filteredFoundByOptions.length === 0 ? (
+                                <p
+                                  className="p-2 text-center text-xs"
+                                  style={{ color: 'var(--text-muted)' }}
+                                >
+                                  No options found
+                                </p>
+                              ) : (
+                                filteredFoundByOptions.map((opt) => (
+                                  <button
+                                    key={opt}
+                                    type="button"
+                                    onClick={() => {
+                                      setForm((prev) => ({ ...prev, foundBy: opt }));
+                                      setFoundBySearch('');
+                                    }}
+                                    className="block w-full px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                                    style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
+                                  >
+                                    {opt}
+                                  </button>
+                                ))
+                              )}
+                            </div>
                           )}
-                        </div>
+                        </>
+                      ) : (
+                        /* Free-text input when no predefined options */
+                        <input
+                          type="text"
+                          placeholder="Enter found by..."
+                          value={form.foundBy}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, foundBy: e.target.value }))
+                          }
+                          className="input w-full text-sm"
+                          required
+                        />
                       )}
                     </div>
                   )}
