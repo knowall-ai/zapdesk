@@ -306,6 +306,7 @@ export default function FeatureTimechain({
   organization,
   featureStates,
 }: FeatureTimechainProps) {
+  const stateCategoryMap = useMemo(() => buildStateCategoryMap(featureStates), [featureStates]);
   const stateColorMap = useMemo(() => buildStateColorMap(featureStates), [featureStates]);
 
   // Initialize with first In Progress feature, or fall back to first feature
@@ -527,7 +528,12 @@ export default function FeatureTimechain({
                         className="mb-2 text-xs font-medium tracking-wider uppercase"
                         style={{ color: isSelected ? selectedColors.accent : colors.accent }}
                       >
-                        {feature.state}
+                        {(() => {
+                          const cat = stateCategoryMap.get(feature.state.toLowerCase());
+                          if (cat === 'Completed' || cat === 'Resolved') return 'Done';
+                          if (cat === 'InProgress') return 'Active';
+                          return 'New';
+                        })()}
                       </div>
 
                       <div className="mb-1">
