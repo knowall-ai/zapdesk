@@ -766,7 +766,11 @@ export default function FeatureTimechain({
                       {blockRects.map((rect) => {
                         const totalWork =
                           (rect.item.completedWork || 0) + (rect.item.remainingWork || 0);
-                        const blockColor = getBlockColor(selectedFeature.state, stateCategoryMap, rect.item.priority);
+                        const blockColor = getBlockColor(
+                          selectedFeature.state,
+                          stateCategoryMap,
+                          rect.item.priority
+                        );
 
                         return (
                           <rect
@@ -798,7 +802,11 @@ export default function FeatureTimechain({
                         <div
                           className="h-3 w-3 rounded-sm"
                           style={{
-                            backgroundColor: getBlockColor(selectedFeature.state, stateCategoryMap, priority),
+                            backgroundColor: getBlockColor(
+                              selectedFeature.state,
+                              stateCategoryMap,
+                              priority
+                            ),
                           }}
                         />
                         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
