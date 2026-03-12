@@ -698,6 +698,7 @@ export class AzureDevOpsService {
       workItemType?: string;
       hasPriority?: boolean;
       priorityFieldRef?: string;
+      additionalFields?: Record<string, string | number>;
       iterationPath?: string;
       areaPath?: string;
     } = {}
@@ -709,6 +710,7 @@ export class AzureDevOpsService {
       workItemType = 'Task',
       hasPriority = true,
       priorityFieldRef,
+      additionalFields,
       iterationPath,
       areaPath,
     } = options;
@@ -738,6 +740,21 @@ export class AzureDevOpsService {
 
     if (areaPath) {
       patchDocument.push({ op: 'add', path: '/fields/System.AreaPath', value: areaPath });
+    }
+
+    // Append any additional required fields, excluding fields already set above
+    const reservedFields = new Set([
+      'System.Title',
+      'System.Description',
+      'System.Tags',
+      'System.AssignedTo',
+    ]);
+    if (additionalFields) {
+      for (const [key, value] of Object.entries(additionalFields)) {
+        if (value != null && value !== '' && !reservedFields.has(key)) {
+          patchDocument.push({ op: 'add', path: `/fields/${key}`, value });
+        }
+      }
     }
 
     const response = await fetch(
