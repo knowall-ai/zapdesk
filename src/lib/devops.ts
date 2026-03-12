@@ -1634,7 +1634,10 @@ export class AzureDevOpsService {
       completedWork: (fields['Microsoft.VSTS.Scheduling.CompletedWork'] as number) || 0,
       remainingWork: (fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number) || 0,
       originalEstimate: (fields['Microsoft.VSTS.Scheduling.OriginalEstimate'] as number) || 0,
-      effort: fields['Microsoft.VSTS.Scheduling.Effort'] as number | undefined,
+      // Effort is stored in days in Azure DevOps — convert to hours (8h/day) to match completedWork
+      effort: (fields['Microsoft.VSTS.Scheduling.Effort'] as number | undefined)
+        ? (fields['Microsoft.VSTS.Scheduling.Effort'] as number) * 8
+        : undefined,
       totalWork: 0,
       workItems: [],
       devOpsUrl:
