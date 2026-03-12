@@ -64,9 +64,6 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
 
   const [severityOptions, setSeverityOptions] = useState<string[]>([]);
   const [isLoadingSeverity, setIsLoadingSeverity] = useState(false);
-  const [foundByOptions, setFoundByOptions] = useState<string[]>([]);
-  const [showFoundBy, setShowFoundBy] = useState(false);
-  const [isLoadingFoundBy, setIsLoadingFoundBy] = useState(false);
   const [foundBySearch, setFoundBySearch] = useState('');
 
   const [form, setForm] = useState<NewTicketForm>({
@@ -321,51 +318,36 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.project, form.workItemType, hasOrganization]);
 
-  // Fetch Found By options when work item type requires it
+  // Show Found By field only for Enhancement work item type
+  const showFoundBy = form.workItemType === 'Enhancement';
+
+  // Reset foundBy when type changes away from Enhancement
   useEffect(() => {
-    if (!form.project || !form.workItemType || !hasOrganization) {
-      setFoundByOptions([]);
-      setShowFoundBy(false);
+    if (!showFoundBy) {
       setForm((prev) => ({ ...prev, foundBy: '' }));
       setFoundBySearch('');
-      return;
     }
+  }, [showFoundBy]);
 
-    const fetchFoundBy = async () => {
-      setIsLoadingFoundBy(true);
-      try {
-        const fieldUrl = `/api/devops/projects/${encodeURIComponent(form.project)}/workitemtypes/${encodeURIComponent(form.workItemType)}/fields/Custom.FoundBy`;
-        const response = await get(fieldUrl);
-        if (response.ok) {
-          const data = await response.json();
-          // Field exists for this type — show it
-          setShowFoundBy(true);
-          setFoundByOptions(data.allowedValues || []);
-          setForm((prev) => ({ ...prev, foundBy: '' }));
-        } else {
-          // Field doesn't exist for this type (404)
-          setShowFoundBy(false);
-          setFoundByOptions([]);
-          setForm((prev) => ({ ...prev, foundBy: '' }));
-        }
-      } catch {
-        setShowFoundBy(false);
-        setFoundByOptions([]);
-      } finally {
-        setIsLoadingFoundBy(false);
-      }
-    };
-
-    fetchFoundBy();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.project, form.workItemType, hasOrganization]);
-
-  // Filter Found By options by search
-  const filteredFoundByOptions = useMemo(() => {
-    if (!foundBySearch) return foundByOptions;
-    const search = foundBySearch.toLowerCase();
-    return foundByOptions.filter((opt) => opt.toLowerCase().includes(search));
-  }, [foundByOptions, foundBySearch]);
+  // Filter team members for Found By picker
+  const filteredFoundByMembers = useMemo(() => {
+    return teamMembers
+      .filter((member) => {
+        const isStakeholder =
+          member.accessLevel?.toLowerCase().includes('stakeholder') ||
+          member.licenseType?.toLowerCase().includes('stakeholder');
+        return !isStakeholder;
+      })
+      .filter((member) => {
+        if (!foundBySearch) return true;
+        const search = foundBySearch.toLowerCase();
+        return (
+          member.displayName.toLowerCase().includes(search) ||
+          member.email?.toLowerCase().includes(search)
+        );
+      })
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }, [teamMembers, foundBySearch]);
 
   // Filter out Stakeholders and apply search
   const filteredMembers = useMemo(() => {
@@ -1045,7 +1027,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                 </div>
               )}
 
-              {/* Found By - shown when required by the work item type (Assignee-style search) */}
+              {/* Found By - people picker, shown only for Enhancement type */}
               {showFoundBy && (
                 <div>
                   <label
@@ -1054,7 +1036,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                   >
                     Found By *
                   </label>
-                  {isLoadingFoundBy ? (
+                  {isLoadingMembers ? (
                     <div
                       className="flex items-center gap-2 text-sm"
                       style={{ color: 'var(--text-muted)' }}
@@ -1064,87 +1046,75 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {foundByOptions.length > 0 ? (
-                        <>
-                          {/* Search input */}
-                          <div className="relative">
-                            <Search
-                              size={14}
-                              className="absolute top-1/2 left-2 -translate-y-1/2"
-                              style={{ color: 'var(--text-muted)' }}
-                            />
-                            <input
-                              type="text"
-                              placeholder="Search..."
-                              value={foundBySearch}
-                              onChange={(e) => setFoundBySearch(e.target.value)}
-                              className="input w-full pl-7 text-sm"
-                            />
-                          </div>
-                          {/* Selected value or dropdown list */}
-                          {form.foundBy ? (
-                            <div
-                              className="flex items-center justify-between rounded p-2"
-                              style={{ backgroundColor: 'var(--surface-hover)' }}
-                            >
-                              <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                                {form.foundBy}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setForm((prev) => ({ ...prev, foundBy: '' }));
-                                  setFoundBySearch('');
-                                }}
-                                className="text-xs hover:underline"
-                                style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
-                              >
-                                clear
-                              </button>
-                            </div>
-                          ) : (
-                            <div
-                              className="max-h-32 overflow-auto rounded"
-                              style={{ border: '1px solid var(--border)' }}
-                            >
-                              {filteredFoundByOptions.length === 0 ? (
-                                <p
-                                  className="p-2 text-center text-xs"
-                                  style={{ color: 'var(--text-muted)' }}
-                                >
-                                  No options found
-                                </p>
-                              ) : (
-                                filteredFoundByOptions.map((opt) => (
-                                  <button
-                                    key={opt}
-                                    type="button"
-                                    onClick={() => {
-                                      setForm((prev) => ({ ...prev, foundBy: opt }));
-                                      setFoundBySearch('');
-                                    }}
-                                    className="block w-full px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                                    style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
-                                  >
-                                    {opt}
-                                  </button>
-                                ))
-                              )}
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        /* Free-text input when no predefined options */
+                      {/* Search input */}
+                      <div className="relative">
+                        <Search
+                          size={14}
+                          className="absolute top-1/2 left-2 -translate-y-1/2"
+                          style={{ color: 'var(--text-muted)' }}
+                        />
                         <input
                           type="text"
-                          placeholder="Enter found by..."
-                          value={form.foundBy}
-                          onChange={(e) =>
-                            setForm((prev) => ({ ...prev, foundBy: e.target.value }))
-                          }
-                          className="input w-full text-sm"
-                          required
+                          placeholder="Search users..."
+                          value={foundBySearch}
+                          onChange={(e) => setFoundBySearch(e.target.value)}
+                          className="input w-full pl-7 text-sm"
+                          disabled={!form.project}
                         />
+                      </div>
+                      {/* Selected user or dropdown */}
+                      {form.foundBy && form.foundBy.trim() ? (
+                        <div
+                          className="flex items-center justify-between rounded p-2"
+                          style={{ backgroundColor: 'var(--surface-hover)' }}
+                        >
+                          <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                            {getDisplayNameFromIdentity(form.foundBy)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForm((prev) => ({ ...prev, foundBy: '' }));
+                              setFoundBySearch('');
+                            }}
+                            className="text-xs hover:underline"
+                            style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
+                          >
+                            clear
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          className="max-h-32 overflow-auto rounded"
+                          style={{ border: '1px solid var(--border)' }}
+                        >
+                          {filteredFoundByMembers.length === 0 ? (
+                            <p
+                              className="p-2 text-center text-xs"
+                              style={{ color: 'var(--text-muted)' }}
+                            >
+                              {form.project ? 'No users found' : 'Select a project first'}
+                            </p>
+                          ) : (
+                            filteredFoundByMembers.map((member) => (
+                              <button
+                                key={member.id}
+                                type="button"
+                                onClick={() => {
+                                  setForm((prev) => ({
+                                    ...prev,
+                                    foundBy: buildIdentityString(member),
+                                  }));
+                                  setFoundBySearch('');
+                                }}
+                                className="block w-full px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                                style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
+                              >
+                                {member.displayName}
+                              </button>
+                            ))
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
