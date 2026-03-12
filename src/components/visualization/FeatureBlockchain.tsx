@@ -176,24 +176,34 @@ interface FeatureTimechainProps {
   organization?: string; // Azure DevOps organization for API calls
 }
 
-// Map Feature state to category: New, In Progress, Done
+// Map Feature state to DevOps category: Proposed (new), InProgress, Completed (done)
 function getStateCategory(state: string): 'new' | 'inProgress' | 'done' {
   const normalizedState = state.toLowerCase();
-  if (normalizedState === 'done' || normalizedState === 'closed' || normalizedState === 'removed') {
+  // Completed / Resolved states
+  if (
+    normalizedState === 'done' ||
+    normalizedState === 'closed' ||
+    normalizedState === 'operate' ||
+    normalizedState === 'resolved' ||
+    normalizedState === 'removed'
+  ) {
     return 'done';
   }
+  // InProgress states
   if (
     normalizedState === 'active' ||
     normalizedState === 'in progress' ||
     normalizedState === 'doing' ||
-    normalizedState === 'resolved'
+    normalizedState === 'engineer' ||
+    normalizedState === 'test'
   ) {
     return 'inProgress';
   }
+  // Proposed states (New, Prep, Design, and any other)
   return 'new';
 }
 
-// Color scheme: Purple (Done), Green (In Progress), Grey (New)
+// Color scheme: Grey (Proposed), Blue (In Progress), Green (Completed)
 interface BlockColors {
   gradient: string;
   accent: string;
@@ -208,16 +218,7 @@ function getStateColors(state: string): BlockColors {
   const category = getStateCategory(state);
   switch (category) {
     case 'done':
-      return {
-        gradient: 'linear-gradient(180deg, #1e1b4b 0%, #312e81 100%)',
-        accent: '#a78bfa',
-        topFace: '#4c1d95',
-        rightFace: '#1e1b4b',
-        border: '#6366f1',
-        text: '#c4b5fd',
-        subtext: '#a78bfa',
-      };
-    case 'inProgress':
+      // Green for Completed
       return {
         gradient: 'linear-gradient(180deg, #052e16 0%, #14532d 100%)',
         accent: '#4ade80',
@@ -227,8 +228,20 @@ function getStateColors(state: string): BlockColors {
         text: '#bbf7d0',
         subtext: '#4ade80',
       };
+    case 'inProgress':
+      // Blue for In Progress
+      return {
+        gradient: 'linear-gradient(180deg, #0c1a3d 0%, #1e3a5f 100%)',
+        accent: '#60a5fa',
+        topFace: '#1e40af',
+        rightFace: '#0c1a3d',
+        border: '#3b82f6',
+        text: '#bfdbfe',
+        subtext: '#60a5fa',
+      };
     case 'new':
     default:
+      // Grey for Proposed
       return {
         gradient: 'linear-gradient(180deg, #1f2937 0%, #374151 100%)',
         accent: '#9ca3af',
@@ -255,18 +268,7 @@ interface SelectedColors {
 function getSelectedColors(category: 'new' | 'inProgress' | 'done'): SelectedColors {
   switch (category) {
     case 'done':
-      // Purple glow for Done blocks
-      return {
-        topFace: '#c084fc', // purple-400
-        leftFace: '#7c3aed', // purple-600
-        gradient: 'linear-gradient(180deg, #4c1d95 0%, #2e1065 100%)',
-        border: '#a855f7', // purple-500
-        glow: '0 0 30px rgba(168, 85, 247, 0.5)',
-        accent: '#c084fc',
-        text: '#e9d5ff',
-      };
-    case 'inProgress':
-      // Green glow for Active blocks
+      // Green glow for Completed blocks
       return {
         topFace: '#4ade80', // green-400
         leftFace: '#15803d', // green-700
@@ -276,9 +278,20 @@ function getSelectedColors(category: 'new' | 'inProgress' | 'done'): SelectedCol
         accent: '#4ade80',
         text: '#bbf7d0',
       };
+    case 'inProgress':
+      // Blue glow for In Progress blocks
+      return {
+        topFace: '#60a5fa', // blue-400
+        leftFace: '#1d4ed8', // blue-700
+        gradient: 'linear-gradient(180deg, #1e3a5f 0%, #0c1a3d 100%)',
+        border: '#3b82f6', // blue-500
+        glow: '0 0 30px rgba(59, 130, 246, 0.5)',
+        accent: '#60a5fa',
+        text: '#dbeafe',
+      };
     case 'new':
     default:
-      // Grey glow for New blocks
+      // Grey glow for Proposed blocks
       return {
         topFace: '#9ca3af', // gray-400
         leftFace: '#4b5563', // gray-600
@@ -309,10 +322,10 @@ export default function FeatureTimechain({
   availableTypes,
   organization,
 }: FeatureTimechainProps) {
-  // Initialize with first Active feature, or fall back to first feature
+  // Initialize with first In Progress feature, or fall back to first feature
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(() => {
-    const firstActive = features.find((f) => f.state === 'Active');
-    return firstActive || features[0] || null;
+    const firstInProgress = features.find((f) => getStateCategory(f.state) === 'inProgress');
+    return firstInProgress || features[0] || null;
   });
   const [selectedWorkItem, setSelectedWorkItem] = useState<WorkItem | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -618,15 +631,15 @@ export default function FeatureTimechain({
                     style={{
                       backgroundColor:
                         getStateCategory(selectedFeature.state) === 'done'
-                          ? 'rgba(139, 92, 246, 0.2)'
+                          ? 'rgba(34, 197, 94, 0.2)'
                           : getStateCategory(selectedFeature.state) === 'inProgress'
-                            ? 'rgba(34, 197, 94, 0.2)'
+                            ? 'rgba(59, 130, 246, 0.2)'
                             : 'rgba(156, 163, 175, 0.2)',
                       color:
                         getStateCategory(selectedFeature.state) === 'done'
-                          ? '#a78bfa'
+                          ? '#4ade80'
                           : getStateCategory(selectedFeature.state) === 'inProgress'
-                            ? '#22c55e'
+                            ? '#60a5fa'
                             : '#9ca3af',
                     }}
                   >
@@ -680,9 +693,9 @@ export default function FeatureTimechain({
                   style={{
                     color:
                       getStateCategory(selectedFeature.state) === 'done'
-                        ? '#a855f7'
+                        ? '#22c55e'
                         : getStateCategory(selectedFeature.state) === 'inProgress'
-                          ? 'var(--primary)'
+                          ? '#3b82f6'
                           : '#9ca3af',
                   }}
                 >
@@ -830,7 +843,24 @@ export default function FeatureTimechain({
 }
 
 // Priority-based colors for Explorer treemap (mempool.space style)
-// Green colors for Active/In Progress features
+// Blue colors for In Progress features
+function getBluePriorityColor(priority?: TicketPriority | 'Not set'): string {
+  switch (priority) {
+    case 'Urgent':
+      return '#93c5fd'; // Brightest blue
+    case 'High':
+      return '#60a5fa'; // Primary blue
+    case 'Normal':
+      return '#3b82f6'; // Medium blue
+    case 'Low':
+      return '#2563eb'; // Dark blue
+    case 'Not set':
+    default:
+      return '#1e40af'; // Very dark blue
+  }
+}
+
+// Green colors for Completed features
 function getGreenPriorityColor(priority?: TicketPriority | 'Not set'): string {
   switch (priority) {
     case 'Urgent':
@@ -847,24 +877,7 @@ function getGreenPriorityColor(priority?: TicketPriority | 'Not set'): string {
   }
 }
 
-// Purple colors for Done/Closed features
-function getPurplePriorityColor(priority?: TicketPriority | 'Not set'): string {
-  switch (priority) {
-    case 'Urgent':
-      return '#c084fc'; // Brightest purple
-    case 'High':
-      return '#a855f7'; // Primary purple
-    case 'Normal':
-      return '#9333ea'; // Medium purple
-    case 'Low':
-      return '#7e22ce'; // Dark purple
-    case 'Not set':
-    default:
-      return '#581c87'; // Very dark purple
-  }
-}
-
-// Grey colors for New features
+// Grey colors for Proposed/New features
 function getGreyPriorityColor(priority?: TicketPriority | 'Not set'): string {
   switch (priority) {
     case 'Urgent':
@@ -885,12 +898,12 @@ function getGreyPriorityColor(priority?: TicketPriority | 'Not set'): string {
 function getBlockColor(featureState: string, priority?: TicketPriority | 'Not set'): string {
   const category = getStateCategory(featureState);
   if (category === 'done') {
-    return getPurplePriorityColor(priority);
+    return getGreenPriorityColor(priority);
   }
   if (category === 'new') {
     return getGreyPriorityColor(priority);
   }
-  return getGreenPriorityColor(priority);
+  return getBluePriorityColor(priority);
 }
 
 // Priority labels for legend (including "Not set" for items without priority)
