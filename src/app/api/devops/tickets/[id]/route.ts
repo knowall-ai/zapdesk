@@ -67,14 +67,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { assignee, priority, project, title, description } = body;
-
-    if (!project) {
-      return NextResponse.json({ error: 'Project name is required' }, { status: 400 });
-    }
+    const { assignee, assignToMe, priority, project, title, description } = body;
 
     const organization = request.headers.get('x-devops-org') || undefined;
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
+
+    // If no project provided, find it by searching all projects
+    let projectName = project;
+    if (!projectName) {
+      const found = await devopsService.findProjectForWorkItem(ticketId);
+      if (!found) {
+        return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+      }
+      projectName = found.project.name;
+    }
 
     // Build updates object
     const updates: {
@@ -84,7 +90,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       description?: string;
     } = {};
 
-    if (assignee !== undefined) {
+    if (assignToMe) {
+      // Use the Azure DevOps profile API to get the authenticated user's identity
+      // Format as "Display Name <email>" to avoid ambiguous identity errors
+      const profile = await devopsService.getUserProfile();
+      updates.assignee = `${profile.displayName} <${profile.emailAddress}>`;
+    } else if (assignee !== undefined) {
       updates.assignee = assignee; // Can be null to unassign
     }
 
@@ -101,12 +112,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     // Update the work item
-    const updatedWorkItem = await devopsService.updateTicketFields(project, ticketId, updates);
+    const updatedWorkItem = await devopsService.updateTicketFields(projectName, ticketId, updates);
 
     const ticket = workItemToTicket(updatedWorkItem, {
-      id: project,
-      name: project,
-      devOpsProject: project,
+      id: projectName,
+      name: projectName,
+      devOpsProject: projectName,
       devOpsOrg: 'KnowAll',
       tags: [],
       createdAt: new Date(),
@@ -115,10 +126,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ ticket });
   } catch (error) {
-    console.error('Error updating ticket:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to update ticket' },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : 'Failed to update ticket';
+    console.error('Error updating ticket:', message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
