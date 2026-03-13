@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService, workItemToTicket, setStateCategoryCache } from '@/lib/devops';
+import { TICKET_WORK_ITEM_TYPES } from '@/types';
 import type { Ticket, TicketStatus } from '@/types';
 
 // TTL cache for state categories (avoids refetching on every request)
@@ -199,7 +200,7 @@ export async function GET(request: NextRequest) {
     await fetchAndCacheStateCategories(session.accessToken, organization);
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
-    const tickets = await devopsService.getAllTickets(ticketsOnly);
+    const tickets = await devopsService.getAllTickets(ticketsOnly, TICKET_WORK_ITEM_TYPES);
 
     // Filter tickets based on view
     const filteredTickets = filterTicketsByView(tickets, view, session.user?.email);

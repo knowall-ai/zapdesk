@@ -183,6 +183,10 @@ export interface Attachment {
   createdBy?: User;
 }
 
+// Work item types that appear on the Tickets screen and support bulk actions.
+// Higher-level types (Epic, Feature, User Story) are managed on the Projects screen.
+export const TICKET_WORK_ITEM_TYPES = ['Task', 'Enhancement', 'Issue', 'Bug', 'Risk', 'Question'];
+
 // Maximum file size for attachments (25MB)
 export const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
 

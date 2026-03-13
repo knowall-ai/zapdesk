@@ -289,12 +289,20 @@ export class AzureDevOpsService {
   // Set ticketsOnly=false to get all work items regardless of tags
   async getTickets(
     projectName: string,
-    options?: { additionalFilters?: string; ticketsOnly?: boolean }
+    options?: {
+      additionalFilters?: string;
+      ticketsOnly?: boolean;
+      allowedTypes?: string[];
+    }
   ): Promise<DevOpsWorkItem[]> {
-    const { additionalFilters, ticketsOnly = true } = options || {};
+    const { additionalFilters, ticketsOnly = true, allowedTypes } = options || {};
 
     // WIQL query - optionally filter by "ticket" tag
     const ticketTagClause = ticketsOnly ? "AND [System.Tags] CONTAINS 'ticket'" : '';
+    // Optionally restrict to specific work item types (e.g., exclude Epic, Feature, User Story)
+    const typeClause = allowedTypes?.length
+      ? `AND [System.WorkItemType] IN (${allowedTypes.map((t) => `'${escapeWiql(t)}'`).join(', ')})`
+      : '';
     const wiql = {
       query: `
         SELECT [System.Id], [System.Title], [System.State], [System.CreatedDate],
@@ -304,6 +312,7 @@ export class AzureDevOpsService {
         FROM WorkItems
         WHERE [System.TeamProject] = '${escapeWiql(projectName)}'
           ${ticketTagClause}
+          ${typeClause}
           ${additionalFilters || ''}
         ORDER BY [System.ChangedDate] DESC
       `,
@@ -991,13 +1000,16 @@ export class AzureDevOpsService {
 
   // Get all tickets from all accessible projects (fetches in parallel)
   // Set ticketsOnly=false to get all work items (not just those tagged as "ticket")
-  async getAllTickets(ticketsOnly: boolean = true): Promise<Ticket[]> {
+  async getAllTickets(ticketsOnly: boolean = true, allowedTypes?: string[]): Promise<Ticket[]> {
     const projects = await this.getProjects();
     const slaMap = await getProjectSLAMap();
 
     const results = await Promise.allSettled(
       projects.map(async (project) => {
-        const workItems = await this.getTickets(project.name, { ticketsOnly });
+        const workItems = await this.getTickets(project.name, {
+          ticketsOnly,
+          allowedTypes,
+        });
         const slaLevel = slaMap[project.name] || DEFAULT_SLA_LEVEL;
         const organization: Organization = {
           id: project.id,

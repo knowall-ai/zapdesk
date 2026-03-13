@@ -21,6 +21,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { Ticket, WorkItem, WorkItemType } from '@/types';
+import { TICKET_WORK_ITEM_TYPES } from '@/types';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
@@ -502,7 +503,20 @@ export default function WorkItemBoard({
     });
   }, [items, filters, ticketsOnly, searchQuery]);
 
+  // Only ticket-level types (Task, Bug, Enhancement, etc.) can be selected for bulk actions
+  const bulkSelectableItems = useMemo(
+    () =>
+      filteredItems.filter(
+        (item) => !item.workItemType || TICKET_WORK_ITEM_TYPES.includes(item.workItemType)
+      ),
+    [filteredItems]
+  );
+
   const toggleItemSelection = (itemId: number) => {
+    const item = filteredItems.find((i) => i.id === itemId);
+    // Prevent selection of non-ticket types (Epic, Feature, User Story)
+    if (item?.workItemType && !TICKET_WORK_ITEM_TYPES.includes(item.workItemType)) return;
+
     const newSelection = new Set(selectedItems);
     if (newSelection.has(itemId)) {
       newSelection.delete(itemId);
@@ -513,10 +527,10 @@ export default function WorkItemBoard({
   };
 
   const toggleAllSelection = () => {
-    if (selectedItems.size === filteredItems.length) {
+    if (selectedItems.size === bulkSelectableItems.length) {
       setSelectedItems(new Set());
     } else {
-      setSelectedItems(new Set(filteredItems.map((t) => t.id)));
+      setSelectedItems(new Set(bulkSelectableItems.map((t) => t.id)));
     }
   };
 
@@ -908,7 +922,8 @@ export default function WorkItemBoard({
                     <input
                       type="checkbox"
                       checked={
-                        selectedItems.size === filteredItems.length && filteredItems.length > 0
+                        selectedItems.size === bulkSelectableItems.length &&
+                        bulkSelectableItems.length > 0
                       }
                       onChange={toggleAllSelection}
                       className="rounded"
@@ -975,7 +990,11 @@ export default function WorkItemBoard({
                             type="checkbox"
                             checked={selectedItems.has(item.id)}
                             onChange={() => toggleItemSelection(item.id)}
-                            className="rounded"
+                            disabled={
+                              !!item.workItemType &&
+                              !TICKET_WORK_ITEM_TYPES.includes(item.workItemType)
+                            }
+                            className="rounded disabled:opacity-30"
                           />
                         </td>
                       )}
