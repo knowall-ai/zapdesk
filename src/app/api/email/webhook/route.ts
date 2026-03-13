@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProjectFromEmail } from '@/lib/devops';
+import { sendTicketConfirmation } from '@/lib/email';
 import type { EmailWebhookPayload } from '@/types';
 
-// This endpoint receives emails from email providers like SendGrid, Mailgun, etc.
-// Emails sent to zapdesk@knowall.ai will be forwarded here to create tickets
+// This endpoint receives emails from email providers (Power Automate, Logic Apps, etc.)
+// Emails sent to the support address will be forwarded here to create tickets or add comments
+
+const TICKET_REF_REGEX = /\[ZapDesk #(\d+)\]/;
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,70 +33,142 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid sender email' }, { status: 400 });
     }
 
-    // Determine which project to create the ticket in based on sender domain
-    // This queries DevOps project descriptions for email domain mappings
-    const projectName = await getProjectFromEmail(senderEmail);
-
-    if (!projectName) {
-      // Default to a general project or return error
-      console.warn(`No project mapping for email domain: ${senderEmail}`);
-      return NextResponse.json(
-        { error: 'No project mapping found for sender domain' },
-        { status: 400 }
-      );
-    }
-
-    // Use service account PAT for creating tickets
+    // Use service account PAT for creating tickets / adding comments
     const pat = process.env.AZURE_DEVOPS_PAT;
     if (!pat) {
       console.error('AZURE_DEVOPS_PAT not configured');
       return NextResponse.json({ error: 'Service not configured' }, { status: 500 });
     }
 
-    // Create Azure DevOps service with PAT (base64 encoded)
     const encodedPat = Buffer.from(`:${pat}`).toString('base64');
-    const devopsService = new AzureDevOpsServiceWithPAT(encodedPat);
 
-    // Determine priority from subject line keywords
-    const priority = determinePriority(subject);
+    // Check if this email is a reply to an existing ticket (thread detection)
+    const ticketMatch = subject.match(TICKET_REF_REGEX);
+    if (ticketMatch) {
+      const ticketId = parseInt(ticketMatch[1], 10);
+      return await handleThreadReply(encodedPat, ticketId, senderEmail, body);
+    }
 
-    // Create the ticket
-    const workItem = await devopsService.createTicket(
-      projectName,
-      subject,
-      formatEmailBody(body, senderEmail),
-      senderEmail,
-      priority
-    );
-
-    console.log(`Created ticket #${workItem.id} from email: ${senderEmail}`);
-
-    return NextResponse.json({
-      success: true,
-      ticketId: workItem.id,
-      project: projectName,
-    });
+    // Otherwise, create a new ticket
+    return await handleNewTicket(encodedPat, senderEmail, subject, body, payload);
   } catch (error) {
     console.error('Error processing email webhook:', error);
     return NextResponse.json({ error: 'Failed to process email' }, { status: 500 });
   }
 }
 
-// Helper class for PAT authentication
+// ---------------------------------------------------------------------------
+// New ticket creation
+// ---------------------------------------------------------------------------
+
+async function handleNewTicket(
+  encodedPat: string,
+  senderEmail: string,
+  subject: string,
+  body: string,
+  payload: EmailWebhookPayload
+) {
+  // Determine which project to create the ticket in based on sender domain
+  const projectName = await getProjectFromEmail(senderEmail);
+
+  if (!projectName) {
+    console.warn(`No project mapping for email domain: ${senderEmail}`);
+    return NextResponse.json(
+      { error: 'No project mapping found for sender domain' },
+      { status: 400 }
+    );
+  }
+
+  const devopsService = new AzureDevOpsServiceWithPAT(encodedPat);
+  const priority = determinePriority(subject);
+
+  // Create the ticket with requester email tag for tracking
+  const workItem = await devopsService.createTicket(
+    projectName,
+    subject,
+    formatEmailBody(body, senderEmail),
+    senderEmail,
+    priority
+  );
+
+  const ticketId = workItem.id;
+  console.log(`Created ticket #${ticketId} from email: ${senderEmail}`);
+
+  // Process attachments if present
+  if (payload.attachments && payload.attachments.length > 0) {
+    for (const attachment of payload.attachments) {
+      try {
+        await devopsService.uploadAttachment(projectName, ticketId, attachment);
+      } catch (err) {
+        console.error(`Failed to upload attachment ${attachment.filename}:`, err);
+      }
+    }
+  }
+
+  // Send confirmation email (fire-and-forget)
+  sendTicketConfirmation(ticketId, subject, senderEmail).catch(() => {});
+
+  return NextResponse.json({
+    success: true,
+    ticketId,
+    project: projectName,
+    action: 'ticket_created',
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Thread reply — add email body as comment on existing ticket
+// ---------------------------------------------------------------------------
+
+async function handleThreadReply(
+  encodedPat: string,
+  ticketId: number,
+  senderEmail: string,
+  body: string
+) {
+  const devopsService = new AzureDevOpsServiceWithPAT(encodedPat);
+
+  try {
+    const commentHtml = `
+<div style="font-family: sans-serif;">
+  <p><strong>Email reply from:</strong> ${senderEmail}</p>
+  <hr/>
+  <div>${body || '<em>No content</em>'}</div>
+</div>`.trim();
+
+    await devopsService.addComment(ticketId, commentHtml);
+
+    console.log(`Added email reply to ticket #${ticketId} from ${senderEmail}`);
+
+    return NextResponse.json({
+      success: true,
+      ticketId,
+      action: 'comment_added',
+    });
+  } catch (error) {
+    console.error(`Failed to add comment to ticket #${ticketId}:`, error);
+    return NextResponse.json({ error: 'Failed to add comment to ticket' }, { status: 500 });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PAT-authenticated Azure DevOps service
+// ---------------------------------------------------------------------------
+
 class AzureDevOpsServiceWithPAT {
   private encodedPat: string;
   private organization: string;
 
-  constructor(encodedPat: string, organization: string = 'KnowAll') {
+  constructor(encodedPat: string, organization?: string) {
     this.encodedPat = encodedPat;
-    this.organization = organization;
+    this.organization = organization || process.env.AZURE_DEVOPS_ORG || 'KnowAll';
   }
 
   private get baseUrl(): string {
     return `https://dev.azure.com/${this.organization}`;
   }
 
-  private get headers(): HeadersInit {
+  private get headers(): Record<string, string> {
     return {
       Authorization: `Basic ${this.encodedPat}`,
       'Content-Type': 'application/json',
@@ -110,7 +185,11 @@ class AzureDevOpsServiceWithPAT {
     const patchDocument = [
       { op: 'add', path: '/fields/System.Title', value: title },
       { op: 'add', path: '/fields/System.Description', value: description },
-      { op: 'add', path: '/fields/System.Tags', value: 'ticket; email' },
+      {
+        op: 'add',
+        path: '/fields/System.Tags',
+        value: `ticket; email; email-from:${requesterEmail}`,
+      },
       { op: 'add', path: '/fields/Microsoft.VSTS.Common.Priority', value: priority },
       {
         op: 'add',
@@ -138,7 +217,91 @@ class AzureDevOpsServiceWithPAT {
 
     return response.json();
   }
+
+  async addComment(ticketId: number, commentHtml: string) {
+    // Use the work item update API to add a history entry (comment)
+    const patchDocument = [{ op: 'add', path: '/fields/System.History', value: commentHtml }];
+
+    const response = await fetch(
+      `${this.baseUrl}/_apis/wit/workitems/${ticketId}?api-version=7.0`,
+      {
+        method: 'PATCH',
+        headers: {
+          ...this.headers,
+          'Content-Type': 'application/json-patch+json',
+        },
+        body: JSON.stringify(patchDocument),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to add comment: ${response.statusText} - ${errorText}`);
+    }
+
+    return response.json();
+  }
+
+  async uploadAttachment(
+    projectName: string,
+    workItemId: number,
+    attachment: { filename: string; contentType: string; content: string }
+  ) {
+    // Step 1: Upload the attachment blob
+    const buffer = Buffer.from(attachment.content, 'base64');
+    const uploadResponse = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/attachments?fileName=${encodeURIComponent(attachment.filename)}&api-version=7.0`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${this.encodedPat}`,
+          'Content-Type': 'application/octet-stream',
+        },
+        body: buffer,
+      }
+    );
+
+    if (!uploadResponse.ok) {
+      throw new Error(`Failed to upload attachment: ${uploadResponse.statusText}`);
+    }
+
+    const uploadData = await uploadResponse.json();
+    const attachmentUrl = uploadData.url;
+
+    // Step 2: Link the attachment to the work item
+    const patchDocument = [
+      {
+        op: 'add',
+        path: '/relations/-',
+        value: {
+          rel: 'AttachedFile',
+          url: attachmentUrl,
+          attributes: { comment: `Email attachment: ${attachment.filename}` },
+        },
+      },
+    ];
+
+    const linkResponse = await fetch(
+      `${this.baseUrl}/_apis/wit/workitems/${workItemId}?api-version=7.0`,
+      {
+        method: 'PATCH',
+        headers: {
+          ...this.headers,
+          'Content-Type': 'application/json-patch+json',
+        },
+        body: JSON.stringify(patchDocument),
+      }
+    );
+
+    if (!linkResponse.ok) {
+      throw new Error(`Failed to link attachment: ${linkResponse.statusText}`);
+    }
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function extractEmail(from: string): string | null {
   // Handle formats like "Name <email@domain.com>" or just "email@domain.com"
