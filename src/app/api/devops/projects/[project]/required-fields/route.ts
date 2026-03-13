@@ -18,7 +18,6 @@ const HANDLED_FIELDS = new Set([
   'System.IterationPath',
   'System.IterationId',
   'System.Reason',
-  'Custom.FoundBy',
 ]);
 
 function isHandledField(referenceName: string, name: string): boolean {
