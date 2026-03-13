@@ -188,7 +188,18 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         );
         if (!response.ok) throw new Error('Failed to fetch required fields');
         const data = await response.json();
-        setRequiredFields(data.fields || []);
+        // Exclude fields already handled by dedicated UI controls
+        const handledFields = new Set([
+          'System.IterationPath',
+          'System.IterationId',
+          'System.AreaPath',
+          'System.AreaId',
+          'Custom.FoundBy',
+        ]);
+        const filtered = (data.fields || []).filter(
+          (f: RequiredField) => !handledFields.has(f.referenceName)
+        );
+        setRequiredFields(filtered);
         setAdditionalFieldValues({});
       } catch (err) {
         console.error('Failed to fetch required fields:', err);

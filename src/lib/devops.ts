@@ -916,7 +916,8 @@ export class AzureDevOpsService {
   async changeWorkItemType(
     projectName: string,
     workItemId: number,
-    newType: string
+    newType: string,
+    additionalFields?: Record<string, string | number>
   ): Promise<DevOpsWorkItem> {
     // First, get the current work item to read its current state
     const currentItem = await this.getWorkItem(projectName, workItemId);
@@ -966,7 +967,7 @@ export class AzureDevOpsService {
 
     // Per Microsoft docs: use org-level URL (no project), set both WorkItemType and State
     // See: https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/work-items/update
-    const patchDoc = [
+    const patchDoc: Array<{ op: string; path: string; value: string | number }> = [
       {
         op: 'add',
         path: '/fields/System.WorkItemType',
@@ -978,6 +979,17 @@ export class AzureDevOpsService {
         value: targetState,
       },
     ];
+
+    // Add any additional fields (e.g. Severity, Found By for Enhancement type)
+    if (additionalFields) {
+      for (const [fieldRef, value] of Object.entries(additionalFields)) {
+        patchDoc.push({
+          op: 'add',
+          path: `/fields/${fieldRef}`,
+          value,
+        });
+      }
+    }
 
     console.log(`Changing work item ${workItemId} type to ${newType} with state ${targetState}`);
 
