@@ -13,8 +13,10 @@ const HANDLED_FIELDS = new Set([
   'System.AssignedTo',
   'System.WorkItemType',
   'System.AreaPath',
+  'System.AreaId',
   'System.TeamProject',
   'System.IterationPath',
+  'System.IterationId',
   'System.Reason',
 ]);
 
@@ -58,9 +60,9 @@ export async function GET(
       'Content-Type': 'application/json',
     };
 
-    // Fetch all fields for this work item type
+    // Fetch all fields for this work item type (expand to get allowedValues)
     const response = await fetch(
-      `https://dev.azure.com/${organization}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/fields?api-version=7.0`,
+      `https://dev.azure.com/${organization}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/fields?$expand=allowedValues&api-version=7.0`,
       { headers: authHeaders }
     );
 
