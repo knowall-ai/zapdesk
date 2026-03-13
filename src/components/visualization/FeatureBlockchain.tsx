@@ -168,32 +168,79 @@ interface EpicInfo {
   project?: string;
 }
 
+interface DevOpsState {
+  name: string;
+  color: string;
+  category: string; // Proposed, InProgress, Resolved, Completed, Removed
+}
+
 interface FeatureTimechainProps {
   features: Feature[];
   epic?: EpicInfo;
   onFeatureClick?: (feature: Feature) => void;
   availableTypes?: WorkItemType[]; // Work item types with icons from Azure DevOps
   organization?: string; // Azure DevOps organization for API calls
+  featureStates?: DevOpsState[]; // State definitions from Azure DevOps
 }
 
-// Map Feature state to category: New, In Progress, Done
-function getStateCategory(state: string): 'new' | 'inProgress' | 'done' {
-  const normalizedState = state.toLowerCase();
-  if (normalizedState === 'done' || normalizedState === 'closed' || normalizedState === 'removed') {
-    return 'done';
-  }
-  if (
-    normalizedState === 'active' ||
-    normalizedState === 'in progress' ||
-    normalizedState === 'doing' ||
-    normalizedState === 'resolved'
-  ) {
-    return 'inProgress';
-  }
-  return 'new';
+// --- Color manipulation helpers ---
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const h = hex.replace('#', '');
+  return {
+    r: parseInt(h.substring(0, 2), 16),
+    g: parseInt(h.substring(2, 4), 16),
+    b: parseInt(h.substring(4, 6), 16),
+  };
 }
 
-// Color scheme: Purple (Done), Green (In Progress), Grey (New)
+function rgbToHex(r: number, g: number, b: number): string {
+  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+  return `#${clamp(r).toString(16).padStart(2, '0')}${clamp(g).toString(16).padStart(2, '0')}${clamp(b).toString(16).padStart(2, '0')}`;
+}
+
+function darkenHex(hex: string, factor: number): string {
+  const { r, g, b } = hexToRgb(hex);
+  return rgbToHex(r * factor, g * factor, b * factor);
+}
+
+function lightenHex(hex: string, factor: number): string {
+  const { r, g, b } = hexToRgb(hex);
+  return rgbToHex(r + (255 - r) * factor, g + (255 - g) * factor, b + (255 - b) * factor);
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const { r, g, b } = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+const FALLBACK_COLOR = 'b2b2b2';
+
+// Build lookup maps from featureStates
+function buildStateCategoryMap(featureStates?: DevOpsState[]): Map<string, string> {
+  const map = new Map<string, string>();
+  if (featureStates) {
+    for (const s of featureStates) {
+      map.set(s.name.toLowerCase(), s.category);
+    }
+  }
+  return map;
+}
+
+function buildStateColorMap(featureStates?: DevOpsState[]): Map<string, string> {
+  const map = new Map<string, string>();
+  if (featureStates) {
+    for (const s of featureStates) {
+      map.set(s.name.toLowerCase(), s.color);
+    }
+  }
+  return map;
+}
+
+function getStateHex(state: string, stateColorMap: Map<string, string>): string {
+  return '#' + (stateColorMap.get(state.toLowerCase()) || FALLBACK_COLOR);
+}
+
+// Derive all block colors dynamically from the DevOps state color
 interface BlockColors {
   gradient: string;
   accent: string;
@@ -204,44 +251,19 @@ interface BlockColors {
   subtext: string;
 }
 
-function getStateColors(state: string): BlockColors {
-  const category = getStateCategory(state);
-  switch (category) {
-    case 'done':
-      return {
-        gradient: 'linear-gradient(180deg, #1e1b4b 0%, #312e81 100%)',
-        accent: '#a78bfa',
-        topFace: '#4c1d95',
-        rightFace: '#1e1b4b',
-        border: '#6366f1',
-        text: '#c4b5fd',
-        subtext: '#a78bfa',
-      };
-    case 'inProgress':
-      return {
-        gradient: 'linear-gradient(180deg, #052e16 0%, #14532d 100%)',
-        accent: '#4ade80',
-        topFace: '#166534',
-        rightFace: '#052e16',
-        border: '#22c55e',
-        text: '#bbf7d0',
-        subtext: '#4ade80',
-      };
-    case 'new':
-    default:
-      return {
-        gradient: 'linear-gradient(180deg, #1f2937 0%, #374151 100%)',
-        accent: '#9ca3af',
-        topFace: '#4b5563',
-        rightFace: '#1f2937',
-        border: '#6b7280',
-        text: '#d1d5db',
-        subtext: '#9ca3af',
-      };
-  }
+function getStateColors(state: string, stateColorMap: Map<string, string>): BlockColors {
+  const base = getStateHex(state, stateColorMap);
+  return {
+    gradient: `linear-gradient(180deg, ${darkenHex(base, 0.15)} 0%, ${darkenHex(base, 0.3)} 100%)`,
+    accent: lightenHex(base, 0.4),
+    topFace: darkenHex(base, 0.5),
+    rightFace: darkenHex(base, 0.15),
+    border: base,
+    text: lightenHex(base, 0.7),
+    subtext: lightenHex(base, 0.4),
+  };
 }
 
-// Selected state colors - glow color based on category
 interface SelectedColors {
   topFace: string;
   leftFace: string;
@@ -252,43 +274,17 @@ interface SelectedColors {
   text: string;
 }
 
-function getSelectedColors(category: 'new' | 'inProgress' | 'done'): SelectedColors {
-  switch (category) {
-    case 'done':
-      // Purple glow for Done blocks
-      return {
-        topFace: '#c084fc', // purple-400
-        leftFace: '#7c3aed', // purple-600
-        gradient: 'linear-gradient(180deg, #4c1d95 0%, #2e1065 100%)',
-        border: '#a855f7', // purple-500
-        glow: '0 0 30px rgba(168, 85, 247, 0.5)',
-        accent: '#c084fc',
-        text: '#e9d5ff',
-      };
-    case 'inProgress':
-      // Green glow for Active blocks
-      return {
-        topFace: '#4ade80', // green-400
-        leftFace: '#15803d', // green-700
-        gradient: 'linear-gradient(180deg, #14532d 0%, #052e16 100%)',
-        border: '#22c55e', // green-500
-        glow: '0 0 30px rgba(34, 197, 94, 0.5)',
-        accent: '#4ade80',
-        text: '#bbf7d0',
-      };
-    case 'new':
-    default:
-      // Grey glow for New blocks
-      return {
-        topFace: '#9ca3af', // gray-400
-        leftFace: '#4b5563', // gray-600
-        gradient: 'linear-gradient(180deg, #374151 0%, #1f2937 100%)',
-        border: '#6b7280', // gray-500
-        glow: '0 0 30px rgba(107, 114, 128, 0.5)',
-        accent: '#9ca3af',
-        text: '#e5e7eb',
-      };
-  }
+function getSelectedColors(state: string, stateColorMap: Map<string, string>): SelectedColors {
+  const base = getStateHex(state, stateColorMap);
+  return {
+    topFace: lightenHex(base, 0.4),
+    leftFace: darkenHex(base, 0.5),
+    gradient: `linear-gradient(180deg, ${darkenHex(base, 0.3)} 0%, ${darkenHex(base, 0.15)} 100%)`,
+    border: base,
+    glow: `0 0 30px ${hexToRgba(base, 0.5)}`,
+    accent: lightenHex(base, 0.4),
+    text: lightenHex(base, 0.7),
+  };
 }
 
 // Calculate fill percentage based on completedWork vs effort
@@ -308,11 +304,18 @@ export default function FeatureTimechain({
   onFeatureClick,
   availableTypes,
   organization,
+  featureStates,
 }: FeatureTimechainProps) {
-  // Initialize with first Active feature, or fall back to first feature
+  const stateCategoryMap = useMemo(() => buildStateCategoryMap(featureStates), [featureStates]);
+  const stateColorMap = useMemo(() => buildStateColorMap(featureStates), [featureStates]);
+
+  // Initialize with first In Progress feature, or fall back to first feature
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(() => {
-    const firstActive = features.find((f) => f.state === 'Active');
-    return firstActive || features[0] || null;
+    const catMap = buildStateCategoryMap(featureStates);
+    const firstInProgress = features.find(
+      (f) => catMap.get(f.state.toLowerCase()) === 'InProgress'
+    );
+    return firstInProgress || features[0] || null;
   });
   const [selectedWorkItem, setSelectedWorkItem] = useState<WorkItem | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -449,9 +452,8 @@ export default function FeatureTimechain({
           {features.map((feature) => {
             const fillPercentage = calculateFillPercentage(feature);
             const isSelected = selectedFeature?.id === feature.id;
-            const colors = getStateColors(feature.state);
-            const category = getStateCategory(feature.state);
-            const selectedColors = getSelectedColors(category);
+            const colors = getStateColors(feature.state, stateColorMap);
+            const selectedColors = getSelectedColors(feature.state, stateColorMap);
 
             return (
               <div
@@ -526,11 +528,12 @@ export default function FeatureTimechain({
                         className="mb-2 text-xs font-medium tracking-wider uppercase"
                         style={{ color: isSelected ? selectedColors.accent : colors.accent }}
                       >
-                        {category === 'done'
-                          ? 'Done'
-                          : category === 'inProgress'
-                            ? 'Active'
-                            : 'New'}
+                        {(() => {
+                          const cat = stateCategoryMap.get(feature.state.toLowerCase());
+                          if (cat === 'Completed' || cat === 'Resolved') return 'Done';
+                          if (cat === 'InProgress') return 'Active';
+                          return 'New';
+                        })()}
                       </div>
 
                       <div className="mb-1">
@@ -616,18 +619,11 @@ export default function FeatureTimechain({
                   <span
                     className="rounded px-2 py-0.5 text-xs font-medium"
                     style={{
-                      backgroundColor:
-                        getStateCategory(selectedFeature.state) === 'done'
-                          ? 'rgba(139, 92, 246, 0.2)'
-                          : getStateCategory(selectedFeature.state) === 'inProgress'
-                            ? 'rgba(34, 197, 94, 0.2)'
-                            : 'rgba(156, 163, 175, 0.2)',
-                      color:
-                        getStateCategory(selectedFeature.state) === 'done'
-                          ? '#a78bfa'
-                          : getStateCategory(selectedFeature.state) === 'inProgress'
-                            ? '#22c55e'
-                            : '#9ca3af',
+                      backgroundColor: hexToRgba(
+                        getStateHex(selectedFeature.state, stateColorMap),
+                        0.2
+                      ),
+                      color: getStateHex(selectedFeature.state, stateColorMap),
                     }}
                   >
                     {selectedFeature.state}
@@ -678,12 +674,7 @@ export default function FeatureTimechain({
                 <p
                   className="text-lg font-bold"
                   style={{
-                    color:
-                      getStateCategory(selectedFeature.state) === 'done'
-                        ? '#a855f7'
-                        : getStateCategory(selectedFeature.state) === 'inProgress'
-                          ? 'var(--primary)'
-                          : '#9ca3af',
+                    color: getStateHex(selectedFeature.state, stateColorMap),
                   }}
                 >
                   {formatHours(selectedFeature.completedWork)}h
@@ -736,7 +727,11 @@ export default function FeatureTimechain({
                       {blockRects.map((rect) => {
                         const totalWork =
                           (rect.item.completedWork || 0) + (rect.item.remainingWork || 0);
-                        const blockColor = getBlockColor(selectedFeature.state, rect.item.priority);
+                        const blockColor = getBlockColor(
+                          selectedFeature.state,
+                          stateColorMap,
+                          rect.item.priority
+                        );
 
                         return (
                           <rect
@@ -768,7 +763,11 @@ export default function FeatureTimechain({
                         <div
                           className="h-3 w-3 rounded-sm"
                           style={{
-                            backgroundColor: getBlockColor(selectedFeature.state, priority),
+                            backgroundColor: getBlockColor(
+                              selectedFeature.state,
+                              stateColorMap,
+                              priority
+                            ),
                           }}
                         />
                         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -829,68 +828,32 @@ export default function FeatureTimechain({
   );
 }
 
-// Priority-based colors for Explorer treemap (mempool.space style)
-// Green colors for Active/In Progress features
-function getGreenPriorityColor(priority?: TicketPriority | 'Not set'): string {
+// Priority-based colors derived from DevOps state color
+// Urgent = brightest, Not set = darkest
+function getPriorityColor(baseHex: string, priority?: TicketPriority | 'Not set'): string {
   switch (priority) {
     case 'Urgent':
-      return '#4ade80'; // Brightest green
+      return lightenHex(baseHex, 0.5);
     case 'High':
-      return '#22c55e'; // Primary green
+      return lightenHex(baseHex, 0.2);
     case 'Normal':
-      return '#16a34a'; // Medium green
+      return baseHex;
     case 'Low':
-      return '#15803d'; // Dark green
+      return darkenHex(baseHex, 0.7);
     case 'Not set':
     default:
-      return '#0f5132'; // Very dark green
-  }
-}
-
-// Purple colors for Done/Closed features
-function getPurplePriorityColor(priority?: TicketPriority | 'Not set'): string {
-  switch (priority) {
-    case 'Urgent':
-      return '#c084fc'; // Brightest purple
-    case 'High':
-      return '#a855f7'; // Primary purple
-    case 'Normal':
-      return '#9333ea'; // Medium purple
-    case 'Low':
-      return '#7e22ce'; // Dark purple
-    case 'Not set':
-    default:
-      return '#581c87'; // Very dark purple
-  }
-}
-
-// Grey colors for New features
-function getGreyPriorityColor(priority?: TicketPriority | 'Not set'): string {
-  switch (priority) {
-    case 'Urgent':
-      return '#d1d5db'; // Brightest grey
-    case 'High':
-      return '#9ca3af'; // Primary grey
-    case 'Normal':
-      return '#6b7280'; // Medium grey
-    case 'Low':
-      return '#4b5563'; // Dark grey
-    case 'Not set':
-    default:
-      return '#374151'; // Very dark grey
+      return darkenHex(baseHex, 0.45);
   }
 }
 
 // Get block color based on feature state and priority
-function getBlockColor(featureState: string, priority?: TicketPriority | 'Not set'): string {
-  const category = getStateCategory(featureState);
-  if (category === 'done') {
-    return getPurplePriorityColor(priority);
-  }
-  if (category === 'new') {
-    return getGreyPriorityColor(priority);
-  }
-  return getGreenPriorityColor(priority);
+function getBlockColor(
+  featureState: string,
+  stateColorMap: Map<string, string>,
+  priority?: TicketPriority | 'Not set'
+): string {
+  const base = getStateHex(featureState, stateColorMap);
+  return getPriorityColor(base, priority);
 }
 
 // Priority labels for legend (including "Not set" for items without priority)

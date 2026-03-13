@@ -44,7 +44,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     const devOpsService = new AzureDevOpsService(session.accessToken, devOpsOrg);
-    const epic = await devOpsService.getEpicHierarchy(project, epicId);
+    const [epic, featureStates] = await Promise.all([
+      devOpsService.getEpicHierarchy(project, epicId),
+      devOpsService.getWorkItemTypeStates(project, 'Feature'),
+    ]);
     const treemapData = devOpsService.epicToTreemap(epic);
 
     // Get the project's process template to include ticketTypes
@@ -56,6 +59,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       epic,
       treemapData,
       ticketTypes,
+      featureStates,
     });
   } catch (error) {
     console.error('Error fetching epic hierarchy:', error);

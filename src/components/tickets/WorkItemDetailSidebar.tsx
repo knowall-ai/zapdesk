@@ -10,7 +10,7 @@ import {
   User as UserIcon,
   Timer,
 } from 'lucide-react';
-import type { WorkItem, TicketPriority } from '@/types';
+import type { WorkItem, TicketPriority, WorkItemType } from '@/types';
 import type { WorkItemActions } from '@/hooks/useWorkItemActions';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
@@ -25,6 +25,7 @@ interface WorkItemDetailSidebarProps {
   showEffortHours?: boolean;
   canEditAssignee?: boolean;
   canEditPriority?: boolean;
+  canEditType?: boolean;
 }
 
 const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
@@ -48,6 +49,7 @@ export default function WorkItemDetailSidebar({
   showEffortHours = false,
   canEditAssignee = true,
   canEditPriority = true,
+  canEditType = false,
 }: WorkItemDetailSidebarProps) {
   const closeAssigneeDropdown = useCallback(() => {
     actions.setIsAssigneeDropdownOpen(false);
@@ -67,8 +69,15 @@ export default function WorkItemDetailSidebar({
     actions.isPriorityDropdownOpen
   );
 
+  const closeTypeDropdown = useCallback(() => actions.setIsTypeDropdownOpen(false), [actions]);
+  const typeDropdownRef = useClickOutside<HTMLDivElement>(
+    closeTypeDropdown,
+    actions.isTypeDropdownOpen
+  );
+
   const assigneeEditable = canEditAssignee && !!actions.handleAssigneeSelect;
   const priorityEditable = canEditPriority && !!actions.handlePrioritySelect;
+  const typeEditable = canEditType && !!actions.handleTypeSelect;
 
   return (
     <div className="space-y-4">
@@ -246,6 +255,78 @@ export default function WorkItemDetailSidebar({
           </div>
         )}
       </div>
+
+      {/* Type - Editable */}
+      {workItem.workItemType && (
+        <div className="relative" ref={typeDropdownRef}>
+          <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
+            Type
+          </label>
+          {typeEditable ? (
+            <>
+              <button
+                onClick={() => actions.setIsTypeDropdownOpen(!actions.isTypeDropdownOpen)}
+                disabled={actions.isUpdatingType}
+                className="flex w-full cursor-pointer items-center justify-between rounded p-2 text-left transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {actions.isUpdatingType ? (
+                  <div className="flex items-center gap-2">
+                    <Loader2 size={14} className="animate-spin" />
+                    <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      Updating...
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                    {workItem.workItemType}
+                  </span>
+                )}
+                <ChevronDown size={14} style={{ color: 'var(--text-muted)' }} />
+              </button>
+              {actions.isTypeDropdownOpen && (
+                <div
+                  className="absolute top-full left-0 z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md shadow-lg"
+                  style={{
+                    backgroundColor: 'var(--surface)',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  {actions.isLoadingTypes ? (
+                    <div
+                      className="flex items-center justify-center gap-2 p-3"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <Loader2 size={14} className="animate-spin" />
+                      Loading...
+                    </div>
+                  ) : (
+                    actions.availableTypes.map((type: WorkItemType) => (
+                      <button
+                        key={type.name}
+                        onClick={() => actions.handleTypeSelect(type.name)}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                        style={{
+                          color:
+                            type.name === workItem.workItemType
+                              ? 'var(--primary)'
+                              : 'var(--text-primary)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {type.name}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+              {workItem.workItemType}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Project */}
       {workItem.project && (

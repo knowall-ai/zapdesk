@@ -99,13 +99,12 @@ export async function POST(request: NextRequest) {
       description,
       priority,
       priorityFieldRef,
-      severity,
-      foundBy,
       assignee,
       tags,
       workItemType,
       iterationPath,
       areaPath,
+      additionalFields,
     } = body;
 
     if (!project || !title) {
@@ -140,6 +139,36 @@ export async function POST(request: NextRequest) {
         ? priorityFieldRef
         : undefined;
 
+    // Validate additionalFields: only allow known DevOps field prefixes
+    // and deny core System.* fields that are set by the handler itself
+    const ALLOWED_FIELD_PREFIXES = ['Microsoft.VSTS.', 'Custom.'];
+    const DENIED_FIELDS = new Set([
+      'System.Title',
+      'System.Description',
+      'System.Tags',
+      'System.AssignedTo',
+      'System.State',
+      'System.AreaPath',
+      'System.IterationPath',
+      'System.WorkItemType',
+    ]);
+    let validatedAdditionalFields: Record<string, string | number> | undefined;
+    if (additionalFields && typeof additionalFields === 'object') {
+      validatedAdditionalFields = {};
+      for (const [key, value] of Object.entries(additionalFields)) {
+        const isAllowedPrefix = ALLOWED_FIELD_PREFIXES.some((prefix) => key.startsWith(prefix));
+        const hasPathTraversal = /[/\\]/.test(key);
+        if (
+          isAllowedPrefix &&
+          !DENIED_FIELDS.has(key) &&
+          !hasPathTraversal &&
+          (typeof value === 'string' || typeof value === 'number')
+        ) {
+          validatedAdditionalFields[key] = value;
+        }
+      }
+    }
+
     // Create the ticket with 'ticket' tag always included
     const allTags = ['ticket', ...(tags || [])].filter(Boolean);
     const workItem = await devopsService.createTicketWithAssignee(
@@ -153,10 +182,9 @@ export async function POST(request: NextRequest) {
         workItemType: workItemType || 'Task',
         hasPriority: Boolean(validatedFieldRef),
         priorityFieldRef: validatedFieldRef,
-        severity: severity || undefined,
-        foundBy: foundBy || undefined,
-        iterationPath: iterationPath || undefined,
-        areaPath: areaPath || undefined,
+        additionalFields: validatedAdditionalFields,
+        iterationPath: typeof iterationPath === 'string' ? iterationPath : undefined,
+        areaPath: typeof areaPath === 'string' ? areaPath : undefined,
       }
     );
 

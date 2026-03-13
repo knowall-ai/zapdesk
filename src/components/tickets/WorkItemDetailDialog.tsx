@@ -18,6 +18,7 @@ interface WorkItemDetailDialogProps {
   onStateChange?: (workItemId: number, state: string) => Promise<void>;
   onAssigneeChange?: (workItemId: number, assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (workItemId: number, priority: number) => Promise<void>;
+  onTypeChange?: (workItemId: number, type: string) => Promise<void>;
   onUpdate?: (
     workItemId: number,
     updates: { title?: string; description?: string }
@@ -31,6 +32,7 @@ export default function WorkItemDetailDialog({
   onStateChange,
   onAssigneeChange,
   onPriorityChange,
+  onTypeChange,
   onUpdate,
 }: WorkItemDetailDialogProps) {
   const router = useRouter();
@@ -68,12 +70,22 @@ export default function WorkItemDetailDialog({
     [onPriorityChange, workItem]
   );
 
+  const boundTypeChange = useCallback(
+    async (type: string) => {
+      if (onTypeChange && workItem) {
+        await onTypeChange(workItem.id, type);
+      }
+    },
+    [onTypeChange, workItem]
+  );
+
   const actions = useWorkItemActions({
     project: workItem?.project,
     workItemType: workItem?.workItemType,
     onStateChange: onStateChange ? boundStateChange : undefined,
     onAssigneeChange: onAssigneeChange ? boundAssigneeChange : undefined,
     onPriorityChange: onPriorityChange ? boundPriorityChange : undefined,
+    onTypeChange: onTypeChange ? boundTypeChange : undefined,
   });
 
   // Fetch comments when dialog opens
@@ -266,6 +278,7 @@ export default function WorkItemDetailDialog({
         showEffortHours
         canEditAssignee={!!onAssigneeChange}
         canEditPriority={!!onPriorityChange}
+        canEditType={!!onTypeChange}
       />
     </div>
   );

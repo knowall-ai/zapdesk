@@ -15,12 +15,18 @@ interface PriorityOption {
   label: string;
 }
 
+interface RequiredField {
+  referenceName: string;
+  name: string;
+  type: string;
+  allowedValues?: string[];
+}
+
 interface NewTicketForm {
   project: string;
   title: string;
   description: string;
   priority: number | string;
-  severity: string;
   foundBy: string;
   assignee: string;
   tags: string;
@@ -49,6 +55,9 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   const [isLoadingPriorities, setIsLoadingPriorities] = useState(false);
   const [hasPriority, setHasPriority] = useState(true);
   const [priorityFieldRef, setPriorityFieldRef] = useState<string | null>(null);
+  const [requiredFields, setRequiredFields] = useState<RequiredField[]>([]);
+  const [additionalFieldValues, setAdditionalFieldValues] = useState<Record<string, string>>({});
+  const [isLoadingRequiredFields, setIsLoadingRequiredFields] = useState(false);
   const [iterations, setIterations] = useState<ClassificationNode[]>([]);
   const [areas, setAreas] = useState<ClassificationNode[]>([]);
   const [isLoadingIterations, setIsLoadingIterations] = useState(false);
@@ -62,8 +71,6 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [severityOptions, setSeverityOptions] = useState<string[]>([]);
-  const [isLoadingSeverity, setIsLoadingSeverity] = useState(false);
   const [foundBySearch, setFoundBySearch] = useState('');
 
   const [form, setForm] = useState<NewTicketForm>({
@@ -71,7 +78,6 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     title: '',
     description: '',
     priority: '',
-    severity: '',
     foundBy: '',
     assignee: '',
     tags: '',
@@ -173,6 +179,28 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     [get]
   );
 
+  const fetchRequiredFields = useCallback(
+    async (projectName: string, workItemType: string) => {
+      setIsLoadingRequiredFields(true);
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/required-fields?workItemType=${encodeURIComponent(workItemType)}`
+        );
+        if (!response.ok) throw new Error('Failed to fetch required fields');
+        const data = await response.json();
+        setRequiredFields(data.fields || []);
+        setAdditionalFieldValues({});
+      } catch (err) {
+        console.error('Failed to fetch required fields:', err);
+        setRequiredFields([]);
+        setAdditionalFieldValues({});
+      } finally {
+        setIsLoadingRequiredFields(false);
+      }
+    },
+    [get]
+  );
+
   const fetchIterations = useCallback(
     async (projectName: string) => {
       setIsLoadingIterations(true);
@@ -219,7 +247,6 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         title: '',
         description: '',
         priority: '',
-        severity: '',
         foundBy: '',
         assignee: '',
         tags: '',
@@ -232,12 +259,13 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       setFoundBySearch('');
       setWorkItemTypes([]);
       setPriorityOptions([]);
-      setSeverityOptions([]);
       setHasPriority(true);
       setPriorityFieldRef(null);
       setIterations([]);
       setAreas([]);
       setPendingFiles([]);
+      setRequiredFields([]);
+      setAdditionalFieldValues({});
     }
   }, [isOpen]);
 
@@ -281,42 +309,15 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     }
   }, [form.project, form.workItemType, session, hasOrganization, fetchPriorities]);
 
-  // Fetch severity options when work item type requires it
+  // Fetch required fields when project or work item type changes
   useEffect(() => {
-    if (!form.project || !form.workItemType || !hasOrganization) {
-      setSeverityOptions([]);
-      setForm((prev) => ({ ...prev, severity: '' }));
-      return;
+    if (form.project && form.workItemType && session?.accessToken && hasOrganization) {
+      fetchRequiredFields(form.project, form.workItemType);
+    } else {
+      setRequiredFields([]);
+      setAdditionalFieldValues({});
     }
-
-    const fetchSeverity = async () => {
-      setIsLoadingSeverity(true);
-      try {
-        const fieldUrl = `/api/devops/projects/${encodeURIComponent(form.project)}/workitemtypes/${encodeURIComponent(form.workItemType)}/fields/Microsoft.VSTS.Common.Severity`;
-        const response = await get(fieldUrl);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.allowedValues?.length > 0) {
-            setSeverityOptions(data.allowedValues);
-            setForm((prev) => ({ ...prev, severity: '' }));
-          } else {
-            setSeverityOptions([]);
-            setForm((prev) => ({ ...prev, severity: '' }));
-          }
-        } else {
-          setSeverityOptions([]);
-          setForm((prev) => ({ ...prev, severity: '' }));
-        }
-      } catch {
-        setSeverityOptions([]);
-      } finally {
-        setIsLoadingSeverity(false);
-      }
-    };
-
-    fetchSeverity();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.project, form.workItemType, hasOrganization]);
+  }, [form.project, form.workItemType, session, hasOrganization, fetchRequiredFields]);
 
   // Show Found By field only for Enhancement work item type
   const showFoundBy = form.workItemType === 'Enhancement';
@@ -404,10 +405,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const extraFields = [
-      severityOptions.length > 0 && !form.severity ? 'Severity' : '',
-      showFoundBy && !form.foundBy ? 'Found By' : '',
-    ].filter(Boolean);
+    const extraFields = [showFoundBy && !form.foundBy ? 'Found By' : ''].filter(Boolean);
     if (
       !form.project ||
       !form.title.trim() ||
@@ -427,14 +425,25 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     setError(null);
 
     try {
+      // Build additionalFields from dynamic required field values
+      const additionalFields: Record<string, string> = {};
+      for (const field of requiredFields) {
+        const value = additionalFieldValues[field.referenceName];
+        if (value) {
+          additionalFields[field.referenceName] = value;
+        }
+      }
+      // Add Found By as an additional field for Enhancement type
+      if (form.foundBy) {
+        additionalFields['Custom.FoundBy'] = form.foundBy;
+      }
+
       const response = await post('/api/devops/tickets', {
         project: form.project,
         title: form.title.trim(),
         description: form.description.trim(),
         priority: hasPriority ? form.priority : undefined,
         priorityFieldRef: priorityFieldRef || undefined,
-        severity: form.severity || undefined,
-        foundBy: form.foundBy || undefined,
         assignee: form.assignee || undefined,
         workItemType: form.workItemType,
         iterationPath: form.iterationPath || undefined,
@@ -443,6 +452,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
           .split(',')
           .map((t) => t.trim())
           .filter(Boolean),
+        additionalFields: Object.keys(additionalFields).length > 0 ? additionalFields : undefined,
       });
 
       if (!response.ok) {
@@ -701,7 +711,9 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     !form.workItemType ||
                     !form.iterationPath ||
                     !form.areaPath ||
-                    (severityOptions.length > 0 && !form.severity) ||
+                    requiredFields.some(
+                      (f) => !additionalFieldValues[f.referenceName]?.toString().trim()
+                    ) ||
                     (showFoundBy && !form.foundBy)
                   }
                   className="btn-primary flex items-center gap-2"
@@ -992,41 +1004,6 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                 </p>
               </div>
 
-              {/* Severity - shown when required by the work item type */}
-              {severityOptions.length > 0 && (
-                <div>
-                  <label
-                    className="mb-1 block text-xs uppercase"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    Severity *
-                  </label>
-                  {isLoadingSeverity ? (
-                    <div
-                      className="flex items-center gap-2 text-sm"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      <Loader2 className="animate-spin" size={14} />
-                      Loading...
-                    </div>
-                  ) : (
-                    <select
-                      value={form.severity}
-                      onChange={(e) => setForm((prev) => ({ ...prev, severity: e.target.value }))}
-                      className="input w-full"
-                      required
-                    >
-                      <option value="">Select Severity...</option>
-                      {severityOptions.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              )}
-
               {/* Found By - people picker, shown only for Enhancement type */}
               {showFoundBy && (
                 <div>
@@ -1169,6 +1146,62 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     </select>
                   )}
                 </div>
+              )}
+
+              {/* Dynamic required fields */}
+              {isLoadingRequiredFields ? (
+                <div
+                  className="flex items-center gap-2 text-sm"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <Loader2 className="animate-spin" size={14} />
+                  Loading fields...
+                </div>
+              ) : (
+                requiredFields.map((field) => (
+                  <div key={field.referenceName}>
+                    <label
+                      className="mb-1 block text-xs uppercase"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {field.name} *
+                    </label>
+                    {field.allowedValues ? (
+                      <select
+                        required
+                        value={additionalFieldValues[field.referenceName] || ''}
+                        onChange={(e) =>
+                          setAdditionalFieldValues((prev) => ({
+                            ...prev,
+                            [field.referenceName]: e.target.value,
+                          }))
+                        }
+                        className="input w-full"
+                      >
+                        <option value="">Select {field.name.toLowerCase()}...</option>
+                        {field.allowedValues.map((val) => (
+                          <option key={val} value={val}>
+                            {val}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        required
+                        type="text"
+                        placeholder={field.name}
+                        value={additionalFieldValues[field.referenceName] || ''}
+                        onChange={(e) =>
+                          setAdditionalFieldValues((prev) => ({
+                            ...prev,
+                            [field.referenceName]: e.target.value,
+                          }))
+                        }
+                        className="input w-full"
+                      />
+                    )}
+                  </div>
+                ))
               )}
             </div>
           </div>

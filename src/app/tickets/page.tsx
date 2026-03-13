@@ -153,6 +153,42 @@ function TicketsPageContent() {
     [handleTicketStateChange]
   );
 
+  const handleDialogTypeChange = useCallback(
+    async (workItemId: number, newType: string) => {
+      const ticket = tickets.find((t) => t.id === workItemId);
+      if (!ticket || !selectedOrganization) return;
+      const response = await fetch(`/api/devops/tickets/${workItemId}/type`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-devops-org': selectedOrganization.accountName,
+        },
+        body: JSON.stringify({ type: newType, project: ticket.project }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const updatedTicket = data.ticket;
+        if (updatedTicket) {
+          setTickets((prev) => prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)));
+          setSelectedTicket((prev) =>
+            prev && prev.id === updatedTicket.id ? updatedTicket : prev
+          );
+        } else {
+          // Fallback: update just the type field
+          setTickets((prev) =>
+            prev.map((t) => (t.id === workItemId ? { ...t, workItemType: newType } : t))
+          );
+          setSelectedTicket((prev) => (prev ? { ...prev, workItemType: newType } : null));
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Type change failed:', response.status, errorData);
+        throw new Error(errorData.error || 'Failed to update work item type');
+      }
+    },
+    [tickets, selectedOrganization]
+  );
+
   const handleZapClick = useCallback((item: WorkItem) => {
     if (item.assignee) {
       setZapTarget({ agent: item.assignee, ticketId: item.id });
@@ -241,6 +277,7 @@ function TicketsPageContent() {
           isOpen={!!selectedTicket}
           onClose={() => setSelectedTicket(null)}
           onStateChange={handleDialogStateChange}
+          onTypeChange={handleDialogTypeChange}
           onUpdate={handleWorkItemUpdate}
         />
 
