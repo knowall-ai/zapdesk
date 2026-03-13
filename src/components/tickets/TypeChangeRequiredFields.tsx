@@ -1,10 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { X, Loader2, Search, ChevronDown } from 'lucide-react';
+import { X, Loader2, Search } from 'lucide-react';
 import type { RequiredField } from '@/hooks/useWorkItemActions';
 import type { User } from '@/types';
-import Avatar from '../common/Avatar';
 
 interface TypeChangeRequiredFieldsProps {
   targetType: string;
@@ -23,6 +21,21 @@ interface TypeChangeRequiredFieldsProps {
 
 const PEOPLE_PICKER_FIELDS = new Set(['Custom.FoundBy']);
 
+// Build full identity string for Azure DevOps: "DisplayName <email>"
+const buildIdentityString = (member: User): string => {
+  if (member.email) {
+    return `${member.displayName} <${member.email}>`;
+  }
+  return member.displayName;
+};
+
+// Extract display name from identity string "DisplayName <email>"
+const getDisplayNameFromIdentity = (identity: string): string => {
+  if (!identity) return '';
+  const match = identity.match(/^(.+?)\s*<.+>$/);
+  return match ? match[1].trim() : identity;
+};
+
 export default function TypeChangeRequiredFields({
   targetType,
   requiredFields,
@@ -36,22 +49,10 @@ export default function TypeChangeRequiredFields({
   onMemberSearchChange,
   filteredMembers,
 }: TypeChangeRequiredFieldsProps) {
-  const [openPeoplePicker, setOpenPeoplePicker] = useState<string | null>(null);
-
   const allFieldsFilled = requiredFields.every((f) => {
     const value = fieldValues[f.referenceName];
-    if (!value) {
-      // If field has allowed values and a default exists, it's optional
-      return false;
-    }
-    return true;
+    return !!value;
   });
-
-  const handleMemberSelect = (fieldRef: string, member: User) => {
-    onFieldChange(fieldRef, member.displayName);
-    setOpenPeoplePicker(null);
-    onMemberSearchChange('');
-  };
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50">
@@ -86,86 +87,91 @@ export default function TypeChangeRequiredFields({
             const isPeoplePicker = PEOPLE_PICKER_FIELDS.has(field.referenceName);
 
             if (isPeoplePicker) {
+              const selectedValue = fieldValues[field.referenceName];
               return (
-                <div key={field.referenceName} className="relative">
+                <div key={field.referenceName}>
                   <label
-                    className="mb-1 block text-sm font-medium"
-                    style={{ color: 'var(--text-secondary)' }}
+                    className="mb-1 block text-xs uppercase"
+                    style={{ color: 'var(--text-muted)' }}
                   >
-                    {field.name}
+                    {field.name} *
                   </label>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOpenPeoplePicker(
-                        openPeoplePicker === field.referenceName ? null : field.referenceName
-                      )
-                    }
-                    className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm"
-                    style={{
-                      borderColor: 'var(--border)',
-                      backgroundColor: 'var(--surface)',
-                      color: fieldValues[field.referenceName]
-                        ? 'var(--text-primary)'
-                        : 'var(--text-muted)',
-                    }}
-                  >
-                    <span>{fieldValues[field.referenceName] || `Select ${field.name}...`}</span>
-                    <ChevronDown size={14} style={{ color: 'var(--text-muted)' }} />
-                  </button>
-
-                  {openPeoplePicker === field.referenceName && (
+                  {members.length === 0 ? (
                     <div
-                      className="absolute top-full left-0 z-50 mt-1 w-full rounded-md shadow-lg"
-                      style={{
-                        backgroundColor: 'var(--surface)',
-                        border: '1px solid var(--border)',
-                      }}
+                      className="flex items-center gap-2 text-sm"
+                      style={{ color: 'var(--text-muted)' }}
                     >
-                      <div className="border-b p-2" style={{ borderColor: 'var(--border)' }}>
-                        <div className="relative">
-                          <Search
-                            size={14}
-                            className="absolute top-1/2 left-2 -translate-y-1/2"
-                            style={{ color: 'var(--text-muted)' }}
-                          />
-                          <input
-                            type="text"
-                            placeholder="Search users..."
-                            value={memberSearch}
-                            onChange={(e) => onMemberSearchChange(e.target.value)}
-                            className="input w-full pl-7 text-sm"
-                            autoFocus
-                          />
-                        </div>
+                      <Loader2 className="animate-spin" size={14} />
+                      Loading...
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {/* Search input */}
+                      <div className="relative">
+                        <Search
+                          size={14}
+                          className="absolute top-1/2 left-2 -translate-y-1/2"
+                          style={{ color: 'var(--text-muted)' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Search users..."
+                          value={memberSearch}
+                          onChange={(e) => onMemberSearchChange(e.target.value)}
+                          className="input w-full pl-7 text-sm"
+                        />
                       </div>
-                      <div className="max-h-48 overflow-auto">
-                        {members.length === 0 ? (
-                          <div
-                            className="flex items-center justify-center gap-2 p-3"
-                            style={{ color: 'var(--text-muted)' }}
+                      {/* Selected user or member list */}
+                      {selectedValue && selectedValue.trim() ? (
+                        <div
+                          className="flex items-center justify-between rounded p-2"
+                          style={{ backgroundColor: 'var(--surface-hover)' }}
+                        >
+                          <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                            {getDisplayNameFromIdentity(selectedValue)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onFieldChange(field.referenceName, '');
+                              onMemberSearchChange('');
+                            }}
+                            className="text-xs hover:underline"
+                            style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
                           >
-                            <Loader2 size={14} className="animate-spin" />
-                            Loading...
-                          </div>
-                        ) : (
-                          filteredMembers.map((member) => (
-                            <button
-                              key={member.id}
-                              onClick={() => handleMemberSelect(field.referenceName, member)}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                              style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
+                            clear
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          className="max-h-32 overflow-auto rounded"
+                          style={{ border: '1px solid var(--border)' }}
+                        >
+                          {filteredMembers.length === 0 ? (
+                            <p
+                              className="p-2 text-center text-xs"
+                              style={{ color: 'var(--text-muted)' }}
                             >
-                              <Avatar
-                                name={member.displayName}
-                                image={member.avatarUrl}
-                                size="sm"
-                              />
-                              {member.displayName}
-                            </button>
-                          ))
-                        )}
-                      </div>
+                              No users found
+                            </p>
+                          ) : (
+                            filteredMembers.map((member) => (
+                              <button
+                                key={member.id}
+                                type="button"
+                                onClick={() => {
+                                  onFieldChange(field.referenceName, buildIdentityString(member));
+                                  onMemberSearchChange('');
+                                }}
+                                className="block w-full px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                                style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
+                              >
+                                {member.displayName}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -177,10 +183,10 @@ export default function TypeChangeRequiredFields({
               return (
                 <div key={field.referenceName}>
                   <label
-                    className="mb-1 block text-sm font-medium"
-                    style={{ color: 'var(--text-secondary)' }}
+                    className="mb-1 block text-xs uppercase"
+                    style={{ color: 'var(--text-muted)' }}
                   >
-                    {field.name}
+                    {field.name} *
                   </label>
                   <select
                     value={fieldValues[field.referenceName] || ''}
@@ -202,10 +208,10 @@ export default function TypeChangeRequiredFields({
             return (
               <div key={field.referenceName}>
                 <label
-                  className="mb-1 block text-sm font-medium"
-                  style={{ color: 'var(--text-secondary)' }}
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
                 >
-                  {field.name}
+                  {field.name} *
                 </label>
                 <input
                   type="text"
