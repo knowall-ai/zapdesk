@@ -478,7 +478,7 @@ body {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-width: 200px;
+  min-width: 150px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 0.5rem;
