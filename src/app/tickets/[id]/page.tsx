@@ -209,11 +209,14 @@ export default function TicketDetailPage() {
         }),
       });
 
-      if (response.ok) {
-        await fetchTicket();
+      if (!response.ok) {
+        throw new Error('Failed to update description');
       }
+
+      await fetchTicket();
     } catch (error) {
       console.error('Failed to update description:', error);
+      throw error;
     }
   };
 
