@@ -385,11 +385,17 @@ export default function TicketDetail({
     try {
       for (const file of namedFiles) {
         const attachment = await onUploadAttachment(file);
-        // Extract attachment ID from DevOps URL and use our proxy
+        // Extract attachment ID and org from DevOps URL, use our proxy
         const idMatch = attachment.url?.match(/attachments\/([a-f0-9-]+)/i);
+        const orgMatch = attachment.url?.match(/dev\.azure\.com\/([^/]+)/);
         const attachmentId = idMatch ? idMatch[1] : null;
+        const org = orgMatch ? orgMatch[1] : '';
+        const params = new URLSearchParams({
+          fileName: file.name,
+          ...(org && { org }),
+        });
         const imgSrc = attachmentId
-          ? `/api/devops/attachments/${attachmentId}?fileName=${encodeURIComponent(file.name)}`
+          ? `/api/devops/attachments/${attachmentId}?${params.toString()}`
           : attachment.url;
         const imgHtml = `<img src="${imgSrc}" alt="${file.name}" />`;
         setNewComment((prev) => (prev ? `${prev}\n${imgHtml}` : imgHtml));

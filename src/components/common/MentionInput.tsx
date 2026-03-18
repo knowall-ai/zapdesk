@@ -17,9 +17,34 @@ interface MentionUser extends User {
   matchScore?: number;
 }
 
+/** Escape HTML attribute values to prevent injection. */
+function escapeAttr(val: string): string {
+  return val
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/** Validate that a URL is safe (relative or http/https). */
+function isSafeUrl(url: string): boolean {
+  if (url.startsWith('/')) return true;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/** Sanitize an img tag string — only allow safe src and plain alt. */
+function sanitizeImgTag(src: string, alt: string): string {
+  if (!isSafeUrl(src)) return '';
+  return `<img src="${escapeAttr(src)}" alt="${escapeAttr(alt)}" />`;
+}
+
 /** Extract plain text from the contentEditable innerHTML (strips tags except img). */
 function getTextContent(el: HTMLDivElement): string {
-  // Walk child nodes: keep text nodes and img tags, convert <br>/<div> to newlines
   let text = '';
   const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -29,7 +54,8 @@ function getTextContent(el: HTMLDivElement): string {
       if (tag === 'IMG') {
         const src = (node as HTMLImageElement).src;
         const alt = (node as HTMLImageElement).alt || 'image';
-        text += `<img src="${src}" alt="${alt}" />`;
+        const sanitized = sanitizeImgTag(src, alt);
+        if (sanitized) text += sanitized;
       } else if (tag === 'BR') {
         text += '\n';
       } else if (tag === 'DIV' || tag === 'P') {
@@ -54,6 +80,48 @@ function getCursorOffset(el: HTMLDivElement): number {
   preRange.selectNodeContents(el);
   preRange.setEnd(range.startContainer, range.startOffset);
   return preRange.toString().length;
+}
+
+/**
+ * Convert a value string to safe HTML for the contentEditable.
+ * Only whitelisted <img> tags (with safe src) are preserved; everything else is escaped.
+ */
+function valueToSafeHtml(value: string): string {
+  // Split on img tags, validate each one, escape everything else
+  const IMG_REGEX = /<img\s+src="([^"]*?)"\s+alt="([^"]*?)"\s*\/?>/g;
+  let lastIndex = 0;
+  let html = '';
+  let match;
+
+  while ((match = IMG_REGEX.exec(value)) !== null) {
+    // Escape text before this img tag
+    const before = value.slice(lastIndex, match.index);
+    html += before
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\n/g, '<br>');
+
+    // Validate and re-build img tag with escaped attributes
+    const src = match[1];
+    const alt = match[2];
+    const sanitized = sanitizeImgTag(src, alt);
+    if (sanitized) {
+      html += sanitized;
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Escape remaining text after last img tag
+  const remaining = value.slice(lastIndex);
+  html += remaining
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>');
+
+  return html;
 }
 
 export default function MentionInput({
@@ -87,23 +155,9 @@ export default function MentionInput({
       return;
     }
 
-    // Only sync if the value has actually changed from what's in the editor
     const currentText = getTextContent(el);
     if (currentText !== value) {
-      // Convert value to HTML: preserve img tags, convert newlines to <br>
-      const html = value
-        .replace(/(<img [^>]+>)/g, '\x00$1\x00') // protect img tags
-        .split('\x00')
-        .map((part) => {
-          if (part.startsWith('<img ')) return part;
-          return part
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/\n/g, '<br>');
-        })
-        .join('');
-      el.innerHTML = html || '';
+      el.innerHTML = valueToSafeHtml(value) || '';
     }
     setIsEmpty(!value);
   }, [value]);
@@ -241,7 +295,6 @@ export default function MentionInput({
 
     const mentionText = `@${user.displayName} `;
     const text = getTextContent(el);
-    // Strip img tags for text-position calculation
     const plainText = text.replace(/<img [^>]+>/g, '');
     const before = plainText.slice(0, mentionStartIndex);
     const after = plainText.slice(mentionStartIndex + 1 + mentionQuery.length);
@@ -260,7 +313,7 @@ export default function MentionInput({
       }
     }
 
-    isInternalUpdate.current = false; // Allow sync
+    isInternalUpdate.current = false;
     onChange(finalValue);
 
     setShowSuggestions(false);
@@ -270,27 +323,13 @@ export default function MentionInput({
     requestAnimationFrame(() => el.focus());
   };
 
-  // Handle paste — delegate to parent for image handling
+  // Handle paste — always preventDefault to block raw HTML injection
   const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
-    // Debug: log clipboard contents
-    console.log('[MentionInput paste]', {
-      filesCount: e.clipboardData?.files?.length,
-      fileTypes: e.clipboardData?.files
-        ? Array.from(e.clipboardData.files).map((f) => f.type)
-        : [],
-      itemsCount: e.clipboardData?.items?.length,
-      itemTypes: e.clipboardData?.items
-        ? Array.from(e.clipboardData.items).map((i) => `${i.kind}:${i.type}`)
-        : [],
-      hasOnPaste: !!onPaste,
-    });
-
-    // Check for images in clipboardData.files (Chrome/Edge screenshots)
+    // Check for images in clipboard
     const hasFileImages =
       e.clipboardData?.files?.length > 0 &&
       Array.from(e.clipboardData.files).some((f) => f.type.startsWith('image/'));
 
-    // Also check clipboardData.items (Firefox, some Windows paste scenarios)
     const hasItemImages =
       !hasFileImages &&
       e.clipboardData?.items &&
@@ -299,17 +338,19 @@ export default function MentionInput({
       );
 
     if ((hasFileImages || hasItemImages) && onPaste) {
+      // Delegate image handling to parent — parent must call preventDefault
       onPaste(e);
       return;
     }
 
-    // For non-image paste, strip HTML formatting and insert as plain text
-    const text = e.clipboardData?.getData('text/plain');
+    // Always prevent default to block arbitrary HTML injection from clipboard
+    e.preventDefault();
+
+    // Insert plain text only (strip any HTML formatting)
+    const text = e.clipboardData?.getData('text/plain') || '';
     if (text) {
-      e.preventDefault();
       document.execCommand('insertText', false, text);
     }
-    // If no text and no images, let the browser handle it (e.g. empty paste)
   };
 
   // Scroll selected into view
