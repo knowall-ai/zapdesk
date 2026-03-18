@@ -195,6 +195,26 @@ function TicketsPageContent() {
     }
   }, []);
 
+  const handleDialogTagsChange = useCallback(
+    async (workItemId: number, tags: string[]) => {
+      const ticket = tickets.find((t) => t.id === workItemId);
+      if (!ticket || !selectedOrganization) return;
+      const response = await fetch(`/api/devops/tickets/${workItemId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-devops-org': selectedOrganization.accountName,
+        },
+        body: JSON.stringify({ tags, project: ticket.project }),
+      });
+      if (response.ok) {
+        setTickets((prev) => prev.map((t) => (t.id === workItemId ? { ...t, tags } : t)));
+        setSelectedTicket((prev) => (prev && prev.id === workItemId ? { ...prev, tags } : prev));
+      }
+    },
+    [tickets, selectedOrganization]
+  );
+
   const handleWorkItemUpdate = useCallback(
     async (workItemId: number, updates: { title?: string; description?: string }) => {
       const ticket = tickets.find((t) => t.id === workItemId);
@@ -280,6 +300,7 @@ function TicketsPageContent() {
           onClose={() => setSelectedTicket(null)}
           onStateChange={handleDialogStateChange}
           onTypeChange={handleDialogTypeChange}
+          onTagsChange={handleDialogTagsChange}
           onUpdate={handleWorkItemUpdate}
         />
 

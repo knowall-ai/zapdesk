@@ -67,7 +67,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { assignee, assignToMe, priority, project, title, description } = body;
+    const { assignee, assignToMe, priority, project, title, description, tags } = body;
 
     const organization = request.headers.get('x-devops-org') || undefined;
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
@@ -88,6 +88,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       priority?: number;
       title?: string;
       description?: string;
+      tags?: string[];
     } = {};
 
     if (assignToMe) {
@@ -109,6 +110,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (description !== undefined) {
       updates.description = description;
+    }
+
+    if (tags !== undefined && Array.isArray(tags)) {
+      updates.tags = tags.map((t: string) => t.trim()).filter(Boolean);
     }
 
     // Update the work item
