@@ -57,6 +57,7 @@ interface TicketDetailProps {
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
   onTypeChange?: (type: string) => Promise<void>;
+  onDescriptionChange?: (description: string) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onRefreshTicket?: () => Promise<void>;
 }
@@ -78,6 +79,7 @@ export default function TicketDetail({
   onAssigneeChange,
   onPriorityChange,
   onTypeChange,
+  onDescriptionChange,
   onUploadAttachment,
   onRefreshTicket,
 }: TicketDetailProps) {
@@ -122,6 +124,11 @@ export default function TicketDetail({
   const [availableTypes, setAvailableTypes] = useState<WorkItemType[]>([]);
   const [isLoadingTypes, setIsLoadingTypes] = useState(false);
   const [isUpdatingType, setIsUpdatingType] = useState(false);
+
+  // Description editing state
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [isSavingDescription, setIsSavingDescription] = useState(false);
+  const descriptionRef = useRef<HTMLDivElement>(null);
 
   // Attachment state
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -303,6 +310,32 @@ export default function TicketDetail({
       setIsPriorityDropdownOpen(false);
     } finally {
       setIsUpdatingPriority(false);
+    }
+  };
+
+  // Description editing handlers
+  const handleEditDescription = () => {
+    setIsEditingDescription(true);
+  };
+
+  const handleCancelEditDescription = () => {
+    setIsEditingDescription(false);
+    // Reset content back to original
+    if (descriptionRef.current) {
+      descriptionRef.current.innerHTML = ticket.description || '<em>No description provided</em>';
+    }
+  };
+
+  const handleSaveDescription = async () => {
+    if (!onDescriptionChange || !descriptionRef.current) return;
+    setIsSavingDescription(true);
+    try {
+      await onDescriptionChange(descriptionRef.current.innerHTML);
+      setIsEditingDescription(false);
+    } catch (error) {
+      console.error('Failed to save description:', error);
+    } finally {
+      setIsSavingDescription(false);
     }
   };
 
@@ -554,9 +587,59 @@ export default function TicketDetail({
             <div className="flex-1 overflow-auto p-4">
               {activeSubTab === 'description' && (
                 <div className="card p-4">
+                  {/* Edit/Save/Cancel buttons */}
+                  {onDescriptionChange && (
+                    <div className="mb-3 flex items-center justify-end gap-2">
+                      {isEditingDescription ? (
+                        <>
+                          <button
+                            onClick={handleCancelEditDescription}
+                            disabled={isSavingDescription}
+                            className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleSaveDescription}
+                            disabled={isSavingDescription}
+                            className="btn-primary flex items-center gap-1 px-3 py-1 text-sm"
+                          >
+                            {isSavingDescription ? (
+                              <>
+                                <Loader2 size={14} className="animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              'Save'
+                            )}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={handleEditDescription}
+                          className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                          style={{ color: 'var(--primary)' }}
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <div
-                    className="prose prose-sm prose-invert user-content max-w-none"
-                    style={{ color: 'var(--text-secondary)' }}
+                    ref={descriptionRef}
+                    contentEditable={isEditingDescription}
+                    suppressContentEditableWarning
+                    className={`prose prose-sm prose-invert user-content max-w-none ${isEditingDescription ? 'rounded-md border p-3 outline-none focus:ring-1' : ''}`}
+                    style={{
+                      color: 'var(--text-secondary)',
+                      ...(isEditingDescription
+                        ? {
+                            borderColor: 'var(--border)',
+                            minHeight: '150px',
+                          }
+                        : {}),
+                    }}
                     dangerouslySetInnerHTML={{
                       __html: ticket.description || '<em>No description provided</em>',
                     }}
