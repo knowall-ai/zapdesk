@@ -268,6 +268,8 @@ function TicketsPageContent() {
             availableTypes={workItemTypes}
             defaultViewMode={defaultViewMode}
             hideTicketsOnlyToggle
+            organization={selectedOrganization?.accountName}
+            onRefresh={fetchTickets}
           />
         </div>
 
