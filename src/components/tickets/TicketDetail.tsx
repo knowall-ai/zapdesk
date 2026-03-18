@@ -41,6 +41,8 @@ import MentionInput from '../common/MentionInput';
 import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
 import TicketHistory from './TicketHistory';
+import TypeChangeRequiredFields from './TypeChangeRequiredFields';
+import type { RequiredField } from '@/hooks/useWorkItemActions';
 import { useClickOutside } from '@/hooks';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 
@@ -56,7 +58,7 @@ interface TicketDetailProps {
   onStateChange?: (state: string) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
-  onTypeChange?: (type: string) => Promise<void>;
+  onTypeChange?: (type: string, additionalFields?: Record<string, string>) => Promise<void>;
   onDescriptionChange?: (description: string) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onRefreshTicket?: () => Promise<void>;
@@ -124,6 +126,34 @@ export default function TicketDetail({
   const [availableTypes, setAvailableTypes] = useState<WorkItemType[]>([]);
   const [isLoadingTypes, setIsLoadingTypes] = useState(false);
   const [isUpdatingType, setIsUpdatingType] = useState(false);
+
+  // Pending type change (required fields)
+  const [pendingTypeChange, setPendingTypeChange] = useState<{
+    type: string;
+    requiredFields: RequiredField[];
+  } | null>(null);
+  const [pendingTypeFieldValues, setPendingTypeFieldValues] = useState<Record<string, string>>({});
+  const [pendingTypeMembers, setPendingTypeMembers] = useState<User[]>([]);
+  const [pendingTypeMemberSearch, setPendingTypeMemberSearch] = useState('');
+
+  const filteredPendingTypeMembers = useMemo(() => {
+    return pendingTypeMembers
+      .filter((member) => {
+        const isStakeholder =
+          member.accessLevel?.toLowerCase().includes('stakeholder') ||
+          member.licenseType?.toLowerCase().includes('stakeholder');
+        return !isStakeholder;
+      })
+      .filter((member) => {
+        if (!pendingTypeMemberSearch) return true;
+        const search = pendingTypeMemberSearch.toLowerCase();
+        return (
+          member.displayName.toLowerCase().includes(search) ||
+          member.email?.toLowerCase().includes(search)
+        );
+      })
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }, [pendingTypeMembers, pendingTypeMemberSearch]);
 
   // Description editing state
   const [isEditingDescription, setIsEditingDescription] = useState(false);
@@ -220,6 +250,46 @@ export default function TicketDetail({
 
   const handleTypeSelect = async (typeName: string) => {
     if (!onTypeChange || typeName === ticket.workItemType) return;
+
+    // Check for required fields first
+    if (ticket.project) {
+      setIsTypeDropdownOpen(false);
+      try {
+        const response = await devOpsGet(
+          `/api/devops/projects/${encodeURIComponent(ticket.project)}/required-fields?workItemType=${encodeURIComponent(typeName)}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const fields: RequiredField[] = data.fields || [];
+          if (fields.length > 0) {
+            setPendingTypeChange({ type: typeName, requiredFields: fields });
+            setPendingTypeFieldValues({});
+            setPendingTypeMemberSearch('');
+
+            // Pre-fetch team members for people picker fields
+            const hasPeopleField = fields.some((f) => f.referenceName === 'Custom.FoundBy');
+            if (hasPeopleField && pendingTypeMembers.length === 0) {
+              try {
+                const membersResponse = await devOpsGet(
+                  `/api/devops/projects/${encodeURIComponent(ticket.project)}/members`
+                );
+                if (membersResponse.ok) {
+                  const membersData = await membersResponse.json();
+                  setPendingTypeMembers(membersData.members || []);
+                }
+              } catch (err) {
+                console.error('Failed to fetch members:', err);
+              }
+            }
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch required fields:', err);
+      }
+    }
+
+    // No required fields — proceed directly
     setIsUpdatingType(true);
     try {
       await onTypeChange(typeName);
@@ -227,6 +297,25 @@ export default function TicketDetail({
     } finally {
       setIsUpdatingType(false);
     }
+  };
+
+  const handleConfirmPendingTypeChange = async () => {
+    if (!pendingTypeChange || !onTypeChange) return;
+    setIsUpdatingType(true);
+    try {
+      await onTypeChange(pendingTypeChange.type, pendingTypeFieldValues);
+      setPendingTypeChange(null);
+      setPendingTypeFieldValues({});
+      setPendingTypeMemberSearch('');
+    } finally {
+      setIsUpdatingType(false);
+    }
+  };
+
+  const handleCancelPendingTypeChange = () => {
+    setPendingTypeChange(null);
+    setPendingTypeFieldValues({});
+    setPendingTypeMemberSearch('');
   };
 
   // Fetch team members when assignee dropdown opens
@@ -1312,6 +1401,25 @@ export default function TicketDetail({
           agent={ticket.assignee}
           ticketId={ticket.workItemId}
           onZapSent={handleZapSent}
+        />
+      )}
+
+      {/* Required fields modal for type change */}
+      {pendingTypeChange && (
+        <TypeChangeRequiredFields
+          targetType={pendingTypeChange.type}
+          requiredFields={pendingTypeChange.requiredFields}
+          fieldValues={pendingTypeFieldValues}
+          onFieldChange={(ref, val) =>
+            setPendingTypeFieldValues((prev) => ({ ...prev, [ref]: val }))
+          }
+          onConfirm={handleConfirmPendingTypeChange}
+          onCancel={handleCancelPendingTypeChange}
+          isUpdating={isUpdatingType}
+          members={pendingTypeMembers}
+          memberSearch={pendingTypeMemberSearch}
+          onMemberSearchChange={setPendingTypeMemberSearch}
+          filteredMembers={filteredPendingTypeMembers}
         />
       )}
     </div>
