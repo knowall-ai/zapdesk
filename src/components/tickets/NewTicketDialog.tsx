@@ -8,6 +8,7 @@ import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import type { DevOpsProject, User, WorkItemType, ClassificationNode } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { formatFileSize, validateFile } from '@/lib/attachment-utils';
+import { buildIdentityString, getDisplayNameFromIdentity } from '@/lib/identity';
 import { FileIcon } from '@/components/common';
 
 interface PriorityOption {
@@ -509,30 +510,6 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       setIsSubmitting(false);
       setIsUploadingFiles(false);
     }
-  };
-
-  // Build full identity string for Azure DevOps: "DisplayName <email>"
-  const buildIdentityString = (member: User): string => {
-    if (member.email) {
-      return `${member.displayName} <${member.email}>`;
-    }
-    return member.displayName;
-  };
-
-  // Extract display name from identity string "DisplayName <email>"
-  const getDisplayNameFromIdentity = (identity: string): string => {
-    if (!identity) {
-      return '';
-    }
-
-    const trimmedIdentity = identity.trim();
-    const ltIndex = trimmedIdentity.indexOf('<');
-
-    if (ltIndex !== -1) {
-      return trimmedIdentity.slice(0, ltIndex).trim();
-    }
-
-    return trimmedIdentity;
   };
 
   const handleTakeIt = () => {

@@ -3,6 +3,7 @@
 import { X, Loader2, Search } from 'lucide-react';
 import type { RequiredField } from '@/hooks/useWorkItemActions';
 import type { User } from '@/types';
+import { buildIdentityString, getDisplayNameFromIdentity } from '@/lib/identity';
 
 interface TypeChangeRequiredFieldsProps {
   targetType: string;
@@ -20,21 +21,6 @@ interface TypeChangeRequiredFieldsProps {
 }
 
 const PEOPLE_PICKER_FIELDS = new Set(['Custom.FoundBy']);
-
-// Build full identity string for Azure DevOps: "DisplayName <email>"
-const buildIdentityString = (member: User): string => {
-  if (member.email) {
-    return `${member.displayName} <${member.email}>`;
-  }
-  return member.displayName;
-};
-
-// Extract display name from identity string "DisplayName <email>"
-const getDisplayNameFromIdentity = (identity: string): string => {
-  if (!identity) return '';
-  const match = identity.match(/^(.+?)\s*<.+>$/);
-  return match ? match[1].trim() : identity;
-};
 
 export default function TypeChangeRequiredFields({
   targetType,

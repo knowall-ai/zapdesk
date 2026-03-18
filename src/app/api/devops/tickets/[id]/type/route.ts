@@ -41,11 +41,26 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
 
-    // Validate additionalFields if provided
-    const validatedAdditionalFields: Record<string, string | number> | undefined =
-      additionalFields && typeof additionalFields === 'object'
-        ? (additionalFields as Record<string, string | number>)
-        : undefined;
+    // Validate additionalFields if provided — only allow safe field prefixes
+    let validatedAdditionalFields: Record<string, string | number> | undefined;
+    if (additionalFields && typeof additionalFields === 'object') {
+      const ALLOWED_PREFIXES = ['Custom.', 'Microsoft.VSTS.'];
+      const DENIED_PREFIXES = ['System.'];
+      const filtered: Record<string, string | number> = {};
+
+      for (const [key, value] of Object.entries(additionalFields)) {
+        if (typeof key !== 'string' || key.includes('/') || key.includes('\\')) continue;
+        if (DENIED_PREFIXES.some((p) => key.startsWith(p))) continue;
+        if (!ALLOWED_PREFIXES.some((p) => key.startsWith(p))) continue;
+        if (typeof value === 'string' || typeof value === 'number') {
+          filtered[key] = value;
+        }
+      }
+
+      if (Object.keys(filtered).length > 0) {
+        validatedAdditionalFields = filtered;
+      }
+    }
 
     // If project is provided, use it directly
     if (project) {

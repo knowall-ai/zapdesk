@@ -841,9 +841,19 @@ export class AzureDevOpsService {
       const retryDoc = [...patchDocument];
       let addedFields = 0;
 
+      // Only auto-fill fields with constrained value lists (e.g., Severity, Priority).
+      // Skip identity/people fields — those require user input via the UI.
+      const IDENTITY_FIELD_PREFIXES = ['Custom.FoundBy', 'System.AssignedTo', 'System.CreatedBy'];
+
       for (const ruleError of ruleErrors) {
         const fieldRef: string = ruleError.fieldReferenceName;
         if (!fieldRef || existingFields.has(`/fields/${fieldRef}`)) continue;
+
+        // Never auto-fill identity fields — they need explicit user selection
+        if (IDENTITY_FIELD_PREFIXES.some((p) => fieldRef.startsWith(p))) {
+          console.warn(`Skipping auto-fill for identity field ${fieldRef} — requires user input`);
+          continue;
+        }
 
         try {
           const fieldUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/fields/${encodeURIComponent(fieldRef)}?$expand=allowedValues&api-version=7.1`;
@@ -851,7 +861,8 @@ export class AzureDevOpsService {
           if (fieldResponse.ok) {
             const fieldData = await fieldResponse.json();
             const allowedValues: string[] = fieldData.allowedValues || [];
-            if (allowedValues.length > 0) {
+            // Only auto-fill if the field has a small, constrained set of values
+            if (allowedValues.length > 0 && allowedValues.length <= 20) {
               retryDoc.push({
                 op: 'add',
                 path: `/fields/${fieldRef}`,
@@ -860,6 +871,10 @@ export class AzureDevOpsService {
               addedFields++;
               console.log(
                 `Auto-filling required field ${fieldRef}: "${allowedValues[0]}" (${allowedValues.length} options)`
+              );
+            } else if (allowedValues.length > 20) {
+              console.warn(
+                `Skipping auto-fill for ${fieldRef} — too many options (${allowedValues.length}), requires user input`
               );
             }
           }

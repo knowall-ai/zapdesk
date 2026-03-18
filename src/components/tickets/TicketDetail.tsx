@@ -263,7 +263,7 @@ export default function TicketDetail({
             const hasPeopleField = fields.some((f) => f.referenceName === 'Custom.FoundBy');
             if (hasPeopleField && pendingTypeMembers.length === 0) {
               try {
-                const membersResponse = await fetch(
+                const membersResponse = await devOpsGet(
                   `/api/devops/projects/${encodeURIComponent(ticket.project)}/members`
                 );
                 if (membersResponse.ok) {

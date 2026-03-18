@@ -13,7 +13,10 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { project, type, fieldRef } = await params;
+    const rawParams = await params;
+    const project = decodeURIComponent(rawParams.project);
+    const type = decodeURIComponent(rawParams.type);
+    const fieldRef = decodeURIComponent(rawParams.fieldRef);
     const organization = request.headers.get('x-devops-org') || undefined;
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
 
