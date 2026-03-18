@@ -339,6 +339,53 @@ export default function TicketDetail({
     }
   };
 
+  // Paste image handler
+  const [isPastingImage, setIsPastingImage] = useState(false);
+  const [pastedImages, setPastedImages] = useState<Array<{ name: string; url: string }>>([]);
+
+  const handleCommentPaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items || !onUploadAttachment) return;
+
+    const imageFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          // Generate a descriptive filename
+          const ext = item.type.split('/')[1] || 'png';
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          const namedFile = new File([file], `pasted-image-${timestamp}.${ext}`, {
+            type: item.type,
+          });
+          imageFiles.push(namedFile);
+        }
+      }
+    }
+
+    if (imageFiles.length === 0) return;
+
+    // Prevent default paste of image data as text
+    e.preventDefault();
+    setIsPastingImage(true);
+    setUploadError(null);
+
+    try {
+      for (const file of imageFiles) {
+        const attachment = await onUploadAttachment(file);
+        // Insert inline image HTML into the comment
+        const imgHtml = `<img src="${attachment.url}" alt="${file.name}" />`;
+        setNewComment((prev) => (prev ? `${prev}\n${imgHtml}` : imgHtml));
+        setPastedImages((prev) => [...prev, { name: file.name, url: attachment.url }]);
+      }
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Failed to upload pasted image');
+    } finally {
+      setIsPastingImage(false);
+    }
+  };
+
   // File attachment handlers
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -392,6 +439,7 @@ export default function TicketDetail({
       if (newComment.trim() && onAddComment) {
         await onAddComment(newComment);
         setNewComment('');
+        setPastedImages([]);
       }
 
       // Refresh ticket once after all uploads and comment
@@ -859,9 +907,53 @@ export default function TicketDetail({
             <MentionInput
               value={newComment}
               onChange={setNewComment}
-              placeholder="Type your reply... Use @ to mention team members"
+              onPaste={handleCommentPaste}
+              placeholder="Type your reply... Use @ to mention team members. Paste images with Ctrl+V."
               className="input min-h-[100px] w-full resize-none pr-24"
+              disabled={isPastingImage}
             />
+            {/* Pasted image previews */}
+            {pastedImages.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {pastedImages.map((img, idx) => (
+                  <div
+                    key={idx}
+                    className="relative rounded border"
+                    style={{ borderColor: 'var(--border)' }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.url} alt={img.name} className="h-16 w-16 rounded object-cover" />
+                    <button
+                      onClick={() => {
+                        setPastedImages((prev) => prev.filter((_, i) => i !== idx));
+                        // Remove the img tag from comment
+                        setNewComment((prev) =>
+                          prev.replace(`<img src="${img.url}" alt="${img.name}" />`, '').trim()
+                        );
+                      }}
+                      className="absolute -top-1.5 -right-1.5 rounded-full p-0.5"
+                      style={{
+                        backgroundColor: 'var(--surface)',
+                        color: 'var(--text-muted)',
+                        border: '1px solid var(--border)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {isPastingImage && (
+              <div
+                className="mt-1 flex items-center gap-2 text-xs"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 size={12} className="animate-spin" />
+                Uploading pasted image...
+              </div>
+            )}
             <div className="absolute right-3 bottom-3 flex items-center gap-2">
               <button
                 onClick={() => fileInputRef.current?.click()}

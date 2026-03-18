@@ -14,6 +14,7 @@ import Avatar from './Avatar';
 interface MentionInputProps {
   value: string;
   onChange: (value: string) => void;
+  onPaste?: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
   placeholder?: string;
   className?: string;
   disabled?: boolean;
@@ -26,6 +27,7 @@ interface MentionUser extends User {
 export default function MentionInput({
   value,
   onChange,
+  onPaste,
   placeholder = 'Type your message...',
   className = '',
   disabled = false,
@@ -249,6 +251,7 @@ export default function MentionInput({
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
+        onPaste={onPaste}
         placeholder={placeholder}
         disabled={disabled}
         className={className}
