@@ -207,10 +207,12 @@ function TicketsPageContent() {
         },
         body: JSON.stringify({ tags, project: ticket.project }),
       });
-      if (response.ok) {
-        setTickets((prev) => prev.map((t) => (t.id === workItemId ? { ...t, tags } : t)));
-        setSelectedTicket((prev) => (prev && prev.id === workItemId ? { ...prev, tags } : prev));
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to update tags');
       }
+      setTickets((prev) => prev.map((t) => (t.id === workItemId ? { ...t, tags } : t)));
+      setSelectedTicket((prev) => (prev && prev.id === workItemId ? { ...prev, tags } : prev));
     },
     [tickets, selectedOrganization]
   );

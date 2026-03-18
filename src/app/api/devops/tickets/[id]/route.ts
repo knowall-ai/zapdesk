@@ -113,7 +113,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     if (tags !== undefined && Array.isArray(tags)) {
-      updates.tags = tags.map((t: string) => t.trim()).filter(Boolean);
+      // Validate each element is a string
+      if (!tags.every((t: unknown) => typeof t === 'string')) {
+        return NextResponse.json({ error: 'All tags must be strings' }, { status: 400 });
+      }
+      // Reject tags containing semicolons (DevOps delimiter)
+      const cleanTags = (tags as string[]).map((t) => t.trim()).filter(Boolean);
+      if (cleanTags.some((t) => t.includes(';'))) {
+        return NextResponse.json({ error: 'Tags cannot contain semicolons' }, { status: 400 });
+      }
+      // Ensure "ticket" tag is always preserved
+      if (!cleanTags.some((t) => t.toLowerCase() === 'ticket')) {
+        cleanTags.unshift('ticket');
+      }
+      updates.tags = cleanTags;
     }
 
     // Update the work item

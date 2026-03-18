@@ -421,11 +421,13 @@ export default function WorkItemDetailSidebar({
               {tag}
               {tagsEditable && tag.toLowerCase() !== 'ticket' && (
                 <button
+                  type="button"
                   onClick={() => handleRemoveTag(tag)}
                   disabled={isSavingTags}
                   className="ml-0.5 rounded-full transition-colors hover:bg-[var(--surface)]"
                   style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
                   title={`Remove tag "${tag}"`}
+                  aria-label={`Remove tag ${tag}`}
                 >
                   <X size={10} />
                 </button>

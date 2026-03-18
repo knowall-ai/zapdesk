@@ -222,18 +222,16 @@ export default function TicketDetailPage() {
 
   const handleTagsChange = async (tags: string[]) => {
     if (!ticket) return;
-    try {
-      const response = await fetch(`/api/devops/tickets/${ticketId}`, {
-        method: 'PATCH',
-        headers: orgHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ tags, project: ticket.project }),
-      });
-      if (response.ok) {
-        await fetchTicket();
-      }
-    } catch (error) {
-      console.error('Failed to update tags:', error);
+    const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+      method: 'PATCH',
+      headers: orgHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ tags, project: ticket.project }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || 'Failed to update tags');
     }
+    await fetchTicket();
   };
 
   const handleUploadAttachment = async (file: File): Promise<Attachment> => {
