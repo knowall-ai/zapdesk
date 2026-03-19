@@ -410,6 +410,9 @@ export class AzureDevOpsService {
         'System.TeamProject',
         'System.WorkItemType',
         'System.AreaPath',
+        'Microsoft.VSTS.Common.ResolvedReason',
+        'Microsoft.VSTS.TCM.ReproSteps',
+        'Microsoft.VSTS.TCM.SystemInfo',
       ].join(',');
       const workItemsResponse = await fetch(
         `${this.baseUrl}/_apis/wit/workitems?ids=${batch.join(',')}&fields=${fields}&api-version=7.0`,
