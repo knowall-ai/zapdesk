@@ -29,6 +29,7 @@ function escapeAttr(val: string): string {
 /** Validate that a URL is safe (relative or http/https). */
 function isSafeUrl(url: string): boolean {
   if (url.startsWith('/')) return true;
+  if (url.startsWith('data:image/')) return true;
   try {
     const parsed = new URL(url);
     return parsed.protocol === 'http:' || parsed.protocol === 'https:';
