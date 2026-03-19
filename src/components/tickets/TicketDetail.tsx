@@ -651,9 +651,11 @@ export default function TicketDetail({
                 >
                   Resolution
                 </h3>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  {ticket.resolvedReason}
-                </p>
+                <div
+                  className="prose prose-sm prose-invert user-content max-w-none"
+                  style={{ color: 'var(--text-secondary)' }}
+                  dangerouslySetInnerHTML={{ __html: ticket.resolvedReason }}
+                />
               </div>
             )}
 
