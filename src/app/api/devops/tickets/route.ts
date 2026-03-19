@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService, workItemToTicket, setStateCategoryCache } from '@/lib/devops';
+import { TICKET_WORK_ITEM_TYPES } from '@/types';
 import type { Ticket, TicketStatus } from '@/types';
 
 // TTL cache for state categories (avoids refetching on every request)
@@ -104,6 +105,7 @@ export async function POST(request: NextRequest) {
       workItemType,
       iterationPath,
       areaPath,
+      additionalFields,
     } = body;
 
     if (!project || !title) {
@@ -138,6 +140,36 @@ export async function POST(request: NextRequest) {
         ? priorityFieldRef
         : undefined;
 
+    // Validate additionalFields: only allow known DevOps field prefixes
+    // and deny core System.* fields that are set by the handler itself
+    const ALLOWED_FIELD_PREFIXES = ['Microsoft.VSTS.', 'Custom.'];
+    const DENIED_FIELDS = new Set([
+      'System.Title',
+      'System.Description',
+      'System.Tags',
+      'System.AssignedTo',
+      'System.State',
+      'System.AreaPath',
+      'System.IterationPath',
+      'System.WorkItemType',
+    ]);
+    let validatedAdditionalFields: Record<string, string | number> | undefined;
+    if (additionalFields && typeof additionalFields === 'object') {
+      validatedAdditionalFields = {};
+      for (const [key, value] of Object.entries(additionalFields)) {
+        const isAllowedPrefix = ALLOWED_FIELD_PREFIXES.some((prefix) => key.startsWith(prefix));
+        const hasPathTraversal = /[/\\]/.test(key);
+        if (
+          isAllowedPrefix &&
+          !DENIED_FIELDS.has(key) &&
+          !hasPathTraversal &&
+          (typeof value === 'string' || typeof value === 'number')
+        ) {
+          validatedAdditionalFields[key] = value;
+        }
+      }
+    }
+
     // Create the ticket with 'ticket' tag always included
     const allTags = ['ticket', ...(tags || [])].filter(Boolean);
     const workItem = await devopsService.createTicketWithAssignee(
@@ -151,8 +183,9 @@ export async function POST(request: NextRequest) {
         workItemType: workItemType || 'Task',
         hasPriority: Boolean(validatedFieldRef),
         priorityFieldRef: validatedFieldRef,
-        iterationPath: iterationPath || undefined,
-        areaPath: areaPath || undefined,
+        additionalFields: validatedAdditionalFields,
+        iterationPath: typeof iterationPath === 'string' ? iterationPath : undefined,
+        areaPath: typeof areaPath === 'string' ? areaPath : undefined,
       }
     );
 
@@ -199,7 +232,7 @@ export async function GET(request: NextRequest) {
     await fetchAndCacheStateCategories(session.accessToken, organization);
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
-    const tickets = await devopsService.getAllTickets(ticketsOnly);
+    const tickets = await devopsService.getAllTickets(ticketsOnly, TICKET_WORK_ITEM_TYPES);
 
     // Filter tickets based on view
     const filteredTickets = filterTicketsByView(tickets, view, session.user?.email);

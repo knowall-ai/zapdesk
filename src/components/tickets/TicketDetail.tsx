@@ -25,6 +25,7 @@ import type {
   User,
   TicketPriority,
   WorkItemState,
+  WorkItemType,
   WorkItemUpdate,
   Attachment,
 } from '@/types';
@@ -41,6 +42,7 @@ import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
 import TicketHistory from './TicketHistory';
 import { useClickOutside } from '@/hooks';
+import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 
 type DetailTab = 'details' | 'history';
 type DetailsSubTab = 'description' | 'repro-steps' | 'resolution' | 'comments';
@@ -54,6 +56,8 @@ interface TicketDetailProps {
   onStateChange?: (state: string) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
+  onTypeChange?: (type: string) => Promise<void>;
+  onDescriptionChange?: (description: string) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onRefreshTicket?: () => Promise<void>;
 }
@@ -74,6 +78,8 @@ export default function TicketDetail({
   onStateChange,
   onAssigneeChange,
   onPriorityChange,
+  onTypeChange,
+  onDescriptionChange,
   onUploadAttachment,
   onRefreshTicket,
 }: TicketDetailProps) {
@@ -83,6 +89,7 @@ export default function TicketDetail({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
   const [isDetailsSidebarOpen, setIsDetailsSidebarOpen] = useState(false);
+  const { get: devOpsGet } = useDevOpsApi();
 
   // State editing
   const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
@@ -112,6 +119,17 @@ export default function TicketDetail({
   const [isPriorityDropdownOpen, setIsPriorityDropdownOpen] = useState(false);
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
 
+  // Type editing state
+  const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
+  const [availableTypes, setAvailableTypes] = useState<WorkItemType[]>([]);
+  const [isLoadingTypes, setIsLoadingTypes] = useState(false);
+  const [isUpdatingType, setIsUpdatingType] = useState(false);
+
+  // Description editing state
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [isSavingDescription, setIsSavingDescription] = useState(false);
+  const descriptionRef = useRef<HTMLDivElement>(null);
+
   // Attachment state
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -125,6 +143,7 @@ export default function TicketDetail({
     setAssigneeSearch('');
   }, []);
   const closePriorityDropdown = useCallback(() => setIsPriorityDropdownOpen(false), []);
+  const closeTypeDropdown = useCallback(() => setIsTypeDropdownOpen(false), []);
 
   const stateDropdownRef = useClickOutside<HTMLDivElement>(closeStateDropdown, isStateDropdownOpen);
   const assigneeDropdownRef = useClickOutside<HTMLDivElement>(
@@ -135,6 +154,7 @@ export default function TicketDetail({
     closePriorityDropdown,
     isPriorityDropdownOpen
   );
+  const typeDropdownRef = useClickOutside<HTMLDivElement>(closeTypeDropdown, isTypeDropdownOpen);
 
   // Fetch available states when state dropdown opens
   useEffect(() => {
@@ -169,6 +189,43 @@ export default function TicketDetail({
       setIsStateDropdownOpen(false);
     } finally {
       setIsUpdatingState(false);
+    }
+  };
+
+  // Fetch available types when type dropdown opens
+  useEffect(() => {
+    if (isTypeDropdownOpen && availableTypes.length === 0 && ticket.project) {
+      fetchAvailableTypes();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTypeDropdownOpen, ticket.project]);
+
+  const fetchAvailableTypes = async () => {
+    if (!ticket.project) return;
+    setIsLoadingTypes(true);
+    try {
+      const response = await devOpsGet(
+        `/api/devops/projects/${encodeURIComponent(ticket.project)}/workitemtypes`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableTypes(data.types || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch work item types:', err);
+    } finally {
+      setIsLoadingTypes(false);
+    }
+  };
+
+  const handleTypeSelect = async (typeName: string) => {
+    if (!onTypeChange || typeName === ticket.workItemType) return;
+    setIsUpdatingType(true);
+    try {
+      await onTypeChange(typeName);
+      setIsTypeDropdownOpen(false);
+    } finally {
+      setIsUpdatingType(false);
     }
   };
 
@@ -253,6 +310,32 @@ export default function TicketDetail({
       setIsPriorityDropdownOpen(false);
     } finally {
       setIsUpdatingPriority(false);
+    }
+  };
+
+  // Description editing handlers
+  const handleEditDescription = () => {
+    setIsEditingDescription(true);
+  };
+
+  const handleCancelEditDescription = () => {
+    setIsEditingDescription(false);
+    // Reset content back to original
+    if (descriptionRef.current) {
+      descriptionRef.current.innerHTML = ticket.description || '<em>No description provided</em>';
+    }
+  };
+
+  const handleSaveDescription = async () => {
+    if (!onDescriptionChange || !descriptionRef.current) return;
+    setIsSavingDescription(true);
+    try {
+      await onDescriptionChange(descriptionRef.current.innerHTML);
+      setIsEditingDescription(false);
+    } catch (error) {
+      console.error('Failed to save description:', error);
+    } finally {
+      setIsSavingDescription(false);
     }
   };
 
@@ -504,9 +587,59 @@ export default function TicketDetail({
             <div className="flex-1 overflow-auto p-4">
               {activeSubTab === 'description' && (
                 <div className="card p-4">
+                  {/* Edit/Save/Cancel buttons */}
+                  {onDescriptionChange && (
+                    <div className="mb-3 flex items-center justify-end gap-2">
+                      {isEditingDescription ? (
+                        <>
+                          <button
+                            onClick={handleCancelEditDescription}
+                            disabled={isSavingDescription}
+                            className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleSaveDescription}
+                            disabled={isSavingDescription}
+                            className="btn-primary flex items-center gap-1 px-3 py-1 text-sm"
+                          >
+                            {isSavingDescription ? (
+                              <>
+                                <Loader2 size={14} className="animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              'Save'
+                            )}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={handleEditDescription}
+                          className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                          style={{ color: 'var(--primary)' }}
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <div
-                    className="prose prose-sm prose-invert user-content max-w-none"
-                    style={{ color: 'var(--text-secondary)' }}
+                    ref={descriptionRef}
+                    contentEditable={isEditingDescription}
+                    suppressContentEditableWarning
+                    className={`prose prose-sm prose-invert user-content max-w-none ${isEditingDescription ? 'rounded-md border p-3 outline-none focus:ring-1' : ''}`}
+                    style={{
+                      color: 'var(--text-secondary)',
+                      ...(isEditingDescription
+                        ? {
+                            borderColor: 'var(--border)',
+                            minHeight: '150px',
+                          }
+                        : {}),
+                    }}
                     dangerouslySetInnerHTML={{
                       __html: ticket.description || '<em>No description provided</em>',
                     }}
@@ -1018,16 +1151,69 @@ export default function TicketDetail({
 
             {/* Type */}
             {ticket.workItemType && (
-              <div>
+              <div className="relative" ref={typeDropdownRef}>
                 <label
                   className="mb-1 block text-xs uppercase"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   Type
                 </label>
-                <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                  {ticket.workItemType}
-                </span>
+                {onTypeChange ? (
+                  <>
+                    <button
+                      onClick={() => setIsTypeDropdownOpen(!isTypeDropdownOpen)}
+                      disabled={isUpdatingType}
+                      className="flex w-full items-center justify-between rounded-md px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {isUpdatingType ? <Loader2 size={14} className="animate-spin" /> : null}
+                        {ticket.workItemType}
+                      </span>
+                      <ChevronDown size={14} style={{ color: 'var(--text-muted)' }} />
+                    </button>
+                    {isTypeDropdownOpen && (
+                      <div
+                        className="absolute top-full left-0 z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border shadow-lg"
+                        style={{
+                          backgroundColor: 'var(--surface)',
+                          borderColor: 'var(--border)',
+                        }}
+                      >
+                        {isLoadingTypes ? (
+                          <div className="flex items-center justify-center py-3">
+                            <Loader2
+                              size={16}
+                              className="animate-spin"
+                              style={{ color: 'var(--text-muted)' }}
+                            />
+                          </div>
+                        ) : (
+                          availableTypes.map((type) => (
+                            <button
+                              key={type.name}
+                              onClick={() => handleTypeSelect(type.name)}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                              style={{
+                                color:
+                                  type.name === ticket.workItemType
+                                    ? 'var(--primary)'
+                                    : 'var(--text-primary)',
+                              }}
+                            >
+                              {type.icon && <img src={type.icon} alt="" className="h-4 w-4" />}
+                              {type.name}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                    {ticket.workItemType}
+                  </span>
+                )}
               </div>
             )}
 

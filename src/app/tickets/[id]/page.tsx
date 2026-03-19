@@ -180,6 +180,46 @@ export default function TicketDetailPage() {
     }
   };
 
+  const handleTypeChange = async (newType: string) => {
+    if (!ticket) return;
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}/type`, {
+        method: 'PATCH',
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ type: newType, project: ticket.project }),
+      });
+
+      if (response.ok) {
+        await fetchTicket();
+      }
+    } catch (error) {
+      console.error('Failed to change work item type:', error);
+    }
+  };
+
+  const handleDescriptionChange = async (description: string) => {
+    if (!ticket) return;
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          description,
+          project: ticket.project,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update description');
+      }
+
+      await fetchTicket();
+    } catch (error) {
+      console.error('Failed to update description:', error);
+      throw error;
+    }
+  };
+
   const handleUploadAttachment = async (file: File): Promise<Attachment> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -224,6 +264,8 @@ export default function TicketDetailPage() {
         onStateChange={handleStateChange}
         onAssigneeChange={handleAssigneeChange}
         onPriorityChange={handlePriorityChange}
+        onTypeChange={handleTypeChange}
+        onDescriptionChange={handleDescriptionChange}
         onUploadAttachment={handleUploadAttachment}
         onRefreshTicket={fetchTicket}
       />

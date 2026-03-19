@@ -80,6 +80,34 @@ export function mapStatusToState(status: TicketStatus): string {
   return statusMap[status] || 'Active';
 }
 
+// All effort estimate fields on Features (all stored in days in Azure DevOps)
+const FEATURE_EFFORT_FIELDS = [
+  'Microsoft.VSTS.Scheduling.Effort',
+  'Custom.StrategicEffortDays',
+  'Custom.PrepEffortDays',
+  'Custom.DesignEffortDays',
+  'Custom.Engineereffort',
+  'Custom.TestEffortDays',
+  'Custom.PlanningEffortDays',
+  'Custom.OperateEffortDays',
+  'Custom.Architecteffort',
+  'Custom.Managereffort',
+];
+
+// Sum all effort fields and convert from days to hours (8h/day)
+function sumEffortFields(fields: Record<string, unknown>): number | undefined {
+  let total = 0;
+  let hasValue = false;
+  for (const field of FEATURE_EFFORT_FIELDS) {
+    const raw = fields[field];
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      total += raw;
+      hasValue = true;
+    }
+  }
+  return hasValue ? total * 8 : undefined;
+}
+
 // Map priority numbers to Zendesk-like priorities
 function mapPriority(priority?: number): TicketPriority | undefined {
   if (!priority) return undefined;
@@ -287,17 +315,47 @@ export class AzureDevOpsService {
     }
   }
 
+  // Get state definitions for a work item type (name, color, category from DevOps)
+  async getWorkItemTypeStates(
+    projectName: string,
+    typeName: string
+  ): Promise<{ name: string; color: string; category: string }[]> {
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(typeName)}/states?api-version=7.0`,
+        { headers: this.headers }
+      );
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (data.value || []).map((s: { name: string; color: string; category: string }) => ({
+        name: s.name,
+        color: s.color,
+        category: s.category,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
   // Get work items from a specific project
   // By default, filters to work items with "ticket" tag
   // Set ticketsOnly=false to get all work items regardless of tags
   async getTickets(
     projectName: string,
-    options?: { additionalFilters?: string; ticketsOnly?: boolean }
+    options?: {
+      additionalFilters?: string;
+      ticketsOnly?: boolean;
+      allowedTypes?: string[];
+    }
   ): Promise<DevOpsWorkItem[]> {
-    const { additionalFilters, ticketsOnly = true } = options || {};
+    const { additionalFilters, ticketsOnly = true, allowedTypes } = options || {};
 
     // WIQL query - optionally filter by "ticket" tag
     const ticketTagClause = ticketsOnly ? "AND [System.Tags] CONTAINS 'ticket'" : '';
+    // Optionally restrict to specific work item types (e.g., exclude Epic, Feature, User Story)
+    const typeClause = allowedTypes?.length
+      ? `AND [System.WorkItemType] IN (${allowedTypes.map((t) => `'${escapeWiql(t)}'`).join(', ')})`
+      : '';
     const wiql = {
       query: `
         SELECT [System.Id], [System.Title], [System.State], [System.CreatedDate],
@@ -307,6 +365,7 @@ export class AzureDevOpsService {
         FROM WorkItems
         WHERE [System.TeamProject] = '${escapeWiql(projectName)}'
           ${ticketTagClause}
+          ${typeClause}
           ${additionalFilters || ''}
         ORDER BY [System.ChangedDate] DESC
       `,
@@ -648,6 +707,7 @@ export class AzureDevOpsService {
       workItemType?: string;
       hasPriority?: boolean;
       priorityFieldRef?: string;
+      additionalFields?: Record<string, string | number>;
       iterationPath?: string;
       areaPath?: string;
     } = {}
@@ -659,6 +719,7 @@ export class AzureDevOpsService {
       workItemType = 'Task',
       hasPriority = true,
       priorityFieldRef,
+      additionalFields,
       iterationPath,
       areaPath,
     } = options;
@@ -688,6 +749,21 @@ export class AzureDevOpsService {
 
     if (areaPath) {
       patchDocument.push({ op: 'add', path: '/fields/System.AreaPath', value: areaPath });
+    }
+
+    // Append any additional required fields, excluding fields already set above
+    const reservedFields = new Set([
+      'System.Title',
+      'System.Description',
+      'System.Tags',
+      'System.AssignedTo',
+    ]);
+    if (additionalFields) {
+      for (const [key, value] of Object.entries(additionalFields)) {
+        if (value != null && value !== '' && !reservedFields.has(key)) {
+          patchDocument.push({ op: 'add', path: `/fields/${key}`, value });
+        }
+      }
     }
 
     const response = await fetch(
@@ -724,6 +800,166 @@ export class AzureDevOpsService {
     if (!response.ok) {
       throw new Error(`Failed to add comment: ${response.statusText}`);
     }
+  }
+
+  // Change work item type (e.g., Task → Bug)
+  // Azure DevOps supports this via PATCH with System.WorkItemType in the JSON patch body
+  async changeWorkItemType(
+    projectName: string,
+    workItemId: number,
+    newType: string
+  ): Promise<DevOpsWorkItem> {
+    // First, get the current work item to read its current state
+    const currentItem = await this.getWorkItem(projectName, workItemId);
+    const currentState = currentItem.fields['System.State'];
+
+    // Get valid states for the target work item type
+    let targetState = currentState;
+    try {
+      const statesUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(newType)}/states?api-version=7.1`;
+      const statesResponse = await fetch(statesUrl, { headers: this.headers });
+      if (statesResponse.ok) {
+        const statesData = await statesResponse.json();
+        const validStates: { name: string; category: string }[] = statesData.value;
+        const validStateNames = validStates.map((s) => s.name);
+
+        if (!validStateNames.includes(currentState)) {
+          // Try to find a state in the same category as the current state
+          const currentTypeStatesUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(currentItem.fields['System.WorkItemType'])}/states?api-version=7.1`;
+          const currentStatesResponse = await fetch(currentTypeStatesUrl, {
+            headers: this.headers,
+          });
+          let currentCategory = 'Proposed';
+          if (currentStatesResponse.ok) {
+            const currentStatesData = await currentStatesResponse.json();
+            const currentStateInfo = currentStatesData.value.find(
+              (s: { name: string }) => s.name === currentState
+            );
+            if (currentStateInfo) {
+              currentCategory = currentStateInfo.category;
+            }
+          }
+
+          // Find a matching state by category, or fall back to first state
+          const matchByCategory = validStates.find((s) => s.category === currentCategory);
+          targetState = matchByCategory ? matchByCategory.name : validStates[0]?.name || 'New';
+        }
+
+        console.log(
+          `Type change: ${currentItem.fields['System.WorkItemType']} → ${newType}, state: ${currentState} → ${targetState}, valid states: [${validStateNames.join(', ')}]`
+        );
+      } else {
+        console.warn('Failed to fetch states for target type:', statesResponse.status);
+      }
+    } catch (err) {
+      console.warn('Could not fetch valid states for target type, keeping current state:', err);
+    }
+
+    // Per Microsoft docs: use org-level URL (no project), set both WorkItemType and State
+    // See: https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/work-items/update
+    const patchDoc = [
+      {
+        op: 'add',
+        path: '/fields/System.WorkItemType',
+        value: newType,
+      },
+      {
+        op: 'add',
+        path: '/fields/System.State',
+        value: targetState,
+      },
+    ];
+
+    console.log(`Changing work item ${workItemId} type to ${newType} with state ${targetState}`);
+
+    const url = `${this.baseUrl}/_apis/wit/workitems/${workItemId}?api-version=7.1`;
+    const patchHeaders = {
+      ...this.headers,
+      'Content-Type': 'application/json-patch+json',
+    };
+
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: patchHeaders,
+      body: JSON.stringify(patchDoc),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+
+      // Check for required field validation errors and retry with defaults
+      try {
+        const errorData = JSON.parse(errorText);
+        const ruleErrors = errorData?.customProperties?.RuleValidationErrors;
+        if (ruleErrors && Array.isArray(ruleErrors) && ruleErrors.length > 0) {
+          console.log('Type change has required field errors, fetching defaults...');
+          const retryPatchDoc = [...patchDoc];
+
+          for (const ruleError of ruleErrors) {
+            const fieldRef: string = ruleError.fieldReferenceName;
+            if (!fieldRef) continue;
+
+            // Skip fields we already set
+            if (fieldRef === 'System.WorkItemType' || fieldRef === 'System.State') continue;
+
+            // Fetch allowed values for this field
+            try {
+              const fieldUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(newType)}/fields/${encodeURIComponent(fieldRef)}?$expand=allowedValues&api-version=7.1`;
+              const fieldResponse = await fetch(fieldUrl, {
+                headers: this.headers,
+              });
+              if (fieldResponse.ok) {
+                const fieldData = await fieldResponse.json();
+                const allowedValues: string[] = fieldData.allowedValues || [];
+                if (allowedValues.length > 0) {
+                  // Use the first allowed value as default
+                  retryPatchDoc.push({
+                    op: 'add',
+                    path: `/fields/${fieldRef}`,
+                    value: allowedValues[0],
+                  });
+                  console.log(
+                    `Setting default for ${fieldRef}: "${allowedValues[0]}" (from ${allowedValues.length} options)`
+                  );
+                }
+              }
+            } catch (fieldErr) {
+              console.warn(`Could not fetch allowed values for ${fieldRef}:`, fieldErr);
+            }
+          }
+
+          // Retry with defaults for required fields
+          if (retryPatchDoc.length > patchDoc.length) {
+            console.log('Retrying type change with required field defaults...');
+            const retryResponse = await fetch(url, {
+              method: 'PATCH',
+              headers: patchHeaders,
+              body: JSON.stringify(retryPatchDoc),
+            });
+
+            if (retryResponse.ok) {
+              return retryResponse.json();
+            }
+
+            const retryError = await retryResponse.text();
+            console.error('Retry also failed:', retryResponse.status, retryError);
+            throw new Error(
+              `Failed to change work item type: ${retryResponse.statusText} - ${retryError}`
+            );
+          }
+        }
+      } catch (parseErr) {
+        // If error isn't JSON or retry logic fails, fall through to original error
+        if (parseErr instanceof Error && parseErr.message.startsWith('Failed to change')) {
+          throw parseErr;
+        }
+      }
+
+      console.error('Change type API response:', response.status, errorText);
+      throw new Error(`Failed to change work item type: ${response.statusText} - ${errorText}`);
+    }
+
+    return response.json();
   }
 
   // Update work item state
@@ -994,13 +1230,16 @@ export class AzureDevOpsService {
 
   // Get all tickets from all accessible projects (fetches in parallel)
   // Set ticketsOnly=false to get all work items (not just those tagged as "ticket")
-  async getAllTickets(ticketsOnly: boolean = true): Promise<Ticket[]> {
+  async getAllTickets(ticketsOnly: boolean = true, allowedTypes?: string[]): Promise<Ticket[]> {
     const projects = await this.getProjects();
     const slaMap = await getProjectSLAMap();
 
     const results = await Promise.allSettled(
       projects.map(async (project) => {
-        const workItems = await this.getTickets(project.name, { ticketsOnly });
+        const workItems = await this.getTickets(project.name, {
+          ticketsOnly,
+          allowedTypes,
+        });
         const slaLevel = slaMap[project.name] || DEFAULT_SLA_LEVEL;
         const organization: Organization = {
           id: project.id,
@@ -1634,7 +1873,8 @@ export class AzureDevOpsService {
       completedWork: (fields['Microsoft.VSTS.Scheduling.CompletedWork'] as number) || 0,
       remainingWork: (fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number) || 0,
       originalEstimate: (fields['Microsoft.VSTS.Scheduling.OriginalEstimate'] as number) || 0,
-      effort: fields['Microsoft.VSTS.Scheduling.Effort'] as number | undefined,
+      // Sum all effort fields (stored in days in Azure DevOps) and convert to hours (8h/day)
+      effort: sumEffortFields(fields),
       totalWork: 0,
       workItems: [],
       devOpsUrl:
