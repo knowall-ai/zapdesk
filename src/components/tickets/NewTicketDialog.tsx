@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { X, Send, Loader2, Search, Paperclip } from 'lucide-react';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
+import MentionInput from '@/components/common/MentionInput';
 import type { DevOpsProject, User, WorkItemType, ClassificationNode } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { formatFileSize, validateFile } from '@/lib/attachment-utils';
@@ -567,10 +568,48 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
 
               {/* Description */}
               <div>
-                <textarea
-                  placeholder="Description..."
+                <MentionInput
+                  placeholder="Description... Paste images with Ctrl+V"
                   value={form.description}
-                  onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+                  onChange={(val) => setForm((prev) => ({ ...prev, description: val }))}
+                  onPaste={(e) => {
+                    // Convert pasted images to inline base64 data URLs
+                    const files = e.clipboardData?.files;
+                    const items = e.clipboardData?.items;
+                    const imageFiles: File[] = [];
+
+                    if (files) {
+                      for (let i = 0; i < files.length; i++) {
+                        if (files[i].type.startsWith('image/')) imageFiles.push(files[i]);
+                      }
+                    }
+                    if (imageFiles.length === 0 && items) {
+                      for (let i = 0; i < items.length; i++) {
+                        if (items[i].kind === 'file' && items[i].type.startsWith('image/')) {
+                          const f = items[i].getAsFile();
+                          if (f) imageFiles.push(f);
+                        }
+                      }
+                    }
+
+                    if (imageFiles.length === 0) return;
+                    e.preventDefault();
+
+                    for (const file of imageFiles) {
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        const dataUrl = reader.result as string;
+                        const imgHtml = `<img src="${dataUrl}" alt="${file.name}" />`;
+                        setForm((prev) => ({
+                          ...prev,
+                          description: prev.description
+                            ? `${prev.description}\n${imgHtml}`
+                            : imgHtml,
+                        }));
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
                   className="input min-h-[200px] w-full resize-none"
                 />
               </div>
