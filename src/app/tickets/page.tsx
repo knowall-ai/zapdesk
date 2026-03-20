@@ -153,6 +153,66 @@ function TicketsPageContent() {
     [handleTicketStateChange]
   );
 
+  const handleDialogAssigneeChange = useCallback(
+    async (workItemId: number, assigneeId: string | null) => {
+      const ticket = tickets.find((t) => t.id === workItemId);
+      if (!ticket || !selectedOrganization) return;
+      const response = await fetch(`/api/devops/tickets/${workItemId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-devops-org': selectedOrganization.accountName,
+        },
+        body: JSON.stringify({ assignee: assigneeId, project: ticket.project }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const updatedTicket = data.ticket;
+        if (updatedTicket) {
+          setTickets((prev) => prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)));
+          setSelectedTicket((prev) =>
+            prev && prev.id === updatedTicket.id ? updatedTicket : prev
+          );
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Assignee change failed:', response.status, errorData);
+        throw new Error(errorData.error || 'Failed to update assignee');
+      }
+    },
+    [tickets, selectedOrganization]
+  );
+
+  const handleDialogPriorityChange = useCallback(
+    async (workItemId: number, priority: number) => {
+      const ticket = tickets.find((t) => t.id === workItemId);
+      if (!ticket || !selectedOrganization) return;
+      const response = await fetch(`/api/devops/tickets/${workItemId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-devops-org': selectedOrganization.accountName,
+        },
+        body: JSON.stringify({ priority, project: ticket.project }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const updatedTicket = data.ticket;
+        if (updatedTicket) {
+          setTickets((prev) => prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)));
+          setSelectedTicket((prev) =>
+            prev && prev.id === updatedTicket.id ? updatedTicket : prev
+          );
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Priority change failed:', response.status, errorData);
+        throw new Error(errorData.error || 'Failed to update priority');
+      }
+    },
+    [tickets, selectedOrganization]
+  );
+
   const handleDialogTypeChange = useCallback(
     async (workItemId: number, newType: string) => {
       const ticket = tickets.find((t) => t.id === workItemId);
@@ -279,6 +339,8 @@ function TicketsPageContent() {
           isOpen={!!selectedTicket}
           onClose={() => setSelectedTicket(null)}
           onStateChange={handleDialogStateChange}
+          onAssigneeChange={handleDialogAssigneeChange}
+          onPriorityChange={handleDialogPriorityChange}
           onTypeChange={handleDialogTypeChange}
           onUpdate={handleWorkItemUpdate}
         />
