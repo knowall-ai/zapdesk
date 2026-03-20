@@ -189,10 +189,8 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     description: fields['System.Description'] || '',
     reproSteps: (fields['Microsoft.VSTS.TCM.ReproSteps'] as string) || undefined,
     systemInfo: (fields['Microsoft.VSTS.TCM.SystemInfo'] as string) || undefined,
-    resolvedReason:
-      (fields['Microsoft.VSTS.Common.Resolution'] as string) ||
-      (fields['Microsoft.VSTS.Common.ResolvedReason'] as string) ||
-      undefined,
+    resolution: (fields['Microsoft.VSTS.Common.Resolution'] as string) || undefined,
+    resolvedReason: (fields['Microsoft.VSTS.Common.ResolvedReason'] as string) || undefined,
     status: mapStateToStatus(fields['System.State']),
     devOpsState: fields['System.State'], // Preserve original DevOps state
     workItemType: fields['System.WorkItemType'], // Azure DevOps work item type
