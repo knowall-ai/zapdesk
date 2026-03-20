@@ -177,7 +177,6 @@ function TicketsPageContent() {
       } else {
         const errorData = await response.json().catch(() => ({}));
         console.error('Assignee change failed:', response.status, errorData);
-        throw new Error(errorData.error || 'Failed to update assignee');
       }
     },
     [tickets, selectedOrganization]
@@ -207,7 +206,6 @@ function TicketsPageContent() {
       } else {
         const errorData = await response.json().catch(() => ({}));
         console.error('Priority change failed:', response.status, errorData);
-        throw new Error(errorData.error || 'Failed to update priority');
       }
     },
     [tickets, selectedOrganization]
