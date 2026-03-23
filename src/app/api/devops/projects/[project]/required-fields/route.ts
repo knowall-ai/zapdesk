@@ -13,8 +13,10 @@ const HANDLED_FIELDS = new Set([
   'System.AssignedTo',
   'System.WorkItemType',
   'System.AreaPath',
+  'System.AreaId',
   'System.TeamProject',
   'System.IterationPath',
+  'System.IterationId',
   'System.Reason',
 ]);
 
