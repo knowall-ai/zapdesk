@@ -375,7 +375,7 @@ export default function MentionInput({
         role="textbox"
         aria-multiline="true"
         aria-placeholder={placeholder}
-        style={{ minHeight: '100px', overflowY: 'auto' }}
+        style={{ overflowY: 'auto' }}
       />
       {/* Placeholder overlay */}
       {isEmpty && (

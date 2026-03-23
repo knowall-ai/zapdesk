@@ -929,7 +929,7 @@ export default function TicketDetail({
               onChange={setNewComment}
               onPaste={handleCommentPaste}
               placeholder="Type your reply... Use @ to mention team members. Paste images with Ctrl+V."
-              className="input min-h-[100px] w-full resize-none pr-24"
+              className="input max-h-[300px] min-h-[100px] w-full resize-none overflow-auto pr-24"
               disabled={isPastingImage}
             />
             {isPastingImage && (
