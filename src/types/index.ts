@@ -147,6 +147,7 @@ export interface Ticket {
   description: string;
   reproSteps?: string;
   systemInfo?: string;
+  resolution?: string;
   resolvedReason?: string;
   status: TicketStatus;
   devOpsState: string; // Original Azure DevOps state (e.g., 'New', 'Approved', 'To Do', etc.)
