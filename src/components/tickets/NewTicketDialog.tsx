@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { X, Send, Loader2, Search, Paperclip } from 'lucide-react';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
-import type { DevOpsProject, User, WorkItemType } from '@/types';
+import type { DevOpsProject, User, WorkItemType, ClassificationNode } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { formatFileSize, validateFile } from '@/lib/attachment-utils';
 import { FileIcon } from '@/components/common';
@@ -30,6 +30,8 @@ interface NewTicketForm {
   assignee: string;
   tags: string;
   workItemType: string;
+  iterationPath: string;
+  areaPath: string;
 }
 
 interface NewTicketDialogProps {
@@ -55,6 +57,10 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   const [requiredFields, setRequiredFields] = useState<RequiredField[]>([]);
   const [additionalFieldValues, setAdditionalFieldValues] = useState<Record<string, string>>({});
   const [isLoadingRequiredFields, setIsLoadingRequiredFields] = useState(false);
+  const [iterations, setIterations] = useState<ClassificationNode[]>([]);
+  const [areas, setAreas] = useState<ClassificationNode[]>([]);
+  const [isLoadingIterations, setIsLoadingIterations] = useState(false);
+  const [isLoadingAreas, setIsLoadingAreas] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [assigneeSearch, setAssigneeSearch] = useState('');
@@ -72,6 +78,8 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     assignee: '',
     tags: '',
     workItemType: 'Task',
+    iterationPath: '',
+    areaPath: '',
   });
 
   // Fetch functions defined first (before useEffects that use them)
@@ -189,6 +197,44 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     [get]
   );
 
+  const fetchIterations = useCallback(
+    async (projectName: string) => {
+      setIsLoadingIterations(true);
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/iterations`
+        );
+        if (!response.ok) throw new Error('Failed to fetch iterations');
+        const data = await response.json();
+        setIterations(data.iterations || []);
+      } catch (err) {
+        console.error('Failed to fetch iterations:', err);
+        setIterations([]);
+      } finally {
+        setIsLoadingIterations(false);
+      }
+    },
+    [get]
+  );
+
+  const fetchAreas = useCallback(
+    async (projectName: string) => {
+      setIsLoadingAreas(true);
+      try {
+        const response = await get(`/api/devops/projects/${encodeURIComponent(projectName)}/areas`);
+        if (!response.ok) throw new Error('Failed to fetch areas');
+        const data = await response.json();
+        setAreas(data.areas || []);
+      } catch (err) {
+        console.error('Failed to fetch areas:', err);
+        setAreas([]);
+      } finally {
+        setIsLoadingAreas(false);
+      }
+    },
+    [get]
+  );
+
   // Reset form when dialog opens
   useEffect(() => {
     if (isOpen) {
@@ -200,6 +246,8 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         assignee: '',
         tags: '',
         workItemType: 'Task',
+        iterationPath: '',
+        areaPath: '',
       });
       setError(null);
       setAssigneeSearch('');
@@ -207,6 +255,8 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       setPriorityOptions([]);
       setHasPriority(true);
       setPriorityFieldRef(null);
+      setIterations([]);
+      setAreas([]);
       setPendingFiles([]);
       setRequiredFields([]);
       setAdditionalFieldValues({});
@@ -220,16 +270,28 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     }
   }, [isOpen, session, hasOrganization, fetchProjects]);
 
-  // Fetch team members and work item types when project changes
+  // Fetch team members, work item types, iterations, and areas when project changes
   useEffect(() => {
     if (form.project && session?.accessToken && hasOrganization) {
       fetchTeamMembers(form.project);
       fetchWorkItemTypes(form.project);
+      fetchIterations(form.project);
+      fetchAreas(form.project);
     } else {
       setTeamMembers([]);
       setWorkItemTypes([]);
+      setIterations([]);
+      setAreas([]);
     }
-  }, [form.project, session, hasOrganization, fetchTeamMembers, fetchWorkItemTypes]);
+  }, [
+    form.project,
+    session,
+    hasOrganization,
+    fetchTeamMembers,
+    fetchWorkItemTypes,
+    fetchIterations,
+    fetchAreas,
+  ]);
 
   // Fetch priorities when project or work item type changes
   useEffect(() => {
@@ -306,8 +368,14 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.project || !form.title.trim() || !form.workItemType) {
-      setError('Please fill in all required fields: Project, Title, and Type');
+    if (
+      !form.project ||
+      !form.title.trim() ||
+      !form.workItemType ||
+      !form.iterationPath ||
+      !form.areaPath
+    ) {
+      setError('Please fill in all required fields: Project, Title, Type, Iteration, and Area');
       return;
     }
 
@@ -332,6 +400,8 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         priorityFieldRef: priorityFieldRef || undefined,
         assignee: form.assignee || undefined,
         workItemType: form.workItemType,
+        iterationPath: form.iterationPath || undefined,
+        areaPath: form.areaPath || undefined,
         tags: form.tags
           .split(',')
           .map((t) => t.trim())
@@ -593,6 +663,8 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     !form.project ||
                     !form.title.trim() ||
                     !form.workItemType ||
+                    !form.iterationPath ||
+                    !form.areaPath ||
                     requiredFields.some(
                       (f) => !additionalFieldValues[f.referenceName]?.toString().trim()
                     )
@@ -651,6 +723,8 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                         ...prev,
                         project: e.target.value,
                         assignee: '',
+                        iterationPath: '',
+                        areaPath: '',
                       }))
                     }
                     className="input w-full"
@@ -660,6 +734,76 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     {projects.map((project) => (
                       <option key={project.id} value={project.name}>
                         {project.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Area */}
+              <div>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Area *
+                </label>
+                {isLoadingAreas ? (
+                  <div
+                    className="flex items-center gap-2 text-sm"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <Loader2 className="animate-spin" size={14} />
+                    Loading...
+                  </div>
+                ) : (
+                  <select
+                    value={form.areaPath}
+                    onChange={(e) => setForm((prev) => ({ ...prev, areaPath: e.target.value }))}
+                    className="input w-full"
+                    disabled={!form.project || areas.length === 0}
+                    required
+                  >
+                    <option value="">Select area...</option>
+                    {areas.map((node) => (
+                      <option key={node.id} value={node.path}>
+                        {node.path}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Iteration */}
+              <div>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Iteration *
+                </label>
+                {isLoadingIterations ? (
+                  <div
+                    className="flex items-center gap-2 text-sm"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <Loader2 className="animate-spin" size={14} />
+                    Loading...
+                  </div>
+                ) : (
+                  <select
+                    value={form.iterationPath}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, iterationPath: e.target.value }))
+                    }
+                    className="input w-full"
+                    disabled={!form.project || iterations.length === 0}
+                    required
+                  >
+                    <option value="">Select iteration...</option>
+                    {iterations.map((node) => (
+                      <option key={node.id} value={node.path}>
+                        {node.path}
                       </option>
                     ))}
                   </select>
