@@ -180,13 +180,13 @@ export default function TicketDetailPage() {
     }
   };
 
-  const handleTypeChange = async (newType: string) => {
+  const handleTypeChange = async (newType: string, additionalFields?: Record<string, string>) => {
     if (!ticket) return;
     try {
       const response = await fetch(`/api/devops/tickets/${ticketId}/type`, {
         method: 'PATCH',
         headers: orgHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ type: newType, project: ticket.project }),
+        body: JSON.stringify({ type: newType, project: ticket.project, additionalFields }),
       });
 
       if (response.ok) {

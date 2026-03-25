@@ -8,6 +8,7 @@ import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import type { DevOpsProject, User, WorkItemType, ClassificationNode } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { formatFileSize, validateFile } from '@/lib/attachment-utils';
+import { buildIdentityString, getDisplayNameFromIdentity } from '@/lib/identity';
 import { FileIcon } from '@/components/common';
 
 interface PriorityOption {
@@ -27,6 +28,7 @@ interface NewTicketForm {
   title: string;
   description: string;
   priority: number | string;
+  foundBy: string;
   assignee: string;
   tags: string;
   workItemType: string;
@@ -70,11 +72,14 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [foundBySearch, setFoundBySearch] = useState('');
+
   const [form, setForm] = useState<NewTicketForm>({
     project: '',
     title: '',
     description: '',
     priority: '',
+    foundBy: '',
     assignee: '',
     tags: '',
     workItemType: 'Task',
@@ -184,7 +189,18 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         );
         if (!response.ok) throw new Error('Failed to fetch required fields');
         const data = await response.json();
-        setRequiredFields(data.fields || []);
+        // Exclude fields already handled by dedicated UI controls
+        const handledFields = new Set([
+          'System.IterationPath',
+          'System.IterationId',
+          'System.AreaPath',
+          'System.AreaId',
+          'Custom.FoundBy',
+        ]);
+        const filtered = (data.fields || []).filter(
+          (f: RequiredField) => !handledFields.has(f.referenceName)
+        );
+        setRequiredFields(filtered);
         setAdditionalFieldValues({});
       } catch (err) {
         console.error('Failed to fetch required fields:', err);
@@ -243,6 +259,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         title: '',
         description: '',
         priority: '',
+        foundBy: '',
         assignee: '',
         tags: '',
         workItemType: 'Task',
@@ -251,6 +268,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       });
       setError(null);
       setAssigneeSearch('');
+      setFoundBySearch('');
       setWorkItemTypes([]);
       setPriorityOptions([]);
       setHasPriority(true);
@@ -313,6 +331,37 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     }
   }, [form.project, form.workItemType, session, hasOrganization, fetchRequiredFields]);
 
+  // Show Found By field only for Enhancement work item type
+  const showFoundBy = form.workItemType === 'Enhancement';
+
+  // Reset foundBy when type changes away from Enhancement
+  useEffect(() => {
+    if (!showFoundBy) {
+      setForm((prev) => ({ ...prev, foundBy: '' }));
+      setFoundBySearch('');
+    }
+  }, [showFoundBy]);
+
+  // Filter team members for Found By picker
+  const filteredFoundByMembers = useMemo(() => {
+    return teamMembers
+      .filter((member) => {
+        const isStakeholder =
+          member.accessLevel?.toLowerCase().includes('stakeholder') ||
+          member.licenseType?.toLowerCase().includes('stakeholder');
+        return !isStakeholder;
+      })
+      .filter((member) => {
+        if (!foundBySearch) return true;
+        const search = foundBySearch.toLowerCase();
+        return (
+          member.displayName.toLowerCase().includes(search) ||
+          member.email?.toLowerCase().includes(search)
+        );
+      })
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }, [teamMembers, foundBySearch]);
+
   // Filter out Stakeholders and apply search
   const filteredMembers = useMemo(() => {
     return teamMembers
@@ -368,14 +417,19 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const extraFields = [showFoundBy && !form.foundBy ? 'Found By' : ''].filter(Boolean);
     if (
       !form.project ||
       !form.title.trim() ||
       !form.workItemType ||
       !form.iterationPath ||
-      !form.areaPath
+      !form.areaPath ||
+      extraFields.length > 0
     ) {
-      setError('Please fill in all required fields: Project, Title, Type, Iteration, and Area');
+      setError(
+        'Please fill in all required fields: Project, Title, Type, Iteration, Area' +
+          (extraFields.length > 0 ? `, ${extraFields.join(', ')}` : '')
+      );
       return;
     }
 
@@ -390,6 +444,10 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         if (value) {
           additionalFields[field.referenceName] = value;
         }
+      }
+      // Add Found By as an additional field for Enhancement type
+      if (form.foundBy) {
+        additionalFields['Custom.FoundBy'] = form.foundBy;
       }
 
       const response = await post('/api/devops/tickets', {
@@ -452,30 +510,6 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       setIsSubmitting(false);
       setIsUploadingFiles(false);
     }
-  };
-
-  // Build full identity string for Azure DevOps: "DisplayName <email>"
-  const buildIdentityString = (member: User): string => {
-    if (member.email) {
-      return `${member.displayName} <${member.email}>`;
-    }
-    return member.displayName;
-  };
-
-  // Extract display name from identity string "DisplayName <email>"
-  const getDisplayNameFromIdentity = (identity: string): string => {
-    if (!identity) {
-      return '';
-    }
-
-    const trimmedIdentity = identity.trim();
-    const ltIndex = trimmedIdentity.indexOf('<');
-
-    if (ltIndex !== -1) {
-      return trimmedIdentity.slice(0, ltIndex).trim();
-    }
-
-    return trimmedIdentity;
   };
 
   const handleTakeIt = () => {
@@ -667,7 +701,8 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     !form.areaPath ||
                     requiredFields.some(
                       (f) => !additionalFieldValues[f.referenceName]?.toString().trim()
-                    )
+                    ) ||
+                    (showFoundBy && !form.foundBy)
                   }
                   className="btn-primary flex items-center gap-2"
                   style={{ cursor: 'pointer' }}
@@ -734,76 +769,6 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     {projects.map((project) => (
                       <option key={project.id} value={project.name}>
                         {project.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* Area */}
-              <div>
-                <label
-                  className="mb-1 block text-xs uppercase"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  Area *
-                </label>
-                {isLoadingAreas ? (
-                  <div
-                    className="flex items-center gap-2 text-sm"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    <Loader2 className="animate-spin" size={14} />
-                    Loading...
-                  </div>
-                ) : (
-                  <select
-                    value={form.areaPath}
-                    onChange={(e) => setForm((prev) => ({ ...prev, areaPath: e.target.value }))}
-                    className="input w-full"
-                    disabled={!form.project || areas.length === 0}
-                    required
-                  >
-                    <option value="">Select area...</option>
-                    {areas.map((node) => (
-                      <option key={node.id} value={node.path}>
-                        {node.path}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* Iteration */}
-              <div>
-                <label
-                  className="mb-1 block text-xs uppercase"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  Iteration *
-                </label>
-                {isLoadingIterations ? (
-                  <div
-                    className="flex items-center gap-2 text-sm"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    <Loader2 className="animate-spin" size={14} />
-                    Loading...
-                  </div>
-                ) : (
-                  <select
-                    value={form.iterationPath}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, iterationPath: e.target.value }))
-                    }
-                    className="input w-full"
-                    disabled={!form.project || iterations.length === 0}
-                    required
-                  >
-                    <option value="">Select iteration...</option>
-                    {iterations.map((node) => (
-                      <option key={node.id} value={node.path}>
-                        {node.path}
                       </option>
                     ))}
                   </select>
@@ -1003,6 +968,170 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     >
                       <option value="">Select priority...</option>
                     </select>
+                  )}
+                </div>
+              )}
+
+              {/* Area */}
+              <div>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Area *
+                </label>
+                {isLoadingAreas ? (
+                  <div
+                    className="flex items-center gap-2 text-sm"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <Loader2 className="animate-spin" size={14} />
+                    Loading...
+                  </div>
+                ) : (
+                  <select
+                    value={form.areaPath}
+                    onChange={(e) => setForm((prev) => ({ ...prev, areaPath: e.target.value }))}
+                    className="input w-full"
+                    disabled={!form.project || areas.length === 0}
+                    required
+                  >
+                    <option value="">Select area...</option>
+                    {areas.map((node) => (
+                      <option key={node.id} value={node.path}>
+                        {node.path}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Iteration */}
+              <div>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Iteration *
+                </label>
+                {isLoadingIterations ? (
+                  <div
+                    className="flex items-center gap-2 text-sm"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <Loader2 className="animate-spin" size={14} />
+                    Loading...
+                  </div>
+                ) : (
+                  <select
+                    value={form.iterationPath}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, iterationPath: e.target.value }))
+                    }
+                    className="input w-full"
+                    disabled={!form.project || iterations.length === 0}
+                    required
+                  >
+                    <option value="">Select iteration...</option>
+                    {iterations.map((node) => (
+                      <option key={node.id} value={node.path}>
+                        {node.path}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Found By - people picker, shown only for Enhancement type */}
+              {showFoundBy && (
+                <div>
+                  <label
+                    className="mb-1 block text-xs uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Found By *
+                  </label>
+                  {isLoadingMembers ? (
+                    <div
+                      className="flex items-center gap-2 text-sm"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <Loader2 className="animate-spin" size={14} />
+                      Loading...
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {/* Search input */}
+                      <div className="relative">
+                        <Search
+                          size={14}
+                          className="absolute top-1/2 left-2 -translate-y-1/2"
+                          style={{ color: 'var(--text-muted)' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Search users..."
+                          value={foundBySearch}
+                          onChange={(e) => setFoundBySearch(e.target.value)}
+                          className="input w-full pl-7 text-sm"
+                          disabled={!form.project}
+                        />
+                      </div>
+                      {/* Selected user or dropdown */}
+                      {form.foundBy && form.foundBy.trim() ? (
+                        <div
+                          className="flex items-center justify-between rounded p-2"
+                          style={{ backgroundColor: 'var(--surface-hover)' }}
+                        >
+                          <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                            {getDisplayNameFromIdentity(form.foundBy)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForm((prev) => ({ ...prev, foundBy: '' }));
+                              setFoundBySearch('');
+                            }}
+                            className="text-xs hover:underline"
+                            style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
+                          >
+                            clear
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          className="max-h-32 overflow-auto rounded"
+                          style={{ border: '1px solid var(--border)' }}
+                        >
+                          {filteredFoundByMembers.length === 0 ? (
+                            <p
+                              className="p-2 text-center text-xs"
+                              style={{ color: 'var(--text-muted)' }}
+                            >
+                              {form.project ? 'No users found' : 'Select a project first'}
+                            </p>
+                          ) : (
+                            filteredFoundByMembers.map((member) => (
+                              <button
+                                key={member.id}
+                                type="button"
+                                onClick={() => {
+                                  setForm((prev) => ({
+                                    ...prev,
+                                    foundBy: buildIdentityString(member),
+                                  }));
+                                  setFoundBySearch('');
+                                }}
+                                className="block w-full px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                                style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
+                              >
+                                {member.displayName}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
