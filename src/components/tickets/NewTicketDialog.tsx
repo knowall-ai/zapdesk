@@ -775,76 +775,6 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                 )}
               </div>
 
-              {/* Area */}
-              <div>
-                <label
-                  className="mb-1 block text-xs uppercase"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  Area *
-                </label>
-                {isLoadingAreas ? (
-                  <div
-                    className="flex items-center gap-2 text-sm"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    <Loader2 className="animate-spin" size={14} />
-                    Loading...
-                  </div>
-                ) : (
-                  <select
-                    value={form.areaPath}
-                    onChange={(e) => setForm((prev) => ({ ...prev, areaPath: e.target.value }))}
-                    className="input w-full"
-                    disabled={!form.project || areas.length === 0}
-                    required
-                  >
-                    <option value="">Select area...</option>
-                    {areas.map((node) => (
-                      <option key={node.id} value={node.path}>
-                        {node.path}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* Iteration */}
-              <div>
-                <label
-                  className="mb-1 block text-xs uppercase"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  Iteration *
-                </label>
-                {isLoadingIterations ? (
-                  <div
-                    className="flex items-center gap-2 text-sm"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    <Loader2 className="animate-spin" size={14} />
-                    Loading...
-                  </div>
-                ) : (
-                  <select
-                    value={form.iterationPath}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, iterationPath: e.target.value }))
-                    }
-                    className="input w-full"
-                    disabled={!form.project || iterations.length === 0}
-                    required
-                  >
-                    <option value="">Select iteration...</option>
-                    {iterations.map((node) => (
-                      <option key={node.id} value={node.path}>
-                        {node.path}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
               {/* Work Item Type */}
               <div>
                 <label
@@ -992,6 +922,126 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                 </p>
               </div>
 
+              {/* Priority */}
+              {hasPriority && (
+                <div>
+                  <label
+                    className="mb-1 block text-xs uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Priority
+                  </label>
+                  {isLoadingPriorities ? (
+                    <div
+                      className="flex items-center gap-2 text-sm"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <Loader2 className="animate-spin" size={14} />
+                      Loading...
+                    </div>
+                  ) : priorityOptions.length > 0 ? (
+                    <select
+                      value={String(form.priority)}
+                      onChange={(e) =>
+                        setForm((prev) => {
+                          const selected = priorityOptions.find(
+                            (opt) => String(opt.value) === e.target.value
+                          );
+                          return { ...prev, priority: selected ? selected.value : e.target.value };
+                        })
+                      }
+                      className="input w-full"
+                    >
+                      <option value="">Select priority...</option>
+                      {priorityOptions.map((opt) => (
+                        <option key={String(opt.value)} value={String(opt.value)}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <select
+                      value={String(form.priority)}
+                      onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value }))}
+                      className="input w-full"
+                      disabled={!form.project}
+                    >
+                      <option value="">Select priority...</option>
+                    </select>
+                  )}
+                </div>
+              )}
+
+              {/* Area */}
+              <div>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Area *
+                </label>
+                {isLoadingAreas ? (
+                  <div
+                    className="flex items-center gap-2 text-sm"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <Loader2 className="animate-spin" size={14} />
+                    Loading...
+                  </div>
+                ) : (
+                  <select
+                    value={form.areaPath}
+                    onChange={(e) => setForm((prev) => ({ ...prev, areaPath: e.target.value }))}
+                    className="input w-full"
+                    disabled={!form.project || areas.length === 0}
+                    required
+                  >
+                    <option value="">Select area...</option>
+                    {areas.map((node) => (
+                      <option key={node.id} value={node.path}>
+                        {node.path}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Iteration */}
+              <div>
+                <label
+                  className="mb-1 block text-xs uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Iteration *
+                </label>
+                {isLoadingIterations ? (
+                  <div
+                    className="flex items-center gap-2 text-sm"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <Loader2 className="animate-spin" size={14} />
+                    Loading...
+                  </div>
+                ) : (
+                  <select
+                    value={form.iterationPath}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, iterationPath: e.target.value }))
+                    }
+                    className="input w-full"
+                    disabled={!form.project || iterations.length === 0}
+                    required
+                  >
+                    <option value="">Select iteration...</option>
+                    {iterations.map((node) => (
+                      <option key={node.id} value={node.path}>
+                        {node.path}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
               {/* Found By - people picker, shown only for Enhancement type */}
               {showFoundBy && (
                 <div>
@@ -1082,56 +1132,6 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              )}
-
-              {/* Priority */}
-              {hasPriority && (
-                <div>
-                  <label
-                    className="mb-1 block text-xs uppercase"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    Priority
-                  </label>
-                  {isLoadingPriorities ? (
-                    <div
-                      className="flex items-center gap-2 text-sm"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      <Loader2 className="animate-spin" size={14} />
-                      Loading...
-                    </div>
-                  ) : priorityOptions.length > 0 ? (
-                    <select
-                      value={String(form.priority)}
-                      onChange={(e) =>
-                        setForm((prev) => {
-                          const selected = priorityOptions.find(
-                            (opt) => String(opt.value) === e.target.value
-                          );
-                          return { ...prev, priority: selected ? selected.value : e.target.value };
-                        })
-                      }
-                      className="input w-full"
-                    >
-                      <option value="">Select priority...</option>
-                      {priorityOptions.map((opt) => (
-                        <option key={String(opt.value)} value={String(opt.value)}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <select
-                      value={String(form.priority)}
-                      onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value }))}
-                      className="input w-full"
-                      disabled={!form.project}
-                    >
-                      <option value="">Select priority...</option>
-                    </select>
                   )}
                 </div>
               )}
