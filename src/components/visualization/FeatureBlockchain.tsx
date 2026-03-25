@@ -419,6 +419,11 @@ export default function FeatureTimechain({
   const blockHeight = blockSize;
   const depth = 18; // 3D depth like mempool
 
+  // Neutral dark colors for unfilled block portions
+  const NEUTRAL_TOP = '#1a1e26';
+  const NEUTRAL_LEFT = '#0c1016';
+  const NEUTRAL_MAIN = `linear-gradient(180deg, ${NEUTRAL_TOP} 0%, #0f1318 100%)`;
+
   return (
     <div className="space-y-6">
       {/* Epic description above timechain */}
@@ -490,7 +495,7 @@ export default function FeatureTimechain({
                       left: depth,
                       background:
                         fillPercentage !== null && fillPercentage < 100
-                          ? '#1a1e26'
+                          ? NEUTRAL_TOP
                           : isSelected
                             ? selectedColors.topFace
                             : colors.topFace,
@@ -507,7 +512,7 @@ export default function FeatureTimechain({
                       height: blockHeight,
                       top: depth,
                       left: 0,
-                      background: '#0c1016',
+                      background: NEUTRAL_LEFT,
                       transform: 'skewY(45deg)',
                       transformOrigin: 'top right',
                     }}
@@ -545,7 +550,7 @@ export default function FeatureTimechain({
                       height: blockHeight,
                       top: depth,
                       left: depth,
-                      background: 'linear-gradient(180deg, #1a1e26 0%, #0f1318 100%)',
+                      background: NEUTRAL_MAIN,
                       border: `1px solid ${isSelected ? selectedColors.border : colors.border}`,
                       boxShadow: isSelected ? selectedColors.glow : '0 8px 24px rgba(0,0,0,0.5)',
                     }}
