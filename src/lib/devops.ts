@@ -189,6 +189,7 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     description: fields['System.Description'] || '',
     reproSteps: (fields['Microsoft.VSTS.TCM.ReproSteps'] as string) || undefined,
     systemInfo: (fields['Microsoft.VSTS.TCM.SystemInfo'] as string) || undefined,
+    resolution: (fields['Microsoft.VSTS.Common.Resolution'] as string) || undefined,
     resolvedReason: (fields['Microsoft.VSTS.Common.ResolvedReason'] as string) || undefined,
     status: mapStateToStatus(fields['System.State']),
     devOpsState: fields['System.State'], // Preserve original DevOps state
@@ -410,6 +411,10 @@ export class AzureDevOpsService {
         'System.TeamProject',
         'System.WorkItemType',
         'System.AreaPath',
+        'Microsoft.VSTS.Common.ResolvedReason',
+        'Microsoft.VSTS.Common.Resolution',
+        'Microsoft.VSTS.TCM.ReproSteps',
+        'Microsoft.VSTS.TCM.SystemInfo',
       ].join(',');
       const workItemsResponse = await fetch(
         `${this.baseUrl}/_apis/wit/workitems?ids=${batch.join(',')}&fields=${fields}&api-version=7.0`,

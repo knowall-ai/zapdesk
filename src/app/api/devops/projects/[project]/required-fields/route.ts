@@ -18,6 +18,7 @@ const HANDLED_FIELDS = new Set([
   'System.IterationPath',
   'System.IterationId',
   'System.Reason',
+  'Microsoft.VSTS.Common.ValueArea',
 ]);
 
 function isHandledField(referenceName: string, name: string): boolean {
