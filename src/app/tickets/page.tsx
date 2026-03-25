@@ -212,7 +212,7 @@ function TicketsPageContent() {
   );
 
   const handleDialogTypeChange = useCallback(
-    async (workItemId: number, newType: string) => {
+    async (workItemId: number, newType: string, additionalFields?: Record<string, string>) => {
       const ticket = tickets.find((t) => t.id === workItemId);
       if (!ticket || !selectedOrganization) return;
       const response = await fetch(`/api/devops/tickets/${workItemId}/type`, {
@@ -221,7 +221,7 @@ function TicketsPageContent() {
           'Content-Type': 'application/json',
           'x-devops-org': selectedOrganization.accountName,
         },
-        body: JSON.stringify({ type: newType, project: ticket.project }),
+        body: JSON.stringify({ type: newType, project: ticket.project, additionalFields }),
       });
       if (response.ok) {
         const data = await response.json();

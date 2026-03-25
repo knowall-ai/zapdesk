@@ -593,20 +593,42 @@ export class AzureDevOpsService {
       });
     }
 
-    const response = await fetch(
-      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`,
-      {
-        method: 'POST',
-        headers: {
-          ...this.headers,
-          'Content-Type': 'application/json-patch+json',
-        },
-        body: JSON.stringify(patchDocument),
-      }
-    );
+    const createUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`;
+    const createHeaders = {
+      ...this.headers,
+      'Content-Type': 'application/json-patch+json',
+    };
+
+    const response = await fetch(createUrl, {
+      method: 'POST',
+      headers: createHeaders,
+      body: JSON.stringify(patchDocument),
+    });
 
     if (!response.ok) {
-      throw new Error(`Failed to create work item: ${response.statusText}`);
+      const errorText = await response.text();
+
+      // Handle required field validation errors by fetching defaults and retrying
+      const retryDoc = await this.resolveRequiredFieldErrors(
+        errorText,
+        patchDocument,
+        projectName,
+        workItemType
+      );
+      if (retryDoc) {
+        const retryResponse = await fetch(createUrl, {
+          method: 'POST',
+          headers: createHeaders,
+          body: JSON.stringify(retryDoc),
+        });
+        if (retryResponse.ok) {
+          return retryResponse.json();
+        }
+        const retryError = await retryResponse.text();
+        throw new Error(`Failed to create work item: ${retryResponse.statusText} - ${retryError}`);
+      }
+
+      throw new Error(`Failed to create work item: ${response.statusText} - ${errorText}`);
     }
 
     return response.json();
@@ -771,24 +793,135 @@ export class AzureDevOpsService {
       }
     }
 
-    const response = await fetch(
-      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`,
-      {
-        method: 'POST',
-        headers: {
-          ...this.headers,
-          'Content-Type': 'application/json-patch+json',
-        },
-        body: JSON.stringify(patchDocument),
-      }
-    );
+    const createUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`;
+    const createHeaders = {
+      ...this.headers,
+      'Content-Type': 'application/json-patch+json',
+    };
+
+    const response = await fetch(createUrl, {
+      method: 'POST',
+      headers: createHeaders,
+      body: JSON.stringify(patchDocument),
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
+
+      // Handle required field validation errors by fetching defaults and retrying
+      const retryDoc = await this.resolveRequiredFieldErrors(
+        errorText,
+        patchDocument,
+        projectName,
+        workItemType
+      );
+      if (retryDoc) {
+        const retryResponse = await fetch(createUrl, {
+          method: 'POST',
+          headers: createHeaders,
+          body: JSON.stringify(retryDoc),
+        });
+        if (retryResponse.ok) {
+          return retryResponse.json();
+        }
+        const retryError = await retryResponse.text();
+        throw new Error(`Failed to create work item: ${retryResponse.statusText} - ${retryError}`);
+      }
+
       throw new Error(`Failed to create work item: ${response.statusText} - ${errorText}`);
     }
 
     return response.json();
+  }
+
+  /**
+   * Parse RuleValidationException errors, fetch allowed values for required fields,
+   * and return an updated patch document with defaults. Returns null if not applicable.
+   */
+  private async resolveRequiredFieldErrors(
+    errorText: string,
+    patchDocument: Array<{ op: string; path: string; value: string | number }>,
+    projectName: string,
+    workItemType: string
+  ): Promise<Array<{ op: string; path: string; value: string | number }> | null> {
+    try {
+      const errorData = JSON.parse(errorText);
+      const ruleErrors = errorData?.customProperties?.RuleValidationErrors;
+      if (!ruleErrors || !Array.isArray(ruleErrors) || ruleErrors.length === 0) {
+        return null;
+      }
+
+      const existingFields = new Set(patchDocument.map((d) => d.path));
+      const retryDoc = [...patchDocument];
+      let addedFields = 0;
+
+      // Only auto-fill fields with constrained value lists (e.g., Severity, Priority).
+      // Skip identity/people fields — those require user input via the UI.
+      const IDENTITY_FIELD_PREFIXES = ['Custom.FoundBy', 'System.AssignedTo', 'System.CreatedBy'];
+
+      for (const ruleError of ruleErrors) {
+        const fieldRef: string = ruleError.fieldReferenceName;
+        if (!fieldRef || existingFields.has(`/fields/${fieldRef}`)) continue;
+
+        // Never auto-fill identity fields — they need explicit user selection
+        if (IDENTITY_FIELD_PREFIXES.some((p) => fieldRef.startsWith(p))) {
+          console.warn(`Skipping auto-fill for identity field ${fieldRef} — requires user input`);
+          continue;
+        }
+
+        try {
+          const fieldUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/fields/${encodeURIComponent(fieldRef)}?$expand=allowedValues&api-version=7.1`;
+          const fieldResponse = await fetch(fieldUrl, { headers: this.headers });
+          if (fieldResponse.ok) {
+            const fieldData = await fieldResponse.json();
+            const allowedValues: string[] = fieldData.allowedValues || [];
+            // Only auto-fill if the field has a small, constrained set of values
+            if (allowedValues.length > 0 && allowedValues.length <= 20) {
+              retryDoc.push({
+                op: 'add',
+                path: `/fields/${fieldRef}`,
+                value: allowedValues[0],
+              });
+              addedFields++;
+              console.log(
+                `Auto-filling required field ${fieldRef}: "${allowedValues[0]}" (${allowedValues.length} options)`
+              );
+            } else if (allowedValues.length > 20) {
+              console.warn(
+                `Skipping auto-fill for ${fieldRef} — too many options (${allowedValues.length}), requires user input`
+              );
+            }
+          }
+        } catch (fieldErr) {
+          console.warn(`Could not fetch allowed values for ${fieldRef}:`, fieldErr);
+        }
+      }
+
+      return addedFields > 0 ? retryDoc : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Get field info for a work item type (including allowed values and whether it's required)
+  async getWorkItemTypeField(
+    projectName: string,
+    workItemType: string,
+    fieldRef: string
+  ): Promise<{ required: boolean; allowedValues: string[]; name: string }> {
+    const url = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/fields/${encodeURIComponent(fieldRef)}?$expand=allowedValues&api-version=7.1`;
+    const response = await fetch(url, { headers: this.headers });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch field info: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return {
+      required: data.alwaysRequired || false,
+      allowedValues: data.allowedValues || [],
+      name: data.name || fieldRef,
+    };
   }
 
   // Add a comment to a work item
@@ -812,7 +945,8 @@ export class AzureDevOpsService {
   async changeWorkItemType(
     projectName: string,
     workItemId: number,
-    newType: string
+    newType: string,
+    additionalFields?: Record<string, string | number>
   ): Promise<DevOpsWorkItem> {
     // First, get the current work item to read its current state
     const currentItem = await this.getWorkItem(projectName, workItemId);
@@ -862,7 +996,7 @@ export class AzureDevOpsService {
 
     // Per Microsoft docs: use org-level URL (no project), set both WorkItemType and State
     // See: https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/work-items/update
-    const patchDoc = [
+    const patchDoc: Array<{ op: string; path: string; value: string | number }> = [
       {
         op: 'add',
         path: '/fields/System.WorkItemType',
@@ -874,6 +1008,17 @@ export class AzureDevOpsService {
         value: targetState,
       },
     ];
+
+    // Add any additional fields (e.g. Severity, Found By for Enhancement type)
+    if (additionalFields) {
+      for (const [fieldRef, value] of Object.entries(additionalFields)) {
+        patchDoc.push({
+          op: 'add',
+          path: `/fields/${fieldRef}`,
+          value,
+        });
+      }
+    }
 
     console.log(`Changing work item ${workItemId} type to ${newType} with state ${targetState}`);
 
