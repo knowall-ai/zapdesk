@@ -482,13 +482,18 @@ export default function FeatureTimechain({
                 >
                   {/* Top face - parallelogram going back-left */}
                   <div
-                    className="absolute"
+                    className="absolute overflow-hidden"
                     style={{
                       width: blockWidth,
                       height: depth,
                       top: 0,
                       left: depth,
-                      background: isSelected ? selectedColors.topFace : colors.topFace,
+                      background:
+                        fillPercentage !== null && fillPercentage < 100
+                          ? '#1a1e26'
+                          : isSelected
+                            ? selectedColors.topFace
+                            : colors.topFace,
                       transform: 'skewX(45deg)',
                       transformOrigin: 'bottom left',
                     }}
@@ -496,17 +501,41 @@ export default function FeatureTimechain({
 
                   {/* Left face - parallelogram going back-left */}
                   <div
-                    className="absolute"
+                    className="absolute overflow-hidden"
                     style={{
                       width: depth,
                       height: blockHeight,
                       top: depth,
                       left: 0,
-                      background: isSelected ? selectedColors.leftFace : colors.rightFace,
+                      background: '#0c1016',
                       transform: 'skewY(45deg)',
                       transformOrigin: 'top right',
                     }}
-                  />
+                  >
+                    {/* State-colored fill rising from bottom */}
+                    {fillPercentage !== null && fillPercentage > 0 && (
+                      <div
+                        className="absolute right-0 bottom-0 left-0 transition-all duration-500"
+                        style={{
+                          height: `${Math.min(fillPercentage, 100)}%`,
+                          background: isSelected ? selectedColors.leftFace : colors.rightFace,
+                          borderTop:
+                            fillPercentage > 0 && fillPercentage < 100
+                              ? '1px solid rgba(255, 255, 255, 0.3)'
+                              : 'none',
+                        }}
+                      />
+                    )}
+                    {/* Full color when no effort data */}
+                    {fillPercentage === null && (
+                      <div
+                        className="absolute inset-0"
+                        style={{
+                          background: isSelected ? selectedColors.leftFace : colors.rightFace,
+                        }}
+                      />
+                    )}
+                  </div>
 
                   {/* Main face */}
                   <div
@@ -516,14 +545,37 @@ export default function FeatureTimechain({
                       height: blockHeight,
                       top: depth,
                       left: depth,
-                      background: isSelected ? selectedColors.gradient : colors.gradient,
+                      background: 'linear-gradient(180deg, #1a1e26 0%, #0f1318 100%)',
                       border: isSelected
                         ? `2px solid ${selectedColors.border}`
                         : `1px solid ${colors.border}`,
                       boxShadow: isSelected ? selectedColors.glow : '0 8px 24px rgba(0,0,0,0.5)',
                     }}
                   >
-                    <div className="flex h-full flex-col p-3">
+                    {/* State-colored fill rising from bottom */}
+                    {fillPercentage !== null && fillPercentage > 0 && (
+                      <div
+                        className="absolute right-0 bottom-0 left-0 transition-all duration-500"
+                        style={{
+                          height: `${Math.min(fillPercentage, 100)}%`,
+                          background: isSelected ? selectedColors.gradient : colors.gradient,
+                          borderTop:
+                            fillPercentage > 0 && fillPercentage < 100
+                              ? '1px solid rgba(255, 255, 255, 0.3)'
+                              : 'none',
+                        }}
+                      />
+                    )}
+                    {/* Full color when no effort data */}
+                    {fillPercentage === null && (
+                      <div
+                        className="absolute inset-0"
+                        style={{
+                          background: isSelected ? selectedColors.gradient : colors.gradient,
+                        }}
+                      />
+                    )}
+                    <div className="relative z-10 flex h-full flex-col p-3">
                       <div
                         className="mb-2 text-xs font-medium tracking-wider uppercase"
                         style={{ color: isSelected ? selectedColors.accent : colors.accent }}
