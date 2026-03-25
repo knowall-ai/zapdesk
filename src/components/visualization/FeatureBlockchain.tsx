@@ -518,10 +518,10 @@ export default function FeatureTimechain({
                         className="absolute right-0 bottom-0 left-0 transition-all duration-500"
                         style={{
                           height: `${Math.min(fillPercentage, 100)}%`,
-                          background: isSelected ? selectedColors.leftFace : colors.rightFace,
+                          background: `linear-gradient(180deg, ${lightenHex(getStateHex(feature.state, stateColorMap), 0.4)} 0%, ${getStateHex(feature.state, stateColorMap)} 100%)`,
                           borderTop:
                             fillPercentage > 0 && fillPercentage < 100
-                              ? '1px solid rgba(255, 255, 255, 0.3)'
+                              ? '1px solid rgba(255, 255, 255, 0.4)'
                               : 'none',
                         }}
                       />
@@ -546,9 +546,7 @@ export default function FeatureTimechain({
                       top: depth,
                       left: depth,
                       background: 'linear-gradient(180deg, #1a1e26 0%, #0f1318 100%)',
-                      border: isSelected
-                        ? `2px solid ${selectedColors.border}`
-                        : `1px solid ${colors.border}`,
+                      border: `1px solid ${isSelected ? selectedColors.border : colors.border}`,
                       boxShadow: isSelected ? selectedColors.glow : '0 8px 24px rgba(0,0,0,0.5)',
                     }}
                   >
@@ -558,10 +556,10 @@ export default function FeatureTimechain({
                         className="absolute right-0 bottom-0 left-0 transition-all duration-500"
                         style={{
                           height: `${Math.min(fillPercentage, 100)}%`,
-                          background: isSelected ? selectedColors.gradient : colors.gradient,
+                          background: `linear-gradient(0deg, ${getStateHex(feature.state, stateColorMap)} 0%, ${lightenHex(getStateHex(feature.state, stateColorMap), 0.3)} 100%)`,
                           borderTop:
                             fillPercentage > 0 && fillPercentage < 100
-                              ? '1px solid rgba(255, 255, 255, 0.3)'
+                              ? '1px solid rgba(255, 255, 255, 0.4)'
                               : 'none',
                         }}
                       />
