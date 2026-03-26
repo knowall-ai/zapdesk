@@ -126,13 +126,14 @@ function ResolutionField({
           dangerouslySetInnerHTML={{ __html: workItem.resolution }}
         />
       ) : (
-        <p
-          className="cursor-pointer text-sm italic"
-          style={{ color: 'var(--text-muted)' }}
+        <button
+          type="button"
+          className="text-sm italic"
+          style={{ color: 'var(--text-muted)', cursor: onUpdate ? 'pointer' : 'default' }}
           onClick={onUpdate ? handleStartEdit : undefined}
         >
           No resolution — click to add
-        </p>
+        </button>
       )}
     </div>
   );

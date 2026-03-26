@@ -135,7 +135,7 @@ export default function WorkItemDetailDialog({
   );
 
   const handleUpdate = useCallback(
-    async (updates: { title?: string; description?: string }) => {
+    async (updates: { title?: string; description?: string; resolution?: string }) => {
       if (!workItem || !onUpdate) return;
       await onUpdate(workItem.id, updates);
     },

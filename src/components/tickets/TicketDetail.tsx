@@ -818,15 +818,34 @@ export default function TicketDetail({
                   dangerouslySetInnerHTML={{ __html: ticket.resolution }}
                 />
               ) : (
-                <p
-                  className="cursor-pointer text-sm italic"
-                  style={{ color: 'var(--text-muted)' }}
+                <button
+                  type="button"
+                  className="text-sm italic"
+                  style={{
+                    color: 'var(--text-muted)',
+                    cursor: onResolutionChange ? 'pointer' : 'default',
+                  }}
                   onClick={onResolutionChange ? handleStartEditResolution : undefined}
                 >
                   No resolution — click to add
-                </p>
+                </button>
               )}
             </div>
+
+            {/* Resolved Reason (plain text, e.g. "Fixed", "Approved") */}
+            {ticket.resolvedReason && (
+              <div className="card p-4">
+                <h3
+                  className="mb-2 text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Resolved Reason
+                </h3>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  {ticket.resolvedReason}
+                </p>
+              </div>
+            )}
 
             {/* Attachments */}
             {ticket.attachments && ticket.attachments.length > 0 && (

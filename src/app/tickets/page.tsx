@@ -277,6 +277,7 @@ function TicketsPageContent() {
                   ...t,
                   ...(updates.title && { title: updates.title }),
                   ...(updates.description && { description: updates.description }),
+                  ...(updates.resolution !== undefined && { resolution: updates.resolution }),
                 }
               : t
           )
@@ -288,6 +289,7 @@ function TicketsPageContent() {
                 ...prev,
                 ...(updates.title && { title: updates.title }),
                 ...(updates.description && { description: updates.description }),
+                ...(updates.resolution !== undefined && { resolution: updates.resolution }),
               }
             : null
         );
