@@ -59,6 +59,7 @@ interface TicketDetailProps {
   onPriorityChange?: (priority: number) => Promise<void>;
   onTypeChange?: (type: string, additionalFields?: Record<string, string>) => Promise<void>;
   onDescriptionChange?: (description: string) => Promise<void>;
+  onResolutionChange?: (resolution: string) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onRefreshTicket?: () => Promise<void>;
 }
@@ -81,6 +82,7 @@ export default function TicketDetail({
   onPriorityChange,
   onTypeChange,
   onDescriptionChange,
+  onResolutionChange,
   onUploadAttachment,
   onRefreshTicket,
 }: TicketDetailProps) {
@@ -157,6 +159,11 @@ export default function TicketDetail({
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [isSavingDescription, setIsSavingDescription] = useState(false);
   const descriptionRef = useRef<HTMLDivElement>(null);
+
+  // Resolution editing state
+  const [isEditingResolution, setIsEditingResolution] = useState(false);
+  const [isSavingResolution, setIsSavingResolution] = useState(false);
+  const [editResolution, setEditResolution] = useState('');
 
   // Attachment state
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -409,6 +416,31 @@ export default function TicketDetail({
     } finally {
       setIsSavingDescription(false);
     }
+  };
+
+  const handleStartEditResolution = () => {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = ticket.resolution || '';
+    setEditResolution(tempDiv.textContent || tempDiv.innerText || '');
+    setIsEditingResolution(true);
+  };
+
+  const handleSaveResolution = async () => {
+    if (!onResolutionChange) return;
+    setIsSavingResolution(true);
+    try {
+      await onResolutionChange(editResolution);
+      setIsEditingResolution(false);
+    } catch (error) {
+      console.error('Failed to save resolution:', error);
+    } finally {
+      setIsSavingResolution(false);
+    }
+  };
+
+  const handleCancelResolution = () => {
+    setIsEditingResolution(false);
+    setEditResolution('');
   };
 
   // File attachment handlers
@@ -731,37 +763,70 @@ export default function TicketDetail({
               </div>
             )}
 
-            {/* Resolution (rich text HTML from DevOps) */}
-            {ticket.resolution && (
-              <div className="card p-4">
+            {/* Resolution (editable) */}
+            <div className="card p-4">
+              <div className="mb-2 flex items-center justify-between">
                 <h3
-                  className="mb-2 text-xs font-medium uppercase"
+                  className="text-xs font-medium uppercase"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   Resolution
                 </h3>
+                {onResolutionChange && !isEditingResolution && (
+                  <button
+                    onClick={handleStartEditResolution}
+                    className="text-sm"
+                    style={{ color: 'var(--primary)' }}
+                  >
+                    Edit
+                  </button>
+                )}
+                {isEditingResolution && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleSaveResolution}
+                      disabled={isSavingResolution}
+                      className="text-sm"
+                      style={{ color: 'var(--primary)' }}
+                    >
+                      {isSavingResolution ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      onClick={handleCancelResolution}
+                      disabled={isSavingResolution}
+                      className="text-sm"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+              {isEditingResolution ? (
+                <textarea
+                  value={editResolution}
+                  onChange={(e) => setEditResolution(e.target.value)}
+                  className="input w-full text-sm"
+                  rows={3}
+                  placeholder="Enter resolution..."
+                  autoFocus
+                />
+              ) : ticket.resolution ? (
                 <div
                   className="prose prose-sm prose-invert user-content max-w-none"
                   style={{ color: 'var(--text-secondary)' }}
                   dangerouslySetInnerHTML={{ __html: ticket.resolution }}
                 />
-              </div>
-            )}
-
-            {/* Resolved Reason (plain text fallback, e.g. "Fixed", "Approved") */}
-            {ticket.resolvedReason && !ticket.resolution && (
-              <div className="card p-4">
-                <h3
-                  className="mb-2 text-xs font-medium uppercase"
+              ) : (
+                <p
+                  className="cursor-pointer text-sm italic"
                   style={{ color: 'var(--text-muted)' }}
+                  onClick={onResolutionChange ? handleStartEditResolution : undefined}
                 >
-                  Resolved Reason
-                </h3>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  {ticket.resolvedReason}
+                  No resolution — click to add
                 </p>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Attachments */}
             {ticket.attachments && ticket.attachments.length > 0 && (

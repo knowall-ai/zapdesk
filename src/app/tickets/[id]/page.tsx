@@ -220,6 +220,29 @@ export default function TicketDetailPage() {
     }
   };
 
+  const handleResolutionChange = async (resolution: string) => {
+    if (!ticket) return;
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          resolution,
+          project: ticket.project,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update resolution');
+      }
+
+      await fetchTicket();
+    } catch (error) {
+      console.error('Failed to update resolution:', error);
+      throw error;
+    }
+  };
+
   const handleUploadAttachment = async (file: File): Promise<Attachment> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -266,6 +289,7 @@ export default function TicketDetailPage() {
         onPriorityChange={handlePriorityChange}
         onTypeChange={handleTypeChange}
         onDescriptionChange={handleDescriptionChange}
+        onResolutionChange={handleResolutionChange}
         onUploadAttachment={handleUploadAttachment}
         onRefreshTicket={fetchTicket}
       />
