@@ -174,6 +174,8 @@ export function ticketToWorkItem(ticket: Ticket): WorkItem {
     devOpsUrl: ticket.devOpsUrl,
     tags: ticket.tags,
     priority: ticket.priority,
+    resolution: ticket.resolution,
+    resolvedReason: ticket.resolvedReason,
     requester: ticket.requester,
     organization: ticket.organization,
   };
@@ -1148,6 +1150,7 @@ export class AzureDevOpsService {
       priority?: number;
       title?: string;
       description?: string;
+      resolution?: string;
     }
   ): Promise<DevOpsWorkItem> {
     const patchDocument: Array<{ op: string; path: string; value: string | number | null }> = [];
@@ -1186,6 +1189,14 @@ export class AzureDevOpsService {
         op: 'add',
         path: '/fields/Microsoft.VSTS.Common.Priority',
         value: updates.priority,
+      });
+    }
+
+    if (updates.resolution !== undefined) {
+      patchDocument.push({
+        op: 'add',
+        path: '/fields/Microsoft.VSTS.Common.Resolution',
+        value: updates.resolution,
       });
     }
 
@@ -2068,6 +2079,8 @@ export class AzureDevOpsService {
           .map((t: string) => t.trim())
           .filter(Boolean) || [],
       priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
+      resolution: (fields['Microsoft.VSTS.Common.Resolution'] as string) || undefined,
+      resolvedReason: (fields['Microsoft.VSTS.Common.ResolvedReason'] as string) || undefined,
     };
   }
 

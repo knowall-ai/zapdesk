@@ -26,7 +26,7 @@ interface WorkItemDetailDialogProps {
   ) => Promise<void>;
   onUpdate?: (
     workItemId: number,
-    updates: { title?: string; description?: string }
+    updates: { title?: string; description?: string; resolution?: string }
   ) => Promise<void>;
 }
 

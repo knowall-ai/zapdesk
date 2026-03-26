@@ -254,7 +254,10 @@ function TicketsPageContent() {
   }, []);
 
   const handleWorkItemUpdate = useCallback(
-    async (workItemId: number, updates: { title?: string; description?: string }) => {
+    async (
+      workItemId: number,
+      updates: { title?: string; description?: string; resolution?: string }
+    ) => {
       const ticket = tickets.find((t) => t.id === workItemId);
       if (!ticket || !selectedOrganization) return;
       const response = await fetch(`/api/devops/tickets/${workItemId}`, {
