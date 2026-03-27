@@ -1210,7 +1210,22 @@ export class AzureDevOpsService {
 
     if (updates.resolution !== undefined) {
       const templateConfig = getTemplateConfig();
-      const resFieldRef = getResolutionFieldRef(updates.workItemType || '', templateConfig);
+      let resFieldRef = getResolutionFieldRef(updates.workItemType || '', templateConfig);
+
+      // If using a custom field ref, verify it exists on this work item type
+      // Falls back to standard Resolution field if the custom field isn't set up
+      const standardField = 'Microsoft.VSTS.Common.Resolution';
+      if (resFieldRef !== standardField && updates.workItemType) {
+        try {
+          await this.getWorkItemTypeField(projectName, updates.workItemType, resFieldRef);
+        } catch {
+          console.warn(
+            `Resolution field ${resFieldRef} not found on ${updates.workItemType}, falling back to ${standardField}`
+          );
+          resFieldRef = standardField;
+        }
+      }
+
       patchDocument.push({
         op: 'add',
         path: `/fields/${resFieldRef}`,
