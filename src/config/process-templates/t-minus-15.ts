@@ -30,6 +30,9 @@ export const tMinus15Config: ProcessTemplateConfig = {
       4: 'Low',
     },
     resolutionTypes: ['Bug', 'Enhancement', 'Task'],
+    resolutionFieldOverrides: {
+      Task: 'Custom.TaskResolution',
+    },
   },
 
   states: {

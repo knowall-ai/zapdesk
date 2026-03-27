@@ -266,7 +266,11 @@ function TicketsPageContent() {
           'Content-Type': 'application/json',
           'x-devops-org': selectedOrganization.accountName,
         },
-        body: JSON.stringify({ ...updates, project: ticket.project }),
+        body: JSON.stringify({
+          ...updates,
+          project: ticket.project,
+          workItemType: ticket.workItemType,
+        }),
       });
       if (response.ok) {
         // Update local state

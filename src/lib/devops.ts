@@ -25,9 +25,24 @@ import type {
   ClassificationNode,
 } from '@/types';
 import { parseSLAFromDescription, calculateTicketSLA, DEFAULT_SLA_LEVEL } from './sla';
+import { getResolutionFieldRef, getTemplateConfig } from '@/config/process-templates';
 
 const DEVOPS_ORG = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
 const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
+
+/**
+ * Read the resolution value from a work item, checking all possible field names
+ * (e.g., Microsoft.VSTS.Common.Resolution for Bug, Custom.TaskResolution for Task)
+ */
+function readResolutionField(fields: Record<string, unknown>): string | undefined {
+  // Check standard field first, then known custom fields
+  const candidates = ['Microsoft.VSTS.Common.Resolution', 'Custom.TaskResolution'];
+  for (const ref of candidates) {
+    const value = fields[ref] as string;
+    if (value) return value;
+  }
+  return undefined;
+}
 
 // Map Azure DevOps state category to Zendesk-like status
 // Categories are consistent across all process templates (Basic, Agile, Scrum, CMMI)
@@ -191,7 +206,7 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     description: fields['System.Description'] || '',
     reproSteps: (fields['Microsoft.VSTS.TCM.ReproSteps'] as string) || undefined,
     systemInfo: (fields['Microsoft.VSTS.TCM.SystemInfo'] as string) || undefined,
-    resolution: (fields['Microsoft.VSTS.Common.Resolution'] as string) || undefined,
+    resolution: readResolutionField(fields),
     resolvedReason: (fields['Microsoft.VSTS.Common.ResolvedReason'] as string) || undefined,
     status: mapStateToStatus(fields['System.State']),
     devOpsState: fields['System.State'], // Preserve original DevOps state
@@ -1151,6 +1166,7 @@ export class AzureDevOpsService {
       title?: string;
       description?: string;
       resolution?: string;
+      workItemType?: string;
     }
   ): Promise<DevOpsWorkItem> {
     const patchDocument: Array<{ op: string; path: string; value: string | number | null }> = [];
@@ -1193,9 +1209,11 @@ export class AzureDevOpsService {
     }
 
     if (updates.resolution !== undefined) {
+      const templateConfig = getTemplateConfig();
+      const resFieldRef = getResolutionFieldRef(updates.workItemType || '', templateConfig);
       patchDocument.push({
         op: 'add',
-        path: '/fields/Microsoft.VSTS.Common.Resolution',
+        path: `/fields/${resFieldRef}`,
         value: updates.resolution,
       });
     }
@@ -2079,7 +2097,7 @@ export class AzureDevOpsService {
           .map((t: string) => t.trim())
           .filter(Boolean) || [],
       priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
-      resolution: (fields['Microsoft.VSTS.Common.Resolution'] as string) || undefined,
+      resolution: readResolutionField(fields),
       resolvedReason: (fields['Microsoft.VSTS.Common.ResolvedReason'] as string) || undefined,
     };
   }

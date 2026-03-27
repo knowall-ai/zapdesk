@@ -229,6 +229,7 @@ export default function TicketDetailPage() {
         body: JSON.stringify({
           resolution,
           project: ticket.project,
+          workItemType: ticket.workItemType,
         }),
       });
 
