@@ -112,15 +112,24 @@ export default function TicketDetailPage() {
   useEffect(() => {
     if (!ticket || !selectedOrganization) return;
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchTicket();
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const response = await fetch(`/api/devops/tickets/${ticketId}/exists`, {
+          headers: orgHeaders(),
+        });
+        if (response.status === 404) {
+          router.push('/tickets');
+        }
+        // Ignore other errors (auth, throttling, 5xx) — don't redirect on transient failures
+      } catch {
+        // Network error — don't redirect on transient failures
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [ticket, selectedOrganization, fetchTicket]);
+  }, [ticket, selectedOrganization, ticketId, orgHeaders, router]);
 
   const handleAddComment = async (comment: string) => {
     try {

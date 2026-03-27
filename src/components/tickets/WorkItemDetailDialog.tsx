@@ -169,10 +169,11 @@ export default function WorkItemDetailDialog({
       if (document.visibilityState !== 'visible') return;
       try {
         const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}/exists`);
-        if (!response.ok) {
+        if (response.status === 404) {
           onClose();
           onDeleted?.(workItem.id);
         }
+        // Ignore other errors (auth, throttling, 5xx) — don't close on transient failures
       } catch {
         // Network error — don't close on transient failures
       }

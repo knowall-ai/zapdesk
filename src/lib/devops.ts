@@ -447,12 +447,15 @@ export class AzureDevOpsService {
   }
 
   // Lightweight check if a work item exists (org-level, no project needed, minimal fields)
-  async workItemExists(workItemId: number): Promise<boolean> {
+  // Returns: 'exists' | 'not_found' | 'error'
+  async workItemExists(workItemId: number): Promise<'exists' | 'not_found' | 'error'> {
     const response = await fetch(
-      `${this.baseUrl}/_apis/wit/workitems/${workItemId}?$select=System.Id&api-version=7.0`,
+      `${this.baseUrl}/_apis/wit/workitems/${workItemId}?fields=System.Id&api-version=7.0`,
       { headers: this.headers }
     );
-    return response.ok;
+    if (response.ok) return 'exists';
+    if (response.status === 404) return 'not_found';
+    return 'error';
   }
 
   // Get comments for a work item

@@ -22,10 +22,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const organization = request.headers.get('x-devops-org') || undefined;
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
-    const exists = await devopsService.workItemExists(ticketId);
+    const result = await devopsService.workItemExists(ticketId);
 
-    if (!exists) {
+    if (result === 'not_found') {
       return NextResponse.json({ exists: false }, { status: 404 });
+    }
+
+    if (result === 'error') {
+      return NextResponse.json({ error: 'Upstream error' }, { status: 502 });
     }
 
     return NextResponse.json({ exists: true });
