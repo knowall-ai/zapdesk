@@ -136,7 +136,6 @@ export function getResolutionFieldRef(workItemType: string, config: ProcessTempl
   return config.fields.resolutionFieldOverrides?.[workItemType] ?? DEFAULT_RESOLUTION_FIELD;
 }
 
-
 /**
  * Get priority display name from numeric value
  */
