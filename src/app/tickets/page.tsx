@@ -336,6 +336,10 @@ function TicketsPageContent() {
           workItem={selectedTicket ? ticketToWorkItem(selectedTicket) : null}
           isOpen={!!selectedTicket}
           onClose={() => setSelectedTicket(null)}
+          onDeleted={(workItemId) => {
+            setTickets((prev) => prev.filter((t) => t.id !== workItemId));
+            fetchTickets();
+          }}
           onStateChange={handleDialogStateChange}
           onAssigneeChange={handleDialogAssigneeChange}
           onPriorityChange={handleDialogPriorityChange}

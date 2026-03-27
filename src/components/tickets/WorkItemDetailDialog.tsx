@@ -16,6 +16,7 @@ interface WorkItemDetailDialogProps {
   workItem: WorkItem | null;
   isOpen: boolean;
   onClose: () => void;
+  onDeleted?: (workItemId: number) => void;
   onStateChange?: (workItemId: number, state: string) => Promise<void>;
   onAssigneeChange?: (workItemId: number, assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (workItemId: number, priority: number) => Promise<void>;
@@ -34,6 +35,7 @@ export default function WorkItemDetailDialog({
   workItem,
   isOpen,
   onClose,
+  onDeleted,
   onStateChange,
   onAssigneeChange,
   onPriorityChange,
@@ -158,6 +160,27 @@ export default function WorkItemDetailDialog({
       fetchComments();
     }
   }, [isOpen, workItem, fetchComments]);
+
+  // Re-verify ticket exists when user tabs back (e.g., after deleting in DevOps)
+  useEffect(() => {
+    if (!isOpen || !workItem || !hasOrganization) return;
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}/exists`);
+        if (!response.ok) {
+          onClose();
+          onDeleted?.(workItem.id);
+        }
+      } catch {
+        // Network error — don't close on transient failures
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isOpen, workItem, fetchDevOps, hasOrganization, onClose, onDeleted]);
 
   if (!workItem) return null;
 

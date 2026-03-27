@@ -108,6 +108,20 @@ export default function TicketDetailPage() {
     }
   }, [session, ticketId, fetchTicket, fetchHistory, selectedOrganization]);
 
+  // Re-verify ticket exists when user tabs back (e.g., after deleting in DevOps)
+  useEffect(() => {
+    if (!ticket || !selectedOrganization) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchTicket();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [ticket, selectedOrganization, fetchTicket]);
+
   const handleAddComment = async (comment: string) => {
     try {
       const response = await fetch(`/api/devops/tickets/${ticketId}/comments`, {
