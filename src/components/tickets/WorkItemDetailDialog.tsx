@@ -10,6 +10,7 @@ import { useWorkItemActions } from '@/hooks/useWorkItemActions';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import WorkItemDetailContent from './WorkItemDetailContent';
 import WorkItemDetailSidebar from './WorkItemDetailSidebar';
+import TypeChangeRequiredFields from './TypeChangeRequiredFields';
 
 interface WorkItemDetailDialogProps {
   workItem: WorkItem | null;
@@ -18,7 +19,11 @@ interface WorkItemDetailDialogProps {
   onStateChange?: (workItemId: number, state: string) => Promise<void>;
   onAssigneeChange?: (workItemId: number, assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (workItemId: number, priority: number) => Promise<void>;
-  onTypeChange?: (workItemId: number, type: string) => Promise<void>;
+  onTypeChange?: (
+    workItemId: number,
+    type: string,
+    additionalFields?: Record<string, string>
+  ) => Promise<void>;
   onUpdate?: (
     workItemId: number,
     updates: { title?: string; description?: string }
@@ -71,9 +76,9 @@ export default function WorkItemDetailDialog({
   );
 
   const boundTypeChange = useCallback(
-    async (type: string) => {
+    async (type: string, additionalFields?: Record<string, string>) => {
       if (onTypeChange && workItem) {
-        await onTypeChange(workItem.id, type);
+        await onTypeChange(workItem.id, type, additionalFields);
       }
     },
     [onTypeChange, workItem]
@@ -303,23 +308,42 @@ export default function WorkItemDetailDialog({
   );
 
   return (
-    <TicketDialogShell
-      isOpen={isOpen}
-      onClose={onClose}
-      headerLeft={headerLeft}
-      headerRight={headerRight}
-      sidebar={sidebar}
-    >
-      <WorkItemDetailContent
-        workItem={workItem}
-        comments={comments}
-        isLoadingComments={isLoadingComments}
-        onAddComment={handleAddComment}
-        onUploadAttachment={handleUploadAttachment}
-        onUpdate={onUpdate ? handleUpdate : undefined}
-        showEffortTracking
-        compact
-      />
-    </TicketDialogShell>
+    <>
+      <TicketDialogShell
+        isOpen={isOpen}
+        onClose={onClose}
+        headerLeft={headerLeft}
+        headerRight={headerRight}
+        sidebar={sidebar}
+      >
+        <WorkItemDetailContent
+          workItem={workItem}
+          comments={comments}
+          isLoadingComments={isLoadingComments}
+          onAddComment={handleAddComment}
+          onUploadAttachment={handleUploadAttachment}
+          onUpdate={onUpdate ? handleUpdate : undefined}
+          showEffortTracking
+          compact
+        />
+      </TicketDialogShell>
+
+      {/* Required fields modal for type change */}
+      {actions.pendingTypeChange && (
+        <TypeChangeRequiredFields
+          targetType={actions.pendingTypeChange.type}
+          requiredFields={actions.pendingTypeChange.requiredFields}
+          fieldValues={actions.pendingTypeFieldValues}
+          onFieldChange={actions.setPendingTypeFieldValue}
+          onConfirm={actions.confirmPendingTypeChange}
+          onCancel={actions.cancelPendingTypeChange}
+          isUpdating={actions.isUpdatingType}
+          members={actions.pendingTypeMembers}
+          memberSearch={actions.pendingTypeMemberSearch}
+          onMemberSearchChange={actions.setPendingTypeMemberSearch}
+          filteredMembers={actions.filteredPendingTypeMembers}
+        />
+      )}
+    </>
   );
 }

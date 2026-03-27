@@ -88,9 +88,9 @@ export async function GET(request: NextRequest) {
             states,
           });
 
-          // Collect unique states (excluding Removed)
+          // Collect unique states
           for (const state of states) {
-            if (state.name !== 'Removed' && !uniqueStates.has(state.name)) {
+            if (!uniqueStates.has(state.name)) {
               uniqueStates.set(state.name, state);
             }
           }
@@ -100,12 +100,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Sort states by category order: Proposed -> InProgress -> Resolved -> Completed
+    // Sort states by category order: Proposed -> InProgress -> Resolved -> Completed -> Removed
     const categoryOrder: Record<string, number> = {
       Proposed: 1,
       InProgress: 2,
       Resolved: 3,
       Completed: 4,
+      Removed: 5,
     };
 
     const sortedStates = Array.from(uniqueStates.values()).sort((a, b) => {
