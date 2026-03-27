@@ -43,6 +43,7 @@ import ZapDialog from './ZapDialog';
 import TicketHistory from './TicketHistory';
 import TypeChangeRequiredFields from './TypeChangeRequiredFields';
 import type { RequiredField } from '@/hooks/useWorkItemActions';
+import { getTemplateConfig, hasResolutionField } from '@/config/process-templates';
 import { useClickOutside } from '@/hooks';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 
@@ -62,6 +63,7 @@ interface TicketDetailProps {
   onResolutionChange?: (resolution: string) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onRefreshTicket?: () => Promise<void>;
+  processTemplate?: string;
 }
 
 const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
@@ -85,7 +87,10 @@ export default function TicketDetail({
   onResolutionChange,
   onUploadAttachment,
   onRefreshTicket,
+  processTemplate,
 }: TicketDetailProps) {
+  const templateConfig = getTemplateConfig(processTemplate);
+  const showResolution = hasResolutionField(ticket.workItemType, templateConfig);
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -763,74 +768,76 @@ export default function TicketDetail({
               </div>
             )}
 
-            {/* Resolution (editable) */}
-            <div className="card p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <h3
-                  className="text-xs font-medium uppercase"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  Resolution
-                </h3>
-                {onResolutionChange && !isEditingResolution && (
-                  <button
-                    onClick={handleStartEditResolution}
-                    className="text-sm"
-                    style={{ color: 'var(--primary)' }}
+            {/* Resolution (editable) - only for work item types that support it */}
+            {showResolution && (
+              <div className="card p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <h3
+                    className="text-xs font-medium uppercase"
+                    style={{ color: 'var(--text-muted)' }}
                   >
-                    Edit
-                  </button>
-                )}
-                {isEditingResolution && (
-                  <div className="flex items-center gap-2">
+                    Resolution
+                  </h3>
+                  {onResolutionChange && !isEditingResolution && (
                     <button
-                      onClick={handleSaveResolution}
-                      disabled={isSavingResolution}
+                      onClick={handleStartEditResolution}
                       className="text-sm"
                       style={{ color: 'var(--primary)' }}
                     >
-                      {isSavingResolution ? 'Saving...' : 'Save'}
+                      Edit
                     </button>
-                    <button
-                      onClick={handleCancelResolution}
-                      disabled={isSavingResolution}
-                      className="text-sm"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                  )}
+                  {isEditingResolution && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleSaveResolution}
+                        disabled={isSavingResolution}
+                        className="text-sm"
+                        style={{ color: 'var(--primary)' }}
+                      >
+                        {isSavingResolution ? 'Saving...' : 'Save'}
+                      </button>
+                      <button
+                        onClick={handleCancelResolution}
+                        disabled={isSavingResolution}
+                        className="text-sm"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {isEditingResolution ? (
+                  <textarea
+                    value={editResolution}
+                    onChange={(e) => setEditResolution(e.target.value)}
+                    className="input w-full text-sm"
+                    rows={3}
+                    placeholder="Enter resolution..."
+                    autoFocus
+                  />
+                ) : ticket.resolution ? (
+                  <div
+                    className="prose prose-sm prose-invert user-content max-w-none"
+                    style={{ color: 'var(--text-secondary)' }}
+                    dangerouslySetInnerHTML={{ __html: ticket.resolution }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="text-sm italic"
+                    style={{
+                      color: 'var(--text-muted)',
+                      cursor: onResolutionChange ? 'pointer' : 'default',
+                    }}
+                    onClick={onResolutionChange ? handleStartEditResolution : undefined}
+                  >
+                    No resolution — click to add
+                  </button>
                 )}
               </div>
-              {isEditingResolution ? (
-                <textarea
-                  value={editResolution}
-                  onChange={(e) => setEditResolution(e.target.value)}
-                  className="input w-full text-sm"
-                  rows={3}
-                  placeholder="Enter resolution..."
-                  autoFocus
-                />
-              ) : ticket.resolution ? (
-                <div
-                  className="prose prose-sm prose-invert user-content max-w-none"
-                  style={{ color: 'var(--text-secondary)' }}
-                  dangerouslySetInnerHTML={{ __html: ticket.resolution }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className="text-sm italic"
-                  style={{
-                    color: 'var(--text-muted)',
-                    cursor: onResolutionChange ? 'pointer' : 'default',
-                  }}
-                  onClick={onResolutionChange ? handleStartEditResolution : undefined}
-                >
-                  No resolution — click to add
-                </button>
-              )}
-            </div>
+            )}
 
             {/* Resolved Reason (plain text, e.g. "Fixed", "Approved") */}
             {ticket.resolvedReason && (

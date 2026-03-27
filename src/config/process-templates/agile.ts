@@ -30,6 +30,7 @@ export const agileConfig: ProcessTemplateConfig = {
       3: 'Normal',
       4: 'Low',
     },
+    resolutionTypes: ['Bug'],
   },
 
   states: {

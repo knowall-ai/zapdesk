@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { format } from 'date-fns';
 import { Pencil, Check, X, Loader2 } from 'lucide-react';
 import type { WorkItem, TicketComment } from '@/types';
+import { getTemplateConfig, hasResolutionField } from '@/config/process-templates';
 import Avatar from '../common/Avatar';
 import CommentSection from './CommentSection';
 import ZapDialog from './ZapDialog';
@@ -22,6 +23,7 @@ interface WorkItemDetailContentProps {
   showRequester?: boolean;
   showEffortTracking?: boolean;
   compact?: boolean;
+  processTemplate?: string;
 }
 
 const formatHours = (hours: number) => {
@@ -149,8 +151,11 @@ export default function WorkItemDetailContent({
   showRequester = false,
   showEffortTracking = false,
   compact = false,
+  processTemplate,
 }: WorkItemDetailContentProps) {
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
+  const templateConfig = getTemplateConfig(processTemplate);
+  const showResolution = hasResolutionField(workItem.workItemType, templateConfig);
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -316,8 +321,8 @@ export default function WorkItemDetailContent({
         </div>
       )}
 
-      {/* Resolution (editable) */}
-      <ResolutionField workItem={workItem} onUpdate={onUpdate} />
+      {/* Resolution (editable) - only for work item types that support it */}
+      {showResolution && <ResolutionField workItem={workItem} onUpdate={onUpdate} />}
 
       {/* Effort tracking */}
       {showEffortTracking &&
