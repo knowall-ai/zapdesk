@@ -1155,7 +1155,7 @@ export class AzureDevOpsService {
 
     if (updates.tags !== undefined) {
       patchDocument.push({
-        op: 'add',
+        op: 'replace',
         path: '/fields/System.Tags',
         value: updates.tags.join('; '),
       });
