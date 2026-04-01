@@ -1685,7 +1685,15 @@ export class AzureDevOpsService {
       const data = await response.json();
       for (const member of data.members || []) {
         const email = member.user?.principalName;
-        const displayName = member.user?.displayName || email;
+        const rawDisplayName = member.user?.displayName || email;
+        // If displayName looks like an email, derive a readable name from it
+        const displayName =
+          rawDisplayName && rawDisplayName.includes('@')
+            ? rawDisplayName
+                .split('@')[0]
+                .replace(/[._-]/g, ' ')
+                .replace(/\b\w/g, (c: string) => c.toUpperCase())
+            : rawDisplayName;
         const id = member.id || member.user?.id || email;
         const license =
           member.accessLevel?.licenseDisplayName || member.accessLevel?.accountLicenseType;

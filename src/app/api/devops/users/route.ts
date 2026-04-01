@@ -93,16 +93,9 @@ export async function GET() {
       }
     }
 
-    const users = Array.from(userMap.values()).sort((a, b) => {
-      // Users with ticket activity first, sorted by most recent
-      if (a.lastUpdated && b.lastUpdated) {
-        return b.lastUpdated.getTime() - a.lastUpdated.getTime();
-      }
-      if (a.lastUpdated) return -1;
-      if (b.lastUpdated) return 1;
-      // Both without activity - sort by name
-      return a.displayName.localeCompare(b.displayName);
-    });
+    const users = Array.from(userMap.values()).sort((a, b) =>
+      a.displayName.localeCompare(b.displayName)
+    );
 
     return NextResponse.json({ users });
   } catch (error) {
