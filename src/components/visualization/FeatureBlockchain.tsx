@@ -208,6 +208,16 @@ function lightenHex(hex: string, factor: number): string {
   return rgbToHex(r + (255 - r) * factor, g + (255 - g) * factor, b + (255 - b) * factor);
 }
 
+function blendHex(base: string, target: string, amount: number): string {
+  const b = hexToRgb(base);
+  const t = hexToRgb(target);
+  return rgbToHex(
+    b.r + (t.r - b.r) * amount,
+    b.g + (t.g - b.g) * amount,
+    b.b + (t.b - b.b) * amount
+  );
+}
+
 function hexToRgba(hex: string, alpha: number): string {
   const { r, g, b } = hexToRgb(hex);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
@@ -419,10 +429,12 @@ export default function FeatureTimechain({
   const blockHeight = blockSize;
   const depth = 18; // 3D depth like mempool
 
-  // Neutral dark colors for unfilled block portions
-  const NEUTRAL_TOP = '#1a1e26';
-  const NEUTRAL_LEFT = '#0c1016';
-  const NEUTRAL_MAIN = `linear-gradient(180deg, ${NEUTRAL_TOP} 0%, #0f1318 100%)`;
+  // Neutral dark base colors for unfilled block portions
+  const NEUTRAL_TOP_BASE = '#1a1e26';
+  const NEUTRAL_LEFT_BASE = '#0c1016';
+  const NEUTRAL_MAIN_TOP = '#1a1e26';
+  const NEUTRAL_MAIN_BOTTOM = '#0f1318';
+  const TINT_AMOUNT = 0.15; // Subtle state color tint for unfilled portions
 
   return (
     <div className="space-y-6">
@@ -459,6 +471,11 @@ export default function FeatureTimechain({
             const isSelected = selectedFeature?.id === feature.id;
             const colors = getStateColors(feature.state, stateColorMap);
             const selectedColors = getSelectedColors(feature.state, stateColorMap);
+            const stateHex = getStateHex(feature.state, stateColorMap);
+            const neutralTop = blendHex(NEUTRAL_TOP_BASE, stateHex, TINT_AMOUNT);
+            const neutralLeft = blendHex(NEUTRAL_LEFT_BASE, stateHex, TINT_AMOUNT);
+            const neutralMainTop = blendHex(NEUTRAL_MAIN_TOP, stateHex, TINT_AMOUNT);
+            const neutralMainBottom = blendHex(NEUTRAL_MAIN_BOTTOM, stateHex, TINT_AMOUNT);
 
             return (
               <div
@@ -495,7 +512,7 @@ export default function FeatureTimechain({
                       left: depth,
                       background:
                         fillPercentage !== null && fillPercentage < 100
-                          ? NEUTRAL_TOP
+                          ? neutralTop
                           : isSelected
                             ? selectedColors.topFace
                             : colors.topFace,
@@ -512,7 +529,7 @@ export default function FeatureTimechain({
                       height: blockHeight,
                       top: depth,
                       left: 0,
-                      background: NEUTRAL_LEFT,
+                      background: neutralLeft,
                       transform: 'skewY(45deg)',
                       transformOrigin: 'top right',
                     }}
@@ -550,7 +567,7 @@ export default function FeatureTimechain({
                       height: blockHeight,
                       top: depth,
                       left: depth,
-                      background: NEUTRAL_MAIN,
+                      background: `linear-gradient(180deg, ${neutralMainTop} 0%, ${neutralMainBottom} 100%)`,
                       border: `1px solid ${isSelected ? selectedColors.border : colors.border}`,
                       boxShadow: isSelected ? selectedColors.glow : '0 8px 24px rgba(0,0,0,0.5)',
                     }}
