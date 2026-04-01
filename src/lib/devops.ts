@@ -1686,12 +1686,13 @@ export class AzureDevOpsService {
       for (const member of data.members || []) {
         const email = member.user?.principalName;
         const rawDisplayName = member.user?.displayName || email;
-        // If displayName looks like an email, derive a readable name from it
+        // If displayName is a full email address, derive a readable name from it
         const displayName =
-          rawDisplayName && rawDisplayName.includes('@')
+          rawDisplayName && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawDisplayName)
             ? rawDisplayName
                 .split('@')[0]
                 .replace(/[._-]/g, ' ')
+                .toLowerCase()
                 .replace(/\b\w/g, (c: string) => c.toUpperCase())
             : rawDisplayName;
         const id = member.id || member.user?.id || email;

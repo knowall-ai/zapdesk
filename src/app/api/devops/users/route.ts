@@ -4,6 +4,18 @@ import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import type { Customer } from '@/types';
 
+/** If a display name is a full email address, derive a readable name from it */
+function normalizeDisplayName(name: string): string {
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(name)) {
+    return name
+      .split('@')[0]
+      .replace(/[._-]/g, ' ')
+      .toLowerCase()
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  return name;
+}
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
@@ -59,7 +71,7 @@ export async function GET() {
         // User not in entitlements - add from ticket
         userMap.set(emailKey, {
           id: ticket.requester.id,
-          displayName: ticket.requester.displayName,
+          displayName: normalizeDisplayName(ticket.requester.displayName),
           email: ticket.requester.email,
           organizationId: ticket.organization?.id,
           organization: ticket.organization,
@@ -80,7 +92,7 @@ export async function GET() {
           if (!userMap.has(emailKey)) {
             userMap.set(emailKey, {
               id: member.id,
-              displayName: member.displayName,
+              displayName: normalizeDisplayName(member.displayName),
               email: member.email,
               timezone: '(GMT+00:00) Edinburgh',
               tags: [],
