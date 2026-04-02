@@ -26,7 +26,7 @@ interface WorkItemDetailDialogProps {
   ) => Promise<void>;
   onUpdate?: (
     workItemId: number,
-    updates: { title?: string; description?: string }
+    updates: { title?: string; description?: string; resolution?: string }
   ) => Promise<void>;
 }
 
@@ -135,7 +135,7 @@ export default function WorkItemDetailDialog({
   );
 
   const handleUpdate = useCallback(
-    async (updates: { title?: string; description?: string }) => {
+    async (updates: { title?: string; description?: string; resolution?: string }) => {
       if (!workItem || !onUpdate) return;
       await onUpdate(workItem.id, updates);
     },
