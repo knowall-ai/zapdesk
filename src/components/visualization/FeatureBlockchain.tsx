@@ -208,6 +208,16 @@ function lightenHex(hex: string, factor: number): string {
   return rgbToHex(r + (255 - r) * factor, g + (255 - g) * factor, b + (255 - b) * factor);
 }
 
+function blendHex(base: string, target: string, amount: number): string {
+  const b = hexToRgb(base);
+  const t = hexToRgb(target);
+  return rgbToHex(
+    b.r + (t.r - b.r) * amount,
+    b.g + (t.g - b.g) * amount,
+    b.b + (t.b - b.b) * amount
+  );
+}
+
 function hexToRgba(hex: string, alpha: number): string {
   const { r, g, b } = hexToRgb(hex);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
@@ -419,6 +429,13 @@ export default function FeatureTimechain({
   const blockHeight = blockSize;
   const depth = 18; // 3D depth like mempool
 
+  // Neutral dark base colors for unfilled block portions
+  const NEUTRAL_TOP_BASE = '#1a1e26';
+  const NEUTRAL_LEFT_BASE = '#0c1016';
+  const NEUTRAL_MAIN_TOP = '#1a1e26';
+  const NEUTRAL_MAIN_BOTTOM = '#0f1318';
+  const TINT_AMOUNT = 0.15; // Subtle state color tint for unfilled portions
+
   return (
     <div className="space-y-6">
       {/* Epic description above timechain */}
@@ -454,6 +471,11 @@ export default function FeatureTimechain({
             const isSelected = selectedFeature?.id === feature.id;
             const colors = getStateColors(feature.state, stateColorMap);
             const selectedColors = getSelectedColors(feature.state, stateColorMap);
+            const stateHex = getStateHex(feature.state, stateColorMap);
+            const neutralTop = blendHex(NEUTRAL_TOP_BASE, stateHex, TINT_AMOUNT);
+            const neutralLeft = blendHex(NEUTRAL_LEFT_BASE, stateHex, TINT_AMOUNT);
+            const neutralMainTop = blendHex(NEUTRAL_MAIN_TOP, stateHex, TINT_AMOUNT);
+            const neutralMainBottom = blendHex(NEUTRAL_MAIN_BOTTOM, stateHex, TINT_AMOUNT);
 
             return (
               <div
@@ -482,13 +504,18 @@ export default function FeatureTimechain({
                 >
                   {/* Top face - parallelogram going back-left */}
                   <div
-                    className="absolute"
+                    className="absolute overflow-hidden"
                     style={{
                       width: blockWidth,
                       height: depth,
                       top: 0,
                       left: depth,
-                      background: isSelected ? selectedColors.topFace : colors.topFace,
+                      background:
+                        fillPercentage !== null && fillPercentage < 100
+                          ? neutralTop
+                          : isSelected
+                            ? selectedColors.topFace
+                            : colors.topFace,
                       transform: 'skewX(45deg)',
                       transformOrigin: 'bottom left',
                     }}
@@ -496,17 +523,41 @@ export default function FeatureTimechain({
 
                   {/* Left face - parallelogram going back-left */}
                   <div
-                    className="absolute"
+                    className="absolute overflow-hidden"
                     style={{
                       width: depth,
                       height: blockHeight,
                       top: depth,
                       left: 0,
-                      background: isSelected ? selectedColors.leftFace : colors.rightFace,
+                      background: neutralLeft,
                       transform: 'skewY(45deg)',
                       transformOrigin: 'top right',
                     }}
-                  />
+                  >
+                    {/* State-colored fill rising from bottom */}
+                    {fillPercentage !== null && fillPercentage > 0 && (
+                      <div
+                        className="absolute right-0 bottom-0 left-0 transition-all duration-500"
+                        style={{
+                          height: `${Math.min(fillPercentage, 100)}%`,
+                          background: `linear-gradient(180deg, ${lightenHex(getStateHex(feature.state, stateColorMap), 0.4)} 0%, ${getStateHex(feature.state, stateColorMap)} 100%)`,
+                          borderTop:
+                            fillPercentage > 0 && fillPercentage < 100
+                              ? '1px solid rgba(255, 255, 255, 0.4)'
+                              : 'none',
+                        }}
+                      />
+                    )}
+                    {/* Full color when no effort data */}
+                    {fillPercentage === null && (
+                      <div
+                        className="absolute inset-0"
+                        style={{
+                          background: isSelected ? selectedColors.leftFace : colors.rightFace,
+                        }}
+                      />
+                    )}
+                  </div>
 
                   {/* Main face */}
                   <div
@@ -516,14 +567,35 @@ export default function FeatureTimechain({
                       height: blockHeight,
                       top: depth,
                       left: depth,
-                      background: isSelected ? selectedColors.gradient : colors.gradient,
-                      border: isSelected
-                        ? `2px solid ${selectedColors.border}`
-                        : `1px solid ${colors.border}`,
+                      background: `linear-gradient(180deg, ${neutralMainTop} 0%, ${neutralMainBottom} 100%)`,
+                      border: `1px solid ${isSelected ? selectedColors.border : colors.border}`,
                       boxShadow: isSelected ? selectedColors.glow : '0 8px 24px rgba(0,0,0,0.5)',
                     }}
                   >
-                    <div className="flex h-full flex-col p-3">
+                    {/* State-colored fill rising from bottom */}
+                    {fillPercentage !== null && fillPercentage > 0 && (
+                      <div
+                        className="absolute right-0 bottom-0 left-0 transition-all duration-500"
+                        style={{
+                          height: `${Math.min(fillPercentage, 100)}%`,
+                          background: `linear-gradient(0deg, ${getStateHex(feature.state, stateColorMap)} 0%, ${lightenHex(getStateHex(feature.state, stateColorMap), 0.3)} 100%)`,
+                          borderTop:
+                            fillPercentage > 0 && fillPercentage < 100
+                              ? '1px solid rgba(255, 255, 255, 0.4)'
+                              : 'none',
+                        }}
+                      />
+                    )}
+                    {/* Full color when no effort data */}
+                    {fillPercentage === null && (
+                      <div
+                        className="absolute inset-0"
+                        style={{
+                          background: isSelected ? selectedColors.gradient : colors.gradient,
+                        }}
+                      />
+                    )}
+                    <div className="relative z-10 flex h-full flex-col p-3">
                       <div
                         className="mb-2 text-xs font-medium tracking-wider uppercase"
                         style={{ color: isSelected ? selectedColors.accent : colors.accent }}
