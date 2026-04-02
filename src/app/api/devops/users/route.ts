@@ -4,6 +4,18 @@ import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import type { Customer } from '@/types';
 
+/** If a display name is a full email address, derive a readable name from it */
+function normalizeDisplayName(name: string): string {
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(name)) {
+    return name
+      .split('@')[0]
+      .replace(/[._-]/g, ' ')
+      .toLowerCase()
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  return name;
+}
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
@@ -59,7 +71,7 @@ export async function GET() {
         // User not in entitlements - add from ticket
         userMap.set(emailKey, {
           id: ticket.requester.id,
-          displayName: ticket.requester.displayName,
+          displayName: normalizeDisplayName(ticket.requester.displayName),
           email: ticket.requester.email,
           organizationId: ticket.organization?.id,
           organization: ticket.organization,
@@ -80,7 +92,7 @@ export async function GET() {
           if (!userMap.has(emailKey)) {
             userMap.set(emailKey, {
               id: member.id,
-              displayName: member.displayName,
+              displayName: normalizeDisplayName(member.displayName),
               email: member.email,
               timezone: '(GMT+00:00) Edinburgh',
               tags: [],
@@ -93,16 +105,9 @@ export async function GET() {
       }
     }
 
-    const users = Array.from(userMap.values()).sort((a, b) => {
-      // Users with ticket activity first, sorted by most recent
-      if (a.lastUpdated && b.lastUpdated) {
-        return b.lastUpdated.getTime() - a.lastUpdated.getTime();
-      }
-      if (a.lastUpdated) return -1;
-      if (b.lastUpdated) return 1;
-      // Both without activity - sort by name
-      return a.displayName.localeCompare(b.displayName);
-    });
+    const users = Array.from(userMap.values()).sort((a, b) =>
+      a.displayName.localeCompare(b.displayName)
+    );
 
     return NextResponse.json({ users });
   } catch (error) {
