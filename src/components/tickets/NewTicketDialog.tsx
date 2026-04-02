@@ -544,8 +544,12 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
 
       {/* Dialog */}
       <div
-        className="relative z-10 flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg"
-        style={{ backgroundColor: 'var(--background)', border: '1px solid var(--border)' }}
+        className="relative z-10 flex w-full max-w-4xl flex-col overflow-hidden rounded-lg"
+        style={{
+          height: '85vh',
+          backgroundColor: 'var(--background)',
+          border: '1px solid var(--border)',
+        }}
       >
         {/* Header */}
         <div
