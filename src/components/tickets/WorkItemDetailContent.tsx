@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
 import { Pencil, Check, X, Loader2 } from 'lucide-react';
-import type { WorkItem, TicketComment } from '@/types';
+import type { WorkItem, TicketComment, Attachment } from '@/types';
 import { getTemplateConfig, hasResolutionField } from '@/config/process-templates';
 import Avatar from '../common/Avatar';
 import CommentSection from './CommentSection';
@@ -14,6 +14,7 @@ interface WorkItemDetailContentProps {
   comments: TicketComment[];
   isLoadingComments?: boolean;
   onAddComment?: (comment: string) => Promise<void>;
+  onUploadAttachment?: (file: File) => Promise<Attachment>;
   onUpdate?: (updates: {
     title?: string;
     description?: string;
@@ -146,6 +147,7 @@ export default function WorkItemDetailContent({
   comments,
   isLoadingComments = false,
   onAddComment,
+  onUploadAttachment,
   onUpdate,
   onZapSent,
   showRequester = false,
@@ -374,6 +376,7 @@ export default function WorkItemDetailContent({
             comments={comments}
             isLoading={isLoadingComments}
             onAddComment={onAddComment}
+            onUploadAttachment={onUploadAttachment}
             assignee={workItem.assignee}
             onZapClick={() => setIsZapDialogOpen(true)}
             compact
@@ -384,6 +387,7 @@ export default function WorkItemDetailContent({
           comments={comments}
           isLoading={isLoadingComments}
           onAddComment={onAddComment}
+          onUploadAttachment={onUploadAttachment}
           assignee={workItem.assignee}
           onZapClick={() => setIsZapDialogOpen(true)}
         />

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { ExternalLink, ChevronDown, Loader2, Maximize2 } from 'lucide-react';
-import type { WorkItem, TicketComment } from '@/types';
+import type { WorkItem, TicketComment, Attachment } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import TicketDialogShell from './TicketDialogShell';
 import { useWorkItemActions } from '@/hooks/useWorkItemActions';
@@ -134,6 +134,25 @@ export default function WorkItemDetailDialog({
       }
     },
     [workItem, fetchComments, fetchDevOps, hasOrganization]
+  );
+
+  const handleUploadAttachment = useCallback(
+    async (file: File): Promise<Attachment> => {
+      if (!workItem) throw new Error('No work item');
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}/attachments`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to upload attachment');
+      }
+      const data = await response.json();
+      return data.attachment;
+    },
+    [workItem, fetchDevOps]
   );
 
   const handleUpdate = useCallback(
@@ -326,6 +345,7 @@ export default function WorkItemDetailDialog({
           comments={comments}
           isLoadingComments={isLoadingComments}
           onAddComment={handleAddComment}
+          onUploadAttachment={handleUploadAttachment}
           onUpdate={onUpdate ? handleUpdate : undefined}
           showEffortTracking
           compact

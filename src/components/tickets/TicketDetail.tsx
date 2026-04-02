@@ -423,6 +423,74 @@ export default function TicketDetail({
     }
   };
 
+  // Paste image handler
+  const [isPastingImage, setIsPastingImage] = useState(false);
+
+  const handleCommentPaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
+    if (!onUploadAttachment) return;
+
+    // Collect image files from clipboardData.files and clipboardData.items
+    const imageFiles: File[] = [];
+
+    // Try files first (Chrome/Edge)
+    if (e.clipboardData?.files) {
+      for (let i = 0; i < e.clipboardData.files.length; i++) {
+        const file = e.clipboardData.files[i];
+        if (file.type.startsWith('image/')) {
+          imageFiles.push(file);
+        }
+      }
+    }
+
+    // Fallback to items (Firefox, some Windows scenarios)
+    if (imageFiles.length === 0 && e.clipboardData?.items) {
+      for (let i = 0; i < e.clipboardData.items.length; i++) {
+        const item = e.clipboardData.items[i];
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+    }
+
+    if (imageFiles.length === 0) return;
+
+    // Rename files with descriptive names
+    const namedFiles = imageFiles.map((file) => {
+      const ext = file.type.split('/')[1] || 'png';
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      return new File([file], `pasted-image-${timestamp}.${ext}`, { type: file.type });
+    });
+
+    e.preventDefault();
+    setIsPastingImage(true);
+    setUploadError(null);
+
+    try {
+      for (const file of namedFiles) {
+        const attachment = await onUploadAttachment(file);
+        // Extract attachment ID and org from DevOps URL, use our proxy
+        const idMatch = attachment.url?.match(/attachments\/([a-f0-9-]+)/i);
+        const orgMatch = attachment.url?.match(/dev\.azure\.com\/([^/]+)/);
+        const attachmentId = idMatch ? idMatch[1] : null;
+        const org = orgMatch ? orgMatch[1] : '';
+        const params = new URLSearchParams({
+          fileName: file.name,
+          ...(org && { org }),
+        });
+        const imgSrc = attachmentId
+          ? `/api/devops/attachments/${attachmentId}?${params.toString()}`
+          : attachment.url;
+        const imgHtml = `<img src="${imgSrc}" alt="${file.name}" />`;
+        setNewComment((prev) => (prev ? `${prev}\n${imgHtml}` : imgHtml));
+      }
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Failed to upload pasted image');
+    } finally {
+      setIsPastingImage(false);
+    }
+  };
+
   const handleStartEditResolution = () => {
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = ticket.resolution || '';
@@ -1037,9 +1105,20 @@ export default function TicketDetail({
             <MentionInput
               value={newComment}
               onChange={setNewComment}
-              placeholder="Type your reply... Use @ to mention team members"
-              className="input min-h-[100px] w-full resize-none pr-24"
+              onPaste={handleCommentPaste}
+              placeholder="Type your reply... Use @ to mention team members. Paste images with Ctrl+V."
+              className="input max-h-[300px] min-h-[100px] w-full resize-none overflow-auto pr-24"
+              disabled={isPastingImage}
             />
+            {isPastingImage && (
+              <div
+                className="mt-1 flex items-center gap-2 text-xs"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 size={12} className="animate-spin" />
+                Uploading pasted image...
+              </div>
+            )}
             <div className="absolute right-3 bottom-3 flex items-center gap-2">
               <button
                 onClick={() => fileInputRef.current?.click()}
