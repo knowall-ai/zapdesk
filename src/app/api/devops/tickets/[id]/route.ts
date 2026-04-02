@@ -67,7 +67,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { assignee, assignToMe, priority, project, title, description, tags } = body;
+    const {
+      assignee,
+      assignToMe,
+      priority,
+      project,
+      title,
+      description,
+      tags,
+      resolution,
+      workItemType,
+    } = body;
 
     const organization = request.headers.get('x-devops-org') || undefined;
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
@@ -89,7 +99,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       title?: string;
       description?: string;
       tags?: string[];
+      resolution?: string;
+      workItemType?: string;
     } = {};
+
+    if (workItemType) {
+      updates.workItemType = workItemType;
+    }
 
     if (assignToMe) {
       // Use the Azure DevOps profile API to get the authenticated user's identity
@@ -127,6 +143,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         cleanTags.unshift('ticket');
       }
       updates.tags = cleanTags;
+    }
+
+    if (resolution !== undefined) {
+      updates.resolution = resolution;
     }
 
     // Update the work item

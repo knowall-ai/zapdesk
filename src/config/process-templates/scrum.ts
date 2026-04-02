@@ -30,6 +30,7 @@ export const scrumConfig: ProcessTemplateConfig = {
       3: 'Normal', // Consistent with T-Minus-15 template
       4: 'Low',
     },
+    resolutionTypes: ['Bug'],
   },
 
   states: {

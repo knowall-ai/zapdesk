@@ -276,7 +276,10 @@ function TicketsPageContent() {
   );
 
   const handleWorkItemUpdate = useCallback(
-    async (workItemId: number, updates: { title?: string; description?: string }) => {
+    async (
+      workItemId: number,
+      updates: { title?: string; description?: string; resolution?: string }
+    ) => {
       const ticket = tickets.find((t) => t.id === workItemId);
       if (!ticket || !selectedOrganization) return;
       const response = await fetch(`/api/devops/tickets/${workItemId}`, {
@@ -285,7 +288,11 @@ function TicketsPageContent() {
           'Content-Type': 'application/json',
           'x-devops-org': selectedOrganization.accountName,
         },
-        body: JSON.stringify({ ...updates, project: ticket.project }),
+        body: JSON.stringify({
+          ...updates,
+          project: ticket.project,
+          workItemType: ticket.workItemType,
+        }),
       });
       if (response.ok) {
         // Update local state
@@ -296,6 +303,7 @@ function TicketsPageContent() {
                   ...t,
                   ...(updates.title && { title: updates.title }),
                   ...(updates.description && { description: updates.description }),
+                  ...(updates.resolution !== undefined && { resolution: updates.resolution }),
                 }
               : t
           )
@@ -307,6 +315,7 @@ function TicketsPageContent() {
                 ...prev,
                 ...(updates.title && { title: updates.title }),
                 ...(updates.description && { description: updates.description }),
+                ...(updates.resolution !== undefined && { resolution: updates.resolution }),
               }
             : null
         );
@@ -358,6 +367,10 @@ function TicketsPageContent() {
           workItem={selectedTicket ? ticketToWorkItem(selectedTicket) : null}
           isOpen={!!selectedTicket}
           onClose={() => setSelectedTicket(null)}
+          onDeleted={(workItemId) => {
+            setTickets((prev) => prev.filter((t) => t.id !== workItemId));
+            fetchTickets();
+          }}
           onStateChange={handleDialogStateChange}
           onAssigneeChange={handleDialogAssigneeChange}
           onPriorityChange={handleDialogPriorityChange}

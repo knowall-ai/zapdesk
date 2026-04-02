@@ -490,6 +490,8 @@ export interface WorkItem {
   devOpsUrl: string;
   tags: string[];
   priority?: TicketPriority;
+  resolution?: string;
+  resolvedReason?: string;
   // Optional ticket-specific fields (populated when item is a ticket)
   requester?: Customer;
   organization?: Organization;
