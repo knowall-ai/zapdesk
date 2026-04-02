@@ -28,6 +28,8 @@ export const basicConfig: ProcessTemplateConfig = {
     // Basic template does NOT have Priority field
     priority: undefined,
     priorityValues: undefined,
+    // Basic template does NOT have Resolution field
+    resolutionTypes: undefined,
   },
 
   states: {
