@@ -10,17 +10,24 @@ import { useWorkItemActions } from '@/hooks/useWorkItemActions';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import WorkItemDetailContent from './WorkItemDetailContent';
 import WorkItemDetailSidebar from './WorkItemDetailSidebar';
+import TypeChangeRequiredFields from './TypeChangeRequiredFields';
 
 interface WorkItemDetailDialogProps {
   workItem: WorkItem | null;
   isOpen: boolean;
   onClose: () => void;
+  onDeleted?: (workItemId: number) => void;
   onStateChange?: (workItemId: number, state: string) => Promise<void>;
   onAssigneeChange?: (workItemId: number, assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (workItemId: number, priority: number) => Promise<void>;
+  onTypeChange?: (
+    workItemId: number,
+    type: string,
+    additionalFields?: Record<string, string>
+  ) => Promise<void>;
   onUpdate?: (
     workItemId: number,
-    updates: { title?: string; description?: string }
+    updates: { title?: string; description?: string; resolution?: string }
   ) => Promise<void>;
 }
 
@@ -28,9 +35,11 @@ export default function WorkItemDetailDialog({
   workItem,
   isOpen,
   onClose,
+  onDeleted,
   onStateChange,
   onAssigneeChange,
   onPriorityChange,
+  onTypeChange,
   onUpdate,
 }: WorkItemDetailDialogProps) {
   const router = useRouter();
@@ -68,12 +77,22 @@ export default function WorkItemDetailDialog({
     [onPriorityChange, workItem]
   );
 
+  const boundTypeChange = useCallback(
+    async (type: string, additionalFields?: Record<string, string>) => {
+      if (onTypeChange && workItem) {
+        await onTypeChange(workItem.id, type, additionalFields);
+      }
+    },
+    [onTypeChange, workItem]
+  );
+
   const actions = useWorkItemActions({
     project: workItem?.project,
     workItemType: workItem?.workItemType,
     onStateChange: onStateChange ? boundStateChange : undefined,
     onAssigneeChange: onAssigneeChange ? boundAssigneeChange : undefined,
     onPriorityChange: onPriorityChange ? boundPriorityChange : undefined,
+    onTypeChange: onTypeChange ? boundTypeChange : undefined,
   });
 
   // Fetch comments when dialog opens
@@ -118,7 +137,7 @@ export default function WorkItemDetailDialog({
   );
 
   const handleUpdate = useCallback(
-    async (updates: { title?: string; description?: string }) => {
+    async (updates: { title?: string; description?: string; resolution?: string }) => {
       if (!workItem || !onUpdate) return;
       await onUpdate(workItem.id, updates);
     },
@@ -141,6 +160,28 @@ export default function WorkItemDetailDialog({
       fetchComments();
     }
   }, [isOpen, workItem, fetchComments]);
+
+  // Re-verify ticket exists when user tabs back (e.g., after deleting in DevOps)
+  useEffect(() => {
+    if (!isOpen || !workItem || !hasOrganization) return;
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}/exists`);
+        if (response.status === 404) {
+          onClose();
+          onDeleted?.(workItem.id);
+        }
+        // Ignore other errors (auth, throttling, 5xx) — don't close on transient failures
+      } catch {
+        // Network error — don't close on transient failures
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isOpen, workItem, fetchDevOps, hasOrganization, onClose, onDeleted]);
 
   if (!workItem) return null;
 
@@ -266,27 +307,47 @@ export default function WorkItemDetailDialog({
         showEffortHours
         canEditAssignee={!!onAssigneeChange}
         canEditPriority={!!onPriorityChange}
+        canEditType={!!onTypeChange}
       />
     </div>
   );
 
   return (
-    <TicketDialogShell
-      isOpen={isOpen}
-      onClose={onClose}
-      headerLeft={headerLeft}
-      headerRight={headerRight}
-      sidebar={sidebar}
-    >
-      <WorkItemDetailContent
-        workItem={workItem}
-        comments={comments}
-        isLoadingComments={isLoadingComments}
-        onAddComment={handleAddComment}
-        onUpdate={onUpdate ? handleUpdate : undefined}
-        showEffortTracking
-        compact
-      />
-    </TicketDialogShell>
+    <>
+      <TicketDialogShell
+        isOpen={isOpen}
+        onClose={onClose}
+        headerLeft={headerLeft}
+        headerRight={headerRight}
+        sidebar={sidebar}
+      >
+        <WorkItemDetailContent
+          workItem={workItem}
+          comments={comments}
+          isLoadingComments={isLoadingComments}
+          onAddComment={handleAddComment}
+          onUpdate={onUpdate ? handleUpdate : undefined}
+          showEffortTracking
+          compact
+        />
+      </TicketDialogShell>
+
+      {/* Required fields modal for type change */}
+      {actions.pendingTypeChange && (
+        <TypeChangeRequiredFields
+          targetType={actions.pendingTypeChange.type}
+          requiredFields={actions.pendingTypeChange.requiredFields}
+          fieldValues={actions.pendingTypeFieldValues}
+          onFieldChange={actions.setPendingTypeFieldValue}
+          onConfirm={actions.confirmPendingTypeChange}
+          onCancel={actions.cancelPendingTypeChange}
+          isUpdating={actions.isUpdatingType}
+          members={actions.pendingTypeMembers}
+          memberSearch={actions.pendingTypeMemberSearch}
+          onMemberSearchChange={actions.setPendingTypeMemberSearch}
+          filteredMembers={actions.filteredPendingTypeMembers}
+        />
+      )}
+    </>
   );
 }

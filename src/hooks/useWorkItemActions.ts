@@ -1,8 +1,16 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import type { User, WorkItemState } from '@/types';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import type { User, WorkItemState, WorkItemType } from '@/types';
 import { ensureActiveState } from '@/types';
+import { useDevOpsApi } from '@/hooks/useDevOpsApi';
+
+export interface RequiredField {
+  referenceName: string;
+  name: string;
+  type: string;
+  allowedValues?: string[];
+}
 
 interface UseWorkItemActionsOptions {
   project?: string;
@@ -10,6 +18,7 @@ interface UseWorkItemActionsOptions {
   onStateChange?: (state: string) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
+  onTypeChange?: (type: string, additionalFields?: Record<string, string>) => Promise<void>;
 }
 
 export interface WorkItemActions {
@@ -37,6 +46,26 @@ export interface WorkItemActions {
   isUpdatingPriority: boolean;
   handlePrioritySelect: (priority: number) => Promise<void>;
 
+  // Type dropdown
+  isTypeDropdownOpen: boolean;
+  setIsTypeDropdownOpen: (open: boolean) => void;
+  availableTypes: WorkItemType[];
+  isLoadingTypes: boolean;
+  isUpdatingType: boolean;
+  handleTypeSelect: (type: string) => Promise<void>;
+
+  // Pending type change (required fields)
+  pendingTypeChange: { type: string; requiredFields: RequiredField[] } | null;
+  isLoadingRequiredFields: boolean;
+  pendingTypeFieldValues: Record<string, string>;
+  setPendingTypeFieldValue: (fieldRef: string, value: string) => void;
+  confirmPendingTypeChange: () => Promise<void>;
+  cancelPendingTypeChange: () => void;
+  pendingTypeMembers: User[];
+  pendingTypeMemberSearch: string;
+  setPendingTypeMemberSearch: (search: string) => void;
+  filteredPendingTypeMembers: User[];
+
   // Reset all dropdowns
   resetAll: () => void;
   // Reset available states (for when work item type changes)
@@ -49,6 +78,7 @@ export function useWorkItemActions({
   onStateChange,
   onAssigneeChange,
   onPriorityChange,
+  onTypeChange,
 }: UseWorkItemActionsOptions): WorkItemActions {
   // State dropdown
   const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
@@ -66,6 +96,25 @@ export function useWorkItemActions({
   // Priority dropdown
   const [isPriorityDropdownOpen, setIsPriorityDropdownOpen] = useState(false);
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
+
+  // Type dropdown
+  const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
+  const [availableTypes, setAvailableTypes] = useState<WorkItemType[]>([]);
+  const [isLoadingTypes, setIsLoadingTypes] = useState(false);
+  const [isUpdatingType, setIsUpdatingType] = useState(false);
+  const typesProjectRef = useRef<string | undefined>(undefined);
+
+  // Pending type change (required fields)
+  const [pendingTypeChange, setPendingTypeChange] = useState<{
+    type: string;
+    requiredFields: RequiredField[];
+  } | null>(null);
+  const [isLoadingRequiredFields, setIsLoadingRequiredFields] = useState(false);
+  const [pendingTypeFieldValues, setPendingTypeFieldValues] = useState<Record<string, string>>({});
+  const [pendingTypeMembers, setPendingTypeMembers] = useState<User[]>([]);
+  const [pendingTypeMemberSearch, setPendingTypeMemberSearch] = useState('');
+
+  const { get: devOpsGet } = useDevOpsApi();
 
   // Fetch available states when dropdown opens
   useEffect(() => {
@@ -137,6 +186,50 @@ export function useWorkItemActions({
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
   }, [teamMembers, assigneeSearch]);
 
+  // Filter members for pending type change (people picker fields like Found By)
+  const filteredPendingTypeMembers = useMemo(() => {
+    return pendingTypeMembers
+      .filter((member) => {
+        const isStakeholder =
+          member.accessLevel?.toLowerCase().includes('stakeholder') ||
+          member.licenseType?.toLowerCase().includes('stakeholder');
+        return !isStakeholder;
+      })
+      .filter((member) => {
+        if (!pendingTypeMemberSearch) return true;
+        const search = pendingTypeMemberSearch.toLowerCase();
+        return (
+          member.displayName.toLowerCase().includes(search) ||
+          member.email?.toLowerCase().includes(search)
+        );
+      })
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }, [pendingTypeMembers, pendingTypeMemberSearch]);
+
+  const setPendingTypeFieldValue = useCallback((fieldRef: string, value: string) => {
+    setPendingTypeFieldValues((prev) => ({ ...prev, [fieldRef]: value }));
+  }, []);
+
+  const cancelPendingTypeChange = useCallback(() => {
+    setPendingTypeChange(null);
+    setPendingTypeFieldValues({});
+    setPendingTypeMemberSearch('');
+  }, []);
+
+  const confirmPendingTypeChange = useCallback(async () => {
+    if (!pendingTypeChange || !onTypeChange) return;
+    setIsUpdatingType(true);
+    try {
+      await onTypeChange(pendingTypeChange.type, pendingTypeFieldValues);
+      setPendingTypeChange(null);
+      setPendingTypeFieldValues({});
+      setPendingTypeMemberSearch('');
+      setIsTypeDropdownOpen(false);
+    } finally {
+      setIsUpdatingType(false);
+    }
+  }, [pendingTypeChange, pendingTypeFieldValues, onTypeChange]);
+
   const handleStateSelect = useCallback(
     async (state: string) => {
       if (!onStateChange) return;
@@ -180,11 +273,108 @@ export function useWorkItemActions({
     [onPriorityChange]
   );
 
+  // Reset available types when project changes
+  useEffect(() => {
+    if (project !== typesProjectRef.current) {
+      setAvailableTypes([]);
+      typesProjectRef.current = project;
+    }
+  }, [project]);
+
+  // Fetch available types when type dropdown opens
+  useEffect(() => {
+    if (isTypeDropdownOpen && availableTypes.length === 0 && project) {
+      const fetchTypes = async () => {
+        setIsLoadingTypes(true);
+        try {
+          const response = await devOpsGet(
+            `/api/devops/projects/${encodeURIComponent(project)}/workitemtypes`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            setAvailableTypes(data.types || []);
+          }
+        } catch (err) {
+          console.error('Failed to fetch work item types:', err);
+        } finally {
+          setIsLoadingTypes(false);
+        }
+      };
+      fetchTypes();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTypeDropdownOpen, project]);
+
+  const handleTypeSelect = useCallback(
+    async (type: string) => {
+      if (!onTypeChange || type === workItemType) {
+        setIsTypeDropdownOpen(false);
+        return;
+      }
+
+      // Check if the target type has required fields
+      if (project) {
+        setIsLoadingRequiredFields(true);
+        setIsTypeDropdownOpen(false);
+        try {
+          const response = await devOpsGet(
+            `/api/devops/projects/${encodeURIComponent(project)}/required-fields?workItemType=${encodeURIComponent(type)}`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            const fields: RequiredField[] = data.fields || [];
+            if (fields.length > 0) {
+              // Has required fields — show the modal
+              setPendingTypeChange({ type, requiredFields: fields });
+              setPendingTypeFieldValues({});
+              setPendingTypeMemberSearch('');
+
+              // Pre-fetch team members for people picker fields (e.g., Found By)
+              const hasPeopleField = fields.some((f) => f.referenceName === 'Custom.FoundBy');
+              if (hasPeopleField && pendingTypeMembers.length === 0) {
+                try {
+                  const membersResponse = await devOpsGet(
+                    `/api/devops/projects/${encodeURIComponent(project)}/members`
+                  );
+                  if (membersResponse.ok) {
+                    const membersData = await membersResponse.json();
+                    setPendingTypeMembers(membersData.members || []);
+                  }
+                } catch (err) {
+                  console.error('Failed to fetch members for type change:', err);
+                }
+              }
+              return;
+            }
+          }
+        } catch (err) {
+          console.error('Failed to fetch required fields:', err);
+        } finally {
+          setIsLoadingRequiredFields(false);
+        }
+      }
+
+      // No required fields — proceed directly
+      setIsUpdatingType(true);
+      try {
+        await onTypeChange(type);
+        setIsTypeDropdownOpen(false);
+      } finally {
+        setIsUpdatingType(false);
+      }
+    },
+    [onTypeChange, workItemType, project, devOpsGet, pendingTypeMembers.length]
+  );
+
   const resetAll = useCallback(() => {
     setIsStateDropdownOpen(false);
     setIsAssigneeDropdownOpen(false);
     setIsPriorityDropdownOpen(false);
+    setIsTypeDropdownOpen(false);
     setAssigneeSearch('');
+    setPendingTypeChange(null);
+    setPendingTypeFieldValues({});
+    setPendingTypeMemberSearch('');
   }, []);
 
   const resetStates = useCallback(() => {
@@ -212,6 +402,24 @@ export function useWorkItemActions({
     setIsPriorityDropdownOpen,
     isUpdatingPriority,
     handlePrioritySelect,
+
+    isTypeDropdownOpen,
+    setIsTypeDropdownOpen,
+    availableTypes,
+    isLoadingTypes,
+    isUpdatingType,
+    handleTypeSelect,
+
+    pendingTypeChange,
+    isLoadingRequiredFields,
+    pendingTypeFieldValues,
+    setPendingTypeFieldValue,
+    confirmPendingTypeChange,
+    cancelPendingTypeChange,
+    pendingTypeMembers,
+    pendingTypeMemberSearch,
+    setPendingTypeMemberSearch,
+    filteredPendingTypeMembers,
 
     resetAll,
     resetStates,

@@ -25,9 +25,24 @@ import type {
   ClassificationNode,
 } from '@/types';
 import { parseSLAFromDescription, calculateTicketSLA, DEFAULT_SLA_LEVEL } from './sla';
+import { getResolutionFieldRef, getTemplateConfig } from '@/config/process-templates';
 
 const DEVOPS_ORG = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
 const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
+
+/**
+ * Read the resolution value from a work item, checking all possible field names
+ * (e.g., Microsoft.VSTS.Common.Resolution for Bug, Custom.TaskResolution for Task)
+ */
+function readResolutionField(fields: Record<string, unknown>): string | undefined {
+  // Check standard field first, then known custom fields
+  const candidates = ['Microsoft.VSTS.Common.Resolution', 'Custom.TaskResolution'];
+  for (const ref of candidates) {
+    const value = fields[ref] as string;
+    if (value) return value;
+  }
+  return undefined;
+}
 
 // Map Azure DevOps state category to Zendesk-like status
 // Categories are consistent across all process templates (Basic, Agile, Scrum, CMMI)
@@ -78,6 +93,34 @@ export function mapStatusToState(status: TicketStatus): string {
     Closed: 'Closed',
   };
   return statusMap[status] || 'Active';
+}
+
+// All effort estimate fields on Features (all stored in days in Azure DevOps)
+const FEATURE_EFFORT_FIELDS = [
+  'Microsoft.VSTS.Scheduling.Effort',
+  'Custom.StrategicEffortDays',
+  'Custom.PrepEffortDays',
+  'Custom.DesignEffortDays',
+  'Custom.Engineereffort',
+  'Custom.TestEffortDays',
+  'Custom.PlanningEffortDays',
+  'Custom.OperateEffortDays',
+  'Custom.Architecteffort',
+  'Custom.Managereffort',
+];
+
+// Sum all effort fields and convert from days to hours (8h/day)
+function sumEffortFields(fields: Record<string, unknown>): number | undefined {
+  let total = 0;
+  let hasValue = false;
+  for (const field of FEATURE_EFFORT_FIELDS) {
+    const raw = fields[field];
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      total += raw;
+      hasValue = true;
+    }
+  }
+  return hasValue ? total * 8 : undefined;
 }
 
 // Map priority numbers to Zendesk-like priorities
@@ -146,6 +189,8 @@ export function ticketToWorkItem(ticket: Ticket): WorkItem {
     devOpsUrl: ticket.devOpsUrl,
     tags: ticket.tags,
     priority: ticket.priority,
+    resolution: ticket.resolution,
+    resolvedReason: ticket.resolvedReason,
     requester: ticket.requester,
     organization: ticket.organization,
   };
@@ -161,6 +206,7 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     description: fields['System.Description'] || '',
     reproSteps: (fields['Microsoft.VSTS.TCM.ReproSteps'] as string) || undefined,
     systemInfo: (fields['Microsoft.VSTS.TCM.SystemInfo'] as string) || undefined,
+    resolution: readResolutionField(fields),
     resolvedReason: (fields['Microsoft.VSTS.Common.ResolvedReason'] as string) || undefined,
     status: mapStateToStatus(fields['System.State']),
     devOpsState: fields['System.State'], // Preserve original DevOps state
@@ -287,17 +333,47 @@ export class AzureDevOpsService {
     }
   }
 
+  // Get state definitions for a work item type (name, color, category from DevOps)
+  async getWorkItemTypeStates(
+    projectName: string,
+    typeName: string
+  ): Promise<{ name: string; color: string; category: string }[]> {
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(typeName)}/states?api-version=7.0`,
+        { headers: this.headers }
+      );
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (data.value || []).map((s: { name: string; color: string; category: string }) => ({
+        name: s.name,
+        color: s.color,
+        category: s.category,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
   // Get work items from a specific project
   // By default, filters to work items with "ticket" tag
   // Set ticketsOnly=false to get all work items regardless of tags
   async getTickets(
     projectName: string,
-    options?: { additionalFilters?: string; ticketsOnly?: boolean }
+    options?: {
+      additionalFilters?: string;
+      ticketsOnly?: boolean;
+      allowedTypes?: string[];
+    }
   ): Promise<DevOpsWorkItem[]> {
-    const { additionalFilters, ticketsOnly = true } = options || {};
+    const { additionalFilters, ticketsOnly = true, allowedTypes } = options || {};
 
     // WIQL query - optionally filter by "ticket" tag
     const ticketTagClause = ticketsOnly ? "AND [System.Tags] CONTAINS 'ticket'" : '';
+    // Optionally restrict to specific work item types (e.g., exclude Epic, Feature, User Story)
+    const typeClause = allowedTypes?.length
+      ? `AND [System.WorkItemType] IN (${allowedTypes.map((t) => `'${escapeWiql(t)}'`).join(', ')})`
+      : '';
     const wiql = {
       query: `
         SELECT [System.Id], [System.Title], [System.State], [System.CreatedDate],
@@ -307,6 +383,7 @@ export class AzureDevOpsService {
         FROM WorkItems
         WHERE [System.TeamProject] = '${escapeWiql(projectName)}'
           ${ticketTagClause}
+          ${typeClause}
           ${additionalFilters || ''}
         ORDER BY [System.ChangedDate] DESC
       `,
@@ -351,6 +428,10 @@ export class AzureDevOpsService {
         'System.TeamProject',
         'System.WorkItemType',
         'System.AreaPath',
+        'Microsoft.VSTS.Common.ResolvedReason',
+        'Microsoft.VSTS.Common.Resolution',
+        'Microsoft.VSTS.TCM.ReproSteps',
+        'Microsoft.VSTS.TCM.SystemInfo',
       ].join(',');
       const workItemsResponse = await fetch(
         `${this.baseUrl}/_apis/wit/workitems?ids=${batch.join(',')}&fields=${fields}&api-version=7.0`,
@@ -380,6 +461,18 @@ export class AzureDevOpsService {
     }
 
     return response.json();
+  }
+
+  // Lightweight check if a work item exists (org-level, no project needed, minimal fields)
+  // Returns: 'exists' | 'not_found' | 'error'
+  async workItemExists(workItemId: number): Promise<'exists' | 'not_found' | 'error'> {
+    const response = await fetch(
+      `${this.baseUrl}/_apis/wit/workitems/${workItemId}?fields=System.Id&api-version=7.0`,
+      { headers: this.headers }
+    );
+    if (response.ok) return 'exists';
+    if (response.status === 404) return 'not_found';
+    return 'error';
   }
 
   // Get comments for a work item
@@ -529,20 +622,42 @@ export class AzureDevOpsService {
       });
     }
 
-    const response = await fetch(
-      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`,
-      {
-        method: 'POST',
-        headers: {
-          ...this.headers,
-          'Content-Type': 'application/json-patch+json',
-        },
-        body: JSON.stringify(patchDocument),
-      }
-    );
+    const createUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`;
+    const createHeaders = {
+      ...this.headers,
+      'Content-Type': 'application/json-patch+json',
+    };
+
+    const response = await fetch(createUrl, {
+      method: 'POST',
+      headers: createHeaders,
+      body: JSON.stringify(patchDocument),
+    });
 
     if (!response.ok) {
-      throw new Error(`Failed to create work item: ${response.statusText}`);
+      const errorText = await response.text();
+
+      // Handle required field validation errors by fetching defaults and retrying
+      const retryDoc = await this.resolveRequiredFieldErrors(
+        errorText,
+        patchDocument,
+        projectName,
+        workItemType
+      );
+      if (retryDoc) {
+        const retryResponse = await fetch(createUrl, {
+          method: 'POST',
+          headers: createHeaders,
+          body: JSON.stringify(retryDoc),
+        });
+        if (retryResponse.ok) {
+          return retryResponse.json();
+        }
+        const retryError = await retryResponse.text();
+        throw new Error(`Failed to create work item: ${retryResponse.statusText} - ${retryError}`);
+      }
+
+      throw new Error(`Failed to create work item: ${response.statusText} - ${errorText}`);
     }
 
     return response.json();
@@ -648,6 +763,7 @@ export class AzureDevOpsService {
       workItemType?: string;
       hasPriority?: boolean;
       priorityFieldRef?: string;
+      additionalFields?: Record<string, string | number>;
       iterationPath?: string;
       areaPath?: string;
     } = {}
@@ -659,6 +775,7 @@ export class AzureDevOpsService {
       workItemType = 'Task',
       hasPriority = true,
       priorityFieldRef,
+      additionalFields,
       iterationPath,
       areaPath,
     } = options;
@@ -690,24 +807,150 @@ export class AzureDevOpsService {
       patchDocument.push({ op: 'add', path: '/fields/System.AreaPath', value: areaPath });
     }
 
-    const response = await fetch(
-      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`,
-      {
-        method: 'POST',
-        headers: {
-          ...this.headers,
-          'Content-Type': 'application/json-patch+json',
-        },
-        body: JSON.stringify(patchDocument),
+    // Append any additional required fields, excluding fields already set above
+    const reservedFields = new Set([
+      'System.Title',
+      'System.Description',
+      'System.Tags',
+      'System.AssignedTo',
+    ]);
+    if (additionalFields) {
+      for (const [key, value] of Object.entries(additionalFields)) {
+        if (value != null && value !== '' && !reservedFields.has(key)) {
+          patchDocument.push({ op: 'add', path: `/fields/${key}`, value });
+        }
       }
-    );
+    }
+
+    const createUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`;
+    const createHeaders = {
+      ...this.headers,
+      'Content-Type': 'application/json-patch+json',
+    };
+
+    const response = await fetch(createUrl, {
+      method: 'POST',
+      headers: createHeaders,
+      body: JSON.stringify(patchDocument),
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
+
+      // Handle required field validation errors by fetching defaults and retrying
+      const retryDoc = await this.resolveRequiredFieldErrors(
+        errorText,
+        patchDocument,
+        projectName,
+        workItemType
+      );
+      if (retryDoc) {
+        const retryResponse = await fetch(createUrl, {
+          method: 'POST',
+          headers: createHeaders,
+          body: JSON.stringify(retryDoc),
+        });
+        if (retryResponse.ok) {
+          return retryResponse.json();
+        }
+        const retryError = await retryResponse.text();
+        throw new Error(`Failed to create work item: ${retryResponse.statusText} - ${retryError}`);
+      }
+
       throw new Error(`Failed to create work item: ${response.statusText} - ${errorText}`);
     }
 
     return response.json();
+  }
+
+  /**
+   * Parse RuleValidationException errors, fetch allowed values for required fields,
+   * and return an updated patch document with defaults. Returns null if not applicable.
+   */
+  private async resolveRequiredFieldErrors(
+    errorText: string,
+    patchDocument: Array<{ op: string; path: string; value: string | number }>,
+    projectName: string,
+    workItemType: string
+  ): Promise<Array<{ op: string; path: string; value: string | number }> | null> {
+    try {
+      const errorData = JSON.parse(errorText);
+      const ruleErrors = errorData?.customProperties?.RuleValidationErrors;
+      if (!ruleErrors || !Array.isArray(ruleErrors) || ruleErrors.length === 0) {
+        return null;
+      }
+
+      const existingFields = new Set(patchDocument.map((d) => d.path));
+      const retryDoc = [...patchDocument];
+      let addedFields = 0;
+
+      // Only auto-fill fields with constrained value lists (e.g., Severity, Priority).
+      // Skip identity/people fields — those require user input via the UI.
+      const IDENTITY_FIELD_PREFIXES = ['Custom.FoundBy', 'System.AssignedTo', 'System.CreatedBy'];
+
+      for (const ruleError of ruleErrors) {
+        const fieldRef: string = ruleError.fieldReferenceName;
+        if (!fieldRef || existingFields.has(`/fields/${fieldRef}`)) continue;
+
+        // Never auto-fill identity fields — they need explicit user selection
+        if (IDENTITY_FIELD_PREFIXES.some((p) => fieldRef.startsWith(p))) {
+          console.warn(`Skipping auto-fill for identity field ${fieldRef} — requires user input`);
+          continue;
+        }
+
+        try {
+          const fieldUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/fields/${encodeURIComponent(fieldRef)}?$expand=allowedValues&api-version=7.1`;
+          const fieldResponse = await fetch(fieldUrl, { headers: this.headers });
+          if (fieldResponse.ok) {
+            const fieldData = await fieldResponse.json();
+            const allowedValues: string[] = fieldData.allowedValues || [];
+            // Only auto-fill if the field has a small, constrained set of values
+            if (allowedValues.length > 0 && allowedValues.length <= 20) {
+              retryDoc.push({
+                op: 'add',
+                path: `/fields/${fieldRef}`,
+                value: allowedValues[0],
+              });
+              addedFields++;
+              console.log(
+                `Auto-filling required field ${fieldRef}: "${allowedValues[0]}" (${allowedValues.length} options)`
+              );
+            } else if (allowedValues.length > 20) {
+              console.warn(
+                `Skipping auto-fill for ${fieldRef} — too many options (${allowedValues.length}), requires user input`
+              );
+            }
+          }
+        } catch (fieldErr) {
+          console.warn(`Could not fetch allowed values for ${fieldRef}:`, fieldErr);
+        }
+      }
+
+      return addedFields > 0 ? retryDoc : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Get field info for a work item type (including allowed values and whether it's required)
+  async getWorkItemTypeField(
+    projectName: string,
+    workItemType: string,
+    fieldRef: string
+  ): Promise<{ required: boolean; allowedValues: string[]; name: string }> {
+    const url = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/fields/${encodeURIComponent(fieldRef)}?$expand=allowedValues&api-version=7.1`;
+    const response = await fetch(url, { headers: this.headers });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch field info: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return {
+      required: data.alwaysRequired || false,
+      allowedValues: data.allowedValues || [],
+      name: data.name || fieldRef,
+    };
   }
 
   // Add a comment to a work item
@@ -724,6 +967,178 @@ export class AzureDevOpsService {
     if (!response.ok) {
       throw new Error(`Failed to add comment: ${response.statusText}`);
     }
+  }
+
+  // Change work item type (e.g., Task → Bug)
+  // Azure DevOps supports this via PATCH with System.WorkItemType in the JSON patch body
+  async changeWorkItemType(
+    projectName: string,
+    workItemId: number,
+    newType: string,
+    additionalFields?: Record<string, string | number>
+  ): Promise<DevOpsWorkItem> {
+    // First, get the current work item to read its current state
+    const currentItem = await this.getWorkItem(projectName, workItemId);
+    const currentState = currentItem.fields['System.State'];
+
+    // Get valid states for the target work item type
+    let targetState = currentState;
+    try {
+      const statesUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(newType)}/states?api-version=7.1`;
+      const statesResponse = await fetch(statesUrl, { headers: this.headers });
+      if (statesResponse.ok) {
+        const statesData = await statesResponse.json();
+        const validStates: { name: string; category: string }[] = statesData.value;
+        const validStateNames = validStates.map((s) => s.name);
+
+        if (!validStateNames.includes(currentState)) {
+          // Try to find a state in the same category as the current state
+          const currentTypeStatesUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(currentItem.fields['System.WorkItemType'])}/states?api-version=7.1`;
+          const currentStatesResponse = await fetch(currentTypeStatesUrl, {
+            headers: this.headers,
+          });
+          let currentCategory = 'Proposed';
+          if (currentStatesResponse.ok) {
+            const currentStatesData = await currentStatesResponse.json();
+            const currentStateInfo = currentStatesData.value.find(
+              (s: { name: string }) => s.name === currentState
+            );
+            if (currentStateInfo) {
+              currentCategory = currentStateInfo.category;
+            }
+          }
+
+          // Find a matching state by category, or fall back to first state
+          const matchByCategory = validStates.find((s) => s.category === currentCategory);
+          targetState = matchByCategory ? matchByCategory.name : validStates[0]?.name || 'New';
+        }
+
+        console.log(
+          `Type change: ${currentItem.fields['System.WorkItemType']} → ${newType}, state: ${currentState} → ${targetState}, valid states: [${validStateNames.join(', ')}]`
+        );
+      } else {
+        console.warn('Failed to fetch states for target type:', statesResponse.status);
+      }
+    } catch (err) {
+      console.warn('Could not fetch valid states for target type, keeping current state:', err);
+    }
+
+    // Per Microsoft docs: use org-level URL (no project), set both WorkItemType and State
+    // See: https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/work-items/update
+    const patchDoc: Array<{ op: string; path: string; value: string | number }> = [
+      {
+        op: 'add',
+        path: '/fields/System.WorkItemType',
+        value: newType,
+      },
+      {
+        op: 'add',
+        path: '/fields/System.State',
+        value: targetState,
+      },
+    ];
+
+    // Add any additional fields (e.g. Severity, Found By for Enhancement type)
+    if (additionalFields) {
+      for (const [fieldRef, value] of Object.entries(additionalFields)) {
+        patchDoc.push({
+          op: 'add',
+          path: `/fields/${fieldRef}`,
+          value,
+        });
+      }
+    }
+
+    console.log(`Changing work item ${workItemId} type to ${newType} with state ${targetState}`);
+
+    const url = `${this.baseUrl}/_apis/wit/workitems/${workItemId}?api-version=7.1`;
+    const patchHeaders = {
+      ...this.headers,
+      'Content-Type': 'application/json-patch+json',
+    };
+
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: patchHeaders,
+      body: JSON.stringify(patchDoc),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+
+      // Check for required field validation errors and retry with defaults
+      try {
+        const errorData = JSON.parse(errorText);
+        const ruleErrors = errorData?.customProperties?.RuleValidationErrors;
+        if (ruleErrors && Array.isArray(ruleErrors) && ruleErrors.length > 0) {
+          console.log('Type change has required field errors, fetching defaults...');
+          const retryPatchDoc = [...patchDoc];
+
+          for (const ruleError of ruleErrors) {
+            const fieldRef: string = ruleError.fieldReferenceName;
+            if (!fieldRef) continue;
+
+            // Skip fields we already set
+            if (fieldRef === 'System.WorkItemType' || fieldRef === 'System.State') continue;
+
+            // Fetch allowed values for this field
+            try {
+              const fieldUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(newType)}/fields/${encodeURIComponent(fieldRef)}?$expand=allowedValues&api-version=7.1`;
+              const fieldResponse = await fetch(fieldUrl, {
+                headers: this.headers,
+              });
+              if (fieldResponse.ok) {
+                const fieldData = await fieldResponse.json();
+                const allowedValues: string[] = fieldData.allowedValues || [];
+                if (allowedValues.length > 0) {
+                  // Use the first allowed value as default
+                  retryPatchDoc.push({
+                    op: 'add',
+                    path: `/fields/${fieldRef}`,
+                    value: allowedValues[0],
+                  });
+                  console.log(
+                    `Setting default for ${fieldRef}: "${allowedValues[0]}" (from ${allowedValues.length} options)`
+                  );
+                }
+              }
+            } catch (fieldErr) {
+              console.warn(`Could not fetch allowed values for ${fieldRef}:`, fieldErr);
+            }
+          }
+
+          // Retry with defaults for required fields
+          if (retryPatchDoc.length > patchDoc.length) {
+            console.log('Retrying type change with required field defaults...');
+            const retryResponse = await fetch(url, {
+              method: 'PATCH',
+              headers: patchHeaders,
+              body: JSON.stringify(retryPatchDoc),
+            });
+
+            if (retryResponse.ok) {
+              return retryResponse.json();
+            }
+
+            const retryError = await retryResponse.text();
+            console.error('Retry also failed:', retryResponse.status, retryError);
+            throw new Error(
+              `Failed to change work item type: ${retryResponse.statusText} - ${retryError}`
+            );
+          }
+        }
+      } catch (parseErr) {
+        // If error isn't JSON or retry logic fails, fall through to original error
+        if (parseErr instanceof Error && parseErr.message.startsWith('Failed to change')) {
+          throw parseErr;
+        }
+      }
+
+      console.error('Change type API response:', response.status, errorText);
+      throw new Error(`Failed to change work item type: ${response.statusText} - ${errorText}`);
+    }
+
+    return response.json();
   }
 
   // Update work item state
@@ -762,6 +1177,8 @@ export class AzureDevOpsService {
       priority?: number;
       title?: string;
       description?: string;
+      resolution?: string;
+      workItemType?: string;
     }
   ): Promise<DevOpsWorkItem> {
     const patchDocument: Array<{ op: string; path: string; value: string | number | null }> = [];
@@ -800,6 +1217,31 @@ export class AzureDevOpsService {
         op: 'add',
         path: '/fields/Microsoft.VSTS.Common.Priority',
         value: updates.priority,
+      });
+    }
+
+    if (updates.resolution !== undefined) {
+      const templateConfig = getTemplateConfig();
+      let resFieldRef = getResolutionFieldRef(updates.workItemType || '', templateConfig);
+
+      // If using a custom field ref, verify it exists on this work item type
+      // Falls back to standard Resolution field if the custom field isn't set up
+      const standardField = 'Microsoft.VSTS.Common.Resolution';
+      if (resFieldRef !== standardField && updates.workItemType) {
+        try {
+          await this.getWorkItemTypeField(projectName, updates.workItemType, resFieldRef);
+        } catch {
+          console.warn(
+            `Resolution field ${resFieldRef} not found on ${updates.workItemType}, falling back to ${standardField}`
+          );
+          resFieldRef = standardField;
+        }
+      }
+
+      patchDocument.push({
+        op: 'add',
+        path: `/fields/${resFieldRef}`,
+        value: updates.resolution,
       });
     }
 
@@ -994,13 +1436,16 @@ export class AzureDevOpsService {
 
   // Get all tickets from all accessible projects (fetches in parallel)
   // Set ticketsOnly=false to get all work items (not just those tagged as "ticket")
-  async getAllTickets(ticketsOnly: boolean = true): Promise<Ticket[]> {
+  async getAllTickets(ticketsOnly: boolean = true, allowedTypes?: string[]): Promise<Ticket[]> {
     const projects = await this.getProjects();
     const slaMap = await getProjectSLAMap();
 
     const results = await Promise.allSettled(
       projects.map(async (project) => {
-        const workItems = await this.getTickets(project.name, { ticketsOnly });
+        const workItems = await this.getTickets(project.name, {
+          ticketsOnly,
+          allowedTypes,
+        });
         const slaLevel = slaMap[project.name] || DEFAULT_SLA_LEVEL;
         const organization: Organization = {
           id: project.id,
@@ -1634,7 +2079,8 @@ export class AzureDevOpsService {
       completedWork: (fields['Microsoft.VSTS.Scheduling.CompletedWork'] as number) || 0,
       remainingWork: (fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number) || 0,
       originalEstimate: (fields['Microsoft.VSTS.Scheduling.OriginalEstimate'] as number) || 0,
-      effort: fields['Microsoft.VSTS.Scheduling.Effort'] as number | undefined,
+      // Sum all effort fields (stored in days in Azure DevOps) and convert to hours (8h/day)
+      effort: sumEffortFields(fields),
       totalWork: 0,
       workItems: [],
       devOpsUrl:
@@ -1678,6 +2124,8 @@ export class AzureDevOpsService {
           .map((t: string) => t.trim())
           .filter(Boolean) || [],
       priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
+      resolution: readResolutionField(fields),
+      resolvedReason: (fields['Microsoft.VSTS.Common.ResolvedReason'] as string) || undefined,
     };
   }
 

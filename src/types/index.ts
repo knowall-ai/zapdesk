@@ -147,6 +147,7 @@ export interface Ticket {
   description: string;
   reproSteps?: string;
   systemInfo?: string;
+  resolution?: string;
   resolvedReason?: string;
   status: TicketStatus;
   devOpsState: string; // Original Azure DevOps state (e.g., 'New', 'Approved', 'To Do', etc.)
@@ -185,6 +186,10 @@ export interface Attachment {
   createdAt: Date;
   createdBy?: User;
 }
+
+// Work item types that appear on the Tickets screen and support bulk actions.
+// Higher-level types (Epic, Feature, User Story) are managed on the Projects screen.
+export const TICKET_WORK_ITEM_TYPES = ['Task', 'Enhancement', 'Issue', 'Bug', 'Risk', 'Question'];
 
 // Maximum file size for attachments (25MB)
 export const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
@@ -485,6 +490,8 @@ export interface WorkItem {
   devOpsUrl: string;
   tags: string[];
   priority?: TicketPriority;
+  resolution?: string;
+  resolvedReason?: string;
   // Optional ticket-specific fields (populated when item is a ticket)
   requester?: Customer;
   organization?: Organization;

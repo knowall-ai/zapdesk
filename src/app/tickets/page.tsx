@@ -153,14 +153,8 @@ function TicketsPageContent() {
     [handleTicketStateChange]
   );
 
-  const handleZapClick = useCallback((item: WorkItem) => {
-    if (item.assignee) {
-      setZapTarget({ agent: item.assignee, ticketId: item.id });
-    }
-  }, []);
-
-  const handleWorkItemUpdate = useCallback(
-    async (workItemId: number, updates: { title?: string; description?: string }) => {
+  const handleDialogAssigneeChange = useCallback(
+    async (workItemId: number, assigneeId: string | null) => {
       const ticket = tickets.find((t) => t.id === workItemId);
       if (!ticket || !selectedOrganization) return;
       const response = await fetch(`/api/devops/tickets/${workItemId}`, {
@@ -169,7 +163,114 @@ function TicketsPageContent() {
           'Content-Type': 'application/json',
           'x-devops-org': selectedOrganization.accountName,
         },
-        body: JSON.stringify({ ...updates, project: ticket.project }),
+        body: JSON.stringify({ assignee: assigneeId, project: ticket.project }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const updatedTicket = data.ticket;
+        if (updatedTicket) {
+          setTickets((prev) => prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)));
+          setSelectedTicket((prev) =>
+            prev && prev.id === updatedTicket.id ? updatedTicket : prev
+          );
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Assignee change failed:', response.status, errorData);
+      }
+    },
+    [tickets, selectedOrganization]
+  );
+
+  const handleDialogPriorityChange = useCallback(
+    async (workItemId: number, priority: number) => {
+      const ticket = tickets.find((t) => t.id === workItemId);
+      if (!ticket || !selectedOrganization) return;
+      const response = await fetch(`/api/devops/tickets/${workItemId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-devops-org': selectedOrganization.accountName,
+        },
+        body: JSON.stringify({ priority, project: ticket.project }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const updatedTicket = data.ticket;
+        if (updatedTicket) {
+          setTickets((prev) => prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)));
+          setSelectedTicket((prev) =>
+            prev && prev.id === updatedTicket.id ? updatedTicket : prev
+          );
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Priority change failed:', response.status, errorData);
+      }
+    },
+    [tickets, selectedOrganization]
+  );
+
+  const handleDialogTypeChange = useCallback(
+    async (workItemId: number, newType: string, additionalFields?: Record<string, string>) => {
+      const ticket = tickets.find((t) => t.id === workItemId);
+      if (!ticket || !selectedOrganization) return;
+      const response = await fetch(`/api/devops/tickets/${workItemId}/type`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-devops-org': selectedOrganization.accountName,
+        },
+        body: JSON.stringify({ type: newType, project: ticket.project, additionalFields }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const updatedTicket = data.ticket;
+        if (updatedTicket) {
+          setTickets((prev) => prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)));
+          setSelectedTicket((prev) =>
+            prev && prev.id === updatedTicket.id ? updatedTicket : prev
+          );
+        } else {
+          // Fallback: update just the type field
+          setTickets((prev) =>
+            prev.map((t) => (t.id === workItemId ? { ...t, workItemType: newType } : t))
+          );
+          setSelectedTicket((prev) => (prev ? { ...prev, workItemType: newType } : null));
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Type change failed:', response.status, errorData);
+        throw new Error(errorData.error || 'Failed to update work item type');
+      }
+    },
+    [tickets, selectedOrganization]
+  );
+
+  const handleZapClick = useCallback((item: WorkItem) => {
+    if (item.assignee) {
+      setZapTarget({ agent: item.assignee, ticketId: item.id });
+    }
+  }, []);
+
+  const handleWorkItemUpdate = useCallback(
+    async (
+      workItemId: number,
+      updates: { title?: string; description?: string; resolution?: string }
+    ) => {
+      const ticket = tickets.find((t) => t.id === workItemId);
+      if (!ticket || !selectedOrganization) return;
+      const response = await fetch(`/api/devops/tickets/${workItemId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-devops-org': selectedOrganization.accountName,
+        },
+        body: JSON.stringify({
+          ...updates,
+          project: ticket.project,
+          workItemType: ticket.workItemType,
+        }),
       });
       if (response.ok) {
         // Update local state
@@ -180,6 +281,7 @@ function TicketsPageContent() {
                   ...t,
                   ...(updates.title && { title: updates.title }),
                   ...(updates.description && { description: updates.description }),
+                  ...(updates.resolution !== undefined && { resolution: updates.resolution }),
                 }
               : t
           )
@@ -191,6 +293,7 @@ function TicketsPageContent() {
                 ...prev,
                 ...(updates.title && { title: updates.title }),
                 ...(updates.description && { description: updates.description }),
+                ...(updates.resolution !== undefined && { resolution: updates.resolution }),
               }
             : null
         );
@@ -232,6 +335,8 @@ function TicketsPageContent() {
             availableTypes={workItemTypes}
             defaultViewMode={defaultViewMode}
             hideTicketsOnlyToggle
+            organization={selectedOrganization?.accountName}
+            onRefresh={fetchTickets}
           />
         </div>
 
@@ -240,7 +345,14 @@ function TicketsPageContent() {
           workItem={selectedTicket ? ticketToWorkItem(selectedTicket) : null}
           isOpen={!!selectedTicket}
           onClose={() => setSelectedTicket(null)}
+          onDeleted={(workItemId) => {
+            setTickets((prev) => prev.filter((t) => t.id !== workItemId));
+            fetchTickets();
+          }}
           onStateChange={handleDialogStateChange}
+          onAssigneeChange={handleDialogAssigneeChange}
+          onPriorityChange={handleDialogPriorityChange}
+          onTypeChange={handleDialogTypeChange}
           onUpdate={handleWorkItemUpdate}
         />
 

@@ -17,6 +17,9 @@ export default function EpicDetailPage() {
   const { selectedOrganization } = useOrganization();
   const [epic, setEpic] = useState<Epic | null>(null);
   const [ticketTypes, setTicketTypes] = useState<WorkItemType[]>([]);
+  const [featureStates, setFeatureStates] = useState<
+    { name: string; color: string; category: string }[]
+  >([]);
   const [loading, setLoading] = useState(true);
 
   const projectId = params.id as string;
@@ -36,6 +39,7 @@ export default function EpicDetailPage() {
       if (epicResponse.ok) {
         const data = await epicResponse.json();
         setEpic(data.epic);
+        setFeatureStates(data.featureStates || []);
         const ticketTypeNames: string[] = data.ticketTypes || [];
         // Use the project name from the epic (not the URL GUID) for the workitemtypes call
         const projectName = data.epic?.project;
@@ -183,6 +187,7 @@ export default function EpicDetailPage() {
             }}
             availableTypes={ticketTypes}
             organization={selectedOrganization?.accountName}
+            featureStates={featureStates}
           />
         ) : (
           <div

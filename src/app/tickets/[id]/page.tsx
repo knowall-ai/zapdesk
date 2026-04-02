@@ -108,6 +108,29 @@ export default function TicketDetailPage() {
     }
   }, [session, ticketId, fetchTicket, fetchHistory, selectedOrganization]);
 
+  // Re-verify ticket exists when user tabs back (e.g., after deleting in DevOps)
+  useEffect(() => {
+    if (!ticket || !selectedOrganization) return;
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const response = await fetch(`/api/devops/tickets/${ticketId}/exists`, {
+          headers: orgHeaders(),
+        });
+        if (response.status === 404) {
+          router.push('/tickets');
+        }
+        // Ignore other errors (auth, throttling, 5xx) — don't redirect on transient failures
+      } catch {
+        // Network error — don't redirect on transient failures
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [ticket, selectedOrganization, ticketId, orgHeaders, router]);
+
   const handleAddComment = async (comment: string) => {
     try {
       const response = await fetch(`/api/devops/tickets/${ticketId}/comments`, {
@@ -180,6 +203,70 @@ export default function TicketDetailPage() {
     }
   };
 
+  const handleTypeChange = async (newType: string, additionalFields?: Record<string, string>) => {
+    if (!ticket) return;
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}/type`, {
+        method: 'PATCH',
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ type: newType, project: ticket.project, additionalFields }),
+      });
+
+      if (response.ok) {
+        await fetchTicket();
+      }
+    } catch (error) {
+      console.error('Failed to change work item type:', error);
+    }
+  };
+
+  const handleDescriptionChange = async (description: string) => {
+    if (!ticket) return;
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          description,
+          project: ticket.project,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update description');
+      }
+
+      await fetchTicket();
+    } catch (error) {
+      console.error('Failed to update description:', error);
+      throw error;
+    }
+  };
+
+  const handleResolutionChange = async (resolution: string) => {
+    if (!ticket) return;
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          resolution,
+          project: ticket.project,
+          workItemType: ticket.workItemType,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update resolution');
+      }
+
+      await fetchTicket();
+    } catch (error) {
+      console.error('Failed to update resolution:', error);
+      throw error;
+    }
+  };
+
   const handleUploadAttachment = async (file: File): Promise<Attachment> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -224,6 +311,9 @@ export default function TicketDetailPage() {
         onStateChange={handleStateChange}
         onAssigneeChange={handleAssigneeChange}
         onPriorityChange={handlePriorityChange}
+        onTypeChange={handleTypeChange}
+        onDescriptionChange={handleDescriptionChange}
+        onResolutionChange={handleResolutionChange}
         onUploadAttachment={handleUploadAttachment}
         onRefreshTicket={fetchTicket}
       />

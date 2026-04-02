@@ -25,6 +25,7 @@ import type {
   User,
   TicketPriority,
   WorkItemState,
+  WorkItemType,
   WorkItemUpdate,
   Attachment,
 } from '@/types';
@@ -40,10 +41,13 @@ import MentionInput from '../common/MentionInput';
 import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
 import TicketHistory from './TicketHistory';
+import TypeChangeRequiredFields from './TypeChangeRequiredFields';
+import type { RequiredField } from '@/hooks/useWorkItemActions';
+import { getTemplateConfig, hasResolutionField } from '@/config/process-templates';
 import { useClickOutside } from '@/hooks';
+import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 
 type DetailTab = 'details' | 'history';
-type DetailsSubTab = 'description' | 'repro-steps' | 'resolution' | 'comments';
 
 interface TicketDetailProps {
   ticket: Ticket;
@@ -54,8 +58,12 @@ interface TicketDetailProps {
   onStateChange?: (state: string) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
+  onTypeChange?: (type: string, additionalFields?: Record<string, string>) => Promise<void>;
+  onDescriptionChange?: (description: string) => Promise<void>;
+  onResolutionChange?: (resolution: string) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onRefreshTicket?: () => Promise<void>;
+  processTemplate?: string;
 }
 
 const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
@@ -74,16 +82,22 @@ export default function TicketDetail({
   onStateChange,
   onAssigneeChange,
   onPriorityChange,
+  onTypeChange,
+  onDescriptionChange,
+  onResolutionChange,
   onUploadAttachment,
   onRefreshTicket,
+  processTemplate,
 }: TicketDetailProps) {
   const router = useRouter();
+  const templateConfig = getTemplateConfig(processTemplate);
+  const showResolution = hasResolutionField(ticket.workItemType, templateConfig);
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
-  const [activeSubTab, setActiveSubTab] = useState<DetailsSubTab>('description');
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
   const [isDetailsSidebarOpen, setIsDetailsSidebarOpen] = useState(false);
+  const { get: devOpsGet } = useDevOpsApi();
 
   // State editing
   const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
@@ -113,6 +127,50 @@ export default function TicketDetail({
   const [isPriorityDropdownOpen, setIsPriorityDropdownOpen] = useState(false);
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
 
+  // Type editing state
+  const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
+  const [availableTypes, setAvailableTypes] = useState<WorkItemType[]>([]);
+  const [isLoadingTypes, setIsLoadingTypes] = useState(false);
+  const [isUpdatingType, setIsUpdatingType] = useState(false);
+
+  // Pending type change (required fields)
+  const [pendingTypeChange, setPendingTypeChange] = useState<{
+    type: string;
+    requiredFields: RequiredField[];
+  } | null>(null);
+  const [pendingTypeFieldValues, setPendingTypeFieldValues] = useState<Record<string, string>>({});
+  const [pendingTypeMembers, setPendingTypeMembers] = useState<User[]>([]);
+  const [pendingTypeMemberSearch, setPendingTypeMemberSearch] = useState('');
+
+  const filteredPendingTypeMembers = useMemo(() => {
+    return pendingTypeMembers
+      .filter((member) => {
+        const isStakeholder =
+          member.accessLevel?.toLowerCase().includes('stakeholder') ||
+          member.licenseType?.toLowerCase().includes('stakeholder');
+        return !isStakeholder;
+      })
+      .filter((member) => {
+        if (!pendingTypeMemberSearch) return true;
+        const search = pendingTypeMemberSearch.toLowerCase();
+        return (
+          member.displayName.toLowerCase().includes(search) ||
+          member.email?.toLowerCase().includes(search)
+        );
+      })
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }, [pendingTypeMembers, pendingTypeMemberSearch]);
+
+  // Description editing state
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [isSavingDescription, setIsSavingDescription] = useState(false);
+  const descriptionRef = useRef<HTMLDivElement>(null);
+
+  // Resolution editing state
+  const [isEditingResolution, setIsEditingResolution] = useState(false);
+  const [isSavingResolution, setIsSavingResolution] = useState(false);
+  const [editResolution, setEditResolution] = useState('');
+
   // Attachment state
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -126,6 +184,7 @@ export default function TicketDetail({
     setAssigneeSearch('');
   }, []);
   const closePriorityDropdown = useCallback(() => setIsPriorityDropdownOpen(false), []);
+  const closeTypeDropdown = useCallback(() => setIsTypeDropdownOpen(false), []);
 
   const stateDropdownRef = useClickOutside<HTMLDivElement>(closeStateDropdown, isStateDropdownOpen);
   const assigneeDropdownRef = useClickOutside<HTMLDivElement>(
@@ -136,6 +195,7 @@ export default function TicketDetail({
     closePriorityDropdown,
     isPriorityDropdownOpen
   );
+  const typeDropdownRef = useClickOutside<HTMLDivElement>(closeTypeDropdown, isTypeDropdownOpen);
 
   // Fetch available states when state dropdown opens
   useEffect(() => {
@@ -173,6 +233,102 @@ export default function TicketDetail({
     }
   };
 
+  // Fetch available types when type dropdown opens
+  useEffect(() => {
+    if (isTypeDropdownOpen && availableTypes.length === 0 && ticket.project) {
+      fetchAvailableTypes();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTypeDropdownOpen, ticket.project]);
+
+  const fetchAvailableTypes = async () => {
+    if (!ticket.project) return;
+    setIsLoadingTypes(true);
+    try {
+      const response = await devOpsGet(
+        `/api/devops/projects/${encodeURIComponent(ticket.project)}/workitemtypes`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableTypes(data.types || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch work item types:', err);
+    } finally {
+      setIsLoadingTypes(false);
+    }
+  };
+
+  const handleTypeSelect = async (typeName: string) => {
+    if (!onTypeChange || typeName === ticket.workItemType) return;
+
+    // Check for required fields first
+    if (ticket.project) {
+      setIsTypeDropdownOpen(false);
+      try {
+        const response = await devOpsGet(
+          `/api/devops/projects/${encodeURIComponent(ticket.project)}/required-fields?workItemType=${encodeURIComponent(typeName)}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const fields: RequiredField[] = data.fields || [];
+          if (fields.length > 0) {
+            setPendingTypeChange({ type: typeName, requiredFields: fields });
+            setPendingTypeFieldValues({});
+            setPendingTypeMemberSearch('');
+
+            // Pre-fetch team members for people picker fields
+            const hasPeopleField = fields.some((f) => f.referenceName === 'Custom.FoundBy');
+            if (hasPeopleField && pendingTypeMembers.length === 0) {
+              try {
+                const membersResponse = await devOpsGet(
+                  `/api/devops/projects/${encodeURIComponent(ticket.project)}/members`
+                );
+                if (membersResponse.ok) {
+                  const membersData = await membersResponse.json();
+                  setPendingTypeMembers(membersData.members || []);
+                }
+              } catch (err) {
+                console.error('Failed to fetch members:', err);
+              }
+            }
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch required fields:', err);
+      }
+    }
+
+    // No required fields — proceed directly
+    setIsUpdatingType(true);
+    try {
+      await onTypeChange(typeName);
+      setIsTypeDropdownOpen(false);
+    } finally {
+      setIsUpdatingType(false);
+    }
+  };
+
+  const handleConfirmPendingTypeChange = async () => {
+    if (!pendingTypeChange || !onTypeChange) return;
+    setIsUpdatingType(true);
+    try {
+      await onTypeChange(pendingTypeChange.type, pendingTypeFieldValues);
+      setPendingTypeChange(null);
+      setPendingTypeFieldValues({});
+      setPendingTypeMemberSearch('');
+    } finally {
+      setIsUpdatingType(false);
+    }
+  };
+
+  const handleCancelPendingTypeChange = () => {
+    setPendingTypeChange(null);
+    setPendingTypeFieldValues({});
+    setPendingTypeMemberSearch('');
+  };
+
   // Fetch team members when assignee dropdown opens
   useEffect(() => {
     if (isAssigneeDropdownOpen && teamMembers.length === 0 && ticket.project) {
@@ -198,21 +354,6 @@ export default function TicketDetail({
       setIsLoadingMembers(false);
     }
   };
-
-  // Build available sub-tabs for the Details tab (only show tabs with content)
-  const detailsSubTabs = useMemo(() => {
-    const tabs: { id: DetailsSubTab; label: string }[] = [
-      { id: 'description', label: 'Description' },
-    ];
-    if (ticket.reproSteps) {
-      tabs.push({ id: 'repro-steps', label: 'Reproduction Steps' });
-    }
-    if (ticket.resolvedReason) {
-      tabs.push({ id: 'resolution', label: 'Resolution' });
-    }
-    tabs.push({ id: 'comments', label: `Comments (${comments.length})` });
-    return tabs;
-  }, [ticket.reproSteps, ticket.resolvedReason, comments.length]);
 
   // Filter members based on search (exclude stakeholders)
   const filteredMembers = useMemo(() => {
@@ -255,6 +396,57 @@ export default function TicketDetail({
     } finally {
       setIsUpdatingPriority(false);
     }
+  };
+
+  // Description editing handlers
+  const handleEditDescription = () => {
+    setIsEditingDescription(true);
+  };
+
+  const handleCancelEditDescription = () => {
+    setIsEditingDescription(false);
+    // Reset content back to original
+    if (descriptionRef.current) {
+      descriptionRef.current.innerHTML = ticket.description || '<em>No description provided</em>';
+    }
+  };
+
+  const handleSaveDescription = async () => {
+    if (!onDescriptionChange || !descriptionRef.current) return;
+    setIsSavingDescription(true);
+    try {
+      await onDescriptionChange(descriptionRef.current.innerHTML);
+      setIsEditingDescription(false);
+    } catch (error) {
+      console.error('Failed to save description:', error);
+    } finally {
+      setIsSavingDescription(false);
+    }
+  };
+
+  const handleStartEditResolution = () => {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = ticket.resolution || '';
+    setEditResolution(tempDiv.textContent || tempDiv.innerText || '');
+    setIsEditingResolution(true);
+  };
+
+  const handleSaveResolution = async () => {
+    if (!onResolutionChange) return;
+    setIsSavingResolution(true);
+    try {
+      await onResolutionChange(editResolution);
+      setIsEditingResolution(false);
+    } catch (error) {
+      console.error('Failed to save resolution:', error);
+    } finally {
+      setIsSavingResolution(false);
+    }
+  };
+
+  const handleCancelResolution = () => {
+    setIsEditingResolution(false);
+    setEditResolution('');
   };
 
   // File attachment handlers
@@ -477,177 +669,296 @@ export default function TicketDetail({
 
         {/* Tab content */}
         {activeTab === 'details' ? (
-          <>
-            {/* Sub-tab bar */}
-            <div
-              className="flex gap-0 border-b px-4"
-              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
-            >
-              {detailsSubTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveSubTab(tab.id)}
-                  className="relative px-3 py-2 text-xs font-medium transition-colors"
-                  style={{
-                    color: activeSubTab === tab.id ? 'var(--primary)' : 'var(--text-muted)',
-                  }}
+          <div className="flex-1 space-y-4 overflow-auto p-4">
+            {/* Description */}
+            <div className="card p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <h3
+                  className="text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
                 >
-                  {tab.label}
-                  {activeSubTab === tab.id && (
-                    <span
-                      className="absolute right-0 bottom-0 left-0 h-0.5"
-                      style={{ backgroundColor: 'var(--primary)' }}
-                    />
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {/* Sub-tab content */}
-            <div className="flex-1 overflow-auto p-4">
-              {activeSubTab === 'description' && (
-                <div className="card p-4">
+                  Description
+                </h3>
+                {onDescriptionChange && (
+                  <div className="flex items-center gap-2">
+                    {isEditingDescription ? (
+                      <>
+                        <button
+                          onClick={handleCancelEditDescription}
+                          disabled={isSavingDescription}
+                          className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSaveDescription}
+                          disabled={isSavingDescription}
+                          className="btn-primary flex items-center gap-1 px-3 py-1 text-sm"
+                        >
+                          {isSavingDescription ? (
+                            <>
+                              <Loader2 size={14} className="animate-spin" />
+                              Saving...
+                            </>
+                          ) : (
+                            'Save'
+                          )}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={handleEditDescription}
+                        className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                        style={{ color: 'var(--primary)' }}
+                      >
+                        Edit
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div
+                ref={descriptionRef}
+                contentEditable={isEditingDescription}
+                suppressContentEditableWarning
+                className={`prose prose-sm prose-invert user-content max-w-none ${isEditingDescription ? 'rounded-md border p-3 outline-none focus:ring-1' : ''}`}
+                style={{
+                  color: 'var(--text-secondary)',
+                  ...(isEditingDescription
+                    ? {
+                        borderColor: 'var(--border)',
+                        minHeight: '150px',
+                      }
+                    : {}),
+                }}
+                dangerouslySetInnerHTML={{
+                  __html: ticket.description || '<em>No description provided</em>',
+                }}
+              />
+              {/* System Info */}
+              {ticket.systemInfo && (
+                <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+                  <h4
+                    className="mb-2 text-xs font-medium uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    System Info
+                  </h4>
                   <div
                     className="prose prose-sm prose-invert user-content max-w-none"
                     style={{ color: 'var(--text-secondary)' }}
-                    dangerouslySetInnerHTML={{
-                      __html: ticket.description || '<em>No description provided</em>',
-                    }}
+                    dangerouslySetInnerHTML={{ __html: ticket.systemInfo }}
                   />
-                  {/* System Info inline under description */}
-                  {ticket.systemInfo && (
-                    <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
-                      <h4
-                        className="mb-2 text-xs font-medium uppercase"
+                </div>
+              )}
+            </div>
+
+            {/* Repro Steps */}
+            {ticket.reproSteps && (
+              <div className="card p-4">
+                <h3
+                  className="mb-2 text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Reproduction Steps
+                </h3>
+                <div
+                  className="prose prose-sm prose-invert user-content max-w-none"
+                  style={{ color: 'var(--text-secondary)' }}
+                  dangerouslySetInnerHTML={{ __html: ticket.reproSteps }}
+                />
+              </div>
+            )}
+
+            {/* Resolution (editable) - only for work item types that support it */}
+            {showResolution && (
+              <div className="card p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <h3
+                    className="text-xs font-medium uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Resolution
+                  </h3>
+                  {onResolutionChange && !isEditingResolution && (
+                    <button
+                      onClick={handleStartEditResolution}
+                      className="text-sm"
+                      style={{ color: 'var(--primary)' }}
+                    >
+                      Edit
+                    </button>
+                  )}
+                  {isEditingResolution && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleSaveResolution}
+                        disabled={isSavingResolution}
+                        className="text-sm"
+                        style={{ color: 'var(--primary)' }}
+                      >
+                        {isSavingResolution ? 'Saving...' : 'Save'}
+                      </button>
+                      <button
+                        onClick={handleCancelResolution}
+                        disabled={isSavingResolution}
+                        className="text-sm"
                         style={{ color: 'var(--text-muted)' }}
                       >
-                        System Info
-                      </h4>
-                      <div
-                        className="prose prose-sm prose-invert user-content max-w-none"
-                        style={{ color: 'var(--text-secondary)' }}
-                        dangerouslySetInnerHTML={{ __html: ticket.systemInfo }}
-                      />
+                        Cancel
+                      </button>
                     </div>
                   )}
-                  {/* Attachments */}
-                  {ticket.attachments && ticket.attachments.length > 0 && (
-                    <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
-                      <div
-                        className="mb-2 flex items-center gap-1 text-xs"
-                        style={{ color: 'var(--text-muted)' }}
-                      >
-                        <Paperclip size={12} />
-                        <span>Attachments ({ticket.attachments.length})</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {ticket.attachments.map((attachment) => (
-                          <a
-                            key={attachment.id}
-                            href={attachment.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                            style={{
-                              backgroundColor: 'var(--surface)',
-                              color: 'var(--text-secondary)',
-                            }}
-                            title={`Download ${attachment.fileName}`}
-                          >
-                            <FileIcon contentType={attachment.contentType} />
-                            <span className="max-w-[150px] truncate">{attachment.fileName}</span>
-                            {attachment.size > 0 && (
-                              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                ({formatFileSize(attachment.size)})
+                </div>
+                {isEditingResolution ? (
+                  <textarea
+                    value={editResolution}
+                    onChange={(e) => setEditResolution(e.target.value)}
+                    className="input w-full text-sm"
+                    rows={3}
+                    placeholder="Enter resolution..."
+                    autoFocus
+                  />
+                ) : ticket.resolution ? (
+                  <div
+                    className="prose prose-sm prose-invert user-content max-w-none"
+                    style={{ color: 'var(--text-secondary)' }}
+                    dangerouslySetInnerHTML={{ __html: ticket.resolution }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="text-sm italic"
+                    style={{
+                      color: 'var(--text-muted)',
+                      cursor: onResolutionChange ? 'pointer' : 'default',
+                    }}
+                    onClick={onResolutionChange ? handleStartEditResolution : undefined}
+                  >
+                    No resolution — click to add
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Resolved Reason (plain text, e.g. "Fixed", "Approved") */}
+            {ticket.resolvedReason && (
+              <div className="card p-4">
+                <h3
+                  className="mb-2 text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Resolved Reason
+                </h3>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  {ticket.resolvedReason}
+                </p>
+              </div>
+            )}
+
+            {/* Attachments */}
+            {ticket.attachments && ticket.attachments.length > 0 && (
+              <div className="card p-4">
+                <div
+                  className="mb-2 flex items-center gap-1 text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <Paperclip size={12} />
+                  <span>Attachments ({ticket.attachments.length})</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {ticket.attachments.map((attachment) => (
+                    <a
+                      key={attachment.id}
+                      href={attachment.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                      style={{
+                        backgroundColor: 'var(--surface)',
+                        color: 'var(--text-secondary)',
+                      }}
+                      title={`Download ${attachment.fileName}`}
+                    >
+                      <FileIcon contentType={attachment.contentType} />
+                      <span className="max-w-[150px] truncate">{attachment.fileName}</span>
+                      {attachment.size > 0 && (
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          ({formatFileSize(attachment.size)})
+                        </span>
+                      )}
+                      <Download size={12} style={{ color: 'var(--text-muted)' }} />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Comments */}
+            <div className="card p-4">
+              <h3
+                className="mb-3 text-xs font-medium uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Comments ({comments.length})
+              </h3>
+              {comments.length > 0 ? (
+                <div className="space-y-4">
+                  {comments.map((comment) => (
+                    <div
+                      key={comment.id}
+                      className={`rounded-md p-3 ${comment.isInternal ? 'border-l-4' : ''}`}
+                      style={{
+                        backgroundColor: 'var(--surface)',
+                        ...(comment.isInternal ? { borderLeftColor: 'var(--status-pending)' } : {}),
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <Avatar
+                          name={comment.author.displayName}
+                          image={comment.author.avatarUrl}
+                          size="md"
+                        />
+                        <div className="flex-1">
+                          <div className="mb-2 flex items-center gap-2">
+                            <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                              {comment.author.displayName}
+                            </span>
+                            {comment.isInternal && (
+                              <span
+                                className="rounded px-1.5 py-0.5 text-xs"
+                                style={{
+                                  backgroundColor: 'var(--status-pending)',
+                                  color: 'white',
+                                }}
+                              >
+                                Internal note
                               </span>
                             )}
-                            <Download size={12} style={{ color: 'var(--text-muted)' }} />
-                          </a>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {activeSubTab === 'repro-steps' && ticket.reproSteps && (
-                <div className="card p-4">
-                  <div
-                    className="prose prose-sm prose-invert user-content max-w-none"
-                    style={{ color: 'var(--text-secondary)' }}
-                    dangerouslySetInnerHTML={{ __html: ticket.reproSteps }}
-                  />
-                </div>
-              )}
-
-              {activeSubTab === 'resolution' && ticket.resolvedReason && (
-                <div className="card p-4">
-                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {ticket.resolvedReason}
-                  </p>
-                </div>
-              )}
-
-              {activeSubTab === 'comments' && (
-                <div>
-                  {comments.length > 0 ? (
-                    comments.map((comment) => (
-                      <div
-                        key={comment.id}
-                        className={`card mb-4 p-4 ${comment.isInternal ? 'border-l-4' : ''}`}
-                        style={
-                          comment.isInternal ? { borderLeftColor: 'var(--status-pending)' } : {}
-                        }
-                      >
-                        <div className="flex items-start gap-3">
-                          <Avatar
-                            name={comment.author.displayName}
-                            image={comment.author.avatarUrl}
-                            size="md"
-                          />
-                          <div className="flex-1">
-                            <div className="mb-2 flex items-center gap-2">
-                              <span
-                                className="font-medium"
-                                style={{ color: 'var(--text-primary)' }}
-                              >
-                                {comment.author.displayName}
-                              </span>
-                              {comment.isInternal && (
-                                <span
-                                  className="rounded px-1.5 py-0.5 text-xs"
-                                  style={{
-                                    backgroundColor: 'var(--status-pending)',
-                                    color: 'white',
-                                  }}
-                                >
-                                  Internal note
-                                </span>
-                              )}
-                              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                {format(comment.createdAt, 'dd MMM yyyy, HH:mm')}
-                              </span>
-                            </div>
-                            <div
-                              className="user-content text-sm"
-                              style={{ color: 'var(--text-secondary)' }}
-                              dangerouslySetInnerHTML={{
-                                __html: highlightMentions(comment.content),
-                              }}
-                            />
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                              {format(comment.createdAt, 'dd MMM yyyy, HH:mm')}
+                            </span>
                           </div>
+                          <div
+                            className="user-content text-sm"
+                            style={{ color: 'var(--text-secondary)' }}
+                            dangerouslySetInnerHTML={{
+                              __html: highlightMentions(comment.content),
+                            }}
+                          />
                         </div>
                       </div>
-                    ))
-                  ) : (
-                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                      No comments yet.
-                    </p>
-                  )}
+                    </div>
+                  ))}
                 </div>
+              ) : (
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  No comments yet.
+                </p>
               )}
             </div>
-          </>
+          </div>
         ) : (
           <div className="flex-1 overflow-auto p-4">
             <TicketHistory updates={history} loading={historyLoading} />
@@ -1021,16 +1332,69 @@ export default function TicketDetail({
 
             {/* Type */}
             {ticket.workItemType && (
-              <div>
+              <div className="relative" ref={typeDropdownRef}>
                 <label
                   className="mb-1 block text-xs uppercase"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   Type
                 </label>
-                <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                  {ticket.workItemType}
-                </span>
+                {onTypeChange ? (
+                  <>
+                    <button
+                      onClick={() => setIsTypeDropdownOpen(!isTypeDropdownOpen)}
+                      disabled={isUpdatingType}
+                      className="flex w-full items-center justify-between rounded-md px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {isUpdatingType ? <Loader2 size={14} className="animate-spin" /> : null}
+                        {ticket.workItemType}
+                      </span>
+                      <ChevronDown size={14} style={{ color: 'var(--text-muted)' }} />
+                    </button>
+                    {isTypeDropdownOpen && (
+                      <div
+                        className="absolute top-full left-0 z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border shadow-lg"
+                        style={{
+                          backgroundColor: 'var(--surface)',
+                          borderColor: 'var(--border)',
+                        }}
+                      >
+                        {isLoadingTypes ? (
+                          <div className="flex items-center justify-center py-3">
+                            <Loader2
+                              size={16}
+                              className="animate-spin"
+                              style={{ color: 'var(--text-muted)' }}
+                            />
+                          </div>
+                        ) : (
+                          availableTypes.map((type) => (
+                            <button
+                              key={type.name}
+                              onClick={() => handleTypeSelect(type.name)}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                              style={{
+                                color:
+                                  type.name === ticket.workItemType
+                                    ? 'var(--primary)'
+                                    : 'var(--text-primary)',
+                              }}
+                            >
+                              {type.icon && <img src={type.icon} alt="" className="h-4 w-4" />}
+                              {type.name}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                    {ticket.workItemType}
+                  </span>
+                )}
               </div>
             )}
 
@@ -1129,6 +1493,25 @@ export default function TicketDetail({
           agent={ticket.assignee}
           ticketId={ticket.workItemId}
           onZapSent={handleZapSent}
+        />
+      )}
+
+      {/* Required fields modal for type change */}
+      {pendingTypeChange && (
+        <TypeChangeRequiredFields
+          targetType={pendingTypeChange.type}
+          requiredFields={pendingTypeChange.requiredFields}
+          fieldValues={pendingTypeFieldValues}
+          onFieldChange={(ref, val) =>
+            setPendingTypeFieldValues((prev) => ({ ...prev, [ref]: val }))
+          }
+          onConfirm={handleConfirmPendingTypeChange}
+          onCancel={handleCancelPendingTypeChange}
+          isUpdating={isUpdatingType}
+          members={pendingTypeMembers}
+          memberSearch={pendingTypeMemberSearch}
+          onMemberSearchChange={setPendingTypeMemberSearch}
+          filteredMembers={filteredPendingTypeMembers}
         />
       )}
     </div>
