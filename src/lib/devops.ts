@@ -1177,11 +1177,20 @@ export class AzureDevOpsService {
       priority?: number;
       title?: string;
       description?: string;
+      tags?: string[];
       resolution?: string;
       workItemType?: string;
     }
   ): Promise<DevOpsWorkItem> {
     const patchDocument: Array<{ op: string; path: string; value: string | number | null }> = [];
+
+    if (updates.tags !== undefined) {
+      patchDocument.push({
+        op: 'replace',
+        path: '/fields/System.Tags',
+        value: updates.tags.join('; '),
+      });
+    }
 
     if (updates.title !== undefined) {
       patchDocument.push({

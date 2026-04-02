@@ -9,13 +9,16 @@ import {
   Loader2,
   User as UserIcon,
   Timer,
+  X,
+  Plus,
+  Tag,
 } from 'lucide-react';
 import type { WorkItem, TicketPriority, WorkItemType } from '@/types';
 import type { WorkItemActions } from '@/hooks/useWorkItemActions';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
 import { useClickOutside } from '@/hooks';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 
 interface WorkItemDetailSidebarProps {
   workItem: WorkItem;
@@ -26,6 +29,8 @@ interface WorkItemDetailSidebarProps {
   canEditAssignee?: boolean;
   canEditPriority?: boolean;
   canEditType?: boolean;
+  canEditTags?: boolean;
+  onTagsChange?: (tags: string[]) => Promise<void>;
 }
 
 const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
@@ -50,7 +55,46 @@ export default function WorkItemDetailSidebar({
   canEditAssignee = true,
   canEditPriority = true,
   canEditType = false,
+  canEditTags = false,
+  onTagsChange,
 }: WorkItemDetailSidebarProps) {
+  const [newTag, setNewTag] = useState('');
+  const [isAddingTag, setIsAddingTag] = useState(false);
+  const [isSavingTags, setIsSavingTags] = useState(false);
+
+  const tagsEditable = canEditTags && !!onTagsChange;
+
+  const handleAddTag = async () => {
+    const tag = newTag.trim();
+    if (!tag || !onTagsChange || isSavingTags) return;
+    const currentTags = workItem.tags || [];
+    if (currentTags.includes(tag)) {
+      setNewTag('');
+      setIsAddingTag(false);
+      return;
+    }
+    setIsSavingTags(true);
+    try {
+      await onTagsChange([...currentTags, tag]);
+      setNewTag('');
+      setIsAddingTag(false);
+    } finally {
+      setIsSavingTags(false);
+    }
+  };
+
+  const handleRemoveTag = async (tagToRemove: string) => {
+    if (!onTagsChange || isSavingTags) return;
+    // Prevent removing the "ticket" tag
+    if (tagToRemove.toLowerCase() === 'ticket') return;
+    const currentTags = workItem.tags || [];
+    setIsSavingTags(true);
+    try {
+      await onTagsChange(currentTags.filter((t) => t !== tagToRemove));
+    } finally {
+      setIsSavingTags(false);
+    }
+  };
   const closeAssigneeDropdown = useCallback(() => {
     actions.setIsAssigneeDropdownOpen(false);
     actions.setAssigneeSearch('');
@@ -356,27 +400,92 @@ export default function WorkItemDetailSidebar({
       )}
 
       {/* Tags */}
-      {workItem.tags && workItem.tags.length > 0 && (
-        <div>
-          <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-            Tags
-          </label>
-          <div className="flex flex-wrap gap-1">
-            {workItem.tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded px-2 py-0.5 text-xs"
-                style={{
-                  backgroundColor: 'var(--surface-hover)',
-                  color: 'var(--text-secondary)',
-                }}
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
+      <div>
+        <label
+          className="mb-1 flex items-center gap-1 text-xs uppercase"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <Tag size={12} />
+          Tags
+        </label>
+        <div className="flex flex-wrap gap-1">
+          {(workItem.tags || []).map((tag) => (
+            <span
+              key={tag}
+              className="flex items-center gap-1 rounded px-2 py-0.5 text-xs"
+              style={{
+                backgroundColor: 'var(--surface-hover)',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              {tag}
+              {tagsEditable && tag.toLowerCase() !== 'ticket' && (
+                <button
+                  type="button"
+                  onClick={() => handleRemoveTag(tag)}
+                  disabled={isSavingTags}
+                  className="ml-0.5 rounded-full transition-colors hover:bg-[var(--surface)]"
+                  style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
+                  title={`Remove tag "${tag}"`}
+                  aria-label={`Remove tag ${tag}`}
+                >
+                  <X size={10} />
+                </button>
+              )}
+            </span>
+          ))}
+          {tagsEditable && (
+            <>
+              {isAddingTag ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleAddTag();
+                      if (e.key === 'Escape') {
+                        setIsAddingTag(false);
+                        setNewTag('');
+                      }
+                    }}
+                    placeholder="New tag..."
+                    autoFocus
+                    disabled={isSavingTags}
+                    className="rounded border px-2 py-0.5 text-xs"
+                    style={{
+                      backgroundColor: 'var(--surface)',
+                      borderColor: 'var(--border)',
+                      color: 'var(--text-primary)',
+                      width: '100px',
+                    }}
+                  />
+                  {isSavingTags && (
+                    <Loader2
+                      size={12}
+                      className="animate-spin"
+                      style={{ color: 'var(--text-muted)' }}
+                    />
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => setIsAddingTag(true)}
+                  className="flex items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors hover:bg-[var(--surface-hover)]"
+                  style={{
+                    color: 'var(--primary)',
+                    cursor: 'pointer',
+                    border: '1px dashed var(--border)',
+                  }}
+                >
+                  <Plus size={10} />
+                  Add
+                </button>
+              )}
+            </>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Hours Summary - for work items */}
       {showEffortHours && (workItem.completedWork > 0 || workItem.remainingWork > 0) && (

@@ -74,6 +74,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       project,
       title,
       description,
+      tags,
       resolution,
       workItemType,
     } = body;
@@ -97,6 +98,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       priority?: number;
       title?: string;
       description?: string;
+      tags?: string[];
       resolution?: string;
       workItemType?: string;
     } = {};
@@ -124,6 +126,23 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (description !== undefined) {
       updates.description = description;
+    }
+
+    if (tags !== undefined && Array.isArray(tags)) {
+      // Validate each element is a string
+      if (!tags.every((t: unknown) => typeof t === 'string')) {
+        return NextResponse.json({ error: 'All tags must be strings' }, { status: 400 });
+      }
+      // Reject tags containing semicolons (DevOps delimiter)
+      const cleanTags = (tags as string[]).map((t) => t.trim()).filter(Boolean);
+      if (cleanTags.some((t) => t.includes(';'))) {
+        return NextResponse.json({ error: 'Tags cannot contain semicolons' }, { status: 400 });
+      }
+      // Ensure "ticket" tag is always preserved
+      if (!cleanTags.some((t) => t.toLowerCase() === 'ticket')) {
+        cleanTags.unshift('ticket');
+      }
+      updates.tags = cleanTags;
     }
 
     if (resolution !== undefined) {
