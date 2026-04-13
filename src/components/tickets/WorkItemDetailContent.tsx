@@ -89,6 +89,7 @@ function ResolutionField({
           <div className="flex items-center gap-2">
             <button
               onClick={handleCancel}
+              disabled={isSaving}
               className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
               style={{ color: 'var(--text-muted)' }}
               title="Cancel"
