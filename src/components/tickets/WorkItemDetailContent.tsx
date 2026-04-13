@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { Pencil, Check, X, Loader2 } from 'lucide-react';
+import { Check, X, Loader2 } from 'lucide-react';
 import type { WorkItem, TicketComment } from '@/types';
 import { getTemplateConfig, hasResolutionField } from '@/config/process-templates';
 import Avatar from '../common/Avatar';
