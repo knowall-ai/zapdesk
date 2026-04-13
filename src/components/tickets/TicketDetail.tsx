@@ -406,7 +406,7 @@ export default function TicketDetail({
     setIsEditingDescription(false);
     // Reset content back to original
     if (descriptionRef.current) {
-      descriptionRef.current.innerHTML = ticket.description || '<em>No description provided</em>';
+      descriptionRef.current.innerHTML = ticket.description || '';
     }
   };
 
@@ -715,24 +715,30 @@ export default function TicketDetail({
                   </div>
                 )}
               </div>
-              <div
-                ref={descriptionRef}
-                contentEditable={isEditingDescription}
-                suppressContentEditableWarning
-                className={`prose prose-sm prose-invert user-content max-w-none ${isEditingDescription ? 'rounded-md border p-3 outline-none focus:ring-1' : ''}`}
-                style={{
-                  color: 'var(--text-secondary)',
-                  ...(isEditingDescription
-                    ? {
-                        borderColor: 'var(--border)',
-                        minHeight: '150px',
-                      }
-                    : {}),
-                }}
-                dangerouslySetInnerHTML={{
-                  __html: ticket.description || '<em>No description provided</em>',
-                }}
-              />
+              {ticket.description || isEditingDescription ? (
+                <div
+                  ref={descriptionRef}
+                  contentEditable={isEditingDescription}
+                  suppressContentEditableWarning
+                  className={`prose prose-sm prose-invert user-content max-w-none ${isEditingDescription ? 'rounded-md border p-3 outline-none focus:ring-1' : ''}`}
+                  style={{
+                    color: 'var(--text-secondary)',
+                    ...(isEditingDescription
+                      ? {
+                          borderColor: 'var(--border)',
+                          minHeight: '150px',
+                        }
+                      : {}),
+                  }}
+                  dangerouslySetInnerHTML={{
+                    __html: ticket.description || '',
+                  }}
+                />
+              ) : (
+                <p className="text-sm italic" style={{ color: 'var(--text-muted)' }}>
+                  No description
+                </p>
+              )}
               {/* System Info */}
               {ticket.systemInfo && (
                 <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
@@ -781,7 +787,7 @@ export default function TicketDetail({
                   {onResolutionChange && !isEditingResolution && (
                     <button
                       onClick={handleStartEditResolution}
-                      className="text-sm"
+                      className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
                       style={{ color: 'var(--primary)' }}
                     >
                       Edit
@@ -790,20 +796,26 @@ export default function TicketDetail({
                   {isEditingResolution && (
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={handleSaveResolution}
-                        disabled={isSavingResolution}
-                        className="text-sm"
-                        style={{ color: 'var(--primary)' }}
-                      >
-                        {isSavingResolution ? 'Saving...' : 'Save'}
-                      </button>
-                      <button
                         onClick={handleCancelResolution}
                         disabled={isSavingResolution}
-                        className="text-sm"
+                        className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
                         style={{ color: 'var(--text-muted)' }}
                       >
                         Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveResolution}
+                        disabled={isSavingResolution}
+                        className="btn-primary flex items-center gap-1 px-3 py-1 text-sm"
+                      >
+                        {isSavingResolution ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            Saving...
+                          </>
+                        ) : (
+                          'Save'
+                        )}
                       </button>
                     </div>
                   )}
@@ -833,7 +845,7 @@ export default function TicketDetail({
                     }}
                     onClick={onResolutionChange ? handleStartEditResolution : undefined}
                   >
-                    No resolution — click to add
+                    No resolution
                   </button>
                 )}
               </div>
@@ -950,8 +962,8 @@ export default function TicketDetail({
                   ))}
                 </div>
               ) : (
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                  No comments yet.
+                <p className="text-sm italic" style={{ color: 'var(--text-muted)' }}>
+                  No comments
                 </p>
               )}
             </div>

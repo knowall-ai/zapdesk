@@ -78,36 +78,37 @@ function ResolutionField({
         {onUpdate && !isEditing && (
           <button
             onClick={handleStartEdit}
-            className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
+            className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+            style={{ color: 'var(--primary)' }}
             title="Edit resolution"
           >
-            <Pencil size={12} style={{ color: 'var(--text-muted)' }} />
+            Edit
           </button>
         )}
         {isEditing && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCancel}
+              className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+              style={{ color: 'var(--text-muted)' }}
+              title="Cancel"
+            >
+              Cancel
+            </button>
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
+              className="btn-primary flex items-center gap-1 px-3 py-1 text-sm"
               title="Save"
             >
               {isSaving ? (
-                <Loader2
-                  size={12}
-                  className="animate-spin"
-                  style={{ color: 'var(--text-muted)' }}
-                />
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  Saving...
+                </>
               ) : (
-                <Check size={12} style={{ color: 'var(--primary)' }} />
+                'Save'
               )}
-            </button>
-            <button
-              onClick={handleCancel}
-              className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
-              title="Cancel"
-            >
-              <X size={12} style={{ color: 'var(--text-muted)' }} />
             </button>
           </div>
         )}
@@ -134,7 +135,7 @@ function ResolutionField({
           style={{ color: 'var(--text-muted)', cursor: onUpdate ? 'pointer' : 'default' }}
           onClick={onUpdate ? handleStartEdit : undefined}
         >
-          No resolution — click to add
+          No resolution
         </button>
       )}
     </div>
@@ -252,11 +253,10 @@ export default function WorkItemDetailContent({
             ) : (
               <button
                 onClick={handleStartEdit}
-                className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                style={{ color: 'var(--text-secondary)' }}
+                className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                style={{ color: 'var(--primary)' }}
                 title="Edit title and description"
               >
-                <Pencil size={14} />
                 Edit
               </button>
             )}
@@ -315,7 +315,7 @@ export default function WorkItemDetailContent({
             />
           ) : (
             <p className="text-sm italic" style={{ color: 'var(--text-muted)' }}>
-              No description provided
+              No description
             </p>
           )}
         </div>
