@@ -43,7 +43,11 @@ import ZapDialog from './ZapDialog';
 import TicketHistory from './TicketHistory';
 import TypeChangeRequiredFields from './TypeChangeRequiredFields';
 import type { RequiredField } from '@/hooks/useWorkItemActions';
-import { getTemplateConfig, hasResolutionField } from '@/config/process-templates';
+import {
+  getTemplateConfig,
+  hasMitigationField,
+  hasResolutionField,
+} from '@/config/process-templates';
 import { useClickOutside } from '@/hooks';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 
@@ -61,6 +65,7 @@ interface TicketDetailProps {
   onTypeChange?: (type: string, additionalFields?: Record<string, string>) => Promise<void>;
   onDescriptionChange?: (description: string) => Promise<void>;
   onResolutionChange?: (resolution: string) => Promise<void>;
+  onMitigationChange?: (mitigation: string) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onRefreshTicket?: () => Promise<void>;
   processTemplate?: string;
@@ -85,12 +90,14 @@ export default function TicketDetail({
   onTypeChange,
   onDescriptionChange,
   onResolutionChange,
+  onMitigationChange,
   onUploadAttachment,
   onRefreshTicket,
   processTemplate,
 }: TicketDetailProps) {
   const templateConfig = getTemplateConfig(processTemplate);
   const showResolution = hasResolutionField(ticket.workItemType, templateConfig);
+  const showMitigation = hasMitigationField(ticket.workItemType, templateConfig);
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -169,6 +176,11 @@ export default function TicketDetail({
   const [isEditingResolution, setIsEditingResolution] = useState(false);
   const [isSavingResolution, setIsSavingResolution] = useState(false);
   const [editResolution, setEditResolution] = useState('');
+
+  // Mitigation editing state
+  const [isEditingMitigation, setIsEditingMitigation] = useState(false);
+  const [isSavingMitigation, setIsSavingMitigation] = useState(false);
+  const [editMitigation, setEditMitigation] = useState('');
 
   // Attachment state
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -446,6 +458,31 @@ export default function TicketDetail({
   const handleCancelResolution = () => {
     setIsEditingResolution(false);
     setEditResolution('');
+  };
+
+  const handleStartEditMitigation = () => {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = ticket.mitigation || '';
+    setEditMitigation(tempDiv.textContent || tempDiv.innerText || '');
+    setIsEditingMitigation(true);
+  };
+
+  const handleSaveMitigation = async () => {
+    if (!onMitigationChange) return;
+    setIsSavingMitigation(true);
+    try {
+      await onMitigationChange(editMitigation);
+      setIsEditingMitigation(false);
+    } catch (error) {
+      console.error('Failed to save mitigation:', error);
+    } finally {
+      setIsSavingMitigation(false);
+    }
+  };
+
+  const handleCancelMitigation = () => {
+    setIsEditingMitigation(false);
+    setEditMitigation('');
   };
 
   // File attachment handlers
@@ -834,6 +871,86 @@ export default function TicketDetail({
                     onClick={onResolutionChange ? handleStartEditResolution : undefined}
                   >
                     No resolution — click to add
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Mitigation (editable) - only for work item types that support it */}
+            {showMitigation && (
+              <div className="card p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <h3
+                    className="text-xs font-medium uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Mitigation
+                  </h3>
+                  {onMitigationChange && (
+                    <div className="flex items-center gap-2">
+                      {isEditingMitigation ? (
+                        <>
+                          <button
+                            onClick={handleCancelMitigation}
+                            disabled={isSavingMitigation}
+                            className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleSaveMitigation}
+                            disabled={isSavingMitigation}
+                            className="btn-primary flex items-center gap-1 px-3 py-1 text-sm"
+                          >
+                            {isSavingMitigation ? (
+                              <>
+                                <Loader2 size={14} className="animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              'Save'
+                            )}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={handleStartEditMitigation}
+                          className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                          style={{ color: 'var(--primary)' }}
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {isEditingMitigation ? (
+                  <textarea
+                    value={editMitigation}
+                    onChange={(e) => setEditMitigation(e.target.value)}
+                    className="input w-full text-sm"
+                    rows={3}
+                    placeholder="Enter mitigation..."
+                    autoFocus
+                  />
+                ) : ticket.mitigation ? (
+                  <div
+                    className="prose prose-sm prose-invert user-content max-w-none"
+                    style={{ color: 'var(--text-secondary)' }}
+                    dangerouslySetInnerHTML={{ __html: ticket.mitigation }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="text-sm italic"
+                    style={{
+                      color: 'var(--text-muted)',
+                      cursor: onMitigationChange ? 'pointer' : 'default',
+                    }}
+                    onClick={onMitigationChange ? handleStartEditMitigation : undefined}
+                  >
+                    No mitigation — click to add
                   </button>
                 )}
               </div>

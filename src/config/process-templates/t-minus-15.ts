@@ -33,6 +33,7 @@ export const tMinus15Config: ProcessTemplateConfig = {
     resolutionFieldOverrides: {
       Task: 'Custom.TaskResolution',
     },
+    mitigationTypes: ['Issue', 'Risk'],
   },
 
   states: {

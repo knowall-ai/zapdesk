@@ -25,7 +25,11 @@ import type {
   ClassificationNode,
 } from '@/types';
 import { parseSLAFromDescription, calculateTicketSLA, DEFAULT_SLA_LEVEL } from './sla';
-import { getResolutionFieldRef, getTemplateConfig } from '@/config/process-templates';
+import {
+  getMitigationFieldRef,
+  getResolutionFieldRef,
+  getTemplateConfig,
+} from '@/config/process-templates';
 
 const DEVOPS_ORG = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
 const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
@@ -37,6 +41,18 @@ const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
 function readResolutionField(fields: Record<string, unknown>): string | undefined {
   // Check standard field first, then known custom fields
   const candidates = ['Microsoft.VSTS.Common.Resolution', 'Custom.TaskResolution'];
+  for (const ref of candidates) {
+    const value = fields[ref] as string;
+    if (value) return value;
+  }
+  return undefined;
+}
+
+/**
+ * Read the mitigation value from a work item (used by Issue/Risk types)
+ */
+function readMitigationField(fields: Record<string, unknown>): string | undefined {
+  const candidates = ['Microsoft.VSTS.CMMI.Mitigation', 'Custom.Mitigation'];
   for (const ref of candidates) {
     const value = fields[ref] as string;
     if (value) return value;
@@ -190,6 +206,7 @@ export function ticketToWorkItem(ticket: Ticket): WorkItem {
     tags: ticket.tags,
     priority: ticket.priority,
     resolution: ticket.resolution,
+    mitigation: ticket.mitigation,
     resolvedReason: ticket.resolvedReason,
     requester: ticket.requester,
     organization: ticket.organization,
@@ -207,6 +224,7 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     reproSteps: (fields['Microsoft.VSTS.TCM.ReproSteps'] as string) || undefined,
     systemInfo: (fields['Microsoft.VSTS.TCM.SystemInfo'] as string) || undefined,
     resolution: readResolutionField(fields),
+    mitigation: readMitigationField(fields),
     resolvedReason: (fields['Microsoft.VSTS.Common.ResolvedReason'] as string) || undefined,
     status: mapStateToStatus(fields['System.State']),
     devOpsState: fields['System.State'], // Preserve original DevOps state
@@ -1178,6 +1196,7 @@ export class AzureDevOpsService {
       title?: string;
       description?: string;
       resolution?: string;
+      mitigation?: string;
       workItemType?: string;
     }
   ): Promise<DevOpsWorkItem> {
@@ -1242,6 +1261,29 @@ export class AzureDevOpsService {
         op: 'add',
         path: `/fields/${resFieldRef}`,
         value: updates.resolution,
+      });
+    }
+
+    if (updates.mitigation !== undefined) {
+      const templateConfig = getTemplateConfig();
+      let mitFieldRef = getMitigationFieldRef(updates.workItemType || '', templateConfig);
+
+      const standardMitField = 'Microsoft.VSTS.CMMI.Mitigation';
+      if (mitFieldRef !== standardMitField && updates.workItemType) {
+        try {
+          await this.getWorkItemTypeField(projectName, updates.workItemType, mitFieldRef);
+        } catch {
+          console.warn(
+            `Mitigation field ${mitFieldRef} not found on ${updates.workItemType}, falling back to ${standardMitField}`
+          );
+          mitFieldRef = standardMitField;
+        }
+      }
+
+      patchDocument.push({
+        op: 'add',
+        path: `/fields/${mitFieldRef}`,
+        value: updates.mitigation,
       });
     }
 
@@ -2134,6 +2176,7 @@ export class AzureDevOpsService {
           .filter(Boolean) || [],
       priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
       resolution: readResolutionField(fields),
+      mitigation: readMitigationField(fields),
       resolvedReason: (fields['Microsoft.VSTS.Common.ResolvedReason'] as string) || undefined,
     };
   }
