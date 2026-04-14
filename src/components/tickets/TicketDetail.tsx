@@ -18,7 +18,7 @@ import {
   X,
   Download,
 } from 'lucide-react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type {
   Ticket,
   TicketComment,
@@ -95,6 +95,7 @@ export default function TicketDetail({
   onRefreshTicket,
   processTemplate,
 }: TicketDetailProps) {
+  const router = useRouter();
   const templateConfig = getTemplateConfig(processTemplate);
   const showResolution = hasResolutionField(ticket.workItemType, templateConfig);
   const showMitigation = hasMitigationField(ticket.workItemType, templateConfig);
@@ -559,13 +560,15 @@ export default function TicketDetail({
         {/* Header */}
         <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
           <div className="mb-3 flex items-center gap-4">
-            <Link
-              href="/tickets"
+            <button
+              type="button"
+              onClick={() => (window.history.length > 1 ? router.back() : router.push('/tickets'))}
               className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
               style={{ color: 'var(--text-muted)' }}
+              aria-label="Go back"
             >
               <ArrowLeft size={20} />
-            </Link>
+            </button>
             <h1 className="flex-1 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
               {ticket.title}
             </h1>
