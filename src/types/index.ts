@@ -148,6 +148,7 @@ export interface Ticket {
   reproSteps?: string;
   systemInfo?: string;
   resolution?: string;
+  mitigation?: string;
   resolvedReason?: string;
   status: TicketStatus;
   devOpsState: string; // Original Azure DevOps state (e.g., 'New', 'Approved', 'To Do', etc.)
@@ -491,6 +492,7 @@ export interface WorkItem {
   tags: string[];
   priority?: TicketPriority;
   resolution?: string;
+  mitigation?: string;
   resolvedReason?: string;
   // Optional ticket-specific fields (populated when item is a ticket)
   requester?: Customer;

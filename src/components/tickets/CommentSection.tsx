@@ -112,7 +112,7 @@ export default function CommentSection({
         </div>
       ) : comments.length === 0 ? (
         <p className="py-2 text-sm italic" style={{ color: 'var(--text-muted)' }}>
-          No comments yet
+          No comments
         </p>
       ) : (
         <div className={compact ? 'mb-4 space-y-3' : 'mb-4 space-y-4'}>
