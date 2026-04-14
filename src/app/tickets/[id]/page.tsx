@@ -267,6 +267,30 @@ export default function TicketDetailPage() {
     }
   };
 
+  const handleMitigationChange = async (mitigation: string) => {
+    if (!ticket) return;
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          mitigation,
+          project: ticket.project,
+          workItemType: ticket.workItemType,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update mitigation');
+      }
+
+      await fetchTicket();
+    } catch (error) {
+      console.error('Failed to update mitigation:', error);
+      throw error;
+    }
+  };
+
   const handleUploadAttachment = async (file: File): Promise<Attachment> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -314,6 +338,7 @@ export default function TicketDetailPage() {
         onTypeChange={handleTypeChange}
         onDescriptionChange={handleDescriptionChange}
         onResolutionChange={handleResolutionChange}
+        onMitigationChange={handleMitigationChange}
         onUploadAttachment={handleUploadAttachment}
         onRefreshTicket={fetchTicket}
       />

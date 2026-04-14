@@ -4,7 +4,11 @@ import { useState } from 'react';
 import { format } from 'date-fns';
 import { Check, X, Loader2 } from 'lucide-react';
 import type { WorkItem, TicketComment } from '@/types';
-import { getTemplateConfig, hasResolutionField } from '@/config/process-templates';
+import {
+  getTemplateConfig,
+  hasMitigationField,
+  hasResolutionField,
+} from '@/config/process-templates';
 import Avatar from '../common/Avatar';
 import CommentSection from './CommentSection';
 import ZapDialog from './ZapDialog';
@@ -18,6 +22,7 @@ interface WorkItemDetailContentProps {
     title?: string;
     description?: string;
     resolution?: string;
+    mitigation?: string;
   }) => Promise<void>;
   onZapSent?: (amount: number) => void;
   showRequester?: boolean;
@@ -143,6 +148,112 @@ function ResolutionField({
   );
 }
 
+function MitigationField({
+  workItem,
+  onUpdate,
+}: {
+  workItem: WorkItem;
+  onUpdate?: (updates: { mitigation?: string }) => Promise<void>;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleStartEdit = () => {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = workItem.mitigation || '';
+    setEditValue(tempDiv.textContent || tempDiv.innerText || '');
+    setIsEditing(true);
+  };
+
+  const handleSave = async () => {
+    if (!onUpdate) return;
+    setIsSaving(true);
+    try {
+      await onUpdate({ mitigation: editValue });
+      setIsEditing(false);
+    } catch (err) {
+      console.error('Failed to save mitigation:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditValue('');
+  };
+
+  return (
+    <div className="card mt-4 p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>
+          Mitigation
+        </h3>
+        {onUpdate && !isEditing && (
+          <button
+            onClick={handleStartEdit}
+            className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
+            title="Edit mitigation"
+          >
+            <Pencil size={12} style={{ color: 'var(--text-muted)' }} />
+          </button>
+        )}
+        {isEditing && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
+              title="Save"
+            >
+              {isSaving ? (
+                <Loader2
+                  size={12}
+                  className="animate-spin"
+                  style={{ color: 'var(--text-muted)' }}
+                />
+              ) : (
+                <Check size={12} style={{ color: 'var(--primary)' }} />
+              )}
+            </button>
+            <button
+              onClick={handleCancel}
+              className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
+              title="Cancel"
+            >
+              <X size={12} style={{ color: 'var(--text-muted)' }} />
+            </button>
+          </div>
+        )}
+      </div>
+      {isEditing ? (
+        <textarea
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          className="input w-full text-sm"
+          rows={3}
+          placeholder="Enter mitigation..."
+          autoFocus
+        />
+      ) : workItem.mitigation ? (
+        <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>
+          {workItem.mitigation}
+        </p>
+      ) : (
+        <button
+          type="button"
+          className="text-sm italic"
+          style={{ color: 'var(--text-muted)', cursor: onUpdate ? 'pointer' : 'default' }}
+          onClick={onUpdate ? handleStartEdit : undefined}
+        >
+          No mitigation — click to add
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function WorkItemDetailContent({
   workItem,
   comments,
@@ -158,6 +269,7 @@ export default function WorkItemDetailContent({
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
   const templateConfig = getTemplateConfig(processTemplate);
   const showResolution = hasResolutionField(workItem.workItemType, templateConfig);
+  const showMitigation = hasMitigationField(workItem.workItemType, templateConfig);
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -324,6 +436,7 @@ export default function WorkItemDetailContent({
 
       {/* Resolution (editable) - only for work item types that support it */}
       {showResolution && <ResolutionField workItem={workItem} onUpdate={onUpdate} />}
+      {showMitigation && <MitigationField workItem={workItem} onUpdate={onUpdate} />}
 
       {/* Effort tracking */}
       {showEffortTracking &&

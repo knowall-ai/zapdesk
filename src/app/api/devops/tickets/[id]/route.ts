@@ -75,6 +75,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       title,
       description,
       resolution,
+      mitigation,
       workItemType,
     } = body;
 
@@ -98,6 +99,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       title?: string;
       description?: string;
       resolution?: string;
+      mitigation?: string;
       workItemType?: string;
     } = {};
 
@@ -128,6 +130,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (resolution !== undefined) {
       updates.resolution = resolution;
+    }
+
+    if (mitigation !== undefined) {
+      updates.mitigation = mitigation;
     }
 
     // Update the work item
