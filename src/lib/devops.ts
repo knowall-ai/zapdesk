@@ -50,10 +50,15 @@ function readResolutionField(fields: Record<string, unknown>): string | undefine
 
 /**
  * Read the mitigation value from a work item (used by Issue/Risk types)
+ * Checks the standard CMMI field, any template overrides, and known custom fields.
  */
 function readMitigationField(fields: Record<string, unknown>): string | undefined {
-  const candidates = ['Microsoft.VSTS.CMMI.Mitigation', 'Custom.Mitigation'];
-  for (const ref of candidates) {
+  const templateConfig = getTemplateConfig();
+  const overrides = Object.values(templateConfig.fields.mitigationFieldOverrides || {});
+  const candidates = ['Microsoft.VSTS.CMMI.Mitigation', ...overrides, 'Custom.Mitigation'];
+  // Deduplicate
+  const unique = [...new Set(candidates)];
+  for (const ref of unique) {
     const value = fields[ref] as string;
     if (value) return value;
   }
@@ -1264,27 +1269,40 @@ export class AzureDevOpsService {
       });
     }
 
-    if (updates.mitigation !== undefined) {
+    if (updates.mitigation !== undefined && updates.workItemType) {
       const templateConfig = getTemplateConfig();
-      let mitFieldRef = getMitigationFieldRef(updates.workItemType || '', templateConfig);
+      let mitFieldRef = getMitigationFieldRef(updates.workItemType, templateConfig);
 
-      const standardMitField = 'Microsoft.VSTS.CMMI.Mitigation';
-      if (mitFieldRef !== standardMitField && updates.workItemType) {
-        try {
-          await this.getWorkItemTypeField(projectName, updates.workItemType, mitFieldRef);
-        } catch {
+      // Always probe the field to ensure it exists on this work item type
+      try {
+        await this.getWorkItemTypeField(projectName, updates.workItemType, mitFieldRef);
+      } catch {
+        // Try the standard CMMI field as fallback
+        const standardMitField = 'Microsoft.VSTS.CMMI.Mitigation';
+        if (mitFieldRef !== standardMitField) {
           console.warn(
-            `Mitigation field ${mitFieldRef} not found on ${updates.workItemType}, falling back to ${standardMitField}`
+            `Mitigation field ${mitFieldRef} not found on ${updates.workItemType}, trying ${standardMitField}`
           );
-          mitFieldRef = standardMitField;
+          try {
+            await this.getWorkItemTypeField(projectName, updates.workItemType, standardMitField);
+            mitFieldRef = standardMitField;
+          } catch {
+            console.warn(`Mitigation field not available on ${updates.workItemType}`);
+            mitFieldRef = '';
+          }
+        } else {
+          console.warn(`Mitigation field not available on ${updates.workItemType}`);
+          mitFieldRef = '';
         }
       }
 
-      patchDocument.push({
-        op: 'add',
-        path: `/fields/${mitFieldRef}`,
-        value: updates.mitigation,
-      });
+      if (mitFieldRef) {
+        patchDocument.push({
+          op: 'add',
+          path: `/fields/${mitFieldRef}`,
+          value: updates.mitigation,
+        });
+      }
     }
 
     if (patchDocument.length === 0) {

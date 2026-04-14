@@ -935,11 +935,12 @@ export default function TicketDetail({
                     autoFocus
                   />
                 ) : ticket.mitigation ? (
-                  <div
-                    className="prose prose-sm prose-invert user-content max-w-none"
+                  <p
+                    className="text-sm whitespace-pre-wrap"
                     style={{ color: 'var(--text-secondary)' }}
-                    dangerouslySetInnerHTML={{ __html: ticket.mitigation }}
-                  />
+                  >
+                    {ticket.mitigation}
+                  </p>
                 ) : (
                   <button
                     type="button"
