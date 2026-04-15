@@ -25,6 +25,7 @@ interface WorkItemDetailDialogProps {
     type: string,
     additionalFields?: Record<string, string>
   ) => Promise<void>;
+  onTagsChange?: (workItemId: number, tags: string[]) => Promise<void>;
   onUpdate?: (
     workItemId: number,
     updates: { title?: string; description?: string; resolution?: string }
@@ -40,6 +41,7 @@ export default function WorkItemDetailDialog({
   onAssigneeChange,
   onPriorityChange,
   onTypeChange,
+  onTagsChange,
   onUpdate,
 }: WorkItemDetailDialogProps) {
   const router = useRouter();
@@ -327,6 +329,10 @@ export default function WorkItemDetailDialog({
         canEditAssignee={!!onAssigneeChange}
         canEditPriority={!!onPriorityChange}
         canEditType={!!onTypeChange}
+        canEditTags={!!onTagsChange}
+        onTagsChange={
+          onTagsChange ? (tags: string[]) => onTagsChange(workItem.id, tags) : undefined
+        }
       />
     </div>
   );

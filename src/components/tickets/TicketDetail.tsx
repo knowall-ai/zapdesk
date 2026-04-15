@@ -17,6 +17,8 @@ import {
   Info,
   X,
   Download,
+  Plus,
+  Tag,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type {
@@ -63,6 +65,7 @@ interface TicketDetailProps {
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
   onTypeChange?: (type: string, additionalFields?: Record<string, string>) => Promise<void>;
+  onTagsChange?: (tags: string[]) => Promise<void>;
   onDescriptionChange?: (description: string) => Promise<void>;
   onResolutionChange?: (resolution: string) => Promise<void>;
   onMitigationChange?: (mitigation: string) => Promise<void>;
@@ -88,6 +91,7 @@ export default function TicketDetail({
   onAssigneeChange,
   onPriorityChange,
   onTypeChange,
+  onTagsChange,
   onDescriptionChange,
   onResolutionChange,
   onMitigationChange,
@@ -172,6 +176,40 @@ export default function TicketDetail({
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [isSavingDescription, setIsSavingDescription] = useState(false);
   const descriptionRef = useRef<HTMLDivElement>(null);
+
+  // Tag editing state
+  const [newTagInput, setNewTagInput] = useState('');
+  const [isAddingTag, setIsAddingTag] = useState(false);
+  const [isSavingTags, setIsSavingTags] = useState(false);
+
+  const handleAddTag = async () => {
+    const tag = newTagInput.trim();
+    if (!tag || !onTagsChange || isSavingTags) return;
+    if (ticket.tags.includes(tag)) {
+      setNewTagInput('');
+      setIsAddingTag(false);
+      return;
+    }
+    setIsSavingTags(true);
+    try {
+      await onTagsChange([...ticket.tags, tag]);
+      setNewTagInput('');
+      setIsAddingTag(false);
+    } finally {
+      setIsSavingTags(false);
+    }
+  };
+
+  const handleRemoveTag = async (tagToRemove: string) => {
+    if (!onTagsChange || isSavingTags) return;
+    if (tagToRemove.toLowerCase() === 'ticket') return;
+    setIsSavingTags(true);
+    try {
+      await onTagsChange(ticket.tags.filter((t) => t !== tagToRemove));
+    } finally {
+      setIsSavingTags(false);
+    }
+  };
 
   // Resolution editing state
   const [isEditingResolution, setIsEditingResolution] = useState(false);
@@ -1610,24 +1648,88 @@ export default function TicketDetail({
             {/* Tags */}
             <div>
               <label
-                className="mb-1 block text-xs uppercase"
+                className="mb-1 flex items-center gap-1 text-xs uppercase"
                 style={{ color: 'var(--text-muted)' }}
               >
+                <Tag size={12} />
                 Tags
               </label>
               <div className="flex flex-wrap gap-1">
                 {ticket.tags.map((tag) => (
                   <span
                     key={tag}
-                    className="rounded px-2 py-0.5 text-xs"
+                    className="flex items-center gap-1 rounded px-2 py-0.5 text-xs"
                     style={{
                       backgroundColor: 'var(--surface-hover)',
                       color: 'var(--text-secondary)',
                     }}
                   >
                     {tag}
+                    {onTagsChange && tag.toLowerCase() !== 'ticket' && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTag(tag)}
+                        disabled={isSavingTags}
+                        className="ml-0.5 rounded-full transition-colors hover:bg-[var(--surface)]"
+                        style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
+                        title={`Remove tag "${tag}"`}
+                        aria-label={`Remove tag ${tag}`}
+                      >
+                        <X size={10} />
+                      </button>
+                    )}
                   </span>
                 ))}
+                {onTagsChange && (
+                  <>
+                    {isAddingTag ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={newTagInput}
+                          onChange={(e) => setNewTagInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleAddTag();
+                            if (e.key === 'Escape') {
+                              setIsAddingTag(false);
+                              setNewTagInput('');
+                            }
+                          }}
+                          placeholder="New tag..."
+                          autoFocus
+                          disabled={isSavingTags}
+                          className="rounded border px-2 py-0.5 text-xs"
+                          style={{
+                            backgroundColor: 'var(--surface)',
+                            borderColor: 'var(--border)',
+                            color: 'var(--text-primary)',
+                            width: '100px',
+                          }}
+                        />
+                        {isSavingTags && (
+                          <Loader2
+                            size={12}
+                            className="animate-spin"
+                            style={{ color: 'var(--text-muted)' }}
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setIsAddingTag(true)}
+                        className="flex items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors hover:bg-[var(--surface-hover)]"
+                        style={{
+                          color: 'var(--primary)',
+                          cursor: 'pointer',
+                          border: '1px dashed var(--border)',
+                        }}
+                      >
+                        <Plus size={10} />
+                        Add
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             </div>
 
