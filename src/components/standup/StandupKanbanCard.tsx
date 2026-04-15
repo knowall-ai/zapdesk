@@ -75,8 +75,8 @@ export default function StandupKanbanCard({ item, isDragging }: StandupKanbanCar
 
           {item.project && (
             <span
-              className="max-w-[110px] truncate rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
-              style={{ backgroundColor: 'var(--surface-hover)' }}
+              className="max-w-[110px] truncate rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
+              aria-label={`Project: ${item.project}`}
               title={item.project}
             >
               {item.project}
