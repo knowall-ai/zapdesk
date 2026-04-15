@@ -212,13 +212,13 @@ When making changes:
 
 ### Release Process
 
-Use `bun version` to create releases - it syncs `package.json` and git tags automatically:
+Use `bun pm version` to create releases - it syncs `package.json` and git tags automatically:
 
 ```bash
 # On main branch, after merging PRs
-bun version patch   # Bug fixes (0.3.1 -> 0.3.2)
-bun version minor   # New features (0.3.2 -> 0.4.0)
-bun version major   # Breaking changes (0.4.0 -> 1.0.0)
+bun pm version patch   # Bug fixes (0.3.1 -> 0.3.2)
+bun pm version minor   # New features (0.3.2 -> 0.4.0)
+bun pm version major   # Breaking changes (0.4.0 -> 1.0.0)
 
 # Push with tags to trigger deployment
 git push --follow-tags
