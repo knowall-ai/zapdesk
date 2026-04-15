@@ -13,13 +13,13 @@ import type { StandupData, StandupColumn, StandupWorkItem } from '@/types';
 
 type GroupBy = 'project' | 'person';
 
-/** Build /standup URL with the given params */
-function buildStandupUrl(groupBy: GroupBy, sprint: boolean): string {
+/** Build /kanban URL with the given params */
+function buildKanbanUrl(groupBy: GroupBy, sprint: boolean): string {
   const params = new URLSearchParams();
   if (groupBy !== 'project') params.set('groupBy', groupBy);
   if (sprint) params.set('sprint', 'true');
   const qs = params.toString();
-  return `/standup${qs ? `?${qs}` : ''}`;
+  return `/kanban${qs ? `?${qs}` : ''}`;
 }
 
 interface GroupData {
@@ -215,7 +215,7 @@ function StandupPageContent() {
               {/* Group By toggle */}
               <div className="flex rounded-md border" style={{ borderColor: 'var(--border)' }}>
                 <Link
-                  href={buildStandupUrl('project', currentSprintOnly)}
+                  href={buildKanbanUrl('project', currentSprintOnly)}
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'project'
@@ -228,7 +228,7 @@ function StandupPageContent() {
                   Project
                 </Link>
                 <Link
-                  href={buildStandupUrl('person', currentSprintOnly)}
+                  href={buildKanbanUrl('person', currentSprintOnly)}
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'person'
@@ -251,7 +251,7 @@ function StandupPageContent() {
                   type="checkbox"
                   checked={currentSprintOnly}
                   onChange={(e) =>
-                    router.replace(buildStandupUrl(groupBy, e.target.checked), { scroll: false })
+                    router.replace(buildKanbanUrl(groupBy, e.target.checked), { scroll: false })
                   }
                   className="accent-[var(--primary)]"
                 />
