@@ -17,6 +17,8 @@ import {
   Info,
   X,
   Download,
+  Plus,
+  Tag,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type {
@@ -63,6 +65,7 @@ interface TicketDetailProps {
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
   onTypeChange?: (type: string, additionalFields?: Record<string, string>) => Promise<void>;
+  onTagsChange?: (tags: string[]) => Promise<void>;
   onDescriptionChange?: (description: string) => Promise<void>;
   onResolutionChange?: (resolution: string) => Promise<void>;
   onMitigationChange?: (mitigation: string) => Promise<void>;
@@ -88,6 +91,7 @@ export default function TicketDetail({
   onAssigneeChange,
   onPriorityChange,
   onTypeChange,
+  onTagsChange,
   onDescriptionChange,
   onResolutionChange,
   onMitigationChange,
@@ -172,6 +176,40 @@ export default function TicketDetail({
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [isSavingDescription, setIsSavingDescription] = useState(false);
   const descriptionRef = useRef<HTMLDivElement>(null);
+
+  // Tag editing state
+  const [newTagInput, setNewTagInput] = useState('');
+  const [isAddingTag, setIsAddingTag] = useState(false);
+  const [isSavingTags, setIsSavingTags] = useState(false);
+
+  const handleAddTag = async () => {
+    const tag = newTagInput.trim();
+    if (!tag || !onTagsChange || isSavingTags) return;
+    if (ticket.tags.includes(tag)) {
+      setNewTagInput('');
+      setIsAddingTag(false);
+      return;
+    }
+    setIsSavingTags(true);
+    try {
+      await onTagsChange([...ticket.tags, tag]);
+      setNewTagInput('');
+      setIsAddingTag(false);
+    } finally {
+      setIsSavingTags(false);
+    }
+  };
+
+  const handleRemoveTag = async (tagToRemove: string) => {
+    if (!onTagsChange || isSavingTags) return;
+    if (tagToRemove.toLowerCase() === 'ticket') return;
+    setIsSavingTags(true);
+    try {
+      await onTagsChange(ticket.tags.filter((t) => t !== tagToRemove));
+    } finally {
+      setIsSavingTags(false);
+    }
+  };
 
   // Resolution editing state
   const [isEditingResolution, setIsEditingResolution] = useState(false);
@@ -433,6 +471,74 @@ export default function TicketDetail({
       console.error('Failed to save description:', error);
     } finally {
       setIsSavingDescription(false);
+    }
+  };
+
+  // Paste image handler
+  const [isPastingImage, setIsPastingImage] = useState(false);
+
+  const handleCommentPaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
+    if (!onUploadAttachment) return;
+
+    // Collect image files from clipboardData.files and clipboardData.items
+    const imageFiles: File[] = [];
+
+    // Try files first (Chrome/Edge)
+    if (e.clipboardData?.files) {
+      for (let i = 0; i < e.clipboardData.files.length; i++) {
+        const file = e.clipboardData.files[i];
+        if (file.type.startsWith('image/')) {
+          imageFiles.push(file);
+        }
+      }
+    }
+
+    // Fallback to items (Firefox, some Windows scenarios)
+    if (imageFiles.length === 0 && e.clipboardData?.items) {
+      for (let i = 0; i < e.clipboardData.items.length; i++) {
+        const item = e.clipboardData.items[i];
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+    }
+
+    if (imageFiles.length === 0) return;
+
+    // Rename files with descriptive names
+    const namedFiles = imageFiles.map((file) => {
+      const ext = file.type.split('/')[1] || 'png';
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      return new File([file], `pasted-image-${timestamp}.${ext}`, { type: file.type });
+    });
+
+    e.preventDefault();
+    setIsPastingImage(true);
+    setUploadError(null);
+
+    try {
+      for (const file of namedFiles) {
+        const attachment = await onUploadAttachment(file);
+        // Extract attachment ID and org from DevOps URL, use our proxy
+        const idMatch = attachment.url?.match(/attachments\/([a-f0-9-]+)/i);
+        const orgMatch = attachment.url?.match(/dev\.azure\.com\/([^/]+)/);
+        const attachmentId = idMatch ? idMatch[1] : null;
+        const org = orgMatch ? orgMatch[1] : '';
+        const params = new URLSearchParams({
+          fileName: file.name,
+          ...(org && { org }),
+        });
+        const imgSrc = attachmentId
+          ? `/api/devops/attachments/${attachmentId}?${params.toString()}`
+          : attachment.url;
+        const imgHtml = `<img src="${imgSrc}" alt="${file.name}" />`;
+        setNewComment((prev) => (prev ? `${prev}\n${imgHtml}` : imgHtml));
+      }
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Failed to upload pasted image');
+    } finally {
+      setIsPastingImage(false);
     }
   };
 
@@ -1170,9 +1276,20 @@ export default function TicketDetail({
             <MentionInput
               value={newComment}
               onChange={setNewComment}
-              placeholder="Type your reply... Use @ to mention team members"
-              className="input min-h-[100px] w-full resize-none pr-24"
+              onPaste={handleCommentPaste}
+              placeholder="Type your reply... Use @ to mention team members. Paste images with Ctrl+V."
+              className="input max-h-[300px] min-h-[100px] w-full resize-none overflow-auto pr-24"
+              disabled={isPastingImage}
             />
+            {isPastingImage && (
+              <div
+                className="mt-1 flex items-center gap-2 text-xs"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 size={12} className="animate-spin" />
+                Uploading pasted image...
+              </div>
+            )}
             <div className="absolute right-3 bottom-3 flex items-center gap-2">
               <button
                 onClick={() => fileInputRef.current?.click()}
@@ -1531,24 +1648,88 @@ export default function TicketDetail({
             {/* Tags */}
             <div>
               <label
-                className="mb-1 block text-xs uppercase"
+                className="mb-1 flex items-center gap-1 text-xs uppercase"
                 style={{ color: 'var(--text-muted)' }}
               >
+                <Tag size={12} />
                 Tags
               </label>
               <div className="flex flex-wrap gap-1">
                 {ticket.tags.map((tag) => (
                   <span
                     key={tag}
-                    className="rounded px-2 py-0.5 text-xs"
+                    className="flex items-center gap-1 rounded px-2 py-0.5 text-xs"
                     style={{
                       backgroundColor: 'var(--surface-hover)',
                       color: 'var(--text-secondary)',
                     }}
                   >
                     {tag}
+                    {onTagsChange && tag.toLowerCase() !== 'ticket' && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTag(tag)}
+                        disabled={isSavingTags}
+                        className="ml-0.5 rounded-full transition-colors hover:bg-[var(--surface)]"
+                        style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
+                        title={`Remove tag "${tag}"`}
+                        aria-label={`Remove tag ${tag}`}
+                      >
+                        <X size={10} />
+                      </button>
+                    )}
                   </span>
                 ))}
+                {onTagsChange && (
+                  <>
+                    {isAddingTag ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={newTagInput}
+                          onChange={(e) => setNewTagInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleAddTag();
+                            if (e.key === 'Escape') {
+                              setIsAddingTag(false);
+                              setNewTagInput('');
+                            }
+                          }}
+                          placeholder="New tag..."
+                          autoFocus
+                          disabled={isSavingTags}
+                          className="rounded border px-2 py-0.5 text-xs"
+                          style={{
+                            backgroundColor: 'var(--surface)',
+                            borderColor: 'var(--border)',
+                            color: 'var(--text-primary)',
+                            width: '100px',
+                          }}
+                        />
+                        {isSavingTags && (
+                          <Loader2
+                            size={12}
+                            className="animate-spin"
+                            style={{ color: 'var(--text-muted)' }}
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setIsAddingTag(true)}
+                        className="flex items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors hover:bg-[var(--surface-hover)]"
+                        style={{
+                          color: 'var(--primary)',
+                          cursor: 'pointer',
+                          border: '1px dashed var(--border)',
+                        }}
+                      >
+                        <Plus size={10} />
+                        Add
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             </div>
 

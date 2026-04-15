@@ -243,6 +243,20 @@ export default function TicketDetailPage() {
     }
   };
 
+  const handleTagsChange = async (tags: string[]) => {
+    if (!ticket) return;
+    const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+      method: 'PATCH',
+      headers: orgHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ tags, project: ticket.project }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || 'Failed to update tags');
+    }
+    await fetchTicket();
+  };
+
   const handleResolutionChange = async (resolution: string) => {
     if (!ticket) return;
     try {
@@ -336,6 +350,7 @@ export default function TicketDetailPage() {
         onAssigneeChange={handleAssigneeChange}
         onPriorityChange={handlePriorityChange}
         onTypeChange={handleTypeChange}
+        onTagsChange={handleTagsChange}
         onDescriptionChange={handleDescriptionChange}
         onResolutionChange={handleResolutionChange}
         onMitigationChange={handleMitigationChange}
