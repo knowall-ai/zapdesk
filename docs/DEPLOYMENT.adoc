@@ -155,7 +155,7 @@ az webapp deployment source config-zip \
 
 == Release Process
 
-ZapDesk uses `npm version` to manage releases, which keeps `package.json` and git tags in sync.
+ZapDesk uses `bun pm version` to manage releases, which keeps `package.json` and git tags in sync.
 
 === Creating a Release
 
@@ -166,15 +166,15 @@ git checkout main
 git pull
 
 # 2. Bump version (choose one based on changes)
-npm version patch   # Bug fixes (0.3.1 -> 0.3.2)
-npm version minor   # New features (0.3.2 -> 0.4.0)
-npm version major   # Breaking changes (0.4.0 -> 1.0.0)
+bun pm version patch   # Bug fixes (0.3.1 -> 0.3.2)
+bun pm version minor   # New features (0.3.2 -> 0.4.0)
+bun pm version major   # Breaking changes (0.4.0 -> 1.0.0)
 
 # 3. Push with tags to trigger deployment
 git push --follow-tags
 ----
 
-The `npm version` command automatically:
+The `bun pm version` command automatically:
 
 * Updates `package.json` version
 * Creates a git commit with message "v0.3.2"
