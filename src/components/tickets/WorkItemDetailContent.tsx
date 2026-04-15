@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { Check, X, Loader2 } from 'lucide-react';
+import { Pencil, Check, X, Loader2 } from 'lucide-react';
 import type { WorkItem, TicketComment } from '@/types';
 import {
   getTemplateConfig,

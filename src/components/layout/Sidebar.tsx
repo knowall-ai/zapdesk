@@ -50,10 +50,10 @@ const mainNavItems = [
     href: '/reporting',
   },
   {
-    id: 'standup',
+    id: 'kanban',
     name: 'Kanban Board',
     icon: <ClipboardList size={20} />,
-    href: '/standup',
+    href: '/kanban',
   },
   {
     id: 'monthly-checkpoint',
