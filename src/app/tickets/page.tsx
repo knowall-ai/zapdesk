@@ -3,6 +3,7 @@
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, Suspense, useCallback } from 'react';
+import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { TicketList } from '@/components/tickets';
@@ -118,6 +119,7 @@ function TicketsPageContent() {
         });
 
         if (!response.ok) {
+          toast.error('Failed to update status');
           throw new Error('Failed to update state');
         }
 
@@ -125,6 +127,7 @@ function TicketsPageContent() {
         setTickets((prev) =>
           prev.map((t) => (t.id === ticketId ? { ...t, devOpsState: newState } : t))
         );
+        toast.success(`Status updated to "${newState}"`);
       } catch (error) {
         console.error('Failed to update ticket state:', error);
         throw error; // Re-throw so KanbanBoard can handle rollback
@@ -174,9 +177,11 @@ function TicketsPageContent() {
             prev && prev.id === updatedTicket.id ? updatedTicket : prev
           );
         }
+        toast.success('Assignee updated');
       } else {
         const errorData = await response.json().catch(() => ({}));
         console.error('Assignee change failed:', response.status, errorData);
+        toast.error('Failed to update assignee');
       }
     },
     [tickets, selectedOrganization]
@@ -203,9 +208,11 @@ function TicketsPageContent() {
             prev && prev.id === updatedTicket.id ? updatedTicket : prev
           );
         }
+        toast.success('Priority updated');
       } else {
         const errorData = await response.json().catch(() => ({}));
         console.error('Priority change failed:', response.status, errorData);
+        toast.error('Failed to update priority');
       }
     },
     [tickets, selectedOrganization]
@@ -238,9 +245,11 @@ function TicketsPageContent() {
           );
           setSelectedTicket((prev) => (prev ? { ...prev, workItemType: newType } : null));
         }
+        toast.success(`Type changed to "${newType}"`);
       } else {
         const errorData = await response.json().catch(() => ({}));
         console.error('Type change failed:', response.status, errorData);
+        toast.error('Failed to change work item type');
         throw new Error(errorData.error || 'Failed to update work item type');
       }
     },
@@ -267,10 +276,12 @@ function TicketsPageContent() {
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
+        toast.error(data.error || 'Failed to update tags');
         throw new Error(data.error || 'Failed to update tags');
       }
       setTickets((prev) => prev.map((t) => (t.id === workItemId ? { ...t, tags } : t)));
       setSelectedTicket((prev) => (prev && prev.id === workItemId ? { ...prev, tags } : prev));
+      toast.success('Tags updated');
     },
     [tickets, selectedOrganization]
   );
@@ -319,7 +330,16 @@ function TicketsPageContent() {
               }
             : null
         );
+        const field = updates.title
+          ? 'Title'
+          : updates.description
+            ? 'Description'
+            : updates.resolution !== undefined
+              ? 'Resolution'
+              : 'Work item';
+        toast.success(`${field} updated`);
       } else {
+        toast.error('Failed to update work item');
         throw new Error('Failed to update work item');
       }
     },

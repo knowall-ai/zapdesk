@@ -3,6 +3,7 @@
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
+import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { TicketDetail } from '@/components/tickets';
@@ -140,10 +141,13 @@ export default function TicketDetailPage() {
       });
 
       if (response.ok) {
-        await fetchTicket(); // Refresh comments
+        await fetchTicket();
+      } else {
+        toast.error('Failed to add comment');
       }
     } catch (error) {
       console.error('Failed to add comment:', error);
+      toast.error('Failed to add comment');
     }
   };
 
@@ -156,10 +160,14 @@ export default function TicketDetailPage() {
       });
 
       if (response.ok) {
-        await fetchTicket(); // Refresh ticket
+        await fetchTicket();
+        toast.success(`Status updated to "${newState}"`);
+      } else {
+        toast.error('Failed to update status');
       }
     } catch (error) {
       console.error('Failed to update state:', error);
+      toast.error('Failed to update status');
     }
   };
 
@@ -176,10 +184,14 @@ export default function TicketDetailPage() {
       });
 
       if (response.ok) {
-        await fetchTicket(); // Refresh ticket
+        await fetchTicket();
+        toast.success('Assignee updated');
+      } else {
+        toast.error('Failed to update assignee');
       }
     } catch (error) {
       console.error('Failed to update assignee:', error);
+      toast.error('Failed to update assignee');
     }
   };
 
@@ -196,10 +208,14 @@ export default function TicketDetailPage() {
       });
 
       if (response.ok) {
-        await fetchTicket(); // Refresh ticket
+        await fetchTicket();
+        toast.success('Priority updated');
+      } else {
+        toast.error('Failed to update priority');
       }
     } catch (error) {
       console.error('Failed to update priority:', error);
+      toast.error('Failed to update priority');
     }
   };
 
@@ -214,9 +230,13 @@ export default function TicketDetailPage() {
 
       if (response.ok) {
         await fetchTicket();
+        toast.success(`Type changed to "${newType}"`);
+      } else {
+        toast.error('Failed to change work item type');
       }
     } catch (error) {
       console.error('Failed to change work item type:', error);
+      toast.error('Failed to change work item type');
     }
   };
 
@@ -237,8 +257,10 @@ export default function TicketDetailPage() {
       }
 
       await fetchTicket();
+      toast.success('Description updated');
     } catch (error) {
       console.error('Failed to update description:', error);
+      toast.error('Failed to update description');
       throw error;
     }
   };
@@ -252,9 +274,11 @@ export default function TicketDetailPage() {
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
+      toast.error(data.error || 'Failed to update tags');
       throw new Error(data.error || 'Failed to update tags');
     }
     await fetchTicket();
+    toast.success('Tags updated');
   };
 
   const handleResolutionChange = async (resolution: string) => {
@@ -275,8 +299,10 @@ export default function TicketDetailPage() {
       }
 
       await fetchTicket();
+      toast.success('Resolution updated');
     } catch (error) {
       console.error('Failed to update resolution:', error);
+      toast.error('Failed to update resolution');
       throw error;
     }
   };
@@ -299,8 +325,10 @@ export default function TicketDetailPage() {
       }
 
       await fetchTicket();
+      toast.success('Mitigation updated');
     } catch (error) {
       console.error('Failed to update mitigation:', error);
+      toast.error('Failed to update mitigation');
       throw error;
     }
   };
