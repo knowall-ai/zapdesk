@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService, workItemToTicket } from '@/lib/devops';
+import { isEmailTicket, extractRequesterEmail, sendStatusChangeNotification } from '@/lib/email';
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -30,8 +31,21 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     // If project is provided in the body, use it directly
     if (body.project) {
+      // Get old state before updating for email notification
+      let oldState: string | undefined;
+      try {
+        const existingItem = await devopsService.getWorkItem(body.project, ticketId);
+        oldState = existingItem?.fields?.['System.State'];
+      } catch {
+        // Continue without old state
+      }
+
       const updatedWorkItem = await devopsService.updateTicketState(body.project, ticketId, state);
       const ticket = workItemToTicket(updatedWorkItem);
+
+      // Send email notification for email-created tickets (fire-and-forget)
+      notifyStateChange(updatedWorkItem, ticketId, oldState || 'Unknown', state);
+
       return NextResponse.json({ ticket });
     }
 
@@ -42,6 +56,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       try {
         const workItem = await devopsService.getWorkItem(project.name, ticketId);
         if (workItem) {
+          const oldState = workItem.fields?.['System.State'] || 'Unknown';
+
           const updatedWorkItem = await devopsService.updateTicketState(
             project.name,
             ticketId,
@@ -58,6 +74,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             updatedAt: new Date(),
           });
 
+          // Send email notification for email-created tickets (fire-and-forget)
+          notifyStateChange(updatedWorkItem, ticketId, oldState, state);
+
           return NextResponse.json({ ticket });
         }
       } catch {
@@ -71,4 +90,23 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     console.error('Error updating ticket state:', error);
     return NextResponse.json({ error: 'Failed to update ticket state' }, { status: 500 });
   }
+}
+
+/** Fire-and-forget email notification for state changes on email-created tickets. */
+function notifyStateChange(
+  workItem: { fields?: Record<string, unknown> },
+  ticketId: number,
+  oldState: string,
+  newState: string
+) {
+  const tags = String(workItem.fields?.['System.Tags'] || '');
+  if (!isEmailTicket(tags)) return;
+
+  const requesterEmail = extractRequesterEmail(tags);
+  if (!requesterEmail) return;
+
+  const subject = String(workItem.fields?.['System.Title'] || 'Your ticket');
+  sendStatusChangeNotification(ticketId, subject, requesterEmail, oldState, newState).catch(
+    () => {}
+  );
 }

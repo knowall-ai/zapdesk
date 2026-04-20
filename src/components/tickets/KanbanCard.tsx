@@ -3,7 +3,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import Link from 'next/link';
-import { Zap } from 'lucide-react';
+import { Mail, Zap } from 'lucide-react';
 import Avatar from '@/components/common/Avatar';
 import PriorityIndicator from '@/components/common/PriorityIndicator';
 import type { Ticket, WorkItem, WorkItemType } from '@/types';
@@ -51,6 +51,9 @@ function CardContent({
             />
           ) : null}
           #{item.id}
+          {item.tags?.some((t) => t.toLowerCase() === 'email') && (
+            <Mail size={12} className="text-[var(--primary)]" />
+          )}
         </span>
         <PriorityIndicator priority={item.priority} />
       </div>
