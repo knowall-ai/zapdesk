@@ -139,12 +139,8 @@ export default function TicketDetailPage() {
         headers: orgHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ comment }),
       });
-
-      if (response.ok) {
-        await fetchTicket();
-      } else {
-        toast.error('Failed to add comment');
-      }
+      if (!response.ok) throw new Error('Failed to add comment');
+      await fetchTicket();
     } catch (error) {
       console.error('Failed to add comment:', error);
       toast.error('Failed to add comment');
@@ -158,13 +154,9 @@ export default function TicketDetailPage() {
         headers: orgHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ state: newState }),
       });
-
-      if (response.ok) {
-        await fetchTicket();
-        toast.success(`Status updated to "${newState}"`);
-      } else {
-        toast.error('Failed to update status');
-      }
+      if (!response.ok) throw new Error('Failed to update state');
+      await fetchTicket();
+      toast.success(`Status updated to "${newState}"`);
     } catch (error) {
       console.error('Failed to update state:', error);
       toast.error('Failed to update status');
@@ -182,13 +174,9 @@ export default function TicketDetailPage() {
           project: ticket.project,
         }),
       });
-
-      if (response.ok) {
-        await fetchTicket();
-        toast.success('Assignee updated');
-      } else {
-        toast.error('Failed to update assignee');
-      }
+      if (!response.ok) throw new Error('Failed to update assignee');
+      await fetchTicket();
+      toast.success('Assignee updated');
     } catch (error) {
       console.error('Failed to update assignee:', error);
       toast.error('Failed to update assignee');
@@ -206,13 +194,9 @@ export default function TicketDetailPage() {
           project: ticket.project,
         }),
       });
-
-      if (response.ok) {
-        await fetchTicket();
-        toast.success('Priority updated');
-      } else {
-        toast.error('Failed to update priority');
-      }
+      if (!response.ok) throw new Error('Failed to update priority');
+      await fetchTicket();
+      toast.success('Priority updated');
     } catch (error) {
       console.error('Failed to update priority:', error);
       toast.error('Failed to update priority');
@@ -227,13 +211,9 @@ export default function TicketDetailPage() {
         headers: orgHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ type: newType, project: ticket.project, additionalFields }),
       });
-
-      if (response.ok) {
-        await fetchTicket();
-        toast.success(`Type changed to "${newType}"`);
-      } else {
-        toast.error('Failed to change work item type');
-      }
+      if (!response.ok) throw new Error('Failed to change work item type');
+      await fetchTicket();
+      toast.success(`Type changed to "${newType}"`);
     } catch (error) {
       console.error('Failed to change work item type:', error);
       toast.error('Failed to change work item type');
@@ -251,11 +231,7 @@ export default function TicketDetailPage() {
           project: ticket.project,
         }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to update description');
-      }
-
+      if (!response.ok) throw new Error('Failed to update description');
       await fetchTicket();
       toast.success('Description updated');
     } catch (error) {
@@ -267,18 +243,23 @@ export default function TicketDetailPage() {
 
   const handleTagsChange = async (tags: string[]) => {
     if (!ticket) return;
-    const response = await fetch(`/api/devops/tickets/${ticketId}`, {
-      method: 'PATCH',
-      headers: orgHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ tags, project: ticket.project }),
-    });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      toast.error(data.error || 'Failed to update tags');
-      throw new Error(data.error || 'Failed to update tags');
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ tags, project: ticket.project }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to update tags');
+      }
+      await fetchTicket();
+      toast.success('Tags updated');
+    } catch (error) {
+      console.error('Failed to update tags:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update tags');
+      throw error;
     }
-    await fetchTicket();
-    toast.success('Tags updated');
   };
 
   const handleResolutionChange = async (resolution: string) => {
@@ -293,11 +274,7 @@ export default function TicketDetailPage() {
           workItemType: ticket.workItemType,
         }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to update resolution');
-      }
-
+      if (!response.ok) throw new Error('Failed to update resolution');
       await fetchTicket();
       toast.success('Resolution updated');
     } catch (error) {
@@ -319,11 +296,7 @@ export default function TicketDetailPage() {
           workItemType: ticket.workItemType,
         }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to update mitigation');
-      }
-
+      if (!response.ok) throw new Error('Failed to update mitigation');
       await fetchTicket();
       toast.success('Mitigation updated');
     } catch (error) {
