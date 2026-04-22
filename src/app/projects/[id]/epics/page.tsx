@@ -4,7 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
-import { LoadingSpinner } from '@/components/common';
+import { LoadingSpinner, StatusBadge } from '@/components/common';
 import { EpicTreemap } from '@/components/visualization';
 import {
   ArrowLeft,
@@ -235,7 +235,7 @@ export default function ProjectEpicsPage() {
                                 'Agile'
                               )}
                             </span>
-                            <span style={{ color: 'var(--text-muted)' }}>{epic.state}</span>
+                            <StatusBadge status={epic.state} size="sm" />
                           </div>
                         </div>
                         {selectedEpic?.id === epic.id && (

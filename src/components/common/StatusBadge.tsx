@@ -9,16 +9,20 @@ interface StatusBadgeProps {
 const stateConfig: Record<string, { label: string; className: string }> = {
   // Proposed states
   New: { label: 'New', className: 'status-new' },
+  Proposed: { label: 'Proposed', className: 'status-new' },
   Approved: { label: 'Approved', className: 'status-new' },
   'To Do': { label: 'To Do', className: 'status-new' },
   // InProgress states
   Active: { label: 'Active', className: 'status-in-progress' },
   'In Progress': { label: 'In Progress', className: 'status-in-progress' },
   Committed: { label: 'Committed', className: 'status-in-progress' },
+  Implementing: { label: 'Implementing', className: 'status-in-progress' },
   // Resolved/Completed states
   Resolved: { label: 'Resolved', className: 'status-resolved' },
+  Operate: { label: 'Operate', className: 'status-resolved' },
   Done: { label: 'Done', className: 'status-closed' },
   Closed: { label: 'Closed', className: 'status-closed' },
+  Completed: { label: 'Completed', className: 'status-closed' },
   // Other states
   Pending: { label: 'Pending', className: 'status-pending' },
   Open: { label: 'Open', className: 'status-open' },
