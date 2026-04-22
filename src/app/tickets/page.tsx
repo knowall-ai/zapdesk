@@ -181,6 +181,7 @@ function TicketsPageContent() {
       } catch (error) {
         console.error('Failed to update assignee:', error);
         toast.error('Failed to update assignee');
+        throw error;
       }
     },
     [tickets, selectedOrganization]
@@ -216,6 +217,7 @@ function TicketsPageContent() {
       } catch (error) {
         console.error('Failed to update priority:', error);
         toast.error('Failed to update priority');
+        throw error;
       }
     },
     [tickets, selectedOrganization]

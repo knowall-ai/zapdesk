@@ -141,9 +141,11 @@ export default function TicketDetailPage() {
       });
       if (!response.ok) throw new Error('Failed to add comment');
       await fetchTicket();
+      toast.success('Comment added');
     } catch (error) {
       console.error('Failed to add comment:', error);
       toast.error('Failed to add comment');
+      throw error;
     }
   };
 
@@ -160,6 +162,7 @@ export default function TicketDetailPage() {
     } catch (error) {
       console.error('Failed to update state:', error);
       toast.error('Failed to update status');
+      throw error;
     }
   };
 
@@ -180,6 +183,7 @@ export default function TicketDetailPage() {
     } catch (error) {
       console.error('Failed to update assignee:', error);
       toast.error('Failed to update assignee');
+      throw error;
     }
   };
 
@@ -200,6 +204,7 @@ export default function TicketDetailPage() {
     } catch (error) {
       console.error('Failed to update priority:', error);
       toast.error('Failed to update priority');
+      throw error;
     }
   };
 
@@ -211,12 +216,16 @@ export default function TicketDetailPage() {
         headers: orgHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ type: newType, project: ticket.project, additionalFields }),
       });
-      if (!response.ok) throw new Error('Failed to change work item type');
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || data.message || 'Failed to change work item type');
+      }
       await fetchTicket();
       toast.success(`Type changed to "${newType}"`);
     } catch (error) {
       console.error('Failed to change work item type:', error);
-      toast.error('Failed to change work item type');
+      toast.error(error instanceof Error ? error.message : 'Failed to change work item type');
+      throw error;
     }
   };
 
