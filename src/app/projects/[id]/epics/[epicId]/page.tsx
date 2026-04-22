@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
+import { StatusBadge } from '@/components/common';
 import { FeatureTimechain } from '@/components/visualization';
 import { ArrowLeft, ExternalLink, Loader2, LayoutGrid, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
@@ -133,15 +134,7 @@ export default function EpicDetailPage() {
                 {epic.title}
               </h1>
               <span style={{ color: 'var(--text-muted)' }}>#{epic.id}</span>
-              <span
-                className="rounded px-2 py-0.5 text-xs font-medium"
-                style={{
-                  backgroundColor: 'var(--surface)',
-                  color: 'var(--text-secondary)',
-                }}
-              >
-                {epic.state}
-              </span>
+              <StatusBadge status={epic.state} />
             </div>
           </div>
           <div className="flex items-center gap-2">

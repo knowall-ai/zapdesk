@@ -4,7 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout';
-import { LoadingSpinner } from '@/components/common';
+import { LoadingSpinner, StatusBadge } from '@/components/common';
 import { ArrowLeft, ExternalLink, Loader2, Info, LayoutGrid } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -379,15 +379,7 @@ export default function ProjectDetailPage() {
                             >
                               {epic.title}
                             </h3>
-                            <span
-                              className="shrink-0 rounded px-2 py-0.5 text-xs font-medium"
-                              style={{
-                                backgroundColor: 'var(--surface)',
-                                color: 'var(--text-secondary)',
-                              }}
-                            >
-                              {epic.state}
-                            </span>
+                            <StatusBadge status={epic.state} size="sm" />
                           </div>
                           {epic.description && (
                             <p
