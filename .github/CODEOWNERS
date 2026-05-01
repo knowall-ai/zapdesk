@@ -1,0 +1,14 @@
+# CODEOWNERS — auto-routes PR reviews by file path.
+#
+# Syntax: <pattern>  <@owner1> <@owner2> ...
+#   - Patterns are gitignore-style globs (* matches a single path segment, ** matches any depth).
+#   - The LAST matching line wins — general rules at the top, specific rules at the bottom.
+#   - Owners can be @user, @org/team-name, or email addresses.
+#
+# Paired with branch protection → "Require review from Code Owners", the matched
+# owner's approval becomes mandatory before merge.
+# Repo admins can bypass when "Allow administrators to bypass" is enabled on the
+# branch protection rule.
+
+# Default owner — applies to the entire repo
+*   @EdiWeeks
