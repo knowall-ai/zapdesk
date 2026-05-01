@@ -1,32 +1,39 @@
-## Description
+<!--
+Title format: conventional-commit prefix + short description.
+  feat: ...      fix: ...      perf: ...      refactor: ...     (require Fixes #nnn)
+  chore: ...     ci: ...       docs: ...      deps: ...
+  test: ...      build: ...    style: ...
 
-A brief description of the changes in this PR.
+Body: keep the sections below. Put each `Fixes #nnn` on its own line — one per
+issue. GitHub auto-closes those issues when this PR merges.
+-->
 
-## Related Issue
+## Summary
 
-Fixes #(issue number)
+<!-- 1–3 bullets: what changed and why. -->
 
-## Type of Change
+## Fixes
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Enhancement (improvement to existing functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to change)
-- [ ] Documentation update
+Fixes #
 
-## Checklist
+<!-- One `Fixes #nnn` per issue resolved. Delete this section for chore/ci/docs/deps PRs that aren't tied to an issue. -->
 
-- [ ] My code follows the project's style guidelines
-- [ ] I have performed a self-review of my code
-- [ ] I have added comments where necessary
-- [ ] I have updated the documentation accordingly
-- [ ] My changes generate no new warnings
-- [ ] I have tested my changes locally
+## Test plan
+
+<!--
+Step-by-step actions a reviewer or tester can follow, with expected results.
+Example:
+  1. Sign in with a Microsoft account.
+  2. Open the Kanban board at /kanban.
+  3. **Expected:** the previous /standup URL redirects here, board renders.
+  4. Drag a ticket from "Pending" to "Active".
+  5. **Expected:** ticket state updates and persists after refresh.
+
+For pure-refactor / docs / CI / deps PRs with no user-visible change, replace the steps with:
+
+  N/A — <one-line reason, e.g. "internal refactor, covered by existing tests">
+-->
 
 ## Screenshots (if applicable)
 
-Add screenshots to show visual changes.
-
-## Additional Notes
-
-Add any additional notes for reviewers here.
+<!-- Add screenshots for visual changes. -->
