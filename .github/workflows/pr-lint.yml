@@ -12,14 +12,23 @@ jobs:
   pr-lint:
     name: Title, body and issue link
     runs-on: ubuntu-latest
-    if: github.actor != 'dependabot[bot]' && github.actor != 'github-actions[bot]'
     steps:
       - name: Validate PR title, body and issue reference
         env:
+          GITHUB_ACTOR: ${{ github.actor }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -u
+
+          # Bots open PRs without ticket refs / test plans — skip with success
+          # (exit 0 inside the step, not a job-level `if:`, so the check still
+          # reports "success" rather than "skipped" and can be required).
+          if [ "$GITHUB_ACTOR" = 'dependabot[bot]' ] || [ "$GITHUB_ACTOR" = 'github-actions[bot]' ]; then
+            echo "Skipping PR lint for bot actor: $GITHUB_ACTOR"
+            exit 0
+          fi
+
           fail=0
 
           # 1. Title must use conventional-commit style:
@@ -68,14 +77,17 @@ jobs:
             fail=1
           else
             # The section must have non-template, non-empty content after it.
-            # Extract content after the heading up to the next heading or EOF, strip HTML comments.
+            # Extract content after the heading up to the next heading or EOF, then
+            # strip both single-line and multi-line HTML comment blocks
+            # (perl -0pe with /s slurps the whole input so .*? spans newlines).
             tp_content=$(echo "$PR_BODY" | awk '
               /^## Test plan/ {intp=1; next}
               /^## / {intp=0}
               intp {print}
-            ' | sed 's/<!--.*-->//g' | tr -d '[:space:]')
+            ' | perl -0pe 's/<!--.*?-->//gs' | tr -d '[:space:]')
             if [ -z "$tp_content" ]; then
-              echo "::error::'## Test plan' section is empty. Add steps or 'N/A — <reason>'."
+              echo "::error::'## Test plan' section is empty or only contains the template comment."
+              echo "::error::Add steps or 'N/A — <reason>'."
               fail=1
             fi
           fi
