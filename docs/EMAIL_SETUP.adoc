@@ -1,206 +1,156 @@
-= ZapDesk Email Integration Setup
+= ZapDesk Email Channel Setup
 :toc: left
 :toclevels: 3
 :icons: font
 
 == Overview
 
-ZapDesk integrates with Exchange Online to provide:
+ZapDesk turns inbound email into Azure DevOps work items and emails the
+requester back when an agent replies or the ticket status changes.
 
-* **Inbound**: Customers email your configured support mailbox to create tickets
-* **Outbound**: Agent replies are emailed to the ticket requester
+* *Inbound*: a 1-minute cron polls the support mailbox via Microsoft Graph,
+  ingests each unread message, then marks it as read.
+* *Outbound*: confirmations, agent replies, and status-change notifications go
+  out via Microsoft Graph `sendMail` from the same support mailbox.
 
-== Exchange Online Configuration
+----
+Customer ──email──> support@yourdomain.com (Exchange Online)
+                         ↑
+                         │  Graph poll every minute
+                         │
+ZapDesk /api/email/poll ─┘
+       │
+       ├─ subject contains [ZapDesk #N]?
+       │     yes → add comment to ticket #N
+       │     no  → create ticket; route to project by sender domain
+       │
+       └─ Graph sendMail → Customer (confirmation / reply)
+----
 
-=== Create Shared Mailbox
+== Azure AD App for Mail
 
-1. Go to Microsoft 365 Admin Center
-2. Navigate to Teams & Groups > Shared mailboxes
-3. Click "Add a shared mailbox"
-4. Set display name: "ZapDesk Support"
-5. Set email: your-support-email@yourdomain.com
-6. Click "Create"
+Create or reuse one Azure AD app with these *Application* permissions:
 
-=== Enable SMTP Authentication
+[cols="1,2"]
+|===
+|Permission |Why
 
-SMTP AUTH is disabled by default for new mailboxes:
+|`Mail.Send`
+|Outbound — confirmations, agent replies, status updates
+
+|`Mail.ReadWrite`
+|Inbound — list unread mail and flag-as-read after processing
+|===
+
+[IMPORTANT]
+====
+Click *Grant admin consent* after adding the permissions. Without consent the
+client-credentials token request will succeed but every Graph call will return
+403.
+====
+
+=== Restrict to a single mailbox
+
+`Mail.Send` and `Mail.ReadWrite` Application give the app access to *every*
+mailbox in the tenant. Restrict it to the support mailbox only via an
+{empty}https://learn.microsoft.com/graph/auth-limit-mailbox-access[Application
+Access Policy^]:
 
 [source,powershell]
 ----
-# Connect to Exchange Online
 Connect-ExchangeOnline
 
-# Enable SMTP AUTH for the mailbox
-Set-CASMailbox -Identity "your-support-email@yourdomain.com" -SmtpClientAuthenticationDisabled $false
+# Replace <APP_ID> with the Azure AD client ID of the mail app
+New-ApplicationAccessPolicy `
+  -AppId <APP_ID> `
+  -PolicyScopeGroupId support@yourdomain.com `
+  -AccessRight RestrictAccess `
+  -Description "ZapDesk inbound + outbound — restricted to support mailbox"
 
 # Verify
-Get-CASMailbox -Identity "your-support-email@yourdomain.com" | Select SmtpClientAuthenticationDisabled
+Test-ApplicationAccessPolicy -Identity support@yourdomain.com -AppId <APP_ID>
+# Expected: AccessCheckResult = Granted
 ----
 
-=== Create App Password (Basic Auth)
+To cover multiple mailboxes later, create a mail-enabled security group
+containing them and pass the group address as `-PolicyScopeGroupId`.
 
-If using basic authentication:
-
-1. Sign in as a user with access to the shared mailbox
-2. Go to https://mysignins.microsoft.com/security-info
-3. Click "Add sign-in method" > "App password"
-4. Name it "ZapDesk SMTP"
-5. Copy the generated password
-
-=== Configure OAuth (Recommended)
-
-For production, use OAuth instead of basic auth:
-
-1. Register application in Azure AD
-2. Add Mail.Send permission
-3. Configure client credentials flow
-4. Use Microsoft Graph API for sending
-
-== Inbound Email Processing
-
-=== Option 1: Power Automate
-
-Create a Power Automate flow:
-
-1. **Trigger**: "When a new email arrives (V3)"
-   - Folder: Inbox
-   - To: your-support-email@yourdomain.com
-
-2. **Action**: "HTTP"
-   - Method: POST
-   - URI: https://zapdesk.yourdomain.com/api/email/webhook
-   - Headers:
-     - x-webhook-secret: <EMAIL_WEBHOOK_SECRET>
-   - Body:
-   ```json
-   {
-     "from": "@{triggerOutputs()?['body/from']}",
-     "to": "@{triggerOutputs()?['body/toRecipients']}",
-     "subject": "@{triggerOutputs()?['body/subject']}",
-     "body": "@{triggerOutputs()?['body/body']}"
-   }
-   ```
-
-=== Option 2: Mail Flow Rules
-
-For advanced routing, use Exchange transport rules:
-
-1. Go to Exchange Admin Center
-2. Navigate to Mail flow > Rules
-3. Create rule to redirect to webhook endpoint via connector
-
-=== Option 3: Azure Logic Apps
-
-Similar to Power Automate but with more control:
-
-1. Create Logic App in Azure
-2. Add Office 365 Outlook connector
-3. Add HTTP action for webhook
-
-== Outbound Email Processing
-
-=== Environment Variables
-
-Add to `.env`:
+== Environment Variables
 
 [source,env]
 ----
-# SMTP Configuration (Basic Auth)
-SMTP_HOST=smtp.office365.com
-SMTP_PORT=587
-SMTP_USER=your-support-email@yourdomain.com
-SMTP_PASSWORD=<app-password>
-SMTP_FROM=your-support-email@yourdomain.com
-SMTP_FROM_NAME=ZapDesk Support
+# Auth for the poll + webhook endpoints
+EMAIL_WEBHOOK_SECRET=<random ≥32 chars>
 
-# Or OAuth Configuration
-SMTP_OAUTH_CLIENT_ID=<client-id>
-SMTP_OAUTH_CLIENT_SECRET=<client-secret>
-SMTP_OAUTH_TENANT_ID=<tenant-id>
+# Mailbox ZapDesk polls for inbound mail
+MAIL_POLL_MAILBOX=support@yourdomain.com
+
+# Outbound sender (usually the same mailbox)
+MAIL_FROM=support@yourdomain.com
+MAIL_FROM_NAME=ZapDesk Support
+
+# Dedicated mail app credentials
+MAIL_TENANT_ID=<tenant id>
+MAIL_CLIENT_ID=<app id>
+MAIL_CLIENT_SECRET=<client secret>
+
+# Service account PAT used to create work items (already required for ZapDesk)
+AZURE_DEVOPS_PAT=<pat with Work Items Read & Write>
 ----
 
-=== Email Templates
+If the dedicated mail credentials are not set, ZapDesk falls back to the main
+`AZURE_AD_*` app — but the main app should not have `Mail.*` permissions in
+production, so configure the dedicated ones.
 
-Outbound emails include:
+== Project Routing by Sender Domain
 
-* Ticket reference number for threading
-* Link back to ticket in ZapDesk
-* Requester's original message (quoted)
-* Agent's response
+When a new message arrives, ZapDesk extracts the sender's email domain and
+looks for an Azure DevOps project whose description contains that domain. The
+ticket is created in the matched project.
 
-Example format:
+To route mail from `acme.com` to a project, add the domain to that project's
+description in Azure DevOps:
+
 ----
-Subject: Re: [ZapDesk #123] Original Subject
-
-Hi {RequesterName},
-
-{AgentResponse}
-
----
-Ticket: #123
-Status: {Status}
-View online: https://zapdesk.yourdomain.com/tickets/123
-
---- Original Message ---
-{OriginalMessage}
+Customer support project for Acme. Email: acme.com
 ----
+
+Multiple domains can be listed comma-separated. The mapping is cached for
+~5 minutes; descriptions can be edited at any time.
+
+== GitHub Actions Cron
+
+ZapDesk drives the mailbox poll from a workflow at
+`.github/workflows/email-poll.yml`. Set these *repository* secrets so the
+workflow can call the deployed app:
+
+[cols="1,2"]
+|===
+|Secret |Value
+
+|`ZAPDESK_BASE_URL`
+|e.g. `https://zapdesk.yourdomain.com`
+
+|`EMAIL_WEBHOOK_SECRET`
+|Same value used by the deployed app
+|===
+
+The workflow runs on a 5-minute schedule by default; tighten the cron
+expression to `* * * * *` if you need lower latency.
 
 == Email Threading
 
-Emails are threaded using:
+Subject prefix is the source of truth: every outbound email from ZapDesk
+contains `[ZapDesk #<id>]`, and inbound mail with that prefix is appended to
+the existing ticket as a comment instead of creating a new one. This works
+across every email client, no custom Message-ID handling required.
 
-* Subject prefix: `[ZapDesk #123]`
-* In-Reply-To header
-* References header
-* Message-ID stored in DevOps work item
+== Security
 
-== Security Considerations
-
-=== Inbound
-
-* Webhook protected by shared secret
-* Validate sender domain for project mapping
-* Rate limiting recommended
-* Attachment scanning (future)
-
-=== Outbound
-
-* Use TLS for SMTP connection
-* OAuth preferred over basic auth
-* App passwords expire - monitor and rotate
-* Log all outbound emails
-
-== Testing
-
-=== Test Inbound
-
-[source,bash]
-----
-curl -X POST https://zapdesk.yourdomain.com/api/email/webhook \
-  -H "Content-Type: application/json" \
-  -H "x-webhook-secret: your-secret" \
-  -d '{
-    "from": "test@cairnhomes.com",
-    "to": "your-support-email@yourdomain.com",
-    "subject": "Test ticket",
-    "body": "This is a test"
-  }'
-----
-
-=== Test Outbound
-
-[source,bash]
-----
-# Via ZapDesk UI
-1. Open a ticket
-2. Add a reply
-3. Check requester's inbox
-
-# Via API
-curl -X POST https://zapdesk.yourdomain.com/api/devops/tickets/123/reply \
-  -H "Authorization: Bearer <token>" \
-  -d '{"message": "Test reply"}'
-----
+* Webhook + poll endpoints authenticated with a shared secret (`x-webhook-secret`)
+* Sender domain validated against project mappings — unknown domains rejected
+* Internal notes (`[Internal Note] ...`) are never emailed to the customer
+* Mail app scope restricted to one mailbox via Application Access Policy
 
 == Troubleshooting
 
@@ -208,18 +158,24 @@ curl -X POST https://zapdesk.yourdomain.com/api/devops/tickets/123/reply \
 |===
 |Issue |Solution
 
-|Emails not creating tickets
-|Check webhook secret, sender domain mapping, server logs
+|Poll returns `401 Invalid webhook secret`
+|`EMAIL_WEBHOOK_SECRET` mismatch between the GitHub secret and App Service.
 
-|Replies not sending
-|Verify SMTP credentials, check Exchange Online auth policy
+|Poll returns `MAIL_POLL_MAILBOX not configured`
+|Set the `MAIL_POLL_MAILBOX` env var on App Service and restart.
 
-|Threading not working
-|Ensure Message-ID stored, check subject prefix format
+|Graph returns 403 on list / sendMail
+|`Mail.ReadWrite` / `Mail.Send` not granted with admin consent on the mail app, or the Application Access Policy is excluding the mailbox.
 
-|Attachments missing
-|Attachment processing not yet implemented
+|Emails create tickets in the wrong project
+|Project description missing or contains the wrong domain. Edit the description in DevOps; the cache refreshes within ~5 minutes.
 
-|Rate limited
-|Contact Microsoft support, implement retry logic
+|Replies create new tickets instead of comments
+|Customer's mail client stripped `[ZapDesk #N]` from the subject — check the rendered subject in the customer's reply.
+
+|Confirmations not arriving
+|Outbound mail unconfigured, or the sender mailbox is restricted by the Application Access Policy.
+
+|Same email creates two tickets
+|`mark-as-read` failed after a successful ingest. Inspect server logs for `failed to mark … read`. The mailbox can be safely cleaned up; future polls will continue normally.
 |===
