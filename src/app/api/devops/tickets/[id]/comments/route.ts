@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { isEmailTicket, extractRequesterEmail, sendAgentReply } from '@/lib/email';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -82,6 +83,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           const commentText = isInternal ? `[Internal Note] ${comment}` : comment;
 
           await devopsService.addComment(project.name, ticketId, commentText);
+
+          // Email the requester for non-internal replies on email-created tickets.
+          // Fire-and-forget — never block the response on outbound mail.
+          if (!isInternal) {
+            const tags = workItem.fields?.['System.Tags'] || '';
+            if (isEmailTicket(tags)) {
+              const requesterEmail = extractRequesterEmail(tags);
+              if (requesterEmail) {
+                const subject = workItem.fields?.['System.Title'] || 'Your ticket';
+                const agentName = session.user?.name || 'Support Agent';
+                sendAgentReply(ticketId, subject, requesterEmail, agentName, comment).catch(
+                  () => {}
+                );
+              }
+            }
+          }
 
           return NextResponse.json({ success: true });
         }

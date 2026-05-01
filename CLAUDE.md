@@ -195,7 +195,13 @@ When making changes:
 | `AZURE_AD_TENANT_ID`                      | Azure AD tenant ID (or 'common')                 | Yes                   |
 | `AZURE_DEVOPS_ORG`                        | Azure DevOps organization name                   | Yes                   |
 | `AZURE_DEVOPS_PAT`                        | Personal Access Token for service account        | For email integration |
-| `EMAIL_WEBHOOK_SECRET`                    | Secret for email webhook authentication          | For email integration |
+| `EMAIL_WEBHOOK_SECRET`                    | Shared secret for `/api/email/poll` and `/api/email/webhook` | For email integration |
+| `MAIL_POLL_MAILBOX`                       | Mailbox ZapDesk polls for inbound email          | For inbound email     |
+| `MAIL_FROM`                               | Sender address for outbound mail                 | For outbound email    |
+| `MAIL_FROM_NAME`                          | Display name for outbound mail                   | No (default: ZapDesk Support) |
+| `MAIL_TENANT_ID`                          | Tenant ID for the dedicated mail Azure AD app    | For email integration |
+| `MAIL_CLIENT_ID`                          | Client ID for the dedicated mail Azure AD app    | For email integration |
+| `MAIL_CLIENT_SECRET`                      | Client secret for the dedicated mail Azure AD app | For email integration |
 | `TEAM_THRESHOLD_NEEDS_ATTENTION_PENDING`  | Pending tickets threshold for "Needs Attention"  | No (default: 5)       |
 | `TEAM_THRESHOLD_NEEDS_ATTENTION_ASSIGNED` | Assigned tickets threshold for "Needs Attention" | No (default: 15)      |
 | `TEAM_THRESHOLD_BEHIND_PENDING`           | Pending tickets threshold for "Behind"           | No (default: 2)       |

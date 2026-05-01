@@ -1,0 +1,38 @@
+name: Poll support mailbox
+
+# Inbound email is fetched by polling the support mailbox via Microsoft Graph.
+# This workflow asks the deployed app to drain the mailbox once a minute. Each
+# unread message is turned into a ticket (or appended as a comment if it's a
+# reply to an existing one) and then marked as read.
+
+on:
+  schedule:
+    # GitHub Actions cron runs every 5 minutes minimum on free tiers, but the
+    # workflow accepts as low as '* * * * *' on paid plans. Adjust to taste.
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+# Don't queue concurrent runs — if a poll is slow, skip the next tick rather
+# than pile up. Cancel in-progress lets `workflow_dispatch` always run fresh.
+concurrency:
+  group: email-poll
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Drain support mailbox
+        env:
+          BASE_URL: ${{ secrets.ZAPDESK_BASE_URL }}
+          SECRET: ${{ secrets.EMAIL_WEBHOOK_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$SECRET" ]; then
+            echo "::error::ZAPDESK_BASE_URL and EMAIL_WEBHOOK_SECRET secrets must be configured."
+            exit 1
+          fi
+          response=$(curl -fsSL -X POST "${BASE_URL%/}/api/email/poll" \
+            -H "x-webhook-secret: $SECRET" \
+            --max-time 90)
+          echo "$response"

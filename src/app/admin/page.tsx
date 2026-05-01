@@ -2,21 +2,95 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner, AzureDevOpsIcon } from '@/components/common';
-import { Settings, Code2, CheckCircle, XCircle } from 'lucide-react';
+import {
+  Settings,
+  Code2,
+  CheckCircle,
+  XCircle,
+  Mail,
+  Send,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Loader2,
+  Inbox,
+} from 'lucide-react';
 import { getSupportedTemplates, getTemplateConfig } from '@/config/process-templates';
+
+interface EmailConfig {
+  outbound: {
+    configured: boolean;
+    method: string;
+    from: string | null;
+    fromName: string | null;
+    azureAdConfigured: boolean;
+  };
+  inbound: {
+    webhookConfigured: boolean;
+    patConfigured: boolean;
+    pollMailbox: string | null;
+    pollConfigured: boolean;
+    ready: boolean;
+  };
+}
 
 export default function AdminPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+
+  const [emailConfig, setEmailConfig] = useState<EmailConfig | null>(null);
+  const [emailConfigLoading, setEmailConfigLoading] = useState(true);
+  const [testEmail, setTestEmail] = useState('');
+  const [testSending, setTestSending] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const fetchEmailConfig = useCallback(async () => {
+    try {
+      const res = await fetch('/api/email/config');
+      if (res.ok) {
+        setEmailConfig(await res.json());
+      }
+    } catch {
+      // section will show as unconfigured
+    } finally {
+      setEmailConfigLoading(false);
+    }
+  }, []);
+
+  const handleSendTestEmail = async () => {
+    if (!testEmail || testSending) return;
+    setTestSending(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/email/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: testEmail }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTestResult({ success: true, message: data.message });
+      } else {
+        setTestResult({ success: false, message: data.error || 'Failed to send test email' });
+      }
+    } catch {
+      setTestResult({ success: false, message: 'Network error' });
+    } finally {
+      setTestSending(false);
+    }
+  };
 
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login');
     }
   }, [status, router]);
+
+  useEffect(() => {
+    if (session) fetchEmailConfig();
+  }, [session, fetchEmailConfig]);
 
   if (status === 'loading') {
     return (
@@ -237,6 +311,233 @@ export default function AdminPage() {
             >
               Request support for a new process template &rarr;
             </a>
+          </div>
+        </section>
+
+        {/* Email Channel Section */}
+        <section className="mb-8">
+          <div className="mb-4 flex items-center gap-2">
+            <Mail size={20} style={{ color: 'var(--text-muted)' }} />
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Email Channel
+            </h2>
+          </div>
+          <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+            Customers raise tickets by emailing the support mailbox. Replies on existing tickets are
+            added as comments. The inbound poller checks for new mail every minute.
+          </p>
+
+          {emailConfigLoading ? (
+            <div className="flex items-center gap-2 py-8">
+              <LoadingSpinner size="sm" />
+              <span style={{ color: 'var(--text-muted)' }}>Loading email configuration...</span>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {/* Outbound Card */}
+              <div className="card p-4" style={{ borderColor: 'var(--border)' }}>
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ArrowUpFromLine size={18} style={{ color: 'var(--text-muted)' }} />
+                    <h3 className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                      Outbound (Graph API)
+                    </h3>
+                  </div>
+                  {emailConfig?.outbound.configured ? (
+                    <CheckCircle size={18} className="text-green-500" />
+                  ) : (
+                    <XCircle size={18} className="text-red-400" />
+                  )}
+                </div>
+
+                {emailConfig?.outbound.configured ? (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span style={{ color: 'var(--text-muted)' }}>Method</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>Microsoft Graph API</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span style={{ color: 'var(--text-muted)' }}>From</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        {emailConfig.outbound.fromName} &lt;{emailConfig.outbound.from}&gt;
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span style={{ color: 'var(--text-muted)' }}>Azure AD App</span>
+                      <CheckCircle size={14} className="text-green-500" />
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                    Set <code className="text-xs">MAIL_FROM</code> (shared mailbox address) and
+                    ensure the Azure AD app has <code className="text-xs">Mail.Send</code>{' '}
+                    permission with admin consent.
+                  </p>
+                )}
+              </div>
+
+              {/* Inbound (Polling) Card */}
+              <div className="card p-4" style={{ borderColor: 'var(--border)' }}>
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ArrowDownToLine size={18} style={{ color: 'var(--text-muted)' }} />
+                    <h3 className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                      Inbound (Mailbox Poll)
+                    </h3>
+                  </div>
+                  {emailConfig?.inbound.pollConfigured ? (
+                    <CheckCircle size={18} className="text-green-500" />
+                  ) : (
+                    <XCircle size={18} className="text-red-400" />
+                  )}
+                </div>
+
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--text-muted)' }}>Mailbox</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      {emailConfig?.inbound.pollMailbox || (
+                        <span style={{ color: 'var(--text-muted)' }}>not set</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--text-muted)' }}>Webhook Secret</span>
+                    {emailConfig?.inbound.webhookConfigured ? (
+                      <CheckCircle size={14} className="text-green-500" />
+                    ) : (
+                      <XCircle size={14} className="text-red-400" />
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--text-muted)' }}>Service Account (PAT)</span>
+                    {emailConfig?.inbound.patConfigured ? (
+                      <CheckCircle size={14} className="text-green-500" />
+                    ) : (
+                      <XCircle size={14} className="text-red-400" />
+                    )}
+                  </div>
+                  {emailConfig?.inbound.pollConfigured ? (
+                    <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                      Poll endpoint: <code className="text-xs">/api/email/poll</code> — drive from a
+                      1-minute cron.
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                      Set <code className="text-xs">MAIL_POLL_MAILBOX</code>,{' '}
+                      <code className="text-xs">EMAIL_WEBHOOK_SECRET</code>, and{' '}
+                      <code className="text-xs">AZURE_DEVOPS_PAT</code> to enable inbound email.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Send Test Email Card */}
+              <div className="card p-4" style={{ borderColor: 'var(--border)' }}>
+                <div className="mb-3 flex items-center gap-2">
+                  <Send size={18} style={{ color: 'var(--text-muted)' }} />
+                  <h3 className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                    Send Test Email
+                  </h3>
+                </div>
+
+                {emailConfig?.outbound.configured ? (
+                  <div className="space-y-3">
+                    <input
+                      type="email"
+                      placeholder="recipient@example.com"
+                      value={testEmail}
+                      onChange={(e) => setTestEmail(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSendTestEmail()}
+                      className="w-full rounded-md border px-3 py-2 text-sm"
+                      style={{
+                        backgroundColor: 'var(--surface)',
+                        borderColor: 'var(--border)',
+                        color: 'var(--text-primary)',
+                      }}
+                    />
+                    <button
+                      onClick={handleSendTestEmail}
+                      disabled={!testEmail || testSending}
+                      className="flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50"
+                      style={{ backgroundColor: 'var(--primary)' }}
+                    >
+                      {testSending ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          Sending...
+                        </>
+                      ) : (
+                        <>
+                          <Send size={14} />
+                          Send Test
+                        </>
+                      )}
+                    </button>
+                    {testResult && (
+                      <div
+                        className="flex items-center gap-2 rounded-md px-3 py-2 text-xs"
+                        style={{
+                          backgroundColor: testResult.success
+                            ? 'rgba(34,197,94,0.1)'
+                            : 'rgba(239,68,68,0.1)',
+                          color: testResult.success ? '#22c55e' : '#ef4444',
+                        }}
+                      >
+                        {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                        {testResult.message}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                    Configure outbound email to send a test message.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Email features summary */}
+          <div className="mt-4 rounded-lg p-4" style={{ backgroundColor: 'var(--surface-hover)' }}>
+            <p
+              className="mb-2 text-xs font-medium uppercase"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Email Features
+            </p>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-3">
+              {[
+                { label: 'Email-to-ticket', ready: emailConfig?.inbound.pollConfigured },
+                { label: 'Thread detection', ready: emailConfig?.inbound.pollConfigured },
+                {
+                  label: 'Mailbox polling (1 min)',
+                  ready: emailConfig?.inbound.pollConfigured,
+                  icon: Inbox,
+                },
+                {
+                  label: 'Confirmation emails',
+                  ready: emailConfig?.outbound.configured,
+                },
+                {
+                  label: 'Agent reply notifications',
+                  ready: emailConfig?.outbound.configured,
+                },
+                {
+                  label: 'Status change notifications',
+                  ready: emailConfig?.outbound.configured,
+                },
+              ].map((feature) => (
+                <div key={feature.label} className="flex items-center gap-1.5">
+                  {feature.ready ? (
+                    <CheckCircle size={12} className="shrink-0 text-green-500" />
+                  ) : (
+                    <XCircle size={12} className="shrink-0 text-red-400" />
+                  )}
+                  <span style={{ color: 'var(--text-secondary)' }}>{feature.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
       </div>
