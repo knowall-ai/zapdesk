@@ -11,6 +11,7 @@ import {
   ticketConfirmationTemplate,
   agentReplyTemplate,
   statusChangeTemplate,
+  type HistoryEntry,
 } from './email-templates';
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
@@ -183,12 +184,13 @@ export async function sendAgentReply(
   requesterEmail: string,
   agentName: string,
   replyHtml: string,
-  originalMessageId?: string
+  originalMessageId?: string,
+  history?: HistoryEntry[]
 ): Promise<void> {
   if (!isEmailConfigured()) return;
   try {
     const messageId = generateMessageId(ticketId);
-    const html = agentReplyTemplate({ ticketId, agentName, replyContent: replyHtml });
+    const html = agentReplyTemplate({ ticketId, agentName, replyContent: replyHtml, history });
     await sendViaGraph({
       to: requesterEmail,
       subject: threadedSubject(ticketId, `Re: ${subject}`),

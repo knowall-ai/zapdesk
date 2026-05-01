@@ -77,11 +77,46 @@ export function ticketConfirmationTemplate(opts: {
   `);
 }
 
+export interface HistoryEntry {
+  authorName: string;
+  createdAt: Date;
+  contentHtml: string;
+}
+
+function renderHistory(history: HistoryEntry[]): string {
+  if (!history || history.length === 0) return '';
+  const items = history
+    .map((h) => {
+      const when = h.createdAt.toLocaleString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      return `
+    <div style="border-left: 3px solid #d4d4d8; padding: 8px 12px; margin: 12px 0; color: #52525b; font-size: 13px;">
+      <p style="margin: 0 0 6px; color: #71717a; font-size: 12px;">
+        <strong>${h.authorName}</strong> · ${when}
+      </p>
+      <div>${h.contentHtml}</div>
+    </div>`;
+    })
+    .join('');
+  return `
+    <hr style="margin: 24px 0; border: none; border-top: 1px solid #e4e4e7;" />
+    <p class="meta" style="font-size: 12px; color: #71717a; margin-bottom: 4px;">
+      Earlier in this conversation:
+    </p>
+    ${items}`;
+}
+
 export function agentReplyTemplate(opts: {
   ticketId: number;
   agentName: string;
   replyContent: string;
   ticketUrl?: string;
+  history?: HistoryEntry[];
 }): string {
   const ticketUrl = opts.ticketUrl || `${APP_URL}/tickets/${opts.ticketId}`;
   return layoutWrapper(`
@@ -92,6 +127,7 @@ export function agentReplyTemplate(opts: {
     <p style="text-align: center; margin-top: 24px;">
       <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
     </p>
+    ${renderHistory(opts.history || [])}
   `);
 }
 
