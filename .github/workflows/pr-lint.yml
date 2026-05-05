@@ -59,7 +59,7 @@ jobs:
           # 3. feat/fix/perf/refactor PRs must contain at least one 'Fixes #nnn' line.
           #    Other prefixes (chore/ci/docs/deps/test/build/style) skip this check.
           if echo "$PR_TITLE" | grep -Eq '^(feat|fix|perf|refactor): '; then
-            fixes_regex='^Fixes #[0-9]+'
+            fixes_regex='^[[:space:]]*[-*]?[[:space:]]*Fixes #[0-9]+'
             if ! echo "$PR_BODY" | grep -Eq "$fixes_regex"; then
               echo "::error::PR body must contain at least one 'Fixes #nnn' line for feat/fix/perf/refactor PRs."
               echo "::error::Example:  Fixes #123"
