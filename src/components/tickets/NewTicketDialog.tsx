@@ -24,6 +24,20 @@ interface RequiredField {
   allowedValues?: string[];
 }
 
+interface ParentCandidate {
+  id: number;
+  title: string;
+  workItemType: string;
+  state: string;
+  areaPath: string;
+  parentId?: number;
+}
+
+// Story-equivalents across templates (Agile / Scrum / CMMI). The picker
+// surfaces them all under the "Story" tier so users don't need to know
+// which template their project uses.
+const STORY_TYPES = ['User Story', 'Product Backlog Item', 'Requirement'];
+
 interface NewTicketForm {
   project: string;
   title: string;
@@ -74,6 +88,14 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [foundBySearch, setFoundBySearch] = useState('');
+
+  // Parent picker state — three cascading levels (Epic → Feature → Story).
+  // The actual parent linked is the most specific selection (story > feature > epic).
+  const [parentCandidates, setParentCandidates] = useState<ParentCandidate[]>([]);
+  const [isLoadingParents, setIsLoadingParents] = useState(false);
+  const [selectedEpicId, setSelectedEpicId] = useState<number | null>(null);
+  const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(null);
+  const [selectedStoryId, setSelectedStoryId] = useState<number | null>(null);
 
   const [form, setForm] = useState<NewTicketForm>({
     project: '',
@@ -252,6 +274,27 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     [get]
   );
 
+  const fetchParentCandidates = useCallback(
+    async (projectName: string) => {
+      setIsLoadingParents(true);
+      try {
+        const response = await get(
+          `/api/devops/projects/${encodeURIComponent(projectName)}/parent-candidates`
+        );
+        if (!response.ok) throw new Error('Failed to fetch parent candidates');
+        const data = await response.json();
+        setParentCandidates(data.candidates || []);
+      } catch (err) {
+        // Picker is optional — degrade silently to no candidates
+        console.error('Failed to fetch parent candidates:', err);
+        setParentCandidates([]);
+      } finally {
+        setIsLoadingParents(false);
+      }
+    },
+    [get]
+  );
+
   // Reset form when dialog opens
   useEffect(() => {
     if (isOpen) {
@@ -279,6 +322,10 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       setPendingFiles([]);
       setRequiredFields([]);
       setAdditionalFieldValues({});
+      setParentCandidates([]);
+      setSelectedEpicId(null);
+      setSelectedFeatureId(null);
+      setSelectedStoryId(null);
     }
   }, [isOpen]);
 
@@ -296,12 +343,18 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       fetchWorkItemTypes(form.project);
       fetchIterations(form.project);
       fetchAreas(form.project);
+      fetchParentCandidates(form.project);
     } else {
       setTeamMembers([]);
       setWorkItemTypes([]);
       setIterations([]);
       setAreas([]);
+      setParentCandidates([]);
     }
+    // Clear selected parent when project changes
+    setSelectedEpicId(null);
+    setSelectedFeatureId(null);
+    setSelectedStoryId(null);
   }, [
     form.project,
     session,
@@ -310,6 +363,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     fetchWorkItemTypes,
     fetchIterations,
     fetchAreas,
+    fetchParentCandidates,
   ]);
 
   // Fetch priorities when project or work item type changes
@@ -362,6 +416,40 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       })
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
   }, [teamMembers, foundBySearch]);
+
+  // Group candidates by tier and apply cascading filter rules.
+  const sortByTitle = (a: ParentCandidate, b: ParentCandidate) => a.title.localeCompare(b.title);
+
+  const epics = useMemo(
+    () => parentCandidates.filter((p) => p.workItemType === 'Epic').sort(sortByTitle),
+    [parentCandidates]
+  );
+
+  const features = useMemo(() => {
+    const all = parentCandidates.filter((p) => p.workItemType === 'Feature');
+    const filtered = selectedEpicId ? all.filter((f) => f.parentId === selectedEpicId) : all;
+    return filtered.sort(sortByTitle);
+  }, [parentCandidates, selectedEpicId]);
+
+  const stories = useMemo(() => {
+    const all = parentCandidates.filter((p) => STORY_TYPES.includes(p.workItemType));
+    let filtered = all;
+    if (selectedFeatureId) {
+      filtered = all.filter((s) => s.parentId === selectedFeatureId);
+    } else if (selectedEpicId) {
+      // No Feature picked yet — surface stories whose Feature parent rolls up to the chosen Epic.
+      const featureIdsUnderEpic = new Set(
+        parentCandidates
+          .filter((p) => p.workItemType === 'Feature' && p.parentId === selectedEpicId)
+          .map((f) => f.id)
+      );
+      filtered = all.filter((s) => s.parentId && featureIdsUnderEpic.has(s.parentId));
+    }
+    return filtered.sort(sortByTitle);
+  }, [parentCandidates, selectedFeatureId, selectedEpicId]);
+
+  // Most-specific selection wins. This is the parent that gets linked on submit.
+  const effectiveParentId = selectedStoryId ?? selectedFeatureId ?? selectedEpicId ?? null;
 
   // Filter out Stakeholders and apply search
   const filteredMembers = useMemo(() => {
@@ -466,6 +554,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
           .map((t) => t.trim())
           .filter(Boolean),
         additionalFields: Object.keys(additionalFields).length > 0 ? additionalFields : undefined,
+        parentId: effectiveParentId ?? undefined,
       });
 
       if (!response.ok) {
@@ -1084,6 +1173,121 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                   </select>
                 )}
               </div>
+
+              {/* Parent (optional) — cascading Epic → Feature → Story.
+                  The most specific selection becomes the linked parent. */}
+              {isLoadingParents ? (
+                <div>
+                  <label
+                    className="mb-1 block text-xs uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Parent
+                  </label>
+                  <div
+                    className="flex items-center gap-2 text-sm"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <Loader2 className="animate-spin" size={14} />
+                    Loading...
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label
+                      className="mb-1 block text-xs uppercase"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      Epic
+                    </label>
+                    <select
+                      value={selectedEpicId ?? ''}
+                      onChange={(e) => {
+                        const id = e.target.value ? parseInt(e.target.value, 10) : null;
+                        setSelectedEpicId(id);
+                        // Cascading reset — narrower selections may no longer fit
+                        setSelectedFeatureId(null);
+                        setSelectedStoryId(null);
+                      }}
+                      className="input w-full"
+                      disabled={!form.project || epics.length === 0}
+                    >
+                      <option value="">{epics.length === 0 ? 'No Epics available' : 'None'}</option>
+                      {epics.map((epic) => (
+                        <option key={epic.id} value={epic.id}>
+                          #{epic.id} {epic.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      className="mb-1 block text-xs uppercase"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      Feature
+                    </label>
+                    <select
+                      value={selectedFeatureId ?? ''}
+                      onChange={(e) => {
+                        const id = e.target.value ? parseInt(e.target.value, 10) : null;
+                        setSelectedFeatureId(id);
+                        setSelectedStoryId(null);
+                      }}
+                      className="input w-full"
+                      disabled={!form.project || features.length === 0}
+                    >
+                      <option value="">
+                        {features.length === 0
+                          ? selectedEpicId
+                            ? 'No Features under this Epic'
+                            : 'No Features available'
+                          : 'None'}
+                      </option>
+                      {features.map((feature) => (
+                        <option key={feature.id} value={feature.id}>
+                          #{feature.id} {feature.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      className="mb-1 block text-xs uppercase"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      User Story
+                    </label>
+                    <select
+                      value={selectedStoryId ?? ''}
+                      onChange={(e) => {
+                        const id = e.target.value ? parseInt(e.target.value, 10) : null;
+                        setSelectedStoryId(id);
+                      }}
+                      className="input w-full"
+                      disabled={!form.project || stories.length === 0}
+                    >
+                      <option value="">
+                        {stories.length === 0
+                          ? selectedFeatureId
+                            ? 'No Stories under this Feature'
+                            : selectedEpicId
+                              ? 'No Stories under this Epic'
+                              : 'No Stories available'
+                          : 'None'}
+                      </option>
+                      {stories.map((story) => (
+                        <option key={story.id} value={story.id}>
+                          #{story.id} {story.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
 
               {/* Found By - people picker, shown only for Enhancement type */}
               {showFoundBy && (
