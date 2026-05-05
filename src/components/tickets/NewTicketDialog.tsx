@@ -38,6 +38,9 @@ interface ParentCandidate {
 // which template their project uses.
 const STORY_TYPES = ['User Story', 'Product Backlog Item', 'Requirement'];
 
+// Module-scope so the reference is stable across renders (keeps useMemo deps clean).
+const sortByTitle = (a: ParentCandidate, b: ParentCandidate) => a.title.localeCompare(b.title);
+
 interface NewTicketForm {
   project: string;
   title: string;
@@ -418,8 +421,6 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   }, [teamMembers, foundBySearch]);
 
   // Group candidates by tier and apply cascading filter rules.
-  const sortByTitle = (a: ParentCandidate, b: ParentCandidate) => a.title.localeCompare(b.title);
-
   const epics = useMemo(
     () => parentCandidates.filter((p) => p.workItemType === 'Epic').sort(sortByTitle),
     [parentCandidates]
@@ -437,13 +438,19 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     if (selectedFeatureId) {
       filtered = all.filter((s) => s.parentId === selectedFeatureId);
     } else if (selectedEpicId) {
-      // No Feature picked yet — surface stories whose Feature parent rolls up to the chosen Epic.
+      // No Feature picked yet — surface stories rolling up to the chosen Epic.
+      // This includes both stories under an intermediate Feature and stories linked
+      // directly to the Epic (e.g. teams that skip the Feature tier).
       const featureIdsUnderEpic = new Set(
         parentCandidates
           .filter((p) => p.workItemType === 'Feature' && p.parentId === selectedEpicId)
           .map((f) => f.id)
       );
-      filtered = all.filter((s) => s.parentId && featureIdsUnderEpic.has(s.parentId));
+      filtered = all.filter(
+        (s) =>
+          s.parentId === selectedEpicId ||
+          (s.parentId !== undefined && featureIdsUnderEpic.has(s.parentId))
+      );
     }
     return filtered.sort(sortByTitle);
   }, [parentCandidates, selectedFeatureId, selectedEpicId]);
@@ -1259,7 +1266,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                       className="mb-1 block text-xs uppercase"
                       style={{ color: 'var(--text-muted)' }}
                     >
-                      User Story
+                      Story
                     </label>
                     <select
                       value={selectedStoryId ?? ''}

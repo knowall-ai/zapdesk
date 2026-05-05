@@ -1914,13 +1914,17 @@ export class AzureDevOpsService {
 
     // Need relations to derive each item's parent for cascade filtering;
     // $expand=relations is incompatible with the fields parameter, so we expand all.
+    // Fail loudly if any chunk request fails — a partial list would let users
+    // pick the wrong parent (or hide a valid one) without realising it.
     const all: Array<DevOpsWorkItem & { relations?: Array<{ rel: string; url: string }> }> = [];
     for (const chunk of chunks) {
       const detailsResponse = await fetch(
         `${this.baseUrl}/_apis/wit/workitems?ids=${chunk.join(',')}&$expand=relations&api-version=7.0`,
         { headers: this.headers }
       );
-      if (!detailsResponse.ok) continue;
+      if (!detailsResponse.ok) {
+        throw new Error(`Failed to fetch parent candidate details: ${detailsResponse.statusText}`);
+      }
       const detailsData = await detailsResponse.json();
       all.push(...(detailsData.value || []));
     }
