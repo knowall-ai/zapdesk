@@ -13,6 +13,17 @@ import type { StandupData, StandupColumn, StandupWorkItem } from '@/types';
 
 type GroupBy = 'project' | 'person';
 
+// Module-level cache: navigating away and back to /kanban returns instantly
+// from the previous fetch (within TTL) instead of re-hitting the API. The
+// in-flight map dedupes concurrent calls (e.g. mount + auto-refresh tick).
+const STANDUP_CACHE_TTL_MS = 30 * 1000;
+const standupCache: Map<string, { data: StandupData; timestamp: number }> = new Map();
+const standupInFlight: Map<string, Promise<StandupData>> = new Map();
+
+function cacheKey(currentSprintOnly: boolean): string {
+  return currentSprintOnly ? 'sprint' : 'all';
+}
+
 /** Build /kanban URL with the given params */
 function buildKanbanUrl(groupBy: GroupBy, sprint: boolean): string {
   const params = new URLSearchParams();
@@ -96,10 +107,24 @@ function StandupPageContent() {
   autoRefreshRef.current = autoRefresh;
 
   const fetchStandupData = useCallback(
-    async (isAutoRefresh = false) => {
+    async (isAutoRefresh = false, forceRefresh = false) => {
       if (!session?.accessToken || !hasOrganization) {
         setLoading(false);
         return;
+      }
+
+      const key = cacheKey(currentSprintOnly);
+
+      // Serve fresh cached data instantly (back-navigation case)
+      if (!forceRefresh) {
+        const cached = standupCache.get(key);
+        if (cached && Date.now() - cached.timestamp < STANDUP_CACHE_TTL_MS) {
+          setStandupData(cached.data);
+          setLoading(false);
+          setRefreshing(false);
+          setError(null);
+          return;
+        }
       }
 
       if (isAutoRefresh) {
@@ -110,17 +135,32 @@ function StandupPageContent() {
       setError(null);
 
       try {
-        const params = new URLSearchParams();
-        if (currentSprintOnly) {
-          params.set('currentSprintOnly', 'true');
+        // Dedupe concurrent requests for the same cache key
+        let promise = forceRefresh ? undefined : standupInFlight.get(key);
+        if (!promise) {
+          promise = (async () => {
+            const params = new URLSearchParams();
+            if (currentSprintOnly) {
+              params.set('currentSprintOnly', 'true');
+            }
+            const queryString = params.toString();
+            const url = `/api/devops/standup${queryString ? `?${queryString}` : ''}`;
+            const response = await devOpsGet(url);
+            if (!response.ok) {
+              throw new Error('Failed to fetch standup data');
+            }
+            return (await response.json()) as StandupData;
+          })();
+          standupInFlight.set(key, promise);
         }
-        const queryString = params.toString();
-        const url = `/api/devops/standup${queryString ? `?${queryString}` : ''}`;
-        const response = await devOpsGet(url);
-        if (!response.ok) {
-          throw new Error('Failed to fetch standup data');
+
+        let data: StandupData;
+        try {
+          data = await promise;
+        } finally {
+          standupInFlight.delete(key);
         }
-        const data: StandupData = await response.json();
+        standupCache.set(key, { data, timestamp: Date.now() });
         setStandupData(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load standup data');
@@ -142,7 +182,7 @@ function StandupPageContent() {
     if (!autoRefresh) return;
     const interval = setInterval(() => {
       if (autoRefreshRef.current) {
-        fetchStandupData(true);
+        fetchStandupData(true, true);
       }
     }, 30000);
     return () => clearInterval(interval);
@@ -158,7 +198,7 @@ function StandupPageContent() {
         throw new Error('Failed to update state');
       }
 
-      fetchStandupData(true);
+      fetchStandupData(true, true);
     },
     [fetchStandupData, devOpsPatch]
   );
@@ -274,7 +314,7 @@ function StandupPageContent() {
 
               {/* Manual refresh */}
               <button
-                onClick={() => fetchStandupData(true)}
+                onClick={() => fetchStandupData(true, true)}
                 disabled={refreshing}
                 className="rounded-md p-2 transition-colors hover:bg-white/10"
                 style={{ color: refreshing ? 'var(--text-muted)' : 'var(--text-secondary)' }}

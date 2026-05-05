@@ -85,6 +85,12 @@ let stateCategoryCache: Record<string, string> = {};
 const projectListCache: Map<string, { data: DevOpsProject[]; timestamp: number }> = new Map();
 const PROJECT_CACHE_TTL_MS = 30 * 1000; // 30 seconds
 
+// Cache for current iterations per organization
+const currentIterationsCache: Map<string, { data: Map<string, string>; timestamp: number }> =
+  new Map();
+const currentIterationsInFlight: Map<string, Promise<Map<string, string>>> = new Map();
+const CURRENT_ITERATIONS_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 // Set the state category cache (called from API routes after fetching states)
 export function setStateCategoryCache(stateCategories: Record<string, string>) {
   stateCategoryCache = stateCategories;
@@ -2317,8 +2323,27 @@ export class AzureDevOpsService {
     };
   }
 
-  // Fetch current iteration path for each project
+  // Fetch current iteration path for each project (cached per-org)
   async getCurrentIterations(): Promise<Map<string, string>> {
+    const cached = currentIterationsCache.get(this.organization);
+    if (cached && Date.now() - cached.timestamp < CURRENT_ITERATIONS_TTL_MS) {
+      return cached.data;
+    }
+    const inFlight = currentIterationsInFlight.get(this.organization);
+    if (inFlight) return inFlight;
+
+    const promise = this.fetchCurrentIterations();
+    currentIterationsInFlight.set(this.organization, promise);
+    try {
+      const data = await promise;
+      currentIterationsCache.set(this.organization, { data, timestamp: Date.now() });
+      return data;
+    } finally {
+      currentIterationsInFlight.delete(this.organization);
+    }
+  }
+
+  private async fetchCurrentIterations(): Promise<Map<string, string>> {
     const result = new Map<string, string>();
 
     try {
@@ -2380,7 +2405,7 @@ export class AzureDevOpsService {
   async getStandupData(
     targetDate: Date,
     stateCategories: Record<string, string>
-  ): Promise<{ doneItems: DevOpsWorkItem[]; activeItems: DevOpsWorkItem[] }> {
+  ): Promise<{ items: DevOpsWorkItem[] }> {
     const dateStr = targetDate.toISOString().split('T')[0];
 
     // "Yesterday" relative to the target date
@@ -2400,7 +2425,7 @@ export class AzureDevOpsService {
     }
 
     if (doneStates.length === 0 || activeStates.length === 0) {
-      return { doneItems: [], activeItems: [] };
+      return { items: [] };
     }
 
     const escapeState = (s: string) => s.replace(/'/g, "''");
@@ -2477,15 +2502,13 @@ export class AzureDevOpsService {
     const doneData = await doneResponse.json();
     const activeData = await activeResponse.json();
 
-    // Batch-fetch work item details
-    const doneItems = await this.fetchWorkItemBatch(
-      doneData.workItems?.map((wi: { id: number }) => wi.id) || []
-    );
-    const activeItems = await this.fetchWorkItemBatch(
-      activeData.workItems?.map((wi: { id: number }) => wi.id) || []
-    );
+    // Combine IDs and batch-fetch in one pass — saves a round-trip when the
+    // total fits in a single 200-item batch (the common case).
+    const doneIds: number[] = doneData.workItems?.map((wi: { id: number }) => wi.id) || [];
+    const activeIds: number[] = activeData.workItems?.map((wi: { id: number }) => wi.id) || [];
+    const items = await this.fetchWorkItemBatch([...doneIds, ...activeIds]);
 
-    return { doneItems, activeItems };
+    return { items };
   }
 
   // Fetch work item details in batches of 200

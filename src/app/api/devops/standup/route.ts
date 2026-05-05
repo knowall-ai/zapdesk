@@ -11,42 +11,56 @@ import type {
   TicketPriority,
 } from '@/types';
 
-// TTL cache for state categories
-let stateCategoryCacheData: {
-  categories: Record<string, string>;
-  timestamp: number;
-  org: string;
-} | null = null;
-const STATE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+// Per-org TTL cache + in-flight dedup for state categories.
+// State definitions virtually never change in production, so we cache
+// aggressively (1 hour). The dedup map prevents thundering-herd refetches
+// when many requests arrive simultaneously after a cache expiry.
+const stateCategoryCacheByOrg: Map<
+  string,
+  { categories: Record<string, string>; timestamp: number }
+> = new Map();
+const stateCategoryInFlight: Map<string, Promise<Record<string, string>>> = new Map();
+const STATE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 // Fetch work item states and build state-to-category mapping
 async function fetchStateCategories(
+  devopsService: AzureDevOpsService,
   accessToken: string,
   organization: string
 ): Promise<Record<string, string>> {
-  // Return cached data if fresh and same org
-  if (
-    stateCategoryCacheData &&
-    stateCategoryCacheData.org === organization &&
-    Date.now() - stateCategoryCacheData.timestamp < STATE_CACHE_TTL_MS
-  ) {
-    return stateCategoryCacheData.categories;
+  const cached = stateCategoryCacheByOrg.get(organization);
+  if (cached && Date.now() - cached.timestamp < STATE_CACHE_TTL_MS) {
+    return cached.categories;
   }
 
-  const projectsResponse = await fetch(
-    `https://dev.azure.com/${organization}/_apis/projects?api-version=7.0`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
+  const inFlight = stateCategoryInFlight.get(organization);
+  if (inFlight) return inFlight;
+
+  const promise = doFetchStateCategories(devopsService, accessToken, organization);
+  stateCategoryInFlight.set(organization, promise);
+  try {
+    const categories = await promise;
+    if (Object.keys(categories).length > 0) {
+      stateCategoryCacheByOrg.set(organization, { categories, timestamp: Date.now() });
     }
-  );
+    return categories;
+  } finally {
+    stateCategoryInFlight.delete(organization);
+  }
+}
 
-  if (!projectsResponse.ok) return {};
-
-  const projectsData = await projectsResponse.json();
-  const projects: { name: string }[] = projectsData.value || [];
+async function doFetchStateCategories(
+  devopsService: AzureDevOpsService,
+  accessToken: string,
+  organization: string
+): Promise<Record<string, string>> {
+  // Reuse the cached project list rather than re-fetching independently
+  let projects: { name: string }[] = [];
+  try {
+    projects = await devopsService.getProjects();
+  } catch {
+    return {};
+  }
   if (projects.length === 0) return {};
 
   const stateCategories: Record<string, string> = {};
@@ -105,12 +119,6 @@ async function fetchStateCategories(
       }
     }
   }
-
-  stateCategoryCacheData = {
-    categories: stateCategories,
-    timestamp: Date.now(),
-    org: organization,
-  };
 
   return stateCategories;
 }
@@ -180,19 +188,20 @@ export async function GET(request: NextRequest) {
     const currentSprintOnly = searchParams.get('currentSprintOnly') === 'true';
     const targetDate = dateParam ? new Date(dateParam + 'T12:00:00Z') : new Date();
 
-    // Step 1: Fetch state categories dynamically from DevOps
-    const stateCategories = await fetchStateCategories(session.accessToken, organization);
+    // Step 1: Fetch state categories dynamically from DevOps (cached + deduped)
+    const devopsService = new AzureDevOpsService(session.accessToken, organization);
+    const stateCategories = await fetchStateCategories(
+      devopsService,
+      session.accessToken,
+      organization
+    );
 
     if (Object.keys(stateCategories).length === 0) {
       return NextResponse.json({ error: 'Failed to fetch state categories' }, { status: 500 });
     }
 
     // Step 2: Fetch work items using dynamic state lists
-    const devopsService = new AzureDevOpsService(session.accessToken, organization);
-    const { doneItems, activeItems } = await devopsService.getStandupData(
-      targetDate,
-      stateCategories
-    );
+    const { items } = await devopsService.getStandupData(targetDate, stateCategories);
 
     // Step 2b: If currentSprintOnly, fetch current iterations and filter
     let currentIterations: Map<string, string> | null = null;
@@ -210,8 +219,7 @@ export async function GET(request: NextRequest) {
       return iterationPath.startsWith(currentIteration);
     }
 
-    const filteredDoneItems = doneItems.filter(isInCurrentSprint);
-    const filteredActiveItems = activeItems.filter(isInCurrentSprint);
+    const filteredItems = items.filter(isInCurrentSprint);
 
     // Step 3: Define the 6 display columns and map DevOps states to them
     // Items in states not matching a column are bucketed by their category.
@@ -256,15 +264,8 @@ export async function GET(request: NextRequest) {
       return projectMap.get(name)!;
     };
 
-    // Place done items into their resolved column
-    for (const wi of filteredDoneItems) {
-      const colMap = ensureProject(wi.fields['System.TeamProject']);
-      const column = resolveColumn(wi.fields['System.State']);
-      colMap.get(column)!.push(mapWorkItemToStandupItem(wi, organization, stateCategories));
-    }
-
-    // Place active items into their resolved column
-    for (const wi of filteredActiveItems) {
+    // Place items into their resolved column
+    for (const wi of filteredItems) {
       const colMap = ensureProject(wi.fields['System.TeamProject']);
       const column = resolveColumn(wi.fields['System.State']);
       colMap.get(column)!.push(mapWorkItemToStandupItem(wi, organization, stateCategories));
