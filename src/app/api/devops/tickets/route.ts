@@ -106,6 +106,7 @@ export async function POST(request: NextRequest) {
       iterationPath,
       areaPath,
       additionalFields,
+      parentId,
     } = body;
 
     if (!project || !title) {
@@ -170,6 +171,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Validate parentId — must be a positive integer to avoid arbitrary URL injection
+    const validatedParentId =
+      typeof parentId === 'number' && Number.isInteger(parentId) && parentId > 0
+        ? parentId
+        : undefined;
+
     // Create the ticket with 'ticket' tag always included
     const allTags = ['ticket', ...(tags || [])].filter(Boolean);
     const workItem = await devopsService.createTicketWithAssignee(
@@ -186,6 +193,7 @@ export async function POST(request: NextRequest) {
         additionalFields: validatedAdditionalFields,
         iterationPath: typeof iterationPath === 'string' ? iterationPath : undefined,
         areaPath: typeof areaPath === 'string' ? areaPath : undefined,
+        parentId: validatedParentId,
       }
     );
 
