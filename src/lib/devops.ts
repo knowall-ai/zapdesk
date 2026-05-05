@@ -789,6 +789,7 @@ export class AzureDevOpsService {
       additionalFields?: Record<string, string | number>;
       iterationPath?: string;
       areaPath?: string;
+      parentId?: number;
     } = {}
   ): Promise<DevOpsWorkItem> {
     const {
@@ -801,6 +802,7 @@ export class AzureDevOpsService {
       additionalFields,
       iterationPath,
       areaPath,
+      parentId,
     } = options;
     const patchDocument: Array<{ op: string; path: string; value: string | number }> = [
       { op: 'add', path: '/fields/System.Title', value: title },
@@ -845,6 +847,23 @@ export class AzureDevOpsService {
       }
     }
 
+    // Optional parent link. Relations use a different value shape than fields,
+    // so they're appended outside patchDocument (which is reused on retry).
+    const parentRelation =
+      typeof parentId === 'number' && Number.isInteger(parentId) && parentId > 0
+        ? {
+            op: 'add',
+            path: '/relations/-',
+            value: {
+              rel: 'System.LinkTypes.Hierarchy-Reverse',
+              url: `${this.baseUrl}/_apis/wit/workItems/${parentId}`,
+            },
+          }
+        : null;
+    const buildBody = (
+      doc: Array<{ op: string; path: string; value: string | number }>
+    ): unknown[] => (parentRelation ? [...doc, parentRelation] : doc);
+
     const createUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`;
     const createHeaders = {
       ...this.headers,
@@ -854,7 +873,7 @@ export class AzureDevOpsService {
     const response = await fetch(createUrl, {
       method: 'POST',
       headers: createHeaders,
-      body: JSON.stringify(patchDocument),
+      body: JSON.stringify(buildBody(patchDocument)),
     });
 
     if (!response.ok) {
@@ -871,7 +890,7 @@ export class AzureDevOpsService {
         const retryResponse = await fetch(createUrl, {
           method: 'POST',
           headers: createHeaders,
-          body: JSON.stringify(retryDoc),
+          body: JSON.stringify(buildBody(retryDoc)),
         });
         if (retryResponse.ok) {
           return retryResponse.json();
@@ -1840,6 +1859,96 @@ export class AzureDevOpsService {
     }
 
     return users;
+  }
+
+  // Get work items in a project that can be selected as a parent
+  // (Epic, Feature, User Story / Product Backlog Item / Requirement).
+  // Includes each item's parent ID so the UI can cascade-filter.
+  async getPotentialParents(projectName: string): Promise<
+    Array<{
+      id: number;
+      title: string;
+      workItemType: string;
+      state: string;
+      areaPath: string;
+      parentId?: number;
+    }>
+  > {
+    // Include backlog parent types from all common process templates:
+    // Agile (User Story), Scrum (Product Backlog Item), CMMI (Requirement),
+    // plus Epic and Feature which exist in all.
+    const wiql = {
+      query: `
+        SELECT [System.Id], [System.Title], [System.WorkItemType],
+               [System.State], [System.AreaPath]
+        FROM WorkItems
+        WHERE [System.TeamProject] = '${escapeWiql(projectName)}'
+          AND [System.WorkItemType] IN ('Epic', 'Feature', 'User Story', 'Product Backlog Item', 'Requirement')
+          AND [System.State] NOT IN ('Closed', 'Removed', 'Done', 'Completed', 'Cut')
+        ORDER BY [System.WorkItemType], [System.ChangedDate] DESC
+      `,
+    };
+
+    const queryResponse = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/wiql?api-version=7.0`,
+      {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify(wiql),
+      }
+    );
+
+    if (!queryResponse.ok) {
+      throw new Error(`Failed to query parent candidates: ${queryResponse.statusText}`);
+    }
+
+    const queryData = await queryResponse.json();
+    const workItemIds: number[] = (queryData.workItems || []).map((wi: { id: number }) => wi.id);
+    if (workItemIds.length === 0) return [];
+
+    // Batch in chunks of 200 to stay under the DevOps URL/ID limit
+    const chunks: number[][] = [];
+    for (let i = 0; i < workItemIds.length; i += 200) {
+      chunks.push(workItemIds.slice(i, i + 200));
+    }
+
+    // Need relations to derive each item's parent for cascade filtering;
+    // $expand=relations is incompatible with the fields parameter, so we expand all.
+    // Fail loudly if any chunk request fails — a partial list would let users
+    // pick the wrong parent (or hide a valid one) without realising it.
+    const all: Array<DevOpsWorkItem & { relations?: Array<{ rel: string; url: string }> }> = [];
+    for (const chunk of chunks) {
+      const detailsResponse = await fetch(
+        `${this.baseUrl}/_apis/wit/workitems?ids=${chunk.join(',')}&$expand=relations&api-version=7.0`,
+        { headers: this.headers }
+      );
+      if (!detailsResponse.ok) {
+        throw new Error(`Failed to fetch parent candidate details: ${detailsResponse.statusText}`);
+      }
+      const detailsData = await detailsResponse.json();
+      all.push(...(detailsData.value || []));
+    }
+
+    return all.map((wi) => {
+      let parentId: number | undefined;
+      for (const relation of wi.relations || []) {
+        if (relation.rel === 'System.LinkTypes.Hierarchy-Reverse' && relation.url) {
+          const idMatch = relation.url.match(/workItems\/(\d+)/);
+          if (idMatch) {
+            parentId = parseInt(idMatch[1], 10);
+            break;
+          }
+        }
+      }
+      return {
+        id: wi.id,
+        title: wi.fields['System.Title'],
+        workItemType: wi.fields['System.WorkItemType'],
+        state: wi.fields['System.State'],
+        areaPath: wi.fields['System.AreaPath'],
+        parentId,
+      };
+    });
   }
 
   // Get all Epics from a project
