@@ -85,6 +85,12 @@ let stateCategoryCache: Record<string, string> = {};
 const projectListCache: Map<string, { data: DevOpsProject[]; timestamp: number }> = new Map();
 const PROJECT_CACHE_TTL_MS = 30 * 1000; // 30 seconds
 
+// Cache for current iterations per organization
+const currentIterationsCache: Map<string, { data: Map<string, string>; timestamp: number }> =
+  new Map();
+const currentIterationsInFlight: Map<string, Promise<Map<string, string>>> = new Map();
+const CURRENT_ITERATIONS_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 // Set the state category cache (called from API routes after fetching states)
 export function setStateCategoryCache(stateCategories: Record<string, string>) {
   stateCategoryCache = stateCategories;
@@ -789,6 +795,7 @@ export class AzureDevOpsService {
       additionalFields?: Record<string, string | number>;
       iterationPath?: string;
       areaPath?: string;
+      parentId?: number;
     } = {}
   ): Promise<DevOpsWorkItem> {
     const {
@@ -801,6 +808,7 @@ export class AzureDevOpsService {
       additionalFields,
       iterationPath,
       areaPath,
+      parentId,
     } = options;
     const patchDocument: Array<{ op: string; path: string; value: string | number }> = [
       { op: 'add', path: '/fields/System.Title', value: title },
@@ -845,6 +853,23 @@ export class AzureDevOpsService {
       }
     }
 
+    // Optional parent link. Relations use a different value shape than fields,
+    // so they're appended outside patchDocument (which is reused on retry).
+    const parentRelation =
+      typeof parentId === 'number' && Number.isInteger(parentId) && parentId > 0
+        ? {
+            op: 'add',
+            path: '/relations/-',
+            value: {
+              rel: 'System.LinkTypes.Hierarchy-Reverse',
+              url: `${this.baseUrl}/_apis/wit/workItems/${parentId}`,
+            },
+          }
+        : null;
+    const buildBody = (
+      doc: Array<{ op: string; path: string; value: string | number }>
+    ): unknown[] => (parentRelation ? [...doc, parentRelation] : doc);
+
     const createUrl = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${workItemType}?api-version=7.0`;
     const createHeaders = {
       ...this.headers,
@@ -854,7 +879,7 @@ export class AzureDevOpsService {
     const response = await fetch(createUrl, {
       method: 'POST',
       headers: createHeaders,
-      body: JSON.stringify(patchDocument),
+      body: JSON.stringify(buildBody(patchDocument)),
     });
 
     if (!response.ok) {
@@ -871,7 +896,7 @@ export class AzureDevOpsService {
         const retryResponse = await fetch(createUrl, {
           method: 'POST',
           headers: createHeaders,
-          body: JSON.stringify(retryDoc),
+          body: JSON.stringify(buildBody(retryDoc)),
         });
         if (retryResponse.ok) {
           return retryResponse.json();
@@ -1842,6 +1867,96 @@ export class AzureDevOpsService {
     return users;
   }
 
+  // Get work items in a project that can be selected as a parent
+  // (Epic, Feature, User Story / Product Backlog Item / Requirement).
+  // Includes each item's parent ID so the UI can cascade-filter.
+  async getPotentialParents(projectName: string): Promise<
+    Array<{
+      id: number;
+      title: string;
+      workItemType: string;
+      state: string;
+      areaPath: string;
+      parentId?: number;
+    }>
+  > {
+    // Include backlog parent types from all common process templates:
+    // Agile (User Story), Scrum (Product Backlog Item), CMMI (Requirement),
+    // plus Epic and Feature which exist in all.
+    const wiql = {
+      query: `
+        SELECT [System.Id], [System.Title], [System.WorkItemType],
+               [System.State], [System.AreaPath]
+        FROM WorkItems
+        WHERE [System.TeamProject] = '${escapeWiql(projectName)}'
+          AND [System.WorkItemType] IN ('Epic', 'Feature', 'User Story', 'Product Backlog Item', 'Requirement')
+          AND [System.State] NOT IN ('Closed', 'Removed', 'Done', 'Completed', 'Cut')
+        ORDER BY [System.WorkItemType], [System.ChangedDate] DESC
+      `,
+    };
+
+    const queryResponse = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/wiql?api-version=7.0`,
+      {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify(wiql),
+      }
+    );
+
+    if (!queryResponse.ok) {
+      throw new Error(`Failed to query parent candidates: ${queryResponse.statusText}`);
+    }
+
+    const queryData = await queryResponse.json();
+    const workItemIds: number[] = (queryData.workItems || []).map((wi: { id: number }) => wi.id);
+    if (workItemIds.length === 0) return [];
+
+    // Batch in chunks of 200 to stay under the DevOps URL/ID limit
+    const chunks: number[][] = [];
+    for (let i = 0; i < workItemIds.length; i += 200) {
+      chunks.push(workItemIds.slice(i, i + 200));
+    }
+
+    // Need relations to derive each item's parent for cascade filtering;
+    // $expand=relations is incompatible with the fields parameter, so we expand all.
+    // Fail loudly if any chunk request fails — a partial list would let users
+    // pick the wrong parent (or hide a valid one) without realising it.
+    const all: Array<DevOpsWorkItem & { relations?: Array<{ rel: string; url: string }> }> = [];
+    for (const chunk of chunks) {
+      const detailsResponse = await fetch(
+        `${this.baseUrl}/_apis/wit/workitems?ids=${chunk.join(',')}&$expand=relations&api-version=7.0`,
+        { headers: this.headers }
+      );
+      if (!detailsResponse.ok) {
+        throw new Error(`Failed to fetch parent candidate details: ${detailsResponse.statusText}`);
+      }
+      const detailsData = await detailsResponse.json();
+      all.push(...(detailsData.value || []));
+    }
+
+    return all.map((wi) => {
+      let parentId: number | undefined;
+      for (const relation of wi.relations || []) {
+        if (relation.rel === 'System.LinkTypes.Hierarchy-Reverse' && relation.url) {
+          const idMatch = relation.url.match(/workItems\/(\d+)/);
+          if (idMatch) {
+            parentId = parseInt(idMatch[1], 10);
+            break;
+          }
+        }
+      }
+      return {
+        id: wi.id,
+        title: wi.fields['System.Title'],
+        workItemType: wi.fields['System.WorkItemType'],
+        state: wi.fields['System.State'],
+        areaPath: wi.fields['System.AreaPath'],
+        parentId,
+      };
+    });
+  }
+
   // Get all Epics from a project
   async getEpics(projectName: string): Promise<Epic[]> {
     const wiql = {
@@ -2208,8 +2323,31 @@ export class AzureDevOpsService {
     };
   }
 
-  // Fetch current iteration path for each project
+  // Fetch current iteration path for each project (cached per-org)
   async getCurrentIterations(): Promise<Map<string, string>> {
+    const cached = currentIterationsCache.get(this.organization);
+    if (cached) {
+      if (Date.now() - cached.timestamp < CURRENT_ITERATIONS_TTL_MS) {
+        return cached.data;
+      }
+      // Expired — evict so the map doesn't accumulate stale per-org entries forever.
+      currentIterationsCache.delete(this.organization);
+    }
+    const inFlight = currentIterationsInFlight.get(this.organization);
+    if (inFlight) return inFlight;
+
+    const promise = this.fetchCurrentIterations();
+    currentIterationsInFlight.set(this.organization, promise);
+    try {
+      const data = await promise;
+      currentIterationsCache.set(this.organization, { data, timestamp: Date.now() });
+      return data;
+    } finally {
+      currentIterationsInFlight.delete(this.organization);
+    }
+  }
+
+  private async fetchCurrentIterations(): Promise<Map<string, string>> {
     const result = new Map<string, string>();
 
     try {
@@ -2271,7 +2409,7 @@ export class AzureDevOpsService {
   async getStandupData(
     targetDate: Date,
     stateCategories: Record<string, string>
-  ): Promise<{ doneItems: DevOpsWorkItem[]; activeItems: DevOpsWorkItem[] }> {
+  ): Promise<{ items: DevOpsWorkItem[] }> {
     const dateStr = targetDate.toISOString().split('T')[0];
 
     // "Yesterday" relative to the target date
@@ -2291,7 +2429,7 @@ export class AzureDevOpsService {
     }
 
     if (doneStates.length === 0 || activeStates.length === 0) {
-      return { doneItems: [], activeItems: [] };
+      return { items: [] };
     }
 
     const escapeState = (s: string) => s.replace(/'/g, "''");
@@ -2368,15 +2506,13 @@ export class AzureDevOpsService {
     const doneData = await doneResponse.json();
     const activeData = await activeResponse.json();
 
-    // Batch-fetch work item details
-    const doneItems = await this.fetchWorkItemBatch(
-      doneData.workItems?.map((wi: { id: number }) => wi.id) || []
-    );
-    const activeItems = await this.fetchWorkItemBatch(
-      activeData.workItems?.map((wi: { id: number }) => wi.id) || []
-    );
+    // Combine IDs and batch-fetch in one pass — saves a round-trip when the
+    // total fits in a single 200-item batch (the common case).
+    const doneIds: number[] = doneData.workItems?.map((wi: { id: number }) => wi.id) || [];
+    const activeIds: number[] = activeData.workItems?.map((wi: { id: number }) => wi.id) || [];
+    const items = await this.fetchWorkItemBatch([...doneIds, ...activeIds]);
 
-    return { doneItems, activeItems };
+    return { items };
   }
 
   // Fetch work item details in batches of 200
