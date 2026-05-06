@@ -117,6 +117,9 @@ function StandupPageContent() {
   // opens it in a dialog rather than navigating to the full page (#368).
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [isLoadingTicket, setIsLoadingTicket] = useState(false);
+  // Monotonic request id so a slow first click can't overwrite the dialog
+  // when a second card is clicked before the first response arrives.
+  const ticketFetchSeqRef = useRef(0);
 
   const fetchStandupData = useCallback(
     async (isAutoRefresh = false, forceRefresh = false) => {
@@ -206,11 +209,13 @@ function StandupPageContent() {
     return () => clearInterval(interval);
   }, [autoRefresh, fetchStandupData]);
 
+  // Generic state-change. Pass `project` when known to avoid an
+  // expensive cross-project scan on the server.
   const handleStateChange = useCallback(
-    async (itemId: number, targetState: string) => {
-      const response = await devOpsPatch(`/api/devops/tickets/${itemId}/state`, {
-        state: targetState,
-      });
+    async (itemId: number, targetState: string, project?: string) => {
+      const body: Record<string, unknown> = { state: targetState };
+      if (project) body.project = project;
+      const response = await devOpsPatch(`/api/devops/tickets/${itemId}/state`, body);
 
       if (!response.ok) {
         throw new Error('Failed to update state');
@@ -221,27 +226,35 @@ function StandupPageContent() {
     [fetchStandupData, devOpsPatch]
   );
 
-  // Fetch the full Ticket on card click and open the detail dialog
+  // Fetch the full Ticket on card click and open the detail dialog.
+  // Uses a monotonic seq id so out-of-order responses from rapid clicks
+  // can't overwrite the dialog with a stale ticket.
   const handleItemClick = useCallback(
     async (item: StandupWorkItem) => {
+      const mySeq = ++ticketFetchSeqRef.current;
       setIsLoadingTicket(true);
       try {
         const response = await devOpsGet(`/api/devops/tickets/${item.id}`);
+        if (mySeq !== ticketFetchSeqRef.current) return; // a newer click superseded us
         if (!response.ok) {
           throw new Error('Failed to fetch ticket');
         }
         const data = (await response.json()) as {
           ticket: Ticket & { createdAt: string; updatedAt: string };
         };
+        if (mySeq !== ticketFetchSeqRef.current) return;
         setSelectedTicket({
           ...data.ticket,
           createdAt: new Date(data.ticket.createdAt),
           updatedAt: new Date(data.ticket.updatedAt),
         });
       } catch (err) {
+        if (mySeq !== ticketFetchSeqRef.current) return;
         console.error('Failed to load ticket for dialog:', err);
       } finally {
-        setIsLoadingTicket(false);
+        if (mySeq === ticketFetchSeqRef.current) {
+          setIsLoadingTicket(false);
+        }
       }
     },
     [devOpsGet]
@@ -249,12 +262,15 @@ function StandupPageContent() {
 
   // Dialog state-change: reuse existing kanban state-change logic, then
   // mirror the new state on selectedTicket so the dialog UI updates.
+  // Pass project so the server doesn't have to scan every project to find
+  // the work item.
   const handleDialogStateChange = useCallback(
     async (workItemId: number, state: string) => {
-      await handleStateChange(workItemId, state);
+      const project = selectedTicket?.id === workItemId ? selectedTicket.project : undefined;
+      await handleStateChange(workItemId, state, project);
       setSelectedTicket((prev) => (prev ? { ...prev, devOpsState: state } : null));
     },
-    [handleStateChange]
+    [handleStateChange, selectedTicket]
   );
 
   // Generic PATCH helper used by the dialog's assignee/priority/tags/update handlers.
