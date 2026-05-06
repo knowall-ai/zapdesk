@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { ExternalLink, ChevronDown, Loader2, Maximize2 } from 'lucide-react';
 import type { WorkItem, TicketComment, Attachment } from '@/types';
 import StatusBadge from '../common/StatusBadge';
@@ -28,7 +29,7 @@ interface WorkItemDetailDialogProps {
   onTagsChange?: (workItemId: number, tags: string[]) => Promise<void>;
   onUpdate?: (
     workItemId: number,
-    updates: { title?: string; description?: string; resolution?: string }
+    updates: { title?: string; description?: string; resolution?: string; mitigation?: string }
   ) => Promise<void>;
 }
 
@@ -126,13 +127,24 @@ export default function WorkItemDetailDialog({
   const handleAddComment = useCallback(
     async (comment: string) => {
       if (!workItem || !hasOrganization) return;
-      const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comment }),
-      });
-      if (response.ok) {
+      try {
+        const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}/comments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ comment }),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || 'Failed to add comment');
+        }
         await fetchComments();
+        toast.success('Comment added');
+      } catch (error) {
+        // Re-throw so CommentSection keeps the unsent text in the input
+        // instead of clearing it on a silent failure.
+        console.error('Failed to add comment:', error);
+        toast.error(error instanceof Error ? error.message : 'Failed to add comment');
+        throw error;
       }
     },
     [workItem, fetchComments, fetchDevOps, hasOrganization]
@@ -158,7 +170,12 @@ export default function WorkItemDetailDialog({
   );
 
   const handleUpdate = useCallback(
-    async (updates: { title?: string; description?: string; resolution?: string }) => {
+    async (updates: {
+      title?: string;
+      description?: string;
+      resolution?: string;
+      mitigation?: string;
+    }) => {
       if (!workItem || !onUpdate) return;
       await onUpdate(workItem.id, updates);
     },
