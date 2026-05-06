@@ -27,11 +27,13 @@ function DroppableColumn({
   category,
   items,
   activeId,
+  onItemClick,
 }: {
   name: string;
   category: string;
   items: StandupWorkItem[];
   activeId: number | null;
+  onItemClick?: (item: StandupWorkItem) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: name });
   const color = getColumnColor(name, category);
@@ -54,7 +56,12 @@ function DroppableColumn({
       >
         <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
           {items.map((item) => (
-            <StandupKanbanCard key={item.id} item={item} isDragging={activeId === item.id} />
+            <StandupKanbanCard
+              key={item.id}
+              item={item}
+              isDragging={activeId === item.id}
+              onClick={onItemClick}
+            />
           ))}
         </SortableContext>
 
@@ -72,12 +79,14 @@ interface KanbanGroupSectionProps {
   groupName: string;
   columns: StandupColumn[];
   onStateChange?: (itemId: number, targetState: string) => Promise<void>;
+  onItemClick?: (item: StandupWorkItem) => void;
 }
 
 export default function KanbanGroupSection({
   groupName,
   columns,
   onStateChange,
+  onItemClick,
 }: KanbanGroupSectionProps) {
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
   const totalItems = useMemo(() => columns.reduce((sum, c) => sum + c.items.length, 0), [columns]);
@@ -261,6 +270,7 @@ export default function KanbanGroupSection({
                     category={col.category}
                     items={items}
                     activeId={activeId}
+                    onItemClick={onItemClick}
                   />
                 );
               })}
