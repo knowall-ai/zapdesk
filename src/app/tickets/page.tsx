@@ -303,7 +303,12 @@ function TicketsPageContent() {
   const handleWorkItemUpdate = useCallback(
     async (
       workItemId: number,
-      updates: { title?: string; description?: string; resolution?: string }
+      updates: {
+        title?: string;
+        description?: string;
+        resolution?: string;
+        mitigation?: string;
+      }
     ) => {
       const ticket = tickets.find((t) => t.id === workItemId);
       if (!ticket || !selectedOrganization) return;
@@ -325,17 +330,19 @@ function TicketsPageContent() {
         if (updates.title !== undefined) applied.title = updates.title;
         if (updates.description !== undefined) applied.description = updates.description;
         if (updates.resolution !== undefined) applied.resolution = updates.resolution;
+        if (updates.mitigation !== undefined) applied.mitigation = updates.mitigation;
         setTickets((prev) => prev.map((t) => (t.id === workItemId ? { ...t, ...applied } : t)));
         setSelectedTicket((prev) => (prev ? { ...prev, ...applied } : null));
         const fieldLabels: Record<keyof typeof updates, string> = {
           title: 'Title',
           description: 'Description',
           resolution: 'Resolution',
+          mitigation: 'Mitigation',
         };
         const changedKey = (Object.keys(updates) as Array<keyof typeof updates>).find(
           (k) => updates[k] !== undefined
         );
-        const field = changedKey ? fieldLabels[changedKey] : 'Work item';
+        const field = (changedKey && fieldLabels[changedKey]) || 'Work item';
         toast.success(`${field} updated`);
       } catch (error) {
         console.error('Failed to update work item:', error);
