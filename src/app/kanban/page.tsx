@@ -20,8 +20,8 @@ const STANDUP_CACHE_TTL_MS = 30 * 1000;
 const standupCache: Map<string, { data: StandupData; timestamp: number }> = new Map();
 const standupInFlight: Map<string, Promise<StandupData>> = new Map();
 
-function cacheKey(currentSprintOnly: boolean): string {
-  return currentSprintOnly ? 'sprint' : 'all';
+function cacheKey(organization: string, currentSprintOnly: boolean): string {
+  return `${organization}::${currentSprintOnly ? 'sprint' : 'all'}`;
 }
 
 /** Build /kanban URL with the given params */
@@ -92,7 +92,12 @@ function StandupPageContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { get: devOpsGet, patch: devOpsPatch, hasOrganization } = useDevOpsApi();
+  const {
+    get: devOpsGet,
+    patch: devOpsPatch,
+    hasOrganization,
+    selectedOrganization,
+  } = useDevOpsApi();
 
   // Derive from URL — single source of truth
   const groupBy: GroupBy = (searchParams.get('groupBy') as GroupBy) || 'project';
@@ -108,12 +113,12 @@ function StandupPageContent() {
 
   const fetchStandupData = useCallback(
     async (isAutoRefresh = false, forceRefresh = false) => {
-      if (!session?.accessToken || !hasOrganization) {
+      if (!session?.accessToken || !hasOrganization || !selectedOrganization?.accountName) {
         setLoading(false);
         return;
       }
 
-      const key = cacheKey(currentSprintOnly);
+      const key = cacheKey(selectedOrganization.accountName, currentSprintOnly);
 
       // Serve fresh cached data instantly (back-navigation case)
       if (!forceRefresh) {
@@ -169,7 +174,13 @@ function StandupPageContent() {
         setRefreshing(false);
       }
     },
-    [session?.accessToken, hasOrganization, devOpsGet, currentSprintOnly]
+    [
+      session?.accessToken,
+      hasOrganization,
+      selectedOrganization?.accountName,
+      devOpsGet,
+      currentSprintOnly,
+    ]
   );
 
   useEffect(() => {

@@ -29,8 +29,12 @@ async function fetchStateCategories(
   organization: string
 ): Promise<Record<string, string>> {
   const cached = stateCategoryCacheByOrg.get(organization);
-  if (cached && Date.now() - cached.timestamp < STATE_CACHE_TTL_MS) {
-    return cached.categories;
+  if (cached) {
+    if (Date.now() - cached.timestamp < STATE_CACHE_TTL_MS) {
+      return cached.categories;
+    }
+    // Expired — evict so the map doesn't accumulate stale per-org entries forever.
+    stateCategoryCacheByOrg.delete(organization);
   }
 
   const inFlight = stateCategoryInFlight.get(organization);

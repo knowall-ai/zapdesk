@@ -2326,8 +2326,12 @@ export class AzureDevOpsService {
   // Fetch current iteration path for each project (cached per-org)
   async getCurrentIterations(): Promise<Map<string, string>> {
     const cached = currentIterationsCache.get(this.organization);
-    if (cached && Date.now() - cached.timestamp < CURRENT_ITERATIONS_TTL_MS) {
-      return cached.data;
+    if (cached) {
+      if (Date.now() - cached.timestamp < CURRENT_ITERATIONS_TTL_MS) {
+        return cached.data;
+      }
+      // Expired — evict so the map doesn't accumulate stale per-org entries forever.
+      currentIterationsCache.delete(this.organization);
     }
     const inFlight = currentIterationsInFlight.get(this.organization);
     if (inFlight) return inFlight;
