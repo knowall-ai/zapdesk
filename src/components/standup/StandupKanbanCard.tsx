@@ -61,9 +61,9 @@ export default function StandupKanbanCard({ item, isDragging }: StandupKanbanCar
           {item.title}
         </h4>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           {item.assignee ? (
-            <div className="flex items-center gap-1.5">
+            <div className="flex min-w-0 items-center gap-1.5">
               <Avatar name={item.assignee.displayName} image={item.assignee.avatarUrl} size="sm" />
               <span className="max-w-[100px] truncate text-xs text-[var(--text-secondary)]">
                 {item.assignee.displayName}
@@ -71,6 +71,16 @@ export default function StandupKanbanCard({ item, isDragging }: StandupKanbanCar
             </div>
           ) : (
             <span className="text-xs text-[var(--text-muted)] italic">Unassigned</span>
+          )}
+
+          {item.project && (
+            <span
+              className="max-w-[110px] truncate rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
+              aria-label={`Project: ${item.project}`}
+              title={item.project}
+            >
+              {item.project}
+            </span>
           )}
         </div>
       </Link>
