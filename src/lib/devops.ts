@@ -2414,9 +2414,14 @@ export class AzureDevOpsService {
     // This matches the "recently-solved" view elsewhere in the app and ensures
     // items moved to a done state today still appear in the Closed column on
     // the Kanban board (issue #317).
+    // The upper bound (< nextDay) anchors the window to targetDate so historical
+    // ?date=... requests don't pick up items changed after that date.
     const sevenDaysAgo = new Date(targetDate);
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
+    const nextDay = new Date(targetDate);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const nextDayStr = nextDay.toISOString().split('T')[0];
 
     // Build state lists dynamically from categories
     const doneStates: string[] = [];
@@ -2462,6 +2467,7 @@ export class AzureDevOpsService {
         WHERE [System.State] IN (${doneStatesList})
           AND [System.WorkItemType] IN (${allowedTypesList})
           AND [System.ChangedDate] >= '${sevenDaysAgoStr}'
+          AND [System.ChangedDate] < '${nextDayStr}'
         ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
       `,
     };
