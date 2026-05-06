@@ -2416,9 +2416,12 @@ export class AzureDevOpsService {
     // the Kanban board (issue #317).
     // The upper bound (< nextDay) anchors the window to targetDate so historical
     // ?date=... requests don't pick up items changed after that date.
-    const sevenDaysAgo = new Date(targetDate);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
+    // Subtract 6 (not 7) so [windowStart, nextDay) covers exactly 7 calendar
+    // days inclusive of the target day — otherwise the date-only truncation
+    // would give us 8 days.
+    const windowStart = new Date(targetDate);
+    windowStart.setDate(windowStart.getDate() - 6);
+    const sevenDaysAgoStr = windowStart.toISOString().split('T')[0];
     const nextDay = new Date(targetDate);
     nextDay.setDate(nextDay.getDate() + 1);
     const nextDayStr = nextDay.toISOString().split('T')[0];

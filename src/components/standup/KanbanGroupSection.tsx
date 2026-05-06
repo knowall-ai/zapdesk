@@ -22,8 +22,8 @@ import { getColumnIcon, getColumnColor } from './columnConfig';
 import type { StandupColumn, StandupWorkItem } from '@/types';
 
 // Done-category columns only show items changed in the last 7 days; this hint
-// explains the cutoff so users don't think older closed items have vanished.
-const DONE_WINDOW_HINT = 'Showing items closed in the last 7 days';
+// explains the cutoff so users don't think older items have vanished.
+const DONE_WINDOW_HINT = 'Showing items resolved or closed in the last 7 days';
 
 /** Simple droppable column for the standup kanban */
 function DroppableColumn({
@@ -48,14 +48,15 @@ function DroppableColumn({
           <span style={{ color }}>{getColumnIcon(name, category)}</span>
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">{name}</h3>
           {isDoneColumn && (
-            <span
+            <button
+              type="button"
               title={DONE_WINDOW_HINT}
               aria-label={DONE_WINDOW_HINT}
               className="cursor-help"
               style={{ color: 'var(--text-muted)' }}
             >
               <Info size={12} />
-            </span>
+            </button>
           )}
         </div>
         <span className="rounded-full bg-[var(--surface-hover)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
