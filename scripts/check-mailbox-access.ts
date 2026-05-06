@@ -52,10 +52,12 @@ if (readRes.ok) {
   console.error(`❌ Mail.ReadWrite failed (${readRes.status}):`);
   console.error(readBody);
   console.error('\n→ Add the mailbox to your Application Access Policy:');
-  console.error(`  New-ApplicationAccessPolicy -AppId ${clientId} \`\n` +
-    `    -PolicyScopeGroupId ${mailbox} \`\n` +
-    `    -AccessRight RestrictAccess \`\n` +
-    `    -Description "ZapDesk — ${mailbox}"`);
+  console.error(
+    `  New-ApplicationAccessPolicy -AppId ${clientId} \`\n` +
+      `    -PolicyScopeGroupId ${mailbox} \`\n` +
+      `    -AccessRight RestrictAccess \`\n` +
+      `    -Description "ZapDesk — ${mailbox}"`
+  );
   process.exit(1);
 }
 
@@ -69,11 +71,11 @@ if (probeRes.ok) {
     userPrincipalName?: string;
     displayName?: string;
   };
-  console.log(
-    `✓ Mailbox visible — ${u.displayName} <${u.mail || u.userPrincipalName}>`
-  );
+  console.log(`✓ Mailbox visible — ${u.displayName} <${u.mail || u.userPrincipalName}>`);
 } else {
-  console.warn(`⚠ Could not resolve user record (${probeRes.status}) — sendMail may still work, but check the mailbox identity.`);
+  console.warn(
+    `⚠ Could not resolve user record (${probeRes.status}) — sendMail may still work, but check the mailbox identity.`
+  );
 }
 
 console.log(`\nReady. Update .env.local:`);
