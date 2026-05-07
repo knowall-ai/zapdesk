@@ -33,7 +33,8 @@
     "react-activity-calendar": "^3.0.5",
     "react-dom": "19.2.3",
     "react-tooltip": "^5.30.0",
-    "recharts": "^3.6.0"
+    "recharts": "^3.6.0",
+    "sonner": "^2.0.7"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
