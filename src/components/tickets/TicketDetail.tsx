@@ -35,6 +35,7 @@ import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { ensureActiveState } from '@/types';
 import { highlightMentions } from '@/lib/mentions';
 import { formatFileSize, validateFile } from '@/lib/attachment-utils';
+import { hasTicketTag } from '@/lib/tags';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
@@ -106,7 +107,7 @@ export default function TicketDetail({
   // Items without the "ticket" tag are internal work items (created from the
   // Kanban Board, etc.) — they have no customer-facing surface so the page
   // should read as a Work Item, not a Ticket (issue #372).
-  const isTicket = ticket.tags.includes('ticket');
+  const isTicket = hasTicketTag(ticket.tags);
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);

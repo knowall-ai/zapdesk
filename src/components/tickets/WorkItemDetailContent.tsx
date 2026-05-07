@@ -9,6 +9,7 @@ import {
   hasMitigationField,
   hasResolutionField,
 } from '@/config/process-templates';
+import { hasTicketTag } from '@/lib/tags';
 import Avatar from '../common/Avatar';
 import CommentSection from './CommentSection';
 import ZapDialog from './ZapDialog';
@@ -274,7 +275,9 @@ export default function WorkItemDetailContent({
   const showMitigation = hasMitigationField(workItem.workItemType, templateConfig);
   // Internal work items (no "ticket" tag) have no customer-facing surface, so
   // the comment helper should drop the "visible to customers" wording (#372).
-  const isTicket = workItem.tags?.includes('ticket') ?? true;
+  // Default to true when tags are missing so we don't accidentally hide ticket
+  // copy from a real ticket whose details haven't fully loaded yet.
+  const isTicket = workItem.tags ? hasTicketTag(workItem.tags) : true;
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);

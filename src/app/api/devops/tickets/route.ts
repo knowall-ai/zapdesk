@@ -181,8 +181,13 @@ export async function POST(request: NextRequest) {
     // Auto-tag with 'ticket' unless the caller explicitly opts out (asTicket: false).
     // Defaulting to true preserves existing behaviour for any caller that omits
     // the field — only the Kanban Board flow currently sets it false (issue #372).
+    // Sanitize the user-supplied list to strings first; a malformed request with
+    // non-string entries would otherwise throw on .toLowerCase().
     const tagAsTicket = asTicket !== false;
-    const userTags = (tags || []).filter(Boolean) as string[];
+    const userTags = (Array.isArray(tags) ? tags : [])
+      .filter((t): t is string => typeof t === 'string')
+      .map((t) => t.trim())
+      .filter(Boolean);
     const allTags = tagAsTicket
       ? Array.from(new Set(['ticket', ...userTags]))
       : userTags.filter((t) => t.toLowerCase() !== 'ticket');

@@ -8,6 +8,7 @@ import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { TicketDetail } from '@/components/tickets';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
+import { hasTicketTag } from '@/lib/tags';
 import type { Ticket, TicketComment, Attachment, WorkItemUpdate } from '@/types';
 
 export default function TicketDetailPage() {
@@ -58,7 +59,7 @@ export default function TicketDetailPage() {
         const data = await response.json();
         // Issue #372: route ticket vs internal work item to the URL that
         // matches its identity, so the sidebar highlight reflects reality.
-        const isTicket = (data.ticket.tags || []).includes('ticket');
+        const isTicket = hasTicketTag(data.ticket.tags);
         const onTicketsRoute = pathname?.startsWith('/tickets/');
         const onWorkItemsRoute = pathname?.startsWith('/workitems/');
         if (isTicket && onWorkItemsRoute) {
