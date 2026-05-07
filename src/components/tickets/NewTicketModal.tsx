@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { X, Loader2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { X, Loader2, Search } from 'lucide-react';
+import { useDevOpsApi } from '@/hooks';
+import { useClickOutside } from '@/hooks/useClickOutside';
 import type { TicketType } from '@/types';
 
 interface NewTicketModalProps {
@@ -11,18 +13,83 @@ interface NewTicketModalProps {
   onTicketCreated: () => void;
 }
 
+interface ParentCandidate {
+  id: number;
+  title: string;
+  workItemType: string;
+  state: string;
+  areaPath: string;
+}
+
 export function NewTicketModal({
   isOpen,
   onClose,
   projectName,
   onTicketCreated,
 }: NewTicketModalProps) {
+  const { get: devOpsGet, post: devOpsPost, hasOrganization } = useDevOpsApi();
+
   const [ticketType, setTicketType] = useState<TicketType>('Feature');
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState(3);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Parent picker state
+  const [parentCandidates, setParentCandidates] = useState<ParentCandidate[]>([]);
+  const [isLoadingParents, setIsLoadingParents] = useState(false);
+  const [parentSearch, setParentSearch] = useState('');
+  const [showParentDropdown, setShowParentDropdown] = useState(false);
+  const [selectedParent, setSelectedParent] = useState<ParentCandidate | null>(null);
+  const parentPickerRef = useClickOutside<HTMLDivElement>(() => setShowParentDropdown(false));
+
+  // Load parent candidates when the modal opens for a project
+  useEffect(() => {
+    if (!isOpen || !projectName || !hasOrganization) return;
+
+    let cancelled = false;
+    setIsLoadingParents(true);
+    devOpsGet(`/api/devops/projects/${encodeURIComponent(projectName)}/parent-candidates`)
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = (await response.json()) as { candidates?: ParentCandidate[] };
+        if (!cancelled) setParentCandidates(data.candidates || []);
+      })
+      .catch(() => {
+        // Picker is optional — silently degrade to no candidates on failure
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingParents(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, projectName, hasOrganization, devOpsGet]);
+
+  // Reset parent state whenever the modal closes or the project changes
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedParent(null);
+      setParentSearch('');
+      setShowParentDropdown(false);
+    }
+  }, [isOpen]);
+  useEffect(() => {
+    setSelectedParent(null);
+    setParentSearch('');
+  }, [projectName]);
+
+  const filteredParents = useMemo(() => {
+    const q = parentSearch.trim().toLowerCase();
+    const list = q
+      ? parentCandidates.filter(
+          (p) => p.title.toLowerCase().includes(q) || String(p.id).includes(q)
+        )
+      : parentCandidates;
+    return list.slice(0, 50);
+  }, [parentCandidates, parentSearch]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,16 +107,13 @@ export function NewTicketModal({
       // Strip any existing type prefix to prevent duplicates like "[Feature] [Feature]"
       const cleanSubject = subject.trim().replace(/^\[(Bug|Feature)\]\s*/i, '');
 
-      const response = await fetch('/api/devops/tickets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project: projectName,
-          title: `[${ticketType}] ${cleanSubject}`,
-          description: description.trim(),
-          priority,
-          tags,
-        }),
+      const response = await devOpsPost('/api/devops/tickets', {
+        project: projectName,
+        title: `[${ticketType}] ${cleanSubject}`,
+        description: description.trim(),
+        priority,
+        tags,
+        parentId: selectedParent?.id,
       });
 
       if (!response.ok) {
@@ -62,6 +126,8 @@ export function NewTicketModal({
       setDescription('');
       setPriority(3);
       setTicketType('Feature');
+      setSelectedParent(null);
+      setParentSearch('');
 
       onTicketCreated();
       onClose();
@@ -203,7 +269,7 @@ export function NewTicketModal({
           </div>
 
           {/* Priority */}
-          <div className="mb-6">
+          <div className="mb-4">
             <label className="mb-2 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
               Priority
             </label>
@@ -224,6 +290,138 @@ export function NewTicketModal({
               <option value={3}>Normal</option>
               <option value={4}>Low</option>
             </select>
+          </div>
+
+          {/* Parent (optional) */}
+          <div className="mb-6" ref={parentPickerRef}>
+            <label className="mb-2 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
+              Parent (optional)
+            </label>
+
+            {selectedParent ? (
+              <div
+                className="flex items-center justify-between rounded-md p-2 text-sm"
+                style={{
+                  backgroundColor: 'var(--background)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="rounded px-1.5 py-0.5 text-xs font-medium"
+                      style={{
+                        backgroundColor: 'var(--surface-hover)',
+                        color: 'var(--text-secondary)',
+                      }}
+                    >
+                      {selectedParent.workItemType}
+                    </span>
+                    <span
+                      className="truncate"
+                      style={{ color: 'var(--text-primary)' }}
+                      title={selectedParent.title}
+                    >
+                      #{selectedParent.id} {selectedParent.title}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedParent(null);
+                    setParentSearch('');
+                  }}
+                  className="ml-2 rounded p-1 hover:bg-[var(--surface-hover)]"
+                  style={{ color: 'var(--text-muted)' }}
+                  disabled={isSubmitting}
+                  aria-label="Clear parent"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <div className="relative">
+                  <Search
+                    size={14}
+                    className="absolute top-1/2 left-3 -translate-y-1/2"
+                    style={{ color: 'var(--text-muted)' }}
+                  />
+                  <input
+                    type="text"
+                    placeholder={
+                      isLoadingParents
+                        ? 'Loading parent items...'
+                        : parentCandidates.length === 0
+                          ? 'No parent items available'
+                          : 'Search Epics, Features, User Stories...'
+                    }
+                    value={parentSearch}
+                    onChange={(e) => {
+                      setParentSearch(e.target.value);
+                      setShowParentDropdown(true);
+                    }}
+                    onFocus={() => setShowParentDropdown(true)}
+                    className="input w-full pl-9"
+                    disabled={isSubmitting || isLoadingParents || parentCandidates.length === 0}
+                  />
+                </div>
+
+                {showParentDropdown && filteredParents.length > 0 && (
+                  <div
+                    className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md shadow-lg"
+                    style={{
+                      backgroundColor: 'var(--surface)',
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    {filteredParents.map((candidate) => (
+                      <button
+                        key={candidate.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedParent(candidate);
+                          setShowParentDropdown(false);
+                          setParentSearch('');
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)]"
+                      >
+                        <span
+                          className="rounded px-1.5 py-0.5 text-xs font-medium"
+                          style={{
+                            backgroundColor: 'var(--background)',
+                            color: 'var(--text-secondary)',
+                          }}
+                        >
+                          {candidate.workItemType}
+                        </span>
+                        <span
+                          className="truncate"
+                          style={{ color: 'var(--text-primary)' }}
+                          title={candidate.title}
+                        >
+                          #{candidate.id} {candidate.title}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {showParentDropdown && parentSearch && filteredParents.length === 0 && (
+                  <div
+                    className="absolute z-10 mt-1 w-full rounded-md p-3 text-sm shadow-lg"
+                    style={{
+                      backgroundColor: 'var(--surface)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-muted)',
+                    }}
+                  >
+                    No matches.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Project info */}

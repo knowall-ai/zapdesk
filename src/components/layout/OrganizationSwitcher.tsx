@@ -32,7 +32,7 @@ export default function OrganizationSwitcher() {
     };
   }, []);
 
-  // Don't render if only one organization or still loading with no orgs
+  // Loader while we don't have any orgs yet
   if (isLoading && organizations.length === 0) {
     return (
       <div className="flex items-center gap-2 rounded-md px-3 py-1.5">
@@ -41,9 +41,27 @@ export default function OrganizationSwitcher() {
     );
   }
 
-  // Hide if only one organization
-  if (organizations.length <= 1) {
+  // Nothing to show if we have no orgs at all
+  if (organizations.length === 0) {
     return null;
+  }
+
+  // Single-org case: show a passive label so the user always knows which
+  // organization they're in (issue #367) — no dropdown chevron / interaction.
+  const isMultiOrg = organizations.length > 1;
+  if (!isMultiOrg) {
+    return (
+      <div
+        className="flex items-center gap-2 rounded-md px-3 py-1.5"
+        style={{ color: 'var(--text-primary)' }}
+        aria-label="Current organization"
+      >
+        <Building2 size={16} style={{ color: 'var(--primary)' }} />
+        <span className="max-w-[150px] truncate text-sm font-medium">
+          {selectedOrganization?.accountName || organizations[0].accountName}
+        </span>
+      </div>
+    );
   }
 
   return (
