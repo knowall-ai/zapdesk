@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
@@ -14,6 +14,7 @@ export default function TicketDetailPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const ticketId = params.id as string;
   const { selectedOrganization } = useOrganization();
 
@@ -55,6 +56,19 @@ export default function TicketDetailPage() {
       });
       if (response.ok) {
         const data = await response.json();
+        // Issue #372: route ticket vs internal work item to the URL that
+        // matches its identity, so the sidebar highlight reflects reality.
+        const isTicket = (data.ticket.tags || []).includes('ticket');
+        const onTicketsRoute = pathname?.startsWith('/tickets/');
+        const onWorkItemsRoute = pathname?.startsWith('/workitems/');
+        if (isTicket && onWorkItemsRoute) {
+          router.replace(`/tickets/${ticketId}`);
+          return;
+        }
+        if (!isTicket && onTicketsRoute) {
+          router.replace(`/workitems/${ticketId}`);
+          return;
+        }
         setTicket({
           ...data.ticket,
           createdAt: new Date(data.ticket.createdAt),
@@ -80,7 +94,7 @@ export default function TicketDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [ticketId, router, selectedOrganization, orgHeaders]);
+  }, [ticketId, router, selectedOrganization, orgHeaders, pathname]);
 
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);

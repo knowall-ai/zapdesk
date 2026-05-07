@@ -272,6 +272,9 @@ export default function WorkItemDetailContent({
   const templateConfig = getTemplateConfig(processTemplate);
   const showResolution = hasResolutionField(workItem.workItemType, templateConfig);
   const showMitigation = hasMitigationField(workItem.workItemType, templateConfig);
+  // Internal work items (no "ticket" tag) have no customer-facing surface, so
+  // the comment helper should drop the "visible to customers" wording (#372).
+  const isTicket = workItem.tags?.includes('ticket') ?? true;
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -494,6 +497,7 @@ export default function WorkItemDetailContent({
             assignee={workItem.assignee}
             onZapClick={() => setIsZapDialogOpen(true)}
             compact
+            isTicket={isTicket}
           />
         </div>
       ) : (
@@ -504,6 +508,7 @@ export default function WorkItemDetailContent({
           onUploadAttachment={onUploadAttachment}
           assignee={workItem.assignee}
           onZapClick={() => setIsZapDialogOpen(true)}
+          isTicket={isTicket}
         />
       )}
 

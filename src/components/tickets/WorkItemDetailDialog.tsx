@@ -311,7 +311,10 @@ export default function WorkItemDetailDialog({
     <>
       <button
         onClick={() => {
-          router.push(`/tickets/${workItem.id}`);
+          // Internal work items (no "ticket" tag) live at /workitems/[id]
+          // so the sidebar doesn't highlight Tickets (issue #372).
+          const isTicket = workItem.tags?.includes('ticket') ?? true;
+          router.push(`${isTicket ? '/tickets' : '/workitems'}/${workItem.id}`);
           onClose();
         }}
         className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"

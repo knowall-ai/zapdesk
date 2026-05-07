@@ -103,6 +103,10 @@ export default function TicketDetail({
   const templateConfig = getTemplateConfig(processTemplate);
   const showResolution = hasResolutionField(ticket.workItemType, templateConfig);
   const showMitigation = hasMitigationField(ticket.workItemType, templateConfig);
+  // Items without the "ticket" tag are internal work items (created from the
+  // Kanban Board, etc.) — they have no customer-facing surface so the page
+  // should read as a Work Item, not a Ticket (issue #372).
+  const isTicket = ticket.tags.includes('ticket');
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1225,7 +1229,9 @@ export default function TicketDetail({
                 className="h-4 w-4 rounded accent-[var(--primary)]"
               />
               <span className="text-xs" style={{ color: 'var(--primary)' }}>
-                Public reply – all comments are visible to customers in DevOps
+                {isTicket
+                  ? 'Public reply – all comments are visible to customers in DevOps'
+                  : 'Comments are visible in DevOps'}
               </span>
             </label>
           </div>
@@ -1356,7 +1362,7 @@ export default function TicketDetail({
         <div className="p-4">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-              Ticket Details
+              {isTicket ? 'Ticket Details' : 'Work Item Details'}
             </h3>
             <button
               onClick={() => setIsDetailsSidebarOpen(false)}

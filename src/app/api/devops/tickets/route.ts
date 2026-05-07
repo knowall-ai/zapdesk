@@ -107,6 +107,7 @@ export async function POST(request: NextRequest) {
       areaPath,
       additionalFields,
       parentId,
+      asTicket,
     } = body;
 
     if (!project || !title) {
@@ -177,8 +178,14 @@ export async function POST(request: NextRequest) {
         ? parentId
         : undefined;
 
-    // Create the ticket with 'ticket' tag always included
-    const allTags = ['ticket', ...(tags || [])].filter(Boolean);
+    // Auto-tag with 'ticket' unless the caller explicitly opts out (asTicket: false).
+    // Defaulting to true preserves existing behaviour for any caller that omits
+    // the field — only the Kanban Board flow currently sets it false (issue #372).
+    const tagAsTicket = asTicket !== false;
+    const userTags = (tags || []).filter(Boolean) as string[];
+    const allTags = tagAsTicket
+      ? Array.from(new Set(['ticket', ...userTags]))
+      : userTags.filter((t) => t.toLowerCase() !== 'ticket');
     const workItem = await devopsService.createTicketWithAssignee(
       project,
       title,
