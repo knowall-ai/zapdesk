@@ -20,8 +20,8 @@ export async function GET() {
     // so the admin UI can't claim "configured" while Graph calls still 401.
     const mailApp = Boolean(
       (process.env.MAIL_CLIENT_ID || process.env.AZURE_AD_CLIENT_ID) &&
-        (process.env.MAIL_CLIENT_SECRET || process.env.AZURE_AD_CLIENT_SECRET) &&
-        (process.env.MAIL_TENANT_ID || process.env.AZURE_AD_TENANT_ID)
+      (process.env.MAIL_CLIENT_SECRET || process.env.AZURE_AD_CLIENT_SECRET) &&
+      (process.env.MAIL_TENANT_ID || process.env.AZURE_AD_TENANT_ID)
     );
     const pollMailbox = pollMailboxFromEnv();
     const outboundReady = isEmailConfigured();

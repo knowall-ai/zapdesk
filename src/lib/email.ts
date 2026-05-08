@@ -51,7 +51,11 @@ const TOKEN_REFRESH_LEEWAY_MS = 60_000;
 export async function getMailGraphToken(): Promise<string> {
   const key = `${mailTenantId()}|${mailClientId()}`;
   const now = Date.now();
-  if (tokenCache && tokenCache.key === key && tokenCache.expiresAt - TOKEN_REFRESH_LEEWAY_MS > now) {
+  if (
+    tokenCache &&
+    tokenCache.key === key &&
+    tokenCache.expiresAt - TOKEN_REFRESH_LEEWAY_MS > now
+  ) {
     return tokenCache.accessToken;
   }
   if (inFlight) return inFlight;
