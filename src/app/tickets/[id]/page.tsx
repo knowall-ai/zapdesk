@@ -51,6 +51,10 @@ export default function TicketDetailPage() {
   const fetchTicket = useCallback(async () => {
     if (!selectedOrganization) return;
     setLoading(true);
+    // Track whether we kicked off a route-replace so the finally block knows
+    // not to flip loading off — otherwise we render `null` (blank page) for
+    // a beat until the new route mounts.
+    let isRedirecting = false;
     try {
       const response = await fetch(`/api/devops/tickets/${ticketId}`, {
         headers: orgHeaders(),
@@ -63,10 +67,12 @@ export default function TicketDetailPage() {
         const onTicketsRoute = pathname?.startsWith('/tickets/');
         const onWorkItemsRoute = pathname?.startsWith('/workitems/');
         if (isTicket && onWorkItemsRoute) {
+          isRedirecting = true;
           router.replace(`/tickets/${ticketId}`);
           return;
         }
         if (!isTicket && onTicketsRoute) {
+          isRedirecting = true;
           router.replace(`/workitems/${ticketId}`);
           return;
         }
@@ -87,13 +93,15 @@ export default function TicketDetailPage() {
             )
         );
       } else {
+        isRedirecting = true;
         router.push('/tickets');
       }
     } catch (error) {
       console.error('Failed to fetch ticket:', error);
+      isRedirecting = true;
       router.push('/tickets');
     } finally {
-      setLoading(false);
+      if (!isRedirecting) setLoading(false);
     }
   }, [ticketId, router, selectedOrganization, orgHeaders, pathname]);
 

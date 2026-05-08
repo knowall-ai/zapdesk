@@ -188,9 +188,11 @@ export async function POST(request: NextRequest) {
       .filter((t): t is string => typeof t === 'string')
       .map((t) => t.trim())
       .filter(Boolean);
-    const allTags = tagAsTicket
-      ? Array.from(new Set(['ticket', ...userTags]))
-      : userTags.filter((t) => t.toLowerCase() !== 'ticket');
+    // Drop any case-variant of "ticket" from user input first so the dedup is
+    // case-insensitive — Set() with exact-string equality wouldn't catch
+    // "Ticket" vs "ticket" and we'd end up with both.
+    const userTagsNoTicket = userTags.filter((t) => t.toLowerCase() !== 'ticket');
+    const allTags = tagAsTicket ? ['ticket', ...userTagsNoTicket] : userTagsNoTicket;
     const workItem = await devopsService.createTicketWithAssignee(
       project,
       title,
