@@ -8,8 +8,10 @@ import { RefreshCw, FolderOpen, User } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { StandupSummaryCards, KanbanGroupSection } from '@/components/standup';
+import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import { useDevOpsApi } from '@/hooks';
-import type { StandupData, StandupColumn, StandupWorkItem } from '@/types';
+import { ticketToWorkItem } from '@/lib/devops';
+import type { StandupData, StandupColumn, StandupWorkItem, Ticket } from '@/types';
 
 type GroupBy = 'project' | 'person';
 
@@ -111,6 +113,14 @@ function StandupPageContent() {
   const autoRefreshRef = useRef(autoRefresh);
   autoRefreshRef.current = autoRefresh;
 
+  // Detail dialog state — clicking a card fetches the full ticket and
+  // opens it in a dialog rather than navigating to the full page (#368).
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [isLoadingTicket, setIsLoadingTicket] = useState(false);
+  // Monotonic request id so a slow first click can't overwrite the dialog
+  // when a second card is clicked before the first response arrives.
+  const ticketFetchSeqRef = useRef(0);
+
   const fetchStandupData = useCallback(
     async (isAutoRefresh = false, forceRefresh = false) => {
       if (!session?.accessToken || !hasOrganization || !selectedOrganization?.accountName) {
@@ -199,11 +209,13 @@ function StandupPageContent() {
     return () => clearInterval(interval);
   }, [autoRefresh, fetchStandupData]);
 
+  // Generic state-change. Pass `project` when known to avoid an
+  // expensive cross-project scan on the server.
   const handleStateChange = useCallback(
-    async (itemId: number, targetState: string) => {
-      const response = await devOpsPatch(`/api/devops/tickets/${itemId}/state`, {
-        state: targetState,
-      });
+    async (itemId: number, targetState: string, project?: string) => {
+      const body: Record<string, unknown> = { state: targetState };
+      if (project) body.project = project;
+      const response = await devOpsPatch(`/api/devops/tickets/${itemId}/state`, body);
 
       if (!response.ok) {
         throw new Error('Failed to update state');
@@ -212,6 +224,152 @@ function StandupPageContent() {
       fetchStandupData(true, true);
     },
     [fetchStandupData, devOpsPatch]
+  );
+
+  // Fetch the full Ticket on card click and open the detail dialog.
+  // Uses a monotonic seq id so out-of-order responses from rapid clicks
+  // can't overwrite the dialog with a stale ticket.
+  const handleItemClick = useCallback(
+    async (item: StandupWorkItem) => {
+      const mySeq = ++ticketFetchSeqRef.current;
+      setIsLoadingTicket(true);
+      try {
+        const response = await devOpsGet(`/api/devops/tickets/${item.id}`);
+        if (mySeq !== ticketFetchSeqRef.current) return; // a newer click superseded us
+        if (!response.ok) {
+          throw new Error('Failed to fetch ticket');
+        }
+        const data = (await response.json()) as {
+          ticket: Ticket & { createdAt: string; updatedAt: string };
+        };
+        if (mySeq !== ticketFetchSeqRef.current) return;
+        setSelectedTicket({
+          ...data.ticket,
+          createdAt: new Date(data.ticket.createdAt),
+          updatedAt: new Date(data.ticket.updatedAt),
+        });
+      } catch (err) {
+        if (mySeq !== ticketFetchSeqRef.current) return;
+        console.error('Failed to load ticket for dialog:', err);
+      } finally {
+        if (mySeq === ticketFetchSeqRef.current) {
+          setIsLoadingTicket(false);
+        }
+      }
+    },
+    [devOpsGet]
+  );
+
+  // Dialog state-change: reuse existing kanban state-change logic, then
+  // mirror the new state on selectedTicket so the dialog UI updates.
+  // Pass project so the server doesn't have to scan every project to find
+  // the work item.
+  const handleDialogStateChange = useCallback(
+    async (workItemId: number, state: string) => {
+      const project = selectedTicket?.id === workItemId ? selectedTicket.project : undefined;
+      await handleStateChange(workItemId, state, project);
+      setSelectedTicket((prev) => (prev ? { ...prev, devOpsState: state } : null));
+    },
+    [handleStateChange, selectedTicket]
+  );
+
+  // Generic PATCH helper used by the dialog's assignee/priority/tags/update handlers.
+  // The standup data refresh happens after the patch so the board stays in sync.
+  const patchTicket = useCallback(
+    async (workItemId: number, body: Record<string, unknown>) => {
+      const response = await devOpsPatch(`/api/devops/tickets/${workItemId}`, body);
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to update work item');
+      }
+      const data = await response.json().catch(() => ({}));
+      const updated = data.ticket as Ticket | undefined;
+      if (updated) {
+        setSelectedTicket((prev) =>
+          prev && prev.id === updated.id
+            ? {
+                ...updated,
+                createdAt: new Date(updated.createdAt),
+                updatedAt: new Date(updated.updatedAt),
+              }
+            : prev
+        );
+      }
+      fetchStandupData(true, true);
+      return updated;
+    },
+    [devOpsPatch, fetchStandupData]
+  );
+
+  const handleDialogAssigneeChange = useCallback(
+    async (workItemId: number, assigneeId: string | null) => {
+      const project = selectedTicket?.id === workItemId ? selectedTicket.project : undefined;
+      await patchTicket(workItemId, { assignee: assigneeId, project });
+    },
+    [patchTicket, selectedTicket]
+  );
+
+  const handleDialogPriorityChange = useCallback(
+    async (workItemId: number, priority: number) => {
+      const project = selectedTicket?.id === workItemId ? selectedTicket.project : undefined;
+      await patchTicket(workItemId, { priority, project });
+    },
+    [patchTicket, selectedTicket]
+  );
+
+  const handleDialogTagsChange = useCallback(
+    async (workItemId: number, tags: string[]) => {
+      const project = selectedTicket?.id === workItemId ? selectedTicket.project : undefined;
+      await patchTicket(workItemId, { tags, project });
+      // Optimistic update for the tags field if the PATCH didn't return the ticket
+      setSelectedTicket((prev) => (prev && prev.id === workItemId ? { ...prev, tags } : prev));
+    },
+    [patchTicket, selectedTicket]
+  );
+
+  const handleDialogUpdate = useCallback(
+    async (
+      workItemId: number,
+      updates: { title?: string; description?: string; resolution?: string }
+    ) => {
+      if (!selectedTicket || selectedTicket.id !== workItemId) return;
+      await patchTicket(workItemId, {
+        ...updates,
+        project: selectedTicket.project,
+        workItemType: selectedTicket.workItemType,
+      });
+    },
+    [patchTicket, selectedTicket]
+  );
+
+  const handleDialogTypeChange = useCallback(
+    async (workItemId: number, newType: string, additionalFields?: Record<string, string>) => {
+      if (!selectedTicket || selectedTicket.id !== workItemId) return;
+      const response = await devOpsPatch(`/api/devops/tickets/${workItemId}/type`, {
+        type: newType,
+        project: selectedTicket.project,
+        additionalFields,
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to update work item type');
+      }
+      const data = await response.json().catch(() => ({}));
+      const updated = data.ticket as Ticket | undefined;
+      setSelectedTicket((prev) =>
+        prev && prev.id === workItemId
+          ? updated
+            ? {
+                ...updated,
+                createdAt: new Date(updated.createdAt),
+                updatedAt: new Date(updated.updatedAt),
+              }
+            : { ...prev, workItemType: newType }
+          : prev
+      );
+      fetchStandupData(true, true);
+    },
+    [devOpsPatch, selectedTicket, fetchStandupData]
   );
 
   const groups: GroupData[] = useMemo(() => {
@@ -366,6 +524,7 @@ function StandupPageContent() {
                     groupName={group.groupName}
                     columns={group.columns}
                     onStateChange={handleStateChange}
+                    onItemClick={handleItemClick}
                   />
                 ))
               ) : (
@@ -379,6 +538,29 @@ function StandupPageContent() {
             </div>
           ) : null}
         </div>
+
+        {/* Loading indicator while fetching the clicked ticket */}
+        {isLoadingTicket && !selectedTicket && (
+          <div
+            className="fixed inset-0 z-40 flex items-center justify-center"
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)' }}
+          >
+            <LoadingSpinner />
+          </div>
+        )}
+
+        {/* Detail dialog (issue #368) */}
+        <WorkItemDetailDialog
+          workItem={selectedTicket ? ticketToWorkItem(selectedTicket) : null}
+          isOpen={!!selectedTicket}
+          onClose={() => setSelectedTicket(null)}
+          onStateChange={handleDialogStateChange}
+          onAssigneeChange={handleDialogAssigneeChange}
+          onPriorityChange={handleDialogPriorityChange}
+          onTypeChange={handleDialogTypeChange}
+          onTagsChange={handleDialogTagsChange}
+          onUpdate={handleDialogUpdate}
+        />
       </div>
     </MainLayout>
   );
