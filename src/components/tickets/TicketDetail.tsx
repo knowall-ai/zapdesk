@@ -19,6 +19,7 @@ import {
   Download,
   Plus,
   Tag,
+  Trash2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type {
@@ -71,6 +72,9 @@ interface TicketDetailProps {
   onMitigationChange?: (mitigation: string) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onRefreshTicket?: () => Promise<void>;
+  // Move to DevOps Recycle Bin. Caller is responsible for navigation/refresh
+  // after success (issue #374).
+  onDelete?: () => Promise<void>;
   processTemplate?: string;
 }
 
@@ -97,6 +101,7 @@ export default function TicketDetail({
   onMitigationChange,
   onUploadAttachment,
   onRefreshTicket,
+  onDelete,
   processTemplate,
 }: TicketDetailProps) {
   const router = useRouter();
@@ -108,7 +113,24 @@ export default function TicketDetail({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
   const [isDetailsSidebarOpen, setIsDetailsSidebarOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const { get: devOpsGet } = useDevOpsApi();
+
+  const handleDeleteClick = async () => {
+    if (!onDelete || isDeleting) return;
+    const confirmed = window.confirm(
+      `Move "${ticket.title}" (#${ticket.id}) to the DevOps Recycle Bin?\n\nIt will be removed from ZapDesk views. You can restore it from the DevOps Recycle Bin if needed.`
+    );
+    if (!confirmed) return;
+    setIsDeleting(true);
+    try {
+      await onDelete();
+    } catch {
+      // Caller already toasts on failure; just clear local state so the
+      // button becomes interactive again.
+      setIsDeleting(false);
+    }
+  };
 
   // State editing
   const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
@@ -698,6 +720,20 @@ export default function TicketDetail({
             >
               View in DevOps <ExternalLink size={14} />
             </a>
+            {onDelete && (
+              <button
+                type="button"
+                onClick={handleDeleteClick}
+                disabled={isDeleting}
+                className="hidden items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50 sm:flex"
+                style={{ color: '#ef4444', cursor: 'pointer' }}
+                title="Delete (move to DevOps Recycle Bin)"
+                aria-label="Delete ticket"
+              >
+                {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                Delete
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-4">

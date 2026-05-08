@@ -1017,6 +1017,24 @@ export class AzureDevOpsService {
     }
   }
 
+  // Delete a work item — moves it to the DevOps Recycle Bin (reversible).
+  // Set destroy=true for a permanent, unrecoverable delete (admins only).
+  // Returns the API status code so callers can surface 401/403 specifically.
+  async deleteWorkItem(workItemId: number, destroy: boolean = false): Promise<void> {
+    const url = `${this.baseUrl}/_apis/wit/workitems/${workItemId}?destroy=${destroy ? 'true' : 'false'}&api-version=7.0`;
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: this.headers,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      throw new Error(
+        `Failed to delete work item: ${response.status} ${response.statusText}${errorText ? ' - ' + errorText : ''}`
+      );
+    }
+  }
+
   // Change work item type (e.g., Task → Bug)
   // Azure DevOps supports this via PATCH with System.WorkItemType in the JSON patch body
   async changeWorkItemType(

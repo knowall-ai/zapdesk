@@ -315,6 +315,26 @@ export default function TicketDetailPage() {
     }
   };
 
+  // Delete (Recycle Bin) — issue #374. Confirmation is rendered by TicketDetail.
+  const handleDelete = async () => {
+    if (!ticket) return;
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+        method: 'DELETE',
+        headers: orgHeaders(),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to delete');
+      }
+      toast.success(`Deleted #${ticketId}`);
+      router.push('/tickets');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete');
+      throw err;
+    }
+  };
+
   const handleUploadAttachment = async (file: File): Promise<Attachment> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -366,6 +386,7 @@ export default function TicketDetailPage() {
         onMitigationChange={handleMitigationChange}
         onUploadAttachment={handleUploadAttachment}
         onRefreshTicket={fetchTicket}
+        onDelete={handleDelete}
       />
     </MainLayout>
   );

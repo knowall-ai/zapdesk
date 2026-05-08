@@ -51,6 +51,59 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
+// DELETE moves the work item to the DevOps Recycle Bin (reversible).
+// Pass ?destroy=true to permanently destroy it (admins only) — this still
+// requires the user's PAT/OAuth token to have the destroy permission in DevOps.
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.accessToken) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const ticketId = parseInt(id, 10);
+
+    if (isNaN(ticketId) || ticketId <= 0) {
+      return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
+    }
+
+    const destroy = request.nextUrl.searchParams.get('destroy') === 'true';
+    const organization = request.headers.get('x-devops-org') || undefined;
+    const devopsService = new AzureDevOpsService(session.accessToken, organization);
+
+    try {
+      await devopsService.deleteWorkItem(ticketId, destroy);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete';
+      // Map upstream auth failures to a clear status so the client can toast nicely
+      if (/\b401\b/.test(message)) {
+        return NextResponse.json(
+          { error: 'Unauthorized to delete this work item' },
+          { status: 401 }
+        );
+      }
+      if (/\b403\b/.test(message)) {
+        return NextResponse.json(
+          { error: 'You do not have permission to delete this work item in DevOps' },
+          { status: 403 }
+        );
+      }
+      if (/\b404\b/.test(message)) {
+        return NextResponse.json({ error: 'Work item not found' }, { status: 404 });
+      }
+      throw err;
+    }
+
+    return NextResponse.json({ success: true, id: ticketId, destroyed: destroy });
+  } catch (error) {
+    console.error('Error deleting ticket:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to delete ticket';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  }
+}
+
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
