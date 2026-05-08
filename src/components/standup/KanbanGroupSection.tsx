@@ -16,10 +16,14 @@ import {
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useDroppable } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Info } from 'lucide-react';
 import StandupKanbanCard from './StandupKanbanCard';
 import { getColumnIcon, getColumnColor } from './columnConfig';
 import type { StandupColumn, StandupWorkItem } from '@/types';
+
+// Done-category columns only show items changed in the last 7 days; this hint
+// explains the cutoff so users don't think older items have vanished.
+const DONE_WINDOW_HINT = 'Showing items resolved or closed in the last 7 days';
 
 /** Simple droppable column for the standup kanban */
 function DroppableColumn({
@@ -27,14 +31,17 @@ function DroppableColumn({
   category,
   items,
   activeId,
+  onItemClick,
 }: {
   name: string;
   category: string;
   items: StandupWorkItem[];
   activeId: number | null;
+  onItemClick?: (item: StandupWorkItem) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: name });
   const color = getColumnColor(name, category);
+  const isDoneColumn = category === 'Resolved' || category === 'Completed';
 
   return (
     <div className="kanban-column">
@@ -42,6 +49,17 @@ function DroppableColumn({
         <div className="flex items-center gap-2">
           <span style={{ color }}>{getColumnIcon(name, category)}</span>
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">{name}</h3>
+          {isDoneColumn && (
+            <button
+              type="button"
+              title={DONE_WINDOW_HINT}
+              aria-label={DONE_WINDOW_HINT}
+              className="cursor-help"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <Info size={12} />
+            </button>
+          )}
         </div>
         <span className="rounded-full bg-[var(--surface-hover)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
           {items.length}
@@ -54,7 +72,12 @@ function DroppableColumn({
       >
         <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
           {items.map((item) => (
-            <StandupKanbanCard key={item.id} item={item} isDragging={activeId === item.id} />
+            <StandupKanbanCard
+              key={item.id}
+              item={item}
+              isDragging={activeId === item.id}
+              onClick={onItemClick}
+            />
           ))}
         </SortableContext>
 
@@ -72,12 +95,14 @@ interface KanbanGroupSectionProps {
   groupName: string;
   columns: StandupColumn[];
   onStateChange?: (itemId: number, targetState: string) => Promise<void>;
+  onItemClick?: (item: StandupWorkItem) => void;
 }
 
 export default function KanbanGroupSection({
   groupName,
   columns,
   onStateChange,
+  onItemClick,
 }: KanbanGroupSectionProps) {
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
   const totalItems = useMemo(() => columns.reduce((sum, c) => sum + c.items.length, 0), [columns]);
@@ -261,6 +286,7 @@ export default function KanbanGroupSection({
                     category={col.category}
                     items={items}
                     activeId={activeId}
+                    onItemClick={onItemClick}
                   />
                 );
               })}
