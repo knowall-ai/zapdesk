@@ -12,11 +12,12 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
-# Don't queue concurrent runs — if a poll is slow, skip the next tick rather
-# than pile up. Cancel in-progress lets `workflow_dispatch` always run fresh.
+# Don't queue concurrent runs — if a poll is slow, cancel it so the next tick
+# starts fresh and `workflow_dispatch` always runs against the latest state
+# rather than queueing behind a hung scheduled run.
 concurrency:
   group: email-poll
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   poll:

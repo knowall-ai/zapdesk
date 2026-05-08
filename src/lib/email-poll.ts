@@ -170,8 +170,14 @@ async function fetchAttachments(
     // Only fileAttachment with contentBytes — itemAttachment (forwarded message)
     // and referenceAttachment (cloud links) need different handling and are rare
     // in support traffic.
+    //
+    // Inline attachments (`isInline=true`) are also uploaded: Outlook and Gmail
+    // flag pasted screenshots and dragged-in images as inline even when users
+    // expect them as attachments, so dropping them silently loses common
+    // support artifacts. We extract the body as plain `uniqueBody`, so the
+    // inline reference in the HTML is gone — surfacing the file on the ticket
+    // is what matters.
     if (a['@odata.type'] !== '#microsoft.graph.fileAttachment') continue;
-    if (a.isInline) continue; // skip inline images embedded in the email body
     if (!a.contentBytes) continue;
     result.push({
       filename: a.name || `attachment-${a.id}`,

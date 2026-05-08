@@ -34,24 +34,57 @@ export function isEmailConfigured(): boolean {
   return Boolean(MAIL_FROM() && mailClientId() && mailClientSecret() && mailTenantId());
 }
 
+// In-module Graph token cache. Tokens last ~60 minutes; caching avoids hitting
+// the AAD token endpoint on every send / poll, which adds latency and risks
+// throttling under bursty traffic. Keyed on tenant+client so a config change
+// invalidates automatically.
+interface CachedToken {
+  key: string;
+  accessToken: string;
+  expiresAt: number;
+}
+let tokenCache: CachedToken | null = null;
+let inFlight: Promise<string> | null = null;
+const TOKEN_REFRESH_LEEWAY_MS = 60_000;
+
 /** Acquire a Graph token via client-credentials flow. Used by send + poll. */
 export async function getMailGraphToken(): Promise<string> {
-  const url = `https://login.microsoftonline.com/${mailTenantId()}/oauth2/v2.0/token`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: mailClientId(),
-      client_secret: mailClientSecret(),
-      grant_type: 'client_credentials',
-      scope: 'https://graph.microsoft.com/.default',
-    }),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(`Failed to get mail Graph token: ${JSON.stringify(data)}`);
+  const key = `${mailTenantId()}|${mailClientId()}`;
+  const now = Date.now();
+  if (tokenCache && tokenCache.key === key && tokenCache.expiresAt - TOKEN_REFRESH_LEEWAY_MS > now) {
+    return tokenCache.accessToken;
   }
-  return data.access_token;
+  if (inFlight) return inFlight;
+
+  inFlight = (async () => {
+    try {
+      const url = `https://login.microsoftonline.com/${mailTenantId()}/oauth2/v2.0/token`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: mailClientId(),
+          client_secret: mailClientSecret(),
+          grant_type: 'client_credentials',
+          scope: 'https://graph.microsoft.com/.default',
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(`Failed to get mail Graph token: ${JSON.stringify(data)}`);
+      }
+      const expiresInSec = typeof data.expires_in === 'number' ? data.expires_in : 3600;
+      tokenCache = {
+        key,
+        accessToken: data.access_token,
+        expiresAt: Date.now() + expiresInSec * 1000,
+      };
+      return data.access_token as string;
+    } finally {
+      inFlight = null;
+    }
+  })();
+  return inFlight;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,8 +92,8 @@ export async function getMailGraphToken(): Promise<string> {
 // ---------------------------------------------------------------------------
 
 export function isEmailTicket(tags: string | string[]): boolean {
-  const tagStr = Array.isArray(tags) ? tags.join('; ') : tags;
-  return tagStr.toLowerCase().includes('email');
+  const tagList = Array.isArray(tags) ? tags : tags.split(';');
+  return tagList.some((t) => t.trim().toLowerCase() === 'email');
 }
 
 export function extractRequesterEmail(tags: string | string[]): string | null {

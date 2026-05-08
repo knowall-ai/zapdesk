@@ -42,6 +42,10 @@ export async function GET() {
 
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@');
-  if (!domain) return email;
-  return `${local}@${domain}`;
+  if (!domain) return '***';
+  if (!local) return `***@${domain}`;
+  // Keep the first character so operators can still tell mailboxes apart in
+  // the admin UI without exposing the full local-part publicly.
+  const visible = local.slice(0, 1);
+  return `${visible}***@${domain}`;
 }

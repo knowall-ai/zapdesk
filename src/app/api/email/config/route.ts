@@ -16,11 +16,15 @@ export async function GET() {
     const fromName = process.env.MAIL_FROM_NAME || 'ZapDesk Support';
     const webhookConfigured = Boolean(process.env.EMAIL_WEBHOOK_SECRET);
     const patConfigured = Boolean(process.env.AZURE_DEVOPS_PAT);
+    // Mirror what isEmailConfigured() / getMailGraphToken() actually require
+    // so the admin UI can't claim "configured" while Graph calls still 401.
     const mailApp = Boolean(
       (process.env.MAIL_CLIENT_ID || process.env.AZURE_AD_CLIENT_ID) &&
-      (process.env.MAIL_CLIENT_SECRET || process.env.AZURE_AD_CLIENT_SECRET)
+        (process.env.MAIL_CLIENT_SECRET || process.env.AZURE_AD_CLIENT_SECRET) &&
+        (process.env.MAIL_TENANT_ID || process.env.AZURE_AD_TENANT_ID)
     );
     const pollMailbox = pollMailboxFromEnv();
+    const outboundReady = isEmailConfigured();
 
     return NextResponse.json({
       outbound: {
@@ -34,7 +38,7 @@ export async function GET() {
         webhookConfigured,
         patConfigured,
         pollMailbox: pollMailbox ? pollMailbox.replace(/^[^@]+/, '***') : null,
-        pollConfigured: Boolean(pollMailbox && webhookConfigured && patConfigured && mailApp),
+        pollConfigured: Boolean(pollMailbox && webhookConfigured && patConfigured && outboundReady),
         ready: webhookConfigured && patConfigured,
       },
     });

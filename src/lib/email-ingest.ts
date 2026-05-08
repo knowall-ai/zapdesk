@@ -17,7 +17,11 @@ export interface IngestableEmail {
   /** Raw `From` value — `Name <user@domain>` or bare `user@domain`. */
   from: string;
   subject: string;
-  /** HTML or text body. Used as-is inside the ticket description / comment. */
+  /**
+   * Plain-text body of the message. Passed through `renderEmailBody`, which
+   * strips signatures, HTML-escapes the content, and wraps it in a `<pre>`
+   * block — raw HTML in this field is escaped, not preserved.
+   */
   body: string;
   attachments?: Array<{ filename: string; contentType: string; content: string }>;
 }

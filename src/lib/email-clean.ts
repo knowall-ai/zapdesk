@@ -14,26 +14,37 @@ export function stripSignature(body: string): string {
   if (!body) return '';
 
   const lines = body.replace(/\r\n/g, '\n').split('\n');
-  const cutPoints: number[] = [];
+
+  // Two categories so we don't drop legitimate content that happens to look
+  // like a disclaimer when it appears mid-body.
+  //   - "Hard" delimiters always mark end-of-message (RFC 3676 `-- `, mobile
+  //     auto-signatures). Take the FIRST occurrence — everything below it is
+  //     signature by contract.
+  //   - "Soft" matches (DISCLAIMER, "This e-mail is intended", incorporation
+  //     boilerplate) can appear in legit content (e.g., a customer asking
+  //     about a disclaimer they received). Scan from the bottom and only
+  //     cut at the LAST one, so the boilerplate at the very end is removed
+  //     but a passing reference in the body is preserved.
+  const hardCutPoints: number[] = [];
+  const softCutPoints: number[] = [];
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
+    const trimmed = lines[i].trim();
 
     // RFC 3676: signature delimiter is "-- " on its own line. Some clients
     // ship "--" without trailing space — accept both.
     if (trimmed === '--' || trimmed === '-- ') {
-      cutPoints.push(i);
+      hardCutPoints.push(i);
       continue;
     }
 
-    // Common mobile auto-signatures
+    // Common mobile auto-signatures — also reliably at end of message.
     if (
       /^Sent from my (iPhone|iPad|Android|Galaxy|BlackBerry)/i.test(trimmed) ||
       /^Sent from (Outlook|Mail) for (iOS|Android|Windows)/i.test(trimmed) ||
       /^Get Outlook for (iOS|Android)/i.test(trimmed)
     ) {
-      cutPoints.push(i);
+      hardCutPoints.push(i);
       continue;
     }
 
@@ -46,16 +57,20 @@ export function stripSignature(body: string): string {
       /^This (e-?mail|message) (and any|is intended|may contain)/i.test(trimmed) ||
       /is a limited company incorporated in/i.test(trimmed)
     ) {
-      cutPoints.push(i);
+      softCutPoints.push(i);
       continue;
     }
   }
 
-  if (cutPoints.length === 0) return body.trim();
+  let cutAt: number | null = null;
+  if (hardCutPoints.length > 0) {
+    cutAt = hardCutPoints[0];
+  } else if (softCutPoints.length > 0) {
+    cutAt = softCutPoints[softCutPoints.length - 1];
+  }
+  if (cutAt === null) return body.trim();
 
-  // Keep only what's above the earliest cut point.
-  const cleaned = lines.slice(0, cutPoints[0]).join('\n').trimEnd();
-  return cleaned;
+  return lines.slice(0, cutAt).join('\n').trimEnd();
 }
 
 /** HTML-escape user input before embedding in DevOps fields. */
