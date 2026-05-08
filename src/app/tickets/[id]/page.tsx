@@ -94,12 +94,14 @@ export default function TicketDetailPage() {
         );
       } else {
         isRedirecting = true;
-        router.push('/tickets');
+        // Send users back to a sensible list for whichever route they were on
+        // — Kanban Board is the natural home for internal work items.
+        router.push(pathname?.startsWith('/workitems/') ? '/kanban' : '/tickets');
       }
     } catch (error) {
       console.error('Failed to fetch ticket:', error);
       isRedirecting = true;
-      router.push('/tickets');
+      router.push(pathname?.startsWith('/workitems/') ? '/kanban' : '/tickets');
     } finally {
       if (!isRedirecting) setLoading(false);
     }

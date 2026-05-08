@@ -614,7 +614,8 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         router.push(`/tickets/${ticketId}`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create ticket');
+      const fallback = isKanbanContext ? 'Failed to create work item' : 'Failed to create ticket';
+      setError(err instanceof Error ? err.message : fallback);
     } finally {
       setIsSubmitting(false);
       setIsUploadingFiles(false);

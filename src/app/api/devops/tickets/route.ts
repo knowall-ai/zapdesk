@@ -188,6 +188,12 @@ export async function POST(request: NextRequest) {
       .filter((t): t is string => typeof t === 'string')
       .map((t) => t.trim())
       .filter(Boolean);
+    // Reject semicolons — DevOps uses ';' as the tag delimiter, so a single
+    // user-supplied tag containing ';' would silently split into multiple
+    // tags on the way through. Matches the PATCH handler.
+    if (userTags.some((t) => t.includes(';'))) {
+      return NextResponse.json({ error: 'Tags cannot contain semicolons' }, { status: 400 });
+    }
     // Drop any case-variant of "ticket" from user input first so the dedup is
     // case-insensitive — Set() with exact-string equality wouldn't catch
     // "Ticket" vs "ticket" and we'd end up with both.
