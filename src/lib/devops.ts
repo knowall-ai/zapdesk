@@ -492,6 +492,23 @@ export class AzureDevOpsService {
     return response.json();
   }
 
+  // Org-level work item fetch — works without knowing the project up front.
+  // Used by routes that mutate a single work item: cheaper and more reliable
+  // than iterating every accessible project to find which one owns it.
+  async getWorkItemByIdOrgLevel(workItemId: number): Promise<DevOpsWorkItem | null> {
+    const response = await fetch(
+      `${this.baseUrl}/_apis/wit/workitems/${workItemId}?$expand=all&api-version=7.1`,
+      { headers: this.headers }
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch work item ${workItemId}: ${response.status} ${response.statusText}`
+      );
+    }
+    return response.json();
+  }
+
   // Lightweight check if a work item exists (org-level, no project needed, minimal fields)
   // Returns: 'exists' | 'not_found' | 'error'
   async workItemExists(workItemId: number): Promise<'exists' | 'not_found' | 'error'> {

@@ -62,26 +62,44 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       }
     }
 
-    // If project is provided, use it directly
-    if (project) {
-      const updatedWorkItem = await devopsService.changeWorkItemType(
-        project,
-        ticketId,
-        type,
-        validatedAdditionalFields
-      );
-      const ticket = workItemToTicket(updatedWorkItem);
-      return NextResponse.json({ ticket });
+    // Resolve the project. Prefer the body field (cheap, no extra Graph call)
+    // but fall back to fetching the work item at the org level, which works
+    // regardless of which project owns it. This replaces the older
+    // findProjectForWorkItem iteration that was prone to silent 404s when one
+    // of the cached projects no longer permitted a getWorkItem call.
+    let projectName: string | undefined =
+      typeof project === 'string' && project.trim() ? project.trim() : undefined;
+
+    if (!projectName) {
+      try {
+        const orgWorkItem = await devopsService.getWorkItemByIdOrgLevel(ticketId);
+        if (!orgWorkItem) {
+          return NextResponse.json(
+            { error: `Ticket ${ticketId} not found in this organization` },
+            { status: 404 }
+          );
+        }
+        projectName = orgWorkItem.fields['System.TeamProject'] as string;
+      } catch (err) {
+        console.error(`Org-level lookup failed for ticket ${ticketId}:`, err);
+        return NextResponse.json(
+          {
+            error: `Could not resolve the project for ticket ${ticketId}: ${err instanceof Error ? err.message : 'unknown error'}`,
+          },
+          { status: 500 }
+        );
+      }
     }
 
-    // Fallback: find the project
-    const found = await devopsService.findProjectForWorkItem(ticketId);
-    if (!found) {
-      return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+    if (!projectName) {
+      return NextResponse.json(
+        { error: `Ticket ${ticketId} has no project assigned` },
+        { status: 404 }
+      );
     }
 
     const updatedWorkItem = await devopsService.changeWorkItemType(
-      found.project.name,
+      projectName,
       ticketId,
       type,
       validatedAdditionalFields
