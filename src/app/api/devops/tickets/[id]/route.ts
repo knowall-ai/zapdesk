@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { AzureDevOpsService, workItemToTicket } from '@/lib/devops';
+import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -52,8 +52,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE moves the work item to the DevOps Recycle Bin (reversible).
-// Pass ?destroy=true to permanently destroy it (admins only) — this still
-// requires the user's PAT/OAuth token to have the destroy permission in DevOps.
+// Pass ?destroy=true to permanently destroy it. Authorization is enforced
+// by DevOps based on the user's role/PAT scope — there is no ZapDesk-side
+// admin gate yet (tracked as a follow-up; see PR #375 description).
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
@@ -76,22 +77,23 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     try {
       await devopsService.deleteWorkItem(ticketId, destroy);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to delete';
-      // Map upstream auth failures to a clear status so the client can toast nicely
-      if (/\b401\b/.test(message)) {
-        return NextResponse.json(
-          { error: 'Unauthorized to delete this work item' },
-          { status: 401 }
-        );
-      }
-      if (/\b403\b/.test(message)) {
-        return NextResponse.json(
-          { error: 'You do not have permission to delete this work item in DevOps' },
-          { status: 403 }
-        );
-      }
-      if (/\b404\b/.test(message)) {
-        return NextResponse.json({ error: 'Work item not found' }, { status: 404 });
+      // Map structured upstream failures to clean client-facing statuses
+      if (err instanceof DevOpsApiError) {
+        if (err.status === 401) {
+          return NextResponse.json(
+            { error: 'Unauthorized to delete this work item' },
+            { status: 401 }
+          );
+        }
+        if (err.status === 403) {
+          return NextResponse.json(
+            { error: 'You do not have permission to delete this work item in DevOps' },
+            { status: 403 }
+          );
+        }
+        if (err.status === 404) {
+          return NextResponse.json({ error: 'Work item not found' }, { status: 404 });
+        }
       }
       throw err;
     }

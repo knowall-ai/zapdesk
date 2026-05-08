@@ -358,20 +358,18 @@ export default function WorkItemDetailDialog({
       >
         DevOps <ExternalLink size={14} />
       </a>
-      {onDeleted && (
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={isDeleting}
-          className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ color: '#ef4444', cursor: 'pointer' }}
-          title="Delete (move to DevOps Recycle Bin)"
-          aria-label="Delete work item"
-        >
-          {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-          Delete
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={handleDelete}
+        disabled={isDeleting}
+        className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+        style={{ color: '#ef4444', cursor: isDeleting ? 'not-allowed' : 'pointer' }}
+        title="Delete (move to DevOps Recycle Bin)"
+        aria-label="Delete work item"
+      >
+        {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+        Delete
+      </button>
     </>
   );
 

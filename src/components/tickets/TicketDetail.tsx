@@ -126,8 +126,9 @@ export default function TicketDetail({
     try {
       await onDelete();
     } catch {
-      // Caller already toasts on failure; just clear local state so the
-      // button becomes interactive again.
+      // Caller already toasts on failure; we just need the local state
+      // cleared via the finally block so the button becomes interactive again.
+    } finally {
       setIsDeleting(false);
     }
   };
@@ -726,7 +727,7 @@ export default function TicketDetail({
                 onClick={handleDeleteClick}
                 disabled={isDeleting}
                 className="hidden items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50 sm:flex"
-                style={{ color: '#ef4444', cursor: 'pointer' }}
+                style={{ color: '#ef4444', cursor: isDeleting ? 'not-allowed' : 'pointer' }}
                 title="Delete (move to DevOps Recycle Bin)"
                 aria-label="Delete ticket"
               >
