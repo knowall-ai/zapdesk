@@ -1043,10 +1043,14 @@ export class AzureDevOpsService {
     });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
+      // Truncate upstream body so a verbose HTML/JSON error page can't blow up
+      // logs or echo internal details back to the client via the thrown message.
+      const rawBody = await response.text().catch(() => '');
+      const snippet = rawBody.slice(0, 200).trim();
+      const tail = rawBody.length > snippet.length ? '…' : '';
       throw new DevOpsApiError(
         response.status,
-        `Failed to delete work item: ${response.status} ${response.statusText}${errorText ? ' - ' + errorText : ''}`
+        `Failed to delete work item: ${response.status} ${response.statusText}${snippet ? ` - ${snippet}${tail}` : ''}`
       );
     }
   }

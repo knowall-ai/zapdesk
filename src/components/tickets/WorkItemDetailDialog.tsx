@@ -57,6 +57,12 @@ export default function WorkItemDetailDialog({
 
   const handleDelete = useCallback(async () => {
     if (!workItem || isDeleting) return;
+    // Bail before showing the confirm — fetchDevOps would throw "No organization
+    // selected" anyway, but only after the user committed to the action.
+    if (!hasOrganization) {
+      toast.error('Select an organization before deleting');
+      return;
+    }
     const confirmed = window.confirm(
       `Move "${workItem.title}" (#${workItem.id}) to the DevOps Recycle Bin?\n\nIt will be removed from ZapDesk views. You can restore it from the DevOps Recycle Bin if needed.`
     );
@@ -78,7 +84,7 @@ export default function WorkItemDetailDialog({
     } finally {
       setIsDeleting(false);
     }
-  }, [workItem, isDeleting, fetchDevOps, onDeleted, onClose]);
+  }, [workItem, isDeleting, hasOrganization, fetchDevOps, onDeleted, onClose]);
 
   // Bind workItemId into callbacks for the hook
   const boundStateChange = useCallback(

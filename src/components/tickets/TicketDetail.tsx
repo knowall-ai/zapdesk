@@ -123,11 +123,11 @@ export default function TicketDetail({
     );
     if (!confirmed) return;
     setIsDeleting(true);
+    // Don't swallow — let the consumer's onDelete decide how to surface
+    // failure (toast, redirect, etc.). finally guarantees the button is
+    // re-enabled either way.
     try {
       await onDelete();
-    } catch {
-      // Caller already toasts on failure; we just need the local state
-      // cleared via the finally block so the button becomes interactive again.
     } finally {
       setIsDeleting(false);
     }

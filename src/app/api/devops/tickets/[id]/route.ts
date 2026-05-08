@@ -54,7 +54,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // DELETE moves the work item to the DevOps Recycle Bin (reversible).
 // Pass ?destroy=true to permanently destroy it. Authorization is enforced
 // by DevOps based on the user's role/PAT scope — there is no ZapDesk-side
-// admin gate yet (tracked as a follow-up; see PR #375 description).
+// admin gate yet (a follow-up to issue #374).
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
@@ -100,9 +100,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true, id: ticketId, destroyed: destroy });
   } catch (error) {
+    // Log full detail server-side; return a generic message so the client
+    // toast doesn't echo upstream / internal error text.
     console.error('Error deleting ticket:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to delete ticket';
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to delete ticket' }, { status: 500 });
   }
 }
 
