@@ -202,6 +202,7 @@ When making changes:
 | `MAIL_TENANT_ID`                          | Tenant ID for the dedicated mail Azure AD app                | For email integration         |
 | `MAIL_CLIENT_ID`                          | Client ID for the dedicated mail Azure AD app                | For email integration         |
 | `MAIL_CLIENT_SECRET`                      | Client secret for the dedicated mail Azure AD app            | For email integration         |
+| `SUPPORT_TEAM_NOTIFY_EMAIL`               | Fallback recipient for customer-reply notifications when a ticket is unassigned | No |
 | `TEAM_THRESHOLD_NEEDS_ATTENTION_PENDING`  | Pending tickets threshold for "Needs Attention"              | No (default: 5)               |
 | `TEAM_THRESHOLD_NEEDS_ATTENTION_ASSIGNED` | Assigned tickets threshold for "Needs Attention"             | No (default: 15)              |
 | `TEAM_THRESHOLD_BEHIND_PENDING`           | Pending tickets threshold for "Behind"                       | No (default: 2)               |

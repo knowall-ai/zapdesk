@@ -11,6 +11,7 @@ import {
   ticketConfirmationTemplate,
   agentReplyTemplate,
   statusChangeTemplate,
+  customerReplyNotificationTemplate,
   type HistoryEntry,
 } from './email-templates';
 
@@ -272,6 +273,45 @@ export async function sendStatusChangeNotification(
   } catch (error) {
     console.error(
       `[Email] Failed to send status change notification for ticket #${ticketId}:`,
+      error
+    );
+  }
+}
+
+/**
+ * Notify the assigned agent (or fallback team) that a customer replied to a
+ * ticket via email. Sent on a fresh thread — no In-Reply-To pointing at the
+ * customer's email — so the internal conversation stays separate from the
+ * customer-facing one.
+ */
+export async function sendCustomerReplyNotification(
+  ticketId: number,
+  ticketSubject: string,
+  agentEmail: string,
+  customerEmail: string,
+  replyContentHtml: string
+): Promise<void> {
+  if (!isEmailConfigured()) return;
+  try {
+    const messageId = generateMessageId(ticketId, 'agent-notify');
+    const html = customerReplyNotificationTemplate({
+      ticketId,
+      ticketSubject,
+      customerEmail,
+      replyContentHtml,
+    });
+    await sendViaGraph({
+      to: agentEmail,
+      subject: `[ZapDesk #${ticketId}] New customer reply — "${ticketSubject}"`,
+      html,
+      messageId,
+    });
+    console.log(
+      `[Email] Customer reply notification sent for ticket #${ticketId} to ${agentEmail}`
+    );
+  } catch (error) {
+    console.error(
+      `[Email] Failed to send customer reply notification for ticket #${ticketId}:`,
       error
     );
   }

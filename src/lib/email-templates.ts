@@ -131,6 +131,26 @@ export function agentReplyTemplate(opts: {
   `);
 }
 
+export function customerReplyNotificationTemplate(opts: {
+  ticketId: number;
+  ticketSubject: string;
+  customerEmail: string;
+  replyContentHtml: string;
+}): string {
+  const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
+  return layoutWrapper(`
+    <p class="meta">New customer reply on ticket <strong>#${opts.ticketId}</strong></p>
+    <p class="meta"><strong>Subject:</strong> ${opts.ticketSubject}</p>
+    <p class="meta"><strong>From:</strong> ${opts.customerEmail}</p>
+    <div class="content">
+      ${opts.replyContentHtml}
+    </div>
+    <p style="text-align: center; margin-top: 24px;">
+      <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
+    </p>
+  `);
+}
+
 export function statusChangeTemplate(opts: {
   ticketId: number;
   subject: string;
