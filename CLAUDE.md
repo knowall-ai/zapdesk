@@ -186,27 +186,27 @@ When making changes:
 
 ## Environment Variables
 
-| Variable                                  | Description                                                  | Required                      |
-| ----------------------------------------- | ------------------------------------------------------------ | ----------------------------- |
-| `NEXTAUTH_URL`                            | Base URL of the application                                  | Yes                           |
-| `NEXTAUTH_SECRET`                         | Secret for NextAuth encryption                               | Yes                           |
-| `AZURE_AD_CLIENT_ID`                      | Azure AD application client ID                               | Yes                           |
-| `AZURE_AD_CLIENT_SECRET`                  | Azure AD application client secret                           | Yes                           |
-| `AZURE_AD_TENANT_ID`                      | Azure AD tenant ID (or 'common')                             | Yes                           |
-| `AZURE_DEVOPS_ORG`                        | Azure DevOps organization name                               | Yes                           |
-| `AZURE_DEVOPS_PAT`                        | Personal Access Token for service account                    | For email integration         |
-| `EMAIL_WEBHOOK_SECRET`                    | Shared secret for `/api/email/poll` and `/api/email/webhook` | For email integration         |
-| `MAIL_POLL_MAILBOX`                       | Mailbox ZapDesk polls for inbound email                      | For inbound email             |
-| `MAIL_FROM`                               | Sender address for outbound mail                             | For outbound email            |
-| `MAIL_FROM_NAME`                          | Display name for outbound mail                               | No (default: ZapDesk Support) |
-| `MAIL_TENANT_ID`                          | Tenant ID for the dedicated mail Azure AD app                | For email integration         |
-| `MAIL_CLIENT_ID`                          | Client ID for the dedicated mail Azure AD app                | For email integration         |
-| `MAIL_CLIENT_SECRET`                      | Client secret for the dedicated mail Azure AD app            | For email integration         |
-| `SUPPORT_TEAM_NOTIFY_EMAIL`               | Fallback recipient for customer-reply notifications when a ticket is unassigned | No |
-| `TEAM_THRESHOLD_NEEDS_ATTENTION_PENDING`  | Pending tickets threshold for "Needs Attention"              | No (default: 5)               |
-| `TEAM_THRESHOLD_NEEDS_ATTENTION_ASSIGNED` | Assigned tickets threshold for "Needs Attention"             | No (default: 15)              |
-| `TEAM_THRESHOLD_BEHIND_PENDING`           | Pending tickets threshold for "Behind"                       | No (default: 2)               |
-| `TEAM_THRESHOLD_BEHIND_ASSIGNED`          | Assigned tickets threshold for "Behind"                      | No (default: 10)              |
+| Variable                                  | Description                                                                     | Required                      |
+| ----------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------- |
+| `NEXTAUTH_URL`                            | Base URL of the application                                                     | Yes                           |
+| `NEXTAUTH_SECRET`                         | Secret for NextAuth encryption                                                  | Yes                           |
+| `AZURE_AD_CLIENT_ID`                      | Azure AD application client ID                                                  | Yes                           |
+| `AZURE_AD_CLIENT_SECRET`                  | Azure AD application client secret                                              | Yes                           |
+| `AZURE_AD_TENANT_ID`                      | Azure AD tenant ID (or 'common')                                                | Yes                           |
+| `AZURE_DEVOPS_ORG`                        | Azure DevOps organization name                                                  | Yes                           |
+| `AZURE_DEVOPS_PAT`                        | Personal Access Token for service account                                       | For email integration         |
+| `EMAIL_WEBHOOK_SECRET`                    | Shared secret for `/api/email/poll` and `/api/email/webhook`                    | For email integration         |
+| `MAIL_POLL_MAILBOX`                       | Mailbox ZapDesk polls for inbound email                                         | For inbound email             |
+| `MAIL_FROM`                               | Sender address for outbound mail                                                | For outbound email            |
+| `MAIL_FROM_NAME`                          | Display name for outbound mail                                                  | No (default: ZapDesk Support) |
+| `MAIL_TENANT_ID`                          | Tenant ID for the dedicated mail Azure AD app                                   | For email integration         |
+| `MAIL_CLIENT_ID`                          | Client ID for the dedicated mail Azure AD app                                   | For email integration         |
+| `MAIL_CLIENT_SECRET`                      | Client secret for the dedicated mail Azure AD app                               | For email integration         |
+| `SUPPORT_TEAM_NOTIFY_EMAIL`               | Fallback recipient for customer-reply notifications when a ticket is unassigned | No                            |
+| `TEAM_THRESHOLD_NEEDS_ATTENTION_PENDING`  | Pending tickets threshold for "Needs Attention"                                 | No (default: 5)               |
+| `TEAM_THRESHOLD_NEEDS_ATTENTION_ASSIGNED` | Assigned tickets threshold for "Needs Attention"                                | No (default: 15)              |
+| `TEAM_THRESHOLD_BEHIND_PENDING`           | Pending tickets threshold for "Behind"                                          | No (default: 2)               |
+| `TEAM_THRESHOLD_BEHIND_ASSIGNED`          | Assigned tickets threshold for "Behind"                                         | No (default: 10)              |
 
 ## Deployment
 
