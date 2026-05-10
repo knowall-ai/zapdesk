@@ -238,13 +238,14 @@ export async function GET(request: NextRequest) {
 
     const displayColumnNames = new Set(displayColumns.map((c) => c.name));
 
-    // Map non-display states to the fallback column for their category
+    // Map non-display states to the fallback column for their category.
+    // 'Removed' is omitted because getStandupData filters those out before
+    // we get here (issue #277).
     const categoryFallback: Record<string, string> = {
       Proposed: 'New',
       InProgress: 'Active',
       Resolved: 'Resolved',
       Completed: 'Closed',
-      Removed: 'Closed',
     };
 
     // Resolve any DevOps state to one of the 6 display columns

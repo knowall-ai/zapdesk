@@ -2426,11 +2426,14 @@ export class AzureDevOpsService {
     nextDay.setDate(nextDay.getDate() + 1);
     const nextDayStr = nextDay.toISOString().split('T')[0];
 
-    // Build state lists dynamically from categories
+    // Build state lists dynamically from categories.
+    // 'Removed' states are intentionally excluded — removed work items are
+    // hidden from the Kanban board (issue #277).
     const doneStates: string[] = [];
     const activeStates: string[] = [];
     for (const [state, category] of Object.entries(stateCategories)) {
-      if (category === 'Resolved' || category === 'Completed' || category === 'Removed') {
+      if (category === 'Removed') continue;
+      if (category === 'Resolved' || category === 'Completed') {
         doneStates.push(state);
       } else {
         activeStates.push(state);
