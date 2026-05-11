@@ -37,9 +37,9 @@ export default function StandupKanbanCard({ item, isDragging, onClick }: Standup
 
   const hasRemainingWork = typeof item.remainingWork === 'number' && item.remainingWork > 0;
   const remainingLabel = hasRemainingWork
-    ? item.remainingWork! < 1
-      ? `${item.remainingWork!.toFixed(1)}h`
-      : `${Math.round(item.remainingWork!)}h`
+    ? Number.isInteger(item.remainingWork)
+      ? `${item.remainingWork}h`
+      : `${item.remainingWork!.toFixed(1)}h`
     : null;
 
   const cardBody = (
