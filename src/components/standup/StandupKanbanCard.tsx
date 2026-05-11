@@ -35,6 +35,13 @@ export default function StandupKanbanCard({ item, isDragging, onClick }: Standup
 
   const typeColor = typeColors[item.workItemType] || 'var(--text-muted)';
 
+  const hasRemainingWork = typeof item.remainingWork === 'number' && item.remainingWork > 0;
+  const remainingLabel = hasRemainingWork
+    ? item.remainingWork! < 1
+      ? `${item.remainingWork!.toFixed(1)}h`
+      : `${Math.round(item.remainingWork!)}h`
+    : null;
+
   const cardBody = (
     <>
       <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -50,7 +57,18 @@ export default function StandupKanbanCard({ item, isDragging, onClick }: Standup
           </span>
           <span className="text-xs text-[var(--text-muted)]">#{item.id}</span>
         </div>
-        <PriorityIndicator priority={item.priority} />
+        <div className="flex items-center gap-1.5">
+          {remainingLabel && (
+            <span
+              className="rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
+              aria-label={`Remaining effort: ${remainingLabel}`}
+              title={`Remaining effort: ${remainingLabel}`}
+            >
+              {remainingLabel}
+            </span>
+          )}
+          <PriorityIndicator priority={item.priority} />
+        </div>
       </div>
 
       <h4 className="mb-2 line-clamp-2 text-sm font-medium text-[var(--text-primary)]">
