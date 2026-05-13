@@ -341,6 +341,9 @@ export default function TicketDetailPage() {
   };
 
   // Delete (Recycle Bin) — issue #374. Confirmation is rendered by TicketDetail.
+  // Errors are surfaced via toast here; do not rethrow — the caller invokes
+  // this from an onClick handler that React doesn't await, so a rejection
+  // would land as an unhandled promise rejection in the browser console.
   const handleDelete = async () => {
     if (!ticket) return;
     try {
@@ -356,7 +359,6 @@ export default function TicketDetailPage() {
       router.push('/tickets');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete');
-      throw err;
     }
   };
 
