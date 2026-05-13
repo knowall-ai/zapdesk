@@ -9,6 +9,7 @@ import StatusBadge from '../common/StatusBadge';
 import TicketDialogShell from './TicketDialogShell';
 import { useWorkItemActions } from '@/hooks/useWorkItemActions';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
+import { hasTicketTag } from '@/lib/tags';
 import WorkItemDetailContent from './WorkItemDetailContent';
 import WorkItemDetailSidebar from './WorkItemDetailSidebar';
 import TypeChangeRequiredFields from './TypeChangeRequiredFields';
@@ -345,7 +346,11 @@ export default function WorkItemDetailDialog({
     <>
       <button
         onClick={() => {
-          router.push(`/tickets/${workItem.id}`);
+          // Internal work items (no "ticket" tag) live at /workitems/[id]
+          // so the sidebar doesn't highlight Tickets (issue #372). Default
+          // to ticket routing when tags aren't loaded yet.
+          const isTicket = workItem.tags ? hasTicketTag(workItem.tags) : true;
+          router.push(`${isTicket ? '/tickets' : '/workitems'}/${workItem.id}`);
           onClose();
         }}
         className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
