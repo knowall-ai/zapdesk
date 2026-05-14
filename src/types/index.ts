@@ -549,6 +549,7 @@ export interface StandupWorkItem {
   devOpsUrl: string;
   tags: string[];
   iterationPath?: string;
+  remainingWork?: number;
 }
 
 /** A column definition pulled from DevOps state configuration */
