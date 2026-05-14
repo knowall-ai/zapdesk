@@ -2544,6 +2544,7 @@ export class AzureDevOpsService {
       'System.Tags',
       'System.IterationPath',
       'Microsoft.VSTS.Common.Priority',
+      'Microsoft.VSTS.Scheduling.RemainingWork',
     ].join(',');
 
     for (let i = 0; i < workItemIds.length; i += batchSize) {

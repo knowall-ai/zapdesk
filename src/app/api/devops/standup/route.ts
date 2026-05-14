@@ -142,6 +142,7 @@ function mapWorkItemToStandupItem(
 ): StandupWorkItem {
   const fields = wi.fields;
   const assignedTo = fields['System.AssignedTo'];
+  const remainingWork = fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number | undefined;
   return {
     id: wi.id,
     title: fields['System.Title'],
@@ -167,6 +168,7 @@ function mapWorkItemToStandupItem(
         .map((t: string) => t.trim())
         .filter(Boolean) || [],
     iterationPath: (fields['System.IterationPath'] as string) || undefined,
+    remainingWork: typeof remainingWork === 'number' ? remainingWork : undefined,
   };
 }
 
