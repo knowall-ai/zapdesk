@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { X, Send, Loader2, Search, Paperclip } from 'lucide-react';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import MentionInput from '@/components/common/MentionInput';
@@ -63,6 +63,11 @@ interface NewTicketDialogProps {
 export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProps) {
   const { data: session } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
+  // When opened from the Kanban Board, treat the new item as an internal
+  // work item, not a customer ticket: no auto "ticket" tag, no SLA, hidden
+  // from the Tickets screen (issue #372).
+  const isKanbanContext = pathname?.startsWith('/kanban') ?? false;
   const { get, post, hasOrganization } = useDevOpsApi();
   const [projects, setProjects] = useState<DevOpsProject[]>([]);
   const [teamMembers, setTeamMembers] = useState<User[]>([]);
@@ -562,6 +567,9 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
           .filter(Boolean),
         additionalFields: Object.keys(additionalFields).length > 0 ? additionalFields : undefined,
         parentId: effectiveParentId ?? undefined,
+        // Kanban Board context: create as a plain internal work item (no
+        // "ticket" tag → invisible to the Tickets screen and SLA tracking)
+        asTicket: !isKanbanContext,
       });
 
       if (!response.ok) {
@@ -600,9 +608,14 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
       }
 
       onClose();
-      router.push(`/tickets/${ticketId}`);
+      // Kanban Board: stay on the board so the user sees the new item there.
+      // Other contexts: jump to the new ticket's detail page.
+      if (!isKanbanContext) {
+        router.push(`/tickets/${ticketId}`);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create ticket');
+      const fallback = isKanbanContext ? 'Failed to create work item' : 'Failed to create ticket';
+      setError(err instanceof Error ? err.message : fallback);
     } finally {
       setIsSubmitting(false);
       setIsUploadingFiles(false);
@@ -661,7 +674,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
               New
             </span>
             <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Create Ticket
+              {isKanbanContext ? 'Create Work Item' : 'Create Ticket'}
             </h2>
           </div>
           <button
@@ -1057,7 +1070,9 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                   className="input w-full"
                 />
                 <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                  Comma-separated. &quot;ticket&quot; tag added automatically.
+                  {isKanbanContext
+                    ? 'Comma-separated. Internal work item — no "ticket" tag, hidden from the Tickets screen.'
+                    : 'Comma-separated. "ticket" tag added automatically.'}
                 </p>
               </div>
 

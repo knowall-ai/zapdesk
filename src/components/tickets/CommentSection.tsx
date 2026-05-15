@@ -15,6 +15,9 @@ interface CommentSectionProps {
   assignee?: User | null;
   onZapClick?: () => void;
   compact?: boolean;
+  // false → internal work item (no customer-facing copy). Defaults to true
+  // so existing callers keep their ticket-style helper text.
+  isTicket?: boolean;
 }
 
 export default function CommentSection({
@@ -25,6 +28,7 @@ export default function CommentSection({
   assignee,
   onZapClick,
   compact = false,
+  isTicket = true,
 }: CommentSectionProps) {
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -179,7 +183,9 @@ export default function CommentSection({
                   className="h-4 w-4 rounded accent-[var(--primary)]"
                 />
                 <span className="text-xs" style={{ color: 'var(--primary)' }}>
-                  Public reply – all comments are visible to customers in DevOps
+                  {isTicket
+                    ? 'Public reply – all comments are visible to customers in DevOps'
+                    : 'Comments are visible in DevOps'}
                 </span>
               </label>
             </div>
