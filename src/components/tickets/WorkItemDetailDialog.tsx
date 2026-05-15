@@ -138,6 +138,20 @@ export default function WorkItemDetailDialog({
     [workItem, fetchComments, fetchDevOps, hasOrganization]
   );
 
+  const handleZapSent = useCallback(
+    async (amount: number) => {
+      if (!workItem) return;
+      const assigneeName = workItem.assignee?.displayName || 'the agent';
+      const zapMessage = `⚡ Sent a ${amount.toLocaleString()} sat zap to ${assigneeName} for great support!`;
+      try {
+        await handleAddComment(zapMessage);
+      } catch (err) {
+        console.error('[WorkItemDetailDialog] Failed to post zap comment:', err);
+      }
+    },
+    [workItem, handleAddComment]
+  );
+
   const handleUploadAttachment = useCallback(
     async (file: File): Promise<Attachment> => {
       if (!workItem) throw new Error('No work item');
@@ -353,6 +367,7 @@ export default function WorkItemDetailDialog({
           onAddComment={handleAddComment}
           onUploadAttachment={handleUploadAttachment}
           onUpdate={onUpdate ? handleUpdate : undefined}
+          onZapSent={handleZapSent}
           showEffortTracking
           compact
         />
