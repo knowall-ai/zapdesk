@@ -2404,18 +2404,27 @@ export class AzureDevOpsService {
     return result;
   }
 
-  // Daily Standup: fetch work items across all projects for a given date
-  // Uses org-level WIQL queries (no project scope) for performance
+  // Kanban / Standup: fetch work items across all projects for a given date.
+  // Uses org-level WIQL queries (no project scope) for performance.
   async getStandupData(
     targetDate: Date,
     stateCategories: Record<string, string>
   ): Promise<{ items: DevOpsWorkItem[] }> {
-    const dateStr = targetDate.toISOString().split('T')[0];
-
-    // "Yesterday" relative to the target date
-    const yesterday = new Date(targetDate);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    // Recently-done window: 7 days ending on the target date (inclusive).
+    // This matches the "recently-solved" view elsewhere in the app and ensures
+    // items moved to a done state today still appear in the Closed column on
+    // the Kanban board (issue #317).
+    // The upper bound (< nextDay) anchors the window to targetDate so historical
+    // ?date=... requests don't pick up items changed after that date.
+    // Subtract 6 (not 7) so [windowStart, nextDay) covers exactly 7 calendar
+    // days inclusive of the target day — otherwise the date-only truncation
+    // would give us 8 days.
+    const windowStart = new Date(targetDate);
+    windowStart.setDate(windowStart.getDate() - 6);
+    const sevenDaysAgoStr = windowStart.toISOString().split('T')[0];
+    const nextDay = new Date(targetDate);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const nextDayStr = nextDay.toISOString().split('T')[0];
 
     // Build state lists dynamically from categories
     const doneStates: string[] = [];
@@ -2453,15 +2462,15 @@ export class AzureDevOpsService {
       'Microsoft.VSTS.Common.Priority',
     ].join(', ');
 
-    // Query 1: Items moved to done states on the previous day
+    // Query 1: Items currently in a done state, moved there in the last 7 days
     const doneQuery = {
       query: `
         SELECT ${fields}
         FROM WorkItems
         WHERE [System.State] IN (${doneStatesList})
           AND [System.WorkItemType] IN (${allowedTypesList})
-          AND [System.ChangedDate] >= '${yesterdayStr}'
-          AND [System.ChangedDate] < '${dateStr}'
+          AND [System.ChangedDate] >= '${sevenDaysAgoStr}'
+          AND [System.ChangedDate] < '${nextDayStr}'
         ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
       `,
     };
@@ -2532,6 +2541,7 @@ export class AzureDevOpsService {
       'System.Tags',
       'System.IterationPath',
       'Microsoft.VSTS.Common.Priority',
+      'Microsoft.VSTS.Scheduling.RemainingWork',
     ].join(',');
 
     for (let i = 0; i < workItemIds.length; i += batchSize) {
