@@ -95,3 +95,96 @@ export function renderEmailBody(rawText: string): string {
     truncated
   )}</pre>`;
 }
+
+/**
+ * Strip dangerous markup from an inbound email HTML body before embedding it
+ * in a DevOps work item field. Best-effort regex sanitiser — DevOps applies
+ * its own sanitiser when rendering, this is defence-in-depth.
+ */
+export function sanitizeEmailHtml(html: string): string {
+  if (!html) return '';
+  return (
+    html
+      // Drop entire script/style/iframe/object/embed/link/meta blocks (with content).
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, '')
+      .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>/gi, '')
+      .replace(/<object\b[^>]*>[\s\S]*?<\/object\s*>/gi, '')
+      .replace(/<embed\b[^>]*\/?>/gi, '')
+      .replace(/<link\b[^>]*\/?>/gi, '')
+      .replace(/<meta\b[^>]*\/?>/gi, '')
+      // Strip inline event handlers (`onclick=...`, `onload=...`, ...).
+      .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+      .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+      .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
+      // Neutralise javascript: and data: (non-image) URLs.
+      .replace(/(href|src)\s*=\s*"javascript:[^"]*"/gi, '$1="#"')
+      .replace(/(href|src)\s*=\s*'javascript:[^']*'/gi, "$1='#'")
+  );
+}
+
+/**
+ * Best-effort signature stripping for HTML email bodies. We can't use the
+ * line-based `stripSignature` directly — HTML emails are usually a single
+ * blob with `<br>` separators, not `\n`. Cut at the first reliable end-of-
+ * message marker we find.
+ */
+export function stripHtmlSignature(html: string): string {
+  if (!html) return '';
+
+  // Common hard markers — RFC 3676 delimiter rendered as HTML, mobile auto-
+  // sigs, gmail/outlook signature blocks. Take the FIRST occurrence: anything
+  // below it is signature.
+  const hardMarkers: RegExp[] = [
+    /<div[^>]*class="[^"]*gmail_signature[^"]*"[^>]*>/i,
+    /<div[^>]*id="Signature"[^>]*>/i,
+    /<div[^>]*class="[^"]*moz-signature[^"]*"[^>]*>/i,
+    /(?:<br\s*\/?>\s*){1,3}--\s*(?:<br\s*\/?>|<\/?p>|<\/div>)/i,
+    /(?:<br\s*\/?>|<p>|<div[^>]*>)\s*Sent from my (?:iPhone|iPad|Android|Galaxy|BlackBerry)/i,
+    /(?:<br\s*\/?>|<p>|<div[^>]*>)\s*Sent from (?:Outlook|Mail) for (?:iOS|Android|Windows)/i,
+    /(?:<br\s*\/?>|<p>|<div[^>]*>)\s*Get Outlook for (?:iOS|Android)/i,
+  ];
+
+  let cutAt = html.length;
+  for (const re of hardMarkers) {
+    const match = re.exec(html);
+    if (match && match.index < cutAt) cutAt = match.index;
+  }
+  return cutAt < html.length ? html.slice(0, cutAt).trimEnd() : html;
+}
+
+/**
+ * Replace `cid:CONTENT_ID` references in `<img src="...">` tags with the
+ * URLs the matching files were uploaded to. Outlook and Gmail mark pasted
+ * screenshots as inline `cid:` images; without rewriting, the body shows a
+ * broken-image icon in DevOps.
+ */
+export function rewriteCidReferences(
+  html: string,
+  cidMap: Map<string, { url: string; filename: string }>
+): string {
+  if (!html || cidMap.size === 0) return html;
+  return html.replace(
+    /(<img\b[^>]*?\bsrc\s*=\s*)(["'])cid:([^"'>\s]+)\2/gi,
+    (full, prefix: string, quote: string, cid: string) => {
+      const target = cidMap.get(cid) || cidMap.get(cid.toLowerCase());
+      if (!target) return full;
+      return `${prefix}${quote}${escapeHtml(target.url)}${quote} alt="${escapeHtml(target.filename)}"`;
+    }
+  );
+}
+
+/**
+ * Sanitise + signature-strip + truncate an HTML email body for safe storage
+ * in a DevOps work item. Mirror of `renderEmailBody` for the HTML path.
+ */
+export function renderEmailBodyHtml(rawHtml: string): string {
+  const sanitised = sanitizeEmailHtml(rawHtml);
+  const stripped = stripHtmlSignature(sanitised);
+  const truncated =
+    stripped.length > MAX_BODY_CHARS
+      ? stripped.slice(0, MAX_BODY_CHARS) + '<p><em>[truncated]</em></p>'
+      : stripped;
+  if (!truncated.replace(/<[^>]+>/g, '').trim()) return '<em>No content</em>';
+  return `<div style="font-family: inherit;">${truncated}</div>`;
+}

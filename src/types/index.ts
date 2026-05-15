@@ -307,10 +307,21 @@ export interface EmailWebhookPayload {
   to: string;
   subject: string;
   body: string;
+  /** 'html' if `body` is HTML markup; 'text' (default) for plain text. */
+  bodyType?: 'html' | 'text';
   attachments?: Array<{
     filename: string;
     contentType: string;
-    content: string;
+    /** Base64 file contents. Required for file attachments; omitted for reference / item attachments. */
+    content?: string;
+    /** Microsoft Graph contentId — used to rewrite `cid:` refs in HTML body. */
+    contentId?: string;
+    /** True if the mail client flagged this as inline (pasted screenshot, signature image). */
+    isInline?: boolean;
+    /** For OneDrive / SharePoint reference attachments — clickable link surfaced in the ticket. */
+    referenceUrl?: string;
+    /** For forwarded `.eml` (item attachment) — subject of the embedded message. */
+    itemSubject?: string;
   }>;
 }
 

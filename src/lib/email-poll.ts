@@ -14,7 +14,7 @@
  */
 
 import { getMailGraphToken } from './email';
-import { ingestEmail, type IngestResult } from './email-ingest';
+import { ingestEmail, type IngestEmailAttachment, type IngestResult } from './email-ingest';
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 
@@ -32,14 +32,22 @@ interface GraphMessage {
   receivedDateTime?: string;
 }
 
-interface GraphFileAttachment {
+interface GraphAttachment {
   '@odata.type': string;
   id: string;
-  name: string;
-  contentType: string;
-  size: number;
-  isInline: boolean;
-  contentBytes: string;
+  name?: string;
+  contentType?: string;
+  size?: number;
+  isInline?: boolean;
+  contentId?: string | null;
+  /** Present on `#microsoft.graph.fileAttachment`. */
+  contentBytes?: string;
+  /** Present on `#microsoft.graph.referenceAttachment`. */
+  sourceUrl?: string;
+  /** Microsoft Graph sometimes exposes a direct download for reference attachments. */
+  '@microsoft.graph.downloadUrl'?: string;
+  /** Present on `#microsoft.graph.itemAttachment`. */
+  item?: { subject?: string };
 }
 
 export interface PollSummary {
@@ -87,7 +95,7 @@ export async function pollMailbox(mailbox: string): Promise<PollSummary> {
     const fromName = message.from?.emailAddress?.name;
     const from = fromName ? `${fromName} <${fromAddress}>` : fromAddress;
 
-    let attachments: Array<{ filename: string; contentType: string; content: string }> | undefined;
+    let attachments: IngestEmailAttachment[] | undefined;
     if (message.hasAttachments) {
       try {
         attachments = await fetchAttachments(token, mailbox, message.id);
@@ -100,6 +108,7 @@ export async function pollMailbox(mailbox: string): Promise<PollSummary> {
       from,
       subject: message.subject || '(no subject)',
       body: message.uniqueBody?.content || '',
+      bodyType: message.uniqueBody?.contentType === 'html' ? 'html' : 'text',
       attachments,
     });
 
@@ -140,10 +149,10 @@ async function listUnread(token: string, mailbox: string): Promise<GraphMessage[
   const res = await fetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
-      // Plain text instead of HTML — drops inline CSS, embedded images, etc.
-      // Combined with $select=uniqueBody this gives us only the new content
-      // the customer wrote, in a form we can safely escape and re-wrap.
-      Prefer: 'outlook.body-content-type="text"',
+      // HTML so `<img src="cid:...">` references survive — we rewrite them
+      // post-upload to keep pasted screenshots inline. The body is sanitised
+      // and signature-stripped in `email-clean.ts` before storage.
+      Prefer: 'outlook.body-content-type="html"',
     },
   });
   if (!res.ok) {
@@ -158,32 +167,98 @@ async function fetchAttachments(
   token: string,
   mailbox: string,
   messageId: string
-): Promise<Array<{ filename: string; contentType: string; content: string }>> {
-  const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}/attachments`;
+): Promise<IngestEmailAttachment[]> {
+  // `$expand=microsoft.graph.itemAttachment/item` is required for forwarded
+  // .eml previews to include the inner message subject; without it `item` is
+  // null and we can't surface a useful note.
+  const url =
+    `${GRAPH_BASE_URL}/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}/attachments` +
+    `?$expand=microsoft.graph.itemAttachment/item`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) {
     throw new Error(`Graph list-attachments failed (${res.status}): ${await res.text()}`);
   }
-  const json = (await res.json()) as { value?: GraphFileAttachment[] };
-  const result: Array<{ filename: string; contentType: string; content: string }> = [];
+  const json = (await res.json()) as { value?: GraphAttachment[] };
+  const result: IngestEmailAttachment[] = [];
+
   for (const a of json.value || []) {
-    // Only fileAttachment with contentBytes — itemAttachment (forwarded message)
-    // and referenceAttachment (cloud links) need different handling and are rare
-    // in support traffic.
-    //
-    // Inline attachments (`isInline=true`) are also uploaded: Outlook and Gmail
-    // flag pasted screenshots and dragged-in images as inline even when users
-    // expect them as attachments, so dropping them silently loses common
-    // support artifacts. We extract the body as plain `uniqueBody`, so the
-    // inline reference in the HTML is gone — surfacing the file on the ticket
-    // is what matters.
-    if (a['@odata.type'] !== '#microsoft.graph.fileAttachment') continue;
-    if (!a.contentBytes) continue;
-    result.push({
-      filename: a.name || `attachment-${a.id}`,
-      contentType: a.contentType || 'application/octet-stream',
-      content: a.contentBytes,
-    });
+    const filename = a.name || `attachment-${a.id}`;
+    const contentType = a.contentType || 'application/octet-stream';
+
+    switch (a['@odata.type']) {
+      case '#microsoft.graph.fileAttachment': {
+        if (!a.contentBytes) {
+          console.warn(
+            `[Poll] fileAttachment ${a.id} (${filename}) has no contentBytes — skipping`
+          );
+          continue;
+        }
+        // Inline files (pasted screenshots, signature images) are kept: the
+        // body fetch is HTML now, so `<img src="cid:...">` references can be
+        // rewritten to point at the uploaded DevOps URL.
+        result.push({
+          filename,
+          contentType,
+          content: a.contentBytes,
+          contentId: a.contentId || undefined,
+          isInline: Boolean(a.isInline),
+        });
+        break;
+      }
+      case '#microsoft.graph.referenceAttachment': {
+        // Outlook converts files >35 MB (and any file when "Modern Attachments"
+        // is enabled) to OneDrive / SharePoint links. Try the direct download
+        // URL when Graph exposes it; otherwise surface the source URL so the
+        // agent can click through.
+        const downloadUrl = a['@microsoft.graph.downloadUrl'];
+        const sourceUrl = a.sourceUrl;
+        if (downloadUrl) {
+          try {
+            const fileRes = await fetch(downloadUrl);
+            if (fileRes.ok) {
+              const buf = Buffer.from(await fileRes.arrayBuffer());
+              result.push({
+                filename,
+                contentType,
+                content: buf.toString('base64'),
+                referenceUrl: sourceUrl,
+              });
+              break;
+            }
+            console.warn(
+              `[Poll] referenceAttachment ${a.id} (${filename}) downloadUrl returned ${fileRes.status} — falling back to link`
+            );
+          } catch (err) {
+            console.warn(
+              `[Poll] referenceAttachment ${a.id} (${filename}) download failed — falling back to link:`,
+              err
+            );
+          }
+        }
+        if (sourceUrl) {
+          result.push({ filename, contentType, referenceUrl: sourceUrl });
+        } else {
+          console.warn(
+            `[Poll] referenceAttachment ${a.id} (${filename}) has no sourceUrl — skipping`
+          );
+        }
+        break;
+      }
+      case '#microsoft.graph.itemAttachment': {
+        // Forwarded .eml — Graph won't give us bytes through this endpoint, so
+        // record a tagged note so the message doesn't vanish silently. A
+        // future change can fetch the inner MIME and re-ingest.
+        result.push({
+          filename,
+          contentType,
+          itemSubject: a.item?.subject || filename,
+        });
+        break;
+      }
+      default: {
+        console.warn(`[Poll] unknown attachment type ${a['@odata.type']} (${filename}) — skipping`);
+      }
+    }
   }
   return result;
 }
