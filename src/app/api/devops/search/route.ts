@@ -40,7 +40,6 @@ export async function GET(request: NextRequest) {
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
     const results: SearchResult[] = [];
-    const seenTicketIds = new Set<string>();
 
     // Numeric-only queries are almost always direct work item ID lookups
     // (e.g. "5908"). The tag-filtered ticket search misses any work item that
@@ -63,7 +62,9 @@ export async function GET(request: NextRequest) {
             url: `/tickets/${id}`,
             status: state,
           });
-          seenTicketIds.add(id);
+          // Direct hit — skip the full getAllTickets() scan and the
+          // org/user searches (a pure-digit query won't match those).
+          return NextResponse.json({ results });
         }
       } catch (err) {
         console.error('Direct work item lookup failed:', err);
@@ -78,10 +79,9 @@ export async function GET(request: NextRequest) {
     const matchingTickets = tickets
       .filter(
         (t) =>
-          !seenTicketIds.has(t.id.toString()) &&
-          (t.title.toLowerCase().includes(query) ||
-            t.id.toString().includes(query) ||
-            t.description?.toLowerCase().includes(query))
+          t.title.toLowerCase().includes(query) ||
+          t.id.toString().includes(query) ||
+          t.description?.toLowerCase().includes(query)
       )
       .slice(0, 5)
       .map((t) => ({
