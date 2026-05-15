@@ -201,12 +201,21 @@ function StandupPageContent() {
 
   const handleStateChange = useCallback(
     async (itemId: number, targetState: string) => {
+      console.log('[Kanban] PATCH /state', { itemId, targetState });
       const response = await devOpsPatch(`/api/devops/tickets/${itemId}/state`, {
         state: targetState,
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update state');
+        const bodyText = await response.text().catch(() => '<no body>');
+        console.error('[Kanban] state PATCH rejected', {
+          itemId,
+          targetState,
+          status: response.status,
+          statusText: response.statusText,
+          body: bodyText,
+        });
+        throw new Error(`Failed to update state (${response.status}): ${bodyText}`);
       }
 
       fetchStandupData(true, true);

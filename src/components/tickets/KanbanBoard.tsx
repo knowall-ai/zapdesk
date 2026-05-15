@@ -214,14 +214,20 @@ export default function KanbanBoard({
       const { active, over } = event;
       setActiveId(null);
 
-      if (!over) return;
+      if (!over) {
+        console.log('[Kanban DnD] drag ended with no drop target');
+        return;
+      }
 
       const activeItemId = active.id as number;
       const overId = over.id as string;
 
       // Find the original item (from props, not local state)
       const originalItem = sourceItems.find((t) => t.id === activeItemId);
-      if (!originalItem) return;
+      if (!originalItem) {
+        console.warn('[Kanban DnD] active item not found in sourceItems', { activeItemId });
+        return;
+      }
 
       // Determine the target state
       let targetState: string | null = null;
@@ -235,8 +241,17 @@ export default function KanbanBoard({
         }
       }
 
+      const fromState = getItemState(originalItem);
+      console.log('[Kanban DnD] drag end', {
+        itemId: activeItemId,
+        overId,
+        fromState,
+        targetState,
+        knownStates: stateNames,
+      });
+
       // If state hasn't changed, reset to original
-      if (!targetState || getItemState(originalItem) === targetState) {
+      if (!targetState || fromState === targetState) {
         setLocalItems(sourceItems);
         return;
       }
@@ -245,14 +260,30 @@ export default function KanbanBoard({
       if (onTicketStateChange) {
         setIsUpdating(true);
         try {
+          console.log('[Kanban DnD] calling onTicketStateChange', {
+            itemId: activeItemId,
+            fromState,
+            targetState,
+          });
           await onTicketStateChange(activeItemId, targetState);
+          console.log('[Kanban DnD] state change succeeded', {
+            itemId: activeItemId,
+            targetState,
+          });
         } catch (error) {
-          console.error('Failed to update item state:', error);
+          console.error('[Kanban DnD] state change failed — rolling back', {
+            itemId: activeItemId,
+            fromState,
+            targetState,
+            error,
+          });
           // Rollback on failure
           setLocalItems(sourceItems);
         } finally {
           setIsUpdating(false);
         }
+      } else {
+        console.warn('[Kanban DnD] no onTicketStateChange handler wired — change will not persist');
       }
     },
     [sourceItems, localItems, onTicketStateChange, stateNames]

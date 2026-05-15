@@ -1196,21 +1196,37 @@ export class AzureDevOpsService {
     state: string
   ): Promise<DevOpsWorkItem> {
     const patchDocument = [{ op: 'add', path: '/fields/System.State', value: state }];
+    const url = `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?api-version=7.0`;
 
-    const response = await fetch(
-      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?api-version=7.0`,
-      {
-        method: 'PATCH',
-        headers: {
-          ...this.headers,
-          'Content-Type': 'application/json-patch+json',
-        },
-        body: JSON.stringify(patchDocument),
-      }
-    );
+    console.log('[devops.updateTicketState] PATCH', {
+      url,
+      projectName,
+      workItemId,
+      state,
+    });
+
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        ...this.headers,
+        'Content-Type': 'application/json-patch+json',
+      },
+      body: JSON.stringify(patchDocument),
+    });
 
     if (!response.ok) {
-      throw new Error(`Failed to update work item: ${response.statusText}`);
+      const errorBody = await response.text().catch(() => '<no body>');
+      console.error('[devops.updateTicketState] DevOps rejected PATCH', {
+        projectName,
+        workItemId,
+        state,
+        status: response.status,
+        statusText: response.statusText,
+        body: errorBody,
+      });
+      throw new Error(
+        `Failed to update work item ${workItemId} state to "${state}": ${response.status} ${response.statusText} — ${errorBody}`
+      );
     }
 
     return response.json();
