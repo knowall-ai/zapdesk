@@ -107,6 +107,7 @@ export async function POST(request: NextRequest) {
       areaPath,
       additionalFields,
       parentId,
+      asTicket,
     } = body;
 
     if (!project || !title) {
@@ -177,8 +178,27 @@ export async function POST(request: NextRequest) {
         ? parentId
         : undefined;
 
-    // Create the ticket with 'ticket' tag always included
-    const allTags = ['ticket', ...(tags || [])].filter(Boolean);
+    // Auto-tag with 'ticket' unless the caller explicitly opts out (asTicket: false).
+    // Defaulting to true preserves existing behaviour for any caller that omits
+    // the field — only the Kanban Board flow currently sets it false (issue #372).
+    // Sanitize the user-supplied list to strings first; a malformed request with
+    // non-string entries would otherwise throw on .toLowerCase().
+    const tagAsTicket = asTicket !== false;
+    const userTags = (Array.isArray(tags) ? tags : [])
+      .filter((t): t is string => typeof t === 'string')
+      .map((t) => t.trim())
+      .filter(Boolean);
+    // Reject semicolons — DevOps uses ';' as the tag delimiter, so a single
+    // user-supplied tag containing ';' would silently split into multiple
+    // tags on the way through. Matches the PATCH handler.
+    if (userTags.some((t) => t.includes(';'))) {
+      return NextResponse.json({ error: 'Tags cannot contain semicolons' }, { status: 400 });
+    }
+    // Drop any case-variant of "ticket" from user input first so the dedup is
+    // case-insensitive — Set() with exact-string equality wouldn't catch
+    // "Ticket" vs "ticket" and we'd end up with both.
+    const userTagsNoTicket = userTags.filter((t) => t.toLowerCase() !== 'ticket');
+    const allTags = tagAsTicket ? ['ticket', ...userTagsNoTicket] : userTagsNoTicket;
     const workItem = await devopsService.createTicketWithAssignee(
       project,
       title,
