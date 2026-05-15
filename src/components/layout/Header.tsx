@@ -18,7 +18,7 @@ import {
   Menu,
 } from 'lucide-react';
 import { Avatar } from '@/components/common';
-import { useProfilePhoto } from '@/hooks';
+import { useProfilePhoto, useDevOpsApi } from '@/hooks';
 import OrganizationSwitcher from './OrganizationSwitcher';
 
 interface SearchResult {
@@ -37,6 +37,7 @@ interface HeaderProps {
 export default function Header({ onMenuClick }: HeaderProps) {
   const { data: session, status } = useSession();
   const { photoUrl } = useProfilePhoto(status === 'authenticated');
+  const { get: getDevOps, hasOrganization } = useDevOpsApi();
   const router = useRouter();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,11 +55,12 @@ export default function Header({ onMenuClick }: HeaderProps) {
       setShowSearchResults(false);
       return;
     }
+    if (!hasOrganization) return;
 
     const timeoutId = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const response = await fetch(`/api/devops/search?q=${encodeURIComponent(searchQuery)}`);
+        const response = await getDevOps(`/api/devops/search?q=${encodeURIComponent(searchQuery)}`);
         if (response.ok) {
           const data = await response.json();
           setSearchResults(data.results || []);
@@ -73,7 +75,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [searchQuery]);
+  }, [searchQuery, getDevOps, hasOrganization]);
 
   // Keyboard shortcut (Cmd/Ctrl+K)
   useEffect(() => {
