@@ -93,17 +93,14 @@ function ZapDialogContent({
         throw new Error('No LNURL callback found in response');
       }
 
-      // Validate callback URL for security:
-      // - Must use HTTPS
-      // - Should match the original domain to prevent redirect attacks
+      // Validate callback URL: must use HTTPS.
+      // The LNURL spec does not require the callback host to match the
+      // .well-known host, and legitimate providers (e.g. Wallet of Satoshi
+      // serves callbacks from livingroomofsatoshi.com) routinely split them.
       try {
         const callbackUrlObj = new URL(meta.callback);
         if (callbackUrlObj.protocol !== 'https:') {
           throw new Error('Callback URL must use HTTPS');
-        }
-        // Allow same domain or subdomains
-        if (!callbackUrlObj.hostname.endsWith(domain) && callbackUrlObj.hostname !== domain) {
-          throw new Error('Callback URL domain does not match Lightning address domain');
         }
       } catch (urlErr) {
         if (urlErr instanceof Error && urlErr.message.includes('Invalid URL')) {

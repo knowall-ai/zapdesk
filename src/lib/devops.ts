@@ -504,6 +504,28 @@ export class AzureDevOpsService {
     return 'error';
   }
 
+  // Org-level fetch of a work item with the minimal fields needed for search/preview.
+  // Unlike getWorkItem, no project name is required and tag filters do not apply,
+  // so this finds any work item the user can access (Bug, Checkpoint, Feature, etc.).
+  async findWorkItemById(workItemId: number): Promise<DevOpsWorkItem | null> {
+    const fields = [
+      'System.Id',
+      'System.Title',
+      'System.State',
+      'System.WorkItemType',
+      'System.TeamProject',
+    ].join(',');
+    const response = await fetch(
+      `${this.baseUrl}/_apis/wit/workitems/${workItemId}?fields=${fields}&api-version=7.0`,
+      { headers: this.headers }
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new Error(`Failed to fetch work item ${workItemId}: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
   // Get comments for a work item
   async getWorkItemComments(projectName: string, workItemId: number): Promise<TicketComment[]> {
     const response = await fetch(

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
 
 interface SearchResult {
@@ -20,6 +21,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const organization = request.headers.get('x-devops-org');
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization specified' }, { status: 400 });
+    }
+
+    const hasAccess = await validateOrganizationAccess(session.accessToken, organization);
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.get('q')?.toLowerCase().trim();
 
@@ -27,11 +38,44 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ results: [] });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken, organization);
     const results: SearchResult[] = [];
 
-    // Search tickets
-    const tickets = await devopsService.getAllTickets();
+    // Numeric-only queries are almost always direct work item ID lookups
+    // (e.g. "5908"). The tag-filtered ticket search misses any work item that
+    // isn't tagged "ticket" — Checkpoints, Features, Bugs surfaced on the
+    // Kanban board, etc. — so do an org-level lookup first.
+    if (/^\d+$/.test(query)) {
+      try {
+        const workItem = await devopsService.findWorkItemById(parseInt(query, 10));
+        if (workItem) {
+          const fields = workItem.fields || {};
+          const id = workItem.id.toString();
+          const title = (fields['System.Title'] as string | undefined) || `#${id}`;
+          const state = (fields['System.State'] as string | undefined) || '';
+          const type = (fields['System.WorkItemType'] as string | undefined) || 'Work Item';
+          results.push({
+            type: 'ticket',
+            id,
+            title,
+            subtitle: `${type} #${id}${state ? ` • ${state}` : ''}`,
+            url: `/tickets/${id}`,
+            status: state,
+          });
+          // Direct hit — skip the full getAllTickets() scan and the
+          // org/user searches (a pure-digit query won't match those).
+          return NextResponse.json({ results });
+        }
+      } catch (err) {
+        console.error('Direct work item lookup failed:', err);
+        // Fall through to the tag-filtered search below
+      }
+    }
+
+    // Search across all work items the user can access — not just those tagged
+    // "ticket". The Kanban board surfaces Checkpoints, Features, Bugs, etc.,
+    // and users expect global search to find them too.
+    const tickets = await devopsService.getAllTickets(false);
     const matchingTickets = tickets
       .filter(
         (t) =>
