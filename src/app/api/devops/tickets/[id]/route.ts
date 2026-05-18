@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { AzureDevOpsService, workItemToTicket } from '@/lib/devops';
+import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -48,6 +48,62 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     console.error('Error fetching ticket:', error);
     return NextResponse.json({ error: 'Failed to fetch ticket' }, { status: 500 });
+  }
+}
+
+// DELETE moves the work item to the DevOps Recycle Bin (reversible).
+// Pass ?destroy=true to permanently destroy it. Authorization is enforced
+// by DevOps based on the user's role/PAT scope — there is no ZapDesk-side
+// admin gate yet (a follow-up to issue #374).
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.accessToken) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const ticketId = parseInt(id, 10);
+
+    if (isNaN(ticketId) || ticketId <= 0) {
+      return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
+    }
+
+    const destroy = request.nextUrl.searchParams.get('destroy') === 'true';
+    const organization = request.headers.get('x-devops-org') || undefined;
+    const devopsService = new AzureDevOpsService(session.accessToken, organization);
+
+    try {
+      await devopsService.deleteWorkItem(ticketId, destroy);
+    } catch (err) {
+      // Map structured upstream failures to clean client-facing statuses
+      if (err instanceof DevOpsApiError) {
+        if (err.status === 401) {
+          return NextResponse.json(
+            { error: 'Unauthorized to delete this work item' },
+            { status: 401 }
+          );
+        }
+        if (err.status === 403) {
+          return NextResponse.json(
+            { error: 'You do not have permission to delete this work item in DevOps' },
+            { status: 403 }
+          );
+        }
+        if (err.status === 404) {
+          return NextResponse.json({ error: 'Work item not found' }, { status: 404 });
+        }
+      }
+      throw err;
+    }
+
+    return NextResponse.json({ success: true, id: ticketId, destroyed: destroy });
+  } catch (error) {
+    // Log full detail server-side; return a generic message so the client
+    // toast doesn't echo upstream / internal error text.
+    console.error('Error deleting ticket:', error);
+    return NextResponse.json({ error: 'Failed to delete ticket' }, { status: 500 });
   }
 }
 

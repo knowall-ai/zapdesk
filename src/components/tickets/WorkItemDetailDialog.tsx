@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { ExternalLink, ChevronDown, Loader2, Maximize2 } from 'lucide-react';
+import { ExternalLink, ChevronDown, Loader2, Maximize2, Trash2 } from 'lucide-react';
 import type { WorkItem, TicketComment, Attachment } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import TicketDialogShell from './TicketDialogShell';
@@ -52,6 +52,40 @@ export default function WorkItemDetailDialog({
   // Comments state (dialog fetches its own comments)
   const [comments, setComments] = useState<TicketComment[]>([]);
   const [isLoadingComments, setIsLoadingComments] = useState(false);
+
+  // Delete (Recycle Bin) state — issue #374
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = useCallback(async () => {
+    if (!workItem || isDeleting) return;
+    // Bail before showing the confirm — fetchDevOps would throw "No organization
+    // selected" anyway, but only after the user committed to the action.
+    if (!hasOrganization) {
+      toast.error('Select an organization before deleting');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Move "${workItem.title}" (#${workItem.id}) to the DevOps Recycle Bin?\n\nIt will be removed from ZapDesk views. You can restore it from the DevOps Recycle Bin if needed.`
+    );
+    if (!confirmed) return;
+    setIsDeleting(true);
+    try {
+      const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to delete');
+      }
+      toast.success(`Deleted #${workItem.id}`);
+      onDeleted?.(workItem.id);
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete');
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [workItem, isDeleting, hasOrganization, fetchDevOps, onDeleted, onClose]);
 
   // Bind workItemId into callbacks for the hook
   const boundStateChange = useCallback(
@@ -335,6 +369,18 @@ export default function WorkItemDetailDialog({
       >
         DevOps <ExternalLink size={14} />
       </a>
+      <button
+        type="button"
+        onClick={handleDelete}
+        disabled={isDeleting}
+        className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+        style={{ color: '#ef4444', cursor: isDeleting ? 'not-allowed' : 'pointer' }}
+        title="Delete (move to DevOps Recycle Bin)"
+        aria-label="Delete work item"
+      >
+        {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+        Delete
+      </button>
     </>
   );
 

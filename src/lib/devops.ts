@@ -259,6 +259,19 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
   };
 }
 
+// Thrown by AzureDevOpsService methods when the upstream DevOps API returns
+// a non-OK response. Callers can check `.status` to map to user-facing errors
+// (401/403 → permissions, 404 → not found, etc.) without parsing the message.
+export class DevOpsApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = 'DevOpsApiError';
+  }
+}
+
 export class AzureDevOpsService {
   private accessToken: string;
   private organization: string;
@@ -1014,6 +1027,31 @@ export class AzureDevOpsService {
 
     if (!response.ok) {
       throw new Error(`Failed to add comment: ${response.statusText}`);
+    }
+  }
+
+  // Delete a work item — moves it to the DevOps Recycle Bin (reversible).
+  // Pass destroy=true for a permanent, unrecoverable delete; whether the
+  // caller is allowed to do that is enforced by DevOps based on the user's
+  // role/PAT scope (no ZapDesk-side admin gate). Throws DevOpsApiError on
+  // failure so callers can branch on `.status` cleanly.
+  async deleteWorkItem(workItemId: number, destroy: boolean = false): Promise<void> {
+    const url = `${this.baseUrl}/_apis/wit/workitems/${workItemId}?destroy=${destroy ? 'true' : 'false'}&api-version=7.0`;
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: this.headers,
+    });
+
+    if (!response.ok) {
+      // Truncate upstream body so a verbose HTML/JSON error page can't blow up
+      // logs or echo internal details back to the client via the thrown message.
+      const rawBody = await response.text().catch(() => '');
+      const snippet = rawBody.slice(0, 200).trim();
+      const tail = rawBody.length > snippet.length ? '…' : '';
+      throw new DevOpsApiError(
+        response.status,
+        `Failed to delete work item: ${response.status} ${response.statusText}${snippet ? ` - ${snippet}${tail}` : ''}`
+      );
     }
   }
 
