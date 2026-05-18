@@ -5,20 +5,28 @@
 
 const APP_NAME = process.env.APP_NAME || 'ZapDesk';
 const APP_URL = process.env.APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000';
+// Logo URLs: env-overridable for deployments where outbound mail can't reach
+// the app server (e.g. internal-only APP_URL). Default to assets shipped under
+// public/email/ so local dev works out of the box.
+const ZAPDESK_LOGO_URL = process.env.ZAPDESK_LOGO_URL || `${APP_URL}/email/zapdesk-logo.png`;
+const KNOWALL_LOGO_URL = process.env.KNOWALL_LOGO_URL || `${APP_URL}/email/knowall-logo.png`;
+const KNOWALL_URL = 'https://knowall.ai';
 
-function layoutWrapper(content: string): string {
+export function layoutWrapper(content: string): string {
   return `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
   <style>
     body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f4f5; color: #18181b; }
     .container { max-width: 600px; margin: 0 auto; padding: 24px; }
-    .card { background: #ffffff; border-radius: 8px; padding: 24px; border: 1px solid #e4e4e7; }
+    .card { background: #ffffff; border-radius: 12px; padding: 32px 24px; border: 1px solid #e4e4e7; }
     .header { text-align: center; margin-bottom: 24px; }
-    .header h1 { font-size: 20px; color: #22c55e; margin: 0; }
+    .header img { display: block; margin: 0 auto; max-width: 100%; height: auto; }
     .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
     .badge-new { background: #3b82f6; color: #fff; }
     .badge-active { background: #22c55e; color: #fff; }
@@ -28,7 +36,8 @@ function layoutWrapper(content: string): string {
     .quoted { border-left: 3px solid #d4d4d8; padding-left: 12px; margin: 16px 0; color: #71717a; }
     .footer { text-align: center; margin-top: 24px; font-size: 12px; color: #a1a1aa; }
     .footer a { color: #22c55e; text-decoration: none; }
-    .btn { display: inline-block; padding: 10px 20px; background: #22c55e; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; }
+    .footer img { display: block; margin: 8px auto 4px; max-width: 100%; height: auto; }
+    .btn { display: inline-block; padding: 12px 24px; background: #22c55e; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; line-height: 1; }
     .meta { font-size: 13px; color: #71717a; margin-bottom: 16px; }
   </style>
 </head>
@@ -36,13 +45,18 @@ function layoutWrapper(content: string): string {
   <div class="container">
     <div class="card">
       <div class="header">
-        <h1>⚡ ${APP_NAME}</h1>
+        <a href="${APP_URL}" style="text-decoration: none;">
+          <img src="${ZAPDESK_LOGO_URL}" width="240" height="60" alt="${APP_NAME}" style="border: 0;" />
+        </a>
       </div>
       ${content}
     </div>
     <div class="footer">
-      <p>Powered by <a href="${APP_URL}">${APP_NAME}</a></p>
-      <p>Please reply to this email to update your ticket.</p>
+      <a href="${KNOWALL_URL}" style="text-decoration: none;">
+        <img src="${KNOWALL_LOGO_URL}" width="120" height="30" alt="KnowAll AI" style="border: 0;" />
+      </a>
+      <p style="margin: 4px 0;">Powered by <a href="${KNOWALL_URL}">KnowAll AI</a></p>
+      <p style="margin: 4px 0;">Please reply to this email to update your ticket.</p>
     </div>
   </div>
 </body>

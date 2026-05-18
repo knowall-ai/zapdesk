@@ -11,6 +11,7 @@ import {
   ticketConfirmationTemplate,
   agentReplyTemplate,
   statusChangeTemplate,
+  layoutWrapper,
   type HistoryEntry,
 } from './email-templates';
 
@@ -279,19 +280,17 @@ export async function sendStatusChangeNotification(
 
 export async function sendTestEmail(to: string): Promise<void> {
   const from = MAIL_FROM();
-  const html = `
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
-  <div style="background: #ffffff; border-radius: 8px; padding: 24px; border: 1px solid #e4e4e7;">
-    <h2 style="color: #22c55e; text-align: center; margin-top: 0;">⚡ ZapDesk</h2>
-    <p style="color: #18181b; line-height: 1.6;">This is a test email from your ZapDesk instance.</p>
-    <p style="color: #18181b; line-height: 1.6;">If you received this, your email configuration is working correctly.</p>
-    <div style="margin-top: 16px; padding: 12px; background: #f4f4f5; border-radius: 6px; font-size: 13px; color: #71717a;">
-      <strong>Method:</strong> Microsoft Graph API<br/>
-      <strong>From:</strong> ${from}<br/>
-      <strong>Sent at:</strong> ${new Date().toISOString()}
+  const html = layoutWrapper(`
+    <div class="content">
+      <p>This is a test email from your ZapDesk instance.</p>
+      <p>If you received this, your email configuration is working correctly.</p>
+      <div style="margin-top: 16px; padding: 12px; background: #f4f4f5; border-radius: 6px; font-size: 13px; color: #71717a;">
+        <strong>Method:</strong> Microsoft Graph API<br/>
+        <strong>From:</strong> ${from}<br/>
+        <strong>Sent at:</strong> ${new Date().toISOString()}
+      </div>
     </div>
-  </div>
-</div>`.trim();
+  `);
 
   await sendViaGraph({ to, subject: 'ZapDesk — Test Email', html });
 }
