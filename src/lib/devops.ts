@@ -219,6 +219,7 @@ export function ticketToWorkItem(ticket: Ticket): WorkItem {
     resolution: ticket.resolution,
     mitigation: ticket.mitigation,
     resolvedReason: ticket.resolvedReason,
+    customerResponse: ticket.customerResponse,
     requester: ticket.requester,
     organization: ticket.organization,
   };
@@ -237,6 +238,7 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     resolution: readResolutionField(fields),
     mitigation: readMitigationField(fields),
     resolvedReason: (fields['Microsoft.VSTS.Common.ResolvedReason'] as string) || undefined,
+    customerResponse: (fields['Custom.CustomerResponse'] as string) || undefined,
     status: mapStateToStatus(fields['System.State']),
     devOpsState: fields['System.State'], // Preserve original DevOps state
     workItemType: fields['System.WorkItemType'], // Azure DevOps work item type

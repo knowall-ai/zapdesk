@@ -442,6 +442,20 @@ export default function WorkItemDetailContent({
         </div>
       )}
 
+      {/* Customer Response — Question work items only (issue #398) */}
+      {workItem.workItemType === 'Question' && workItem.customerResponse && (
+        <div className="card mt-4 p-4">
+          <h3 className="mb-2 text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
+            Customer Response
+          </h3>
+          <div
+            className="prose prose-sm prose-invert user-content max-w-none"
+            style={{ color: 'var(--text-secondary)' }}
+            dangerouslySetInnerHTML={{ __html: workItem.customerResponse }}
+          />
+        </div>
+      )}
+
       {/* Resolution (editable) - only for work item types that support it */}
       {showResolution && <ResolutionField workItem={workItem} onUpdate={onUpdate} />}
       {showMitigation && <MitigationField workItem={workItem} onUpdate={onUpdate} />}

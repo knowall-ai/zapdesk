@@ -167,6 +167,8 @@ export interface Ticket {
   project: string;
   comments: TicketComment[];
   attachments?: Attachment[];
+  // Customer's response on a Question work item (Custom.CustomerResponse)
+  customerResponse?: string;
 }
 
 export interface TicketComment {
@@ -494,6 +496,8 @@ export interface WorkItem {
   resolution?: string;
   mitigation?: string;
   resolvedReason?: string;
+  // Customer's response on a Question work item (Custom.CustomerResponse)
+  customerResponse?: string;
   // Optional ticket-specific fields (populated when item is a ticket)
   requester?: Customer;
   organization?: Organization;
