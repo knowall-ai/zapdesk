@@ -463,6 +463,7 @@ export class AzureDevOpsService {
         'Microsoft.VSTS.Common.Resolution',
         'Microsoft.VSTS.TCM.ReproSteps',
         'Microsoft.VSTS.TCM.SystemInfo',
+        'Custom.CustomerResponse',
       ].join(',');
       const workItemsResponse = await fetch(
         `${this.baseUrl}/_apis/wit/workitems?ids=${batch.join(',')}&fields=${fields}&api-version=7.0`,
