@@ -30,6 +30,7 @@ import {
   getResolutionFieldRef,
   getTemplateConfig,
 } from '@/config/process-templates';
+import { DEFAULT_PRIORITY_LABELS, PRIORITY_LABEL_TO_NUMBER } from '@/lib/priority';
 
 const DEVOPS_ORG = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
 const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
@@ -137,13 +138,10 @@ function sumEffortFields(fields: Record<string, unknown>): number | undefined {
   return hasValue ? total * 8 : undefined;
 }
 
-// Map priority numbers to Zendesk-like priorities
+// Map priority numbers to display labels (falls back to centralized defaults)
 function mapPriority(priority?: number): TicketPriority | undefined {
   if (!priority) return undefined;
-  if (priority === 1) return 'Urgent';
-  if (priority === 2) return 'High';
-  if (priority === 3) return 'Normal';
-  return 'Low';
+  return DEFAULT_PRIORITY_LABELS[String(priority)] || 'Low';
 }
 
 // Convert DevOps identity to User
@@ -955,6 +953,17 @@ export class AzureDevOpsService {
         path: `/fields/${fieldPath}`,
         value: priority,
       });
+
+      // Also set the built-in Priority field when using a custom field,
+      // since workItemToTicket reads from Microsoft.VSTS.Common.Priority
+      if (fieldPath !== 'Microsoft.VSTS.Common.Priority') {
+        const numPriority = PRIORITY_LABEL_TO_NUMBER[String(priority).toLowerCase()] ?? 3;
+        patchDocument.push({
+          op: 'add',
+          path: '/fields/Microsoft.VSTS.Common.Priority',
+          value: numPriority,
+        });
+      }
     }
 
     if (assigneeId) {

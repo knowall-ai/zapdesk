@@ -289,9 +289,9 @@ export function getSLAStatusLabel(status: SLAStatus): string {
 // Default SLA targets by priority (in hours)
 // These can be overridden via environment variables
 const DEFAULT_SLA_CONFIG: SLAConfig = {
-  Urgent: { responseTimeHours: 1, resolutionTimeHours: 4 },
+  Critical: { responseTimeHours: 1, resolutionTimeHours: 4 },
   High: { responseTimeHours: 4, resolutionTimeHours: 8 },
-  Normal: { responseTimeHours: 8, resolutionTimeHours: 24 },
+  Medium: { responseTimeHours: 8, resolutionTimeHours: 24 },
   Low: { responseTimeHours: 24, resolutionTimeHours: 72 },
 };
 
@@ -327,7 +327,7 @@ export function getSLATargetsForPriority(priority: TicketPriority): SLAPriorityT
  * Calculate the resolution deadline for a ticket
  */
 export function calculateResolutionDeadline(ticket: Ticket): Date {
-  const targets = getSLATargetsForPriority(ticket.priority ?? 'Normal');
+  const targets = getSLATargetsForPriority(ticket.priority ?? 'Medium');
   const createdAt = new Date(ticket.createdAt);
   return new Date(createdAt.getTime() + targets.resolutionTimeHours * 60 * 60 * 1000);
 }
@@ -336,7 +336,7 @@ export function calculateResolutionDeadline(ticket: Ticket): Date {
  * Calculate the response deadline for a ticket
  */
 export function calculateResponseDeadline(ticket: Ticket): Date {
-  const targets = getSLATargetsForPriority(ticket.priority ?? 'Normal');
+  const targets = getSLATargetsForPriority(ticket.priority ?? 'Medium');
   const createdAt = new Date(ticket.createdAt);
   return new Date(createdAt.getTime() + targets.responseTimeHours * 60 * 60 * 1000);
 }
@@ -352,7 +352,7 @@ export function isActiveTicketStatus(status: TicketStatus): boolean {
  * Calculate SLA status for a single ticket
  */
 export function calculateTicketSLAStatus(ticket: Ticket, now: Date = new Date()): TicketSLAStatus {
-  const targets = getSLATargetsForPriority(ticket.priority ?? 'Normal');
+  const targets = getSLATargetsForPriority(ticket.priority ?? 'Medium');
   const createdAt = new Date(ticket.createdAt);
 
   const responseTarget = calculateResponseDeadline(ticket);
