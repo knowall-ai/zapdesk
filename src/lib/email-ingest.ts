@@ -8,7 +8,7 @@
  */
 
 import { getProjectFromEmail } from '@/lib/devops';
-import { sendTicketConfirmation } from '@/lib/email';
+import { sendCustomerReplyNotification, sendTicketConfirmation } from '@/lib/email';
 import { escapeHtml, renderEmailBody } from '@/lib/email-clean';
 
 const TICKET_REF_REGEX = /\[ZapDesk #(\d+)\]/;
@@ -104,20 +104,60 @@ async function handleThreadReply(
 ): Promise<IngestResult> {
   const devops = new AzureDevOpsServiceWithPAT(encodedPat);
   try {
+    const renderedBody = renderEmailBody(body);
     const commentHtml = `
 <div style="font-family: sans-serif;">
   <p><strong>Email reply from:</strong> ${escapeHtml(senderEmail)}</p>
   <hr/>
-  ${renderEmailBody(body)}
+  ${renderedBody}
 </div>`.trim();
 
-    await devops.addComment(ticketId, commentHtml);
+    const updatedWorkItem = await devops.addComment(ticketId, commentHtml);
     console.log(`Added email reply to ticket #${ticketId} from ${senderEmail}`);
+
+    notifyAgentOfReply(updatedWorkItem, ticketId, senderEmail, renderedBody);
+
     return { success: true, action: 'comment_added', ticketId };
   } catch (error) {
     console.error(`Failed to add comment to ticket #${ticketId}:`, error);
     return { success: false, status: 500, error: 'Failed to add comment to ticket' };
   }
+}
+
+interface WorkItemFieldsResponse {
+  fields?: {
+    'System.Title'?: string;
+    'System.AssignedTo'?: { uniqueName?: string; displayName?: string } | string;
+  };
+}
+
+function notifyAgentOfReply(
+  workItem: WorkItemFieldsResponse | null | undefined,
+  ticketId: number,
+  senderEmail: string,
+  renderedBodyHtml: string
+): void {
+  const fields = workItem?.fields ?? {};
+  const title = fields['System.Title'] || `Ticket #${ticketId}`;
+  const assigned = fields['System.AssignedTo'];
+  const assignedEmail = typeof assigned === 'object' && assigned ? assigned.uniqueName : undefined;
+  // Groups and team identities have a uniqueName like `[Project]\Team Name`
+  // which won't contain `@`. Treat anything that doesn't look like an email
+  // address as "no assignee" and fall back to the configured team address.
+  const recipient =
+    assignedEmail && assignedEmail.includes('@')
+      ? assignedEmail
+      : process.env.SUPPORT_TEAM_NOTIFY_EMAIL || '';
+  if (!recipient) {
+    console.log(
+      `[Notify] No agent assigned and SUPPORT_TEAM_NOTIFY_EMAIL not set — skipping notification for ticket #${ticketId}`
+    );
+    return;
+  }
+  // Fire-and-forget — must never block or fail the comment add.
+  sendCustomerReplyNotification(ticketId, title, recipient, senderEmail, renderedBodyHtml).catch(
+    () => {}
+  );
 }
 
 class AzureDevOpsServiceWithPAT {
