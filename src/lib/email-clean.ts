@@ -95,3 +95,134 @@ export function renderEmailBody(rawText: string): string {
     truncated
   )}</pre>`;
 }
+
+/**
+ * Strip dangerous markup from an inbound email HTML body before embedding it
+ * in a DevOps work item field. Best-effort regex sanitiser — DevOps applies
+ * its own sanitiser when rendering, this is defence-in-depth.
+ */
+export function sanitizeEmailHtml(html: string): string {
+  if (!html) return '';
+  return (
+    html
+      // Drop entire script/style/iframe/object/embed/link/meta blocks (with content).
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, '')
+      .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>/gi, '')
+      .replace(/<object\b[^>]*>[\s\S]*?<\/object\s*>/gi, '')
+      .replace(/<embed\b[^>]*\/?>/gi, '')
+      .replace(/<link\b[^>]*\/?>/gi, '')
+      .replace(/<meta\b[^>]*\/?>/gi, '')
+      // Strip inline event handlers (`onclick=...`, `onload=...`, ...).
+      .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+      .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+      .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
+      // Neutralise script-bearing URLs, quoted or bare. `data:` is allowed
+      // through only for images, which is how Outlook embeds pasted
+      // screenshots; every other media type can carry markup.
+      //
+      // Best-effort by design: this is a regex over untrusted markup, so an
+      // attacker with enough encoding tricks can get past it. It is
+      // defence-in-depth ahead of the render-time sanitisers — ZapDesk's own,
+      // and DevOps's — not a substitute for them.
+      .replace(/(href|src)\s*=\s*"\s*(?:javascript|vbscript):[^"]*"/gi, '$1="#"')
+      .replace(/(href|src)\s*=\s*'\s*(?:javascript|vbscript):[^']*'/gi, "$1='#'")
+      .replace(/(href|src)\s*=\s*(?:javascript|vbscript):[^\s>]*/gi, '$1="#"')
+      .replace(/(href|src)\s*=\s*"\s*data:(?!image\/)[^"]*"/gi, '$1="#"')
+      .replace(/(href|src)\s*=\s*'\s*data:(?!image\/)[^']*'/gi, "$1='#'")
+      .replace(/(href|src)\s*=\s*data:(?!image\/)[^\s>]*/gi, '$1="#"')
+  );
+}
+
+/**
+ * Best-effort signature stripping for HTML email bodies. We can't use the
+ * line-based `stripSignature` directly — HTML emails are usually a single
+ * blob with `<br>` separators, not `\n`. Cut at the first reliable end-of-
+ * message marker we find.
+ */
+export function stripHtmlSignature(html: string): string {
+  if (!html) return '';
+
+  // Common hard markers — RFC 3676 delimiter rendered as HTML, mobile auto-
+  // sigs, gmail/outlook signature blocks. Take the FIRST occurrence: anything
+  // below it is signature.
+  const hardMarkers: RegExp[] = [
+    /<div[^>]*class="[^"]*gmail_signature[^"]*"[^>]*>/i,
+    /<div[^>]*id="Signature"[^>]*>/i,
+    /<div[^>]*class="[^"]*moz-signature[^"]*"[^>]*>/i,
+    /(?:<br\s*\/?>\s*){1,3}--\s*(?:<br\s*\/?>|<\/?p>|<\/div>)/i,
+    /(?:<br\s*\/?>|<p>|<div[^>]*>)\s*Sent from my (?:iPhone|iPad|Android|Galaxy|BlackBerry)/i,
+    /(?:<br\s*\/?>|<p>|<div[^>]*>)\s*Sent from (?:Outlook|Mail) for (?:iOS|Android|Windows)/i,
+    /(?:<br\s*\/?>|<p>|<div[^>]*>)\s*Get Outlook for (?:iOS|Android)/i,
+  ];
+
+  let cutAt = html.length;
+  for (const re of hardMarkers) {
+    const match = re.exec(html);
+    if (match && match.index < cutAt) cutAt = match.index;
+  }
+  return cutAt < html.length ? html.slice(0, cutAt).trimEnd() : html;
+}
+
+/**
+ * Replace `cid:CONTENT_ID` references in `<img src="...">` tags with the
+ * URLs the matching files were uploaded to. Outlook and Gmail mark pasted
+ * screenshots as inline `cid:` images; without rewriting, the body shows a
+ * broken-image icon in DevOps.
+ */
+export function rewriteCidReferences(
+  html: string,
+  cidMap: Map<string, { url: string; filename: string }>
+): string {
+  if (!html || cidMap.size === 0) return html;
+  return html.replace(
+    /(<img\b[^>]*?\bsrc\s*=\s*)(["'])cid:([^"'>\s]+)\2/gi,
+    (full, prefix: string, quote: string, cid: string) => {
+      const target = cidMap.get(cid) || cidMap.get(cid.toLowerCase());
+      if (!target) return full;
+      return `${prefix}${quote}${escapeHtml(target.url)}${quote} alt="${escapeHtml(target.filename)}"`;
+    }
+  );
+}
+
+/**
+ * The `cid:` content ids an HTML body actually references from an `<img>` tag.
+ *
+ * Used to tell an inline file that was spliced into the body from one that was
+ * not: a plain-text body splices nothing, and an HTML body can carry a
+ * `contentId` it never references. Either way the file has to be surfaced
+ * somewhere or it is invisible to the reader.
+ *
+ * Ids are lower-cased, matching how `rewriteCidReferences` looks them up.
+ */
+export function collectReferencedCids(html: string): Set<string> {
+  const found = new Set<string>();
+  if (!html) return found;
+  const pattern = /<img\b[^>]*?\bsrc\s*=\s*(["'])cid:([^"'>\s]+)\1/gi;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(html)) !== null) {
+    found.add(match[2].toLowerCase());
+  }
+  return found;
+}
+
+/**
+ * Sanitise + signature-strip + truncate an HTML email body for safe storage
+ * in a DevOps work item. Mirror of `renderEmailBody` for the HTML path.
+ */
+export function renderEmailBodyHtml(rawHtml: string): string {
+  const sanitised = sanitizeEmailHtml(rawHtml);
+  const stripped = stripHtmlSignature(sanitised);
+  const truncated =
+    stripped.length > MAX_BODY_CHARS
+      ? stripped.slice(0, MAX_BODY_CHARS) + '<p><em>[truncated]</em></p>'
+      : stripped;
+  // A screenshot-only email has no text nodes at all. Testing text alone threw
+  // away the inline image that rewriteCidReferences had just spliced in, and
+  // replaced the whole body with "No content" — so embedded media counts as
+  // content in its own right.
+  const hasText = truncated.replace(/<[^>]+>/g, '').trim().length > 0;
+  const hasMedia = /<img\b/i.test(truncated);
+  if (!hasText && !hasMedia) return '<em>No content</em>';
+  return `<div style="font-family: inherit;">${truncated}</div>`;
+}
