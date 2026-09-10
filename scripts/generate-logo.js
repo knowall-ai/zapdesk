@@ -9,6 +9,15 @@
  *
  * Usage: node scripts/generate-logo.js
  *
+ * WARNING - this script has drifted from the assets it claims to generate.
+ * It still draws the older stylized "D" mark, while the committed
+ * public/assets/*.svg carry the lightning bolt that ZapDeskIcon renders in the
+ * app. Running it as-is would replace the bolt with the "D" and regress the
+ * logo everywhere it is used, including outbound email.
+ *
+ * The wordmark colour below is kept in step with the committed SVGs so the two
+ * do not diverge further, but fix the icon path before running this again.
+ *
  * Outputs:
  *   - public/assets/icon.svg       - Standalone icon (64x64)
  *   - public/assets/logo.svg       - Full logo for dark backgrounds
@@ -138,9 +147,9 @@ function generateFullLogoDark(width = 400, height = 100) {
     fill-rule="evenodd"
   />
 
-  <!-- "ZapDesk" text with two-tone coloring -->
+  <!-- "ZapDesk" wordmark, single brand green -->
   <text x="85" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700">
-    <tspan fill="${COLORS.primary}">Zap</tspan><tspan fill="${COLORS.textLight}">Desk</tspan>
+    <tspan fill="${COLORS.primary}">ZapDesk</tspan>
   </text>
 
   <!-- Tagline -->
@@ -193,9 +202,9 @@ function generateFullLogoLight(width = 400, height = 100) {
     fill-rule="evenodd"
   />
 
-  <!-- "ZapDesk" text with two-tone coloring -->
+  <!-- "ZapDesk" wordmark, single brand green -->
   <text x="85" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700">
-    <tspan fill="${COLORS.primary}">Zap</tspan><tspan fill="${COLORS.textDark}">Desk</tspan>
+    <tspan fill="${COLORS.primary}">ZapDesk</tspan>
   </text>
 
   <!-- Tagline -->
