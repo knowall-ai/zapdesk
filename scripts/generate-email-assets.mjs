@@ -6,7 +6,12 @@ import { mkdirSync } from 'node:fs';
 
 mkdirSync('public/email', { recursive: true });
 
-const svg = readFileSync('public/assets/logo.svg');
+// logo-light.svg, not logo.svg. The two differ only in the "Desk" wordmark and
+// tagline: logo.svg draws them near-white (#f3f4f6) for a dark background,
+// logo-light.svg near-black (#1f2937) for a light one. The email card is
+// #ffffff, so the dark-background variant put near-white text on white and
+// "Desk" all but vanished -- the logo read as "Zap" with a grey smudge after it.
+const svg = readFileSync('public/assets/logo-light.svg');
 await sharp(svg, { density: 300 })
   .resize({ width: 480, height: 120, fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
   .png()
