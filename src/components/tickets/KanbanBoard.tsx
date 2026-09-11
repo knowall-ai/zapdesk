@@ -20,6 +20,7 @@ import KanbanCard from './KanbanCard';
 import type { Ticket, WorkItem, WorkItemState, WorkItemType } from '@/types';
 import { ensureActiveState } from '@/types';
 import type { GroupByOption } from './WorkItemBoard';
+import { debugLog, debugWarn } from '@/lib/debug';
 
 // KanbanBoard can work with either Ticket[] or WorkItem[]
 // WorkItem uses 'state' while Ticket uses 'devOpsState' for the state name
@@ -215,14 +216,20 @@ export default function KanbanBoard({
       const { active, over } = event;
       setActiveId(null);
 
-      if (!over) return;
+      if (!over) {
+        debugLog('[Kanban DnD] drag ended with no drop target');
+        return;
+      }
 
       const activeItemId = active.id as number;
       const overId = over.id as string;
 
       // Find the original item (from props, not local state)
       const originalItem = sourceItems.find((t) => t.id === activeItemId);
-      if (!originalItem) return;
+      if (!originalItem) {
+        debugWarn('[Kanban DnD] active item not found in sourceItems', { activeItemId });
+        return;
+      }
 
       // Determine the target state
       let targetState: string | null = null;
@@ -236,8 +243,17 @@ export default function KanbanBoard({
         }
       }
 
+      const fromState = getItemState(originalItem);
+      debugLog('[Kanban DnD] drag end', {
+        itemId: activeItemId,
+        overId,
+        fromState,
+        targetState,
+        knownStates: stateNames,
+      });
+
       // If state hasn't changed, reset to original
-      if (!targetState || getItemState(originalItem) === targetState) {
+      if (!targetState || fromState === targetState) {
         setLocalItems(sourceItems);
         return;
       }
@@ -246,9 +262,25 @@ export default function KanbanBoard({
       if (onTicketStateChange) {
         setIsUpdating(true);
         try {
+          debugLog('[Kanban DnD] calling onTicketStateChange', {
+            itemId: activeItemId,
+            fromState,
+            targetState,
+          });
           await onTicketStateChange(activeItemId, targetState);
+          debugLog('[Kanban DnD] state change succeeded', {
+            itemId: activeItemId,
+            targetState,
+          });
         } catch (error) {
-          console.error('Failed to update item state:', error);
+          // Not gated: a rejected transition is rare and its detail is the
+          // whole point of issue #391.
+          console.error('[Kanban DnD] state change failed — rolling back', {
+            itemId: activeItemId,
+            fromState,
+            targetState,
+            error,
+          });
           // Rollback on failure — and surface the upstream reason. Process
           // templates often block direct transitions (e.g. New → To Do
           // when an intermediate state is required); without a toast the
@@ -262,6 +294,8 @@ export default function KanbanBoard({
         } finally {
           setIsUpdating(false);
         }
+      } else {
+        debugWarn('[Kanban DnD] no onTicketStateChange handler wired — change will not persist');
       }
     },
     [sourceItems, localItems, onTicketStateChange, stateNames]
