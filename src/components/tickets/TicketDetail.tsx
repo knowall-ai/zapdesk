@@ -34,7 +34,7 @@ import type {
 } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { ensureActiveState } from '@/types';
-import { sanitizeUserHtml } from '@/lib/sanitize-html';
+import { sanitizeUserHtml, htmlToPlainText } from '@/lib/sanitize-html';
 import UserHtml from '@/components/common/UserHtml';
 import {
   formatFileSize,
@@ -590,9 +590,7 @@ export default function TicketDetail({
   };
 
   const handleStartEditResolution = () => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = ticket.resolution || '';
-    setEditResolution(tempDiv.textContent || tempDiv.innerText || '');
+    setEditResolution(htmlToPlainText(ticket.resolution));
     setIsEditingResolution(true);
   };
 
@@ -615,9 +613,7 @@ export default function TicketDetail({
   };
 
   const handleStartEditMitigation = () => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = ticket.mitigation || '';
-    setEditMitigation(tempDiv.textContent || tempDiv.innerText || '');
+    setEditMitigation(htmlToPlainText(ticket.mitigation));
     setIsEditingMitigation(true);
   };
 

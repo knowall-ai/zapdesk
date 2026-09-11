@@ -10,6 +10,7 @@ import {
   hasResolutionField,
 } from '@/config/process-templates';
 import { hasTicketTag } from '@/lib/tags';
+import { htmlToPlainText } from '@/lib/sanitize-html';
 import UserHtml from '@/components/common/UserHtml';
 import Avatar from '../common/Avatar';
 import CommentSection from './CommentSection';
@@ -56,9 +57,7 @@ function ResolutionField({
 
   const handleStartEdit = () => {
     // Strip HTML for editing
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = workItem.resolution || '';
-    setEditValue(tempDiv.textContent || tempDiv.innerText || '');
+    setEditValue(htmlToPlainText(workItem.resolution));
     setIsEditing(true);
   };
 
@@ -167,9 +166,7 @@ function MitigationField({
   const [isSaving, setIsSaving] = useState(false);
 
   const handleStartEdit = () => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = workItem.mitigation || '';
-    setEditValue(tempDiv.textContent || tempDiv.innerText || '');
+    setEditValue(htmlToPlainText(workItem.mitigation));
     setIsEditing(true);
   };
 
@@ -299,9 +296,7 @@ export default function WorkItemDetailContent({
 
   const handleStartEdit = () => {
     setEditTitle(workItem.title);
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = workItem.description || '';
-    setEditDescription(tempDiv.textContent || tempDiv.innerText || '');
+    setEditDescription(htmlToPlainText(workItem.description));
     setIsEditing(true);
   };
 
@@ -319,9 +314,7 @@ export default function WorkItemDetailContent({
       if (editTitle !== workItem.title) {
         updates.title = editTitle;
       }
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = workItem.description || '';
-      const originalText = tempDiv.textContent || tempDiv.innerText || '';
+      const originalText = htmlToPlainText(workItem.description);
       if (editDescription !== originalText) {
         updates.description = editDescription;
       }

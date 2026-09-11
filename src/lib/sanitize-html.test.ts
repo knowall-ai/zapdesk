@@ -324,3 +324,54 @@ describe('inline style', () => {
     expect(sanitizeUserHtml('<div style="position :  FIXED">x</div>')).not.toContain('FIXED');
   });
 });
+
+describe('deferred CSS values on shifting properties', () => {
+  // Ben's bypass: no literal `-digit` for NEGATIVE_LENGTH to catch, but it
+  // computes to `1px - 100vh` and drags the element up over whatever is above.
+  it('drops calc() containing var() on a shifting property', () => {
+    const out = sanitizeUserHtml(
+      '<div style="margin-top: calc(1px - var(--missing, 100vh))">content</div>'
+    );
+    expect(out).not.toContain('margin-top');
+    expect(out).not.toContain('var(');
+  });
+
+  it('drops a bare var() on a shifting property', () => {
+    const out = sanitizeUserHtml('<div style="text-indent: var(--x)">content</div>');
+    expect(out).not.toContain('text-indent');
+  });
+
+  it('still drops a plainly negative margin', () => {
+    const out = sanitizeUserHtml('<div style="margin-left: -100px">content</div>');
+    expect(out).not.toContain('margin-left');
+  });
+
+  it('keeps a non-negative margin', () => {
+    expect(sanitizeUserHtml('<div style="margin-top: 8px">ok</div>')).toContain('margin-top');
+  });
+
+  it('leaves var() alone on a property that cannot shift the element', () => {
+    expect(sanitizeUserHtml('<div style="color: var(--brand)">ok</div>')).toContain('color');
+  });
+});
+
+describe('htmlToPlainText is inert', () => {
+  // The edit buttons used to do `tempDiv.innerHTML = description`. A detached
+  // div is still part of the live document, so that parsed the markup and
+  // started loading resources -- firing onerror on a click of Edit.
+  it('never yields markup that could execute', () => {
+    const out = htmlToPlainText('<img src="data:image/png;base64,AA==" onerror="alert(1)">hi');
+    expect(out).not.toContain('onerror');
+    expect(out).not.toContain('<img');
+    expect(out).toContain('hi');
+  });
+
+  it('decodes entities without re-opening a sink', () => {
+    expect(htmlToPlainText('<p>a &amp; b</p>')).toBe('a & b');
+  });
+
+  it('handles null and undefined', () => {
+    expect(htmlToPlainText(null)).toBe('');
+    expect(htmlToPlainText(undefined)).toBe('');
+  });
+});

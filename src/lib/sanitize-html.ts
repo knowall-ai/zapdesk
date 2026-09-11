@@ -221,6 +221,24 @@ const ALLOWED_CSS_PREFIXES = [
  */
 const NEGATIVE_LENGTH = /(?:^|[\s(,])-\s*\.?\d/;
 
+/**
+ * A value whose sign cannot be known here.
+ *
+ * `var()` is substituted at computed-value time, long after this runs, so
+ * nothing in the declaration text has to look negative for the result to be:
+ *
+ *   margin-top: calc(1px - var(--missing, 100vh))
+ *
+ * carries no literal `-digit` for NEGATIVE_LENGTH to catch, then computes to
+ * `1px - 100vh` and drags the element up over whatever sits above it -- the
+ * overlap that allowing these properties at all was supposed to prevent.
+ *
+ * Matching `var(` anywhere in the value covers the bare form and any `calc()`
+ * wrapping one. On the shifting properties we cannot prove a non-negative
+ * result, so the declaration is dropped.
+ */
+const DEFERRED_VALUE = /var\s*\(/i;
+
 /** Properties where a negative value moves the element rather than sizing it. */
 const SHIFTING_PROPERTIES = ['margin', 'text-indent'];
 
@@ -302,7 +320,7 @@ function sanitizeStyle(value: string): string {
     if (
       !unsafe &&
       SHIFTING_PROPERTIES.some((prefix) => name.startsWith(prefix)) &&
-      NEGATIVE_LENGTH.test(parsed)
+      (NEGATIVE_LENGTH.test(parsed) || DEFERRED_VALUE.test(parsed))
     ) {
       unsafe = true;
     }
