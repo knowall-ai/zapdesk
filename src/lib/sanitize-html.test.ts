@@ -374,4 +374,30 @@ describe('htmlToPlainText is inert', () => {
     expect(htmlToPlainText(null)).toBe('');
     expect(htmlToPlainText(undefined)).toBe('');
   });
+
+  // Asserting on the returned text only proves the output is clean, not that
+  // the markup never reached a sink -- and reaching the sink is the bug: the
+  // handler fires during parsing, whatever the caller does with the result.
+  // So watch the boundary itself.
+  it('never routes the raw markup through an innerHTML sink', () => {
+    const payload = '<img src="data:image/png;base64,AA==" onerror="alert(1)">hi';
+    const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')!;
+    const assigned: string[] = [];
+
+    Object.defineProperty(Element.prototype, 'innerHTML', {
+      ...descriptor,
+      set(this: Element, value: string) {
+        assigned.push(String(value));
+        descriptor.set!.call(this, value);
+      },
+    });
+    try {
+      htmlToPlainText(payload);
+    } finally {
+      Object.defineProperty(Element.prototype, 'innerHTML', descriptor);
+    }
+
+    expect(assigned.some((v) => v.includes('onerror'))).toBe(false);
+    expect(assigned.some((v) => v.includes('<img'))).toBe(false);
+  });
 });
