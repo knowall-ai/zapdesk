@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -31,6 +31,15 @@ export default function NewTicketPage() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [workItemTypes, setWorkItemTypes] = useState<WorkItemType[]>([]);
+  // Monotonic id of the most recent work-item-type request.
+  //
+  // Switching project twice in quick succession fires two fetches, and nothing
+  // guarantees they resolve in order. When the first project's response lands
+  // last it overwrites the second project's type list and selected type, so the
+  // form ends up showing project B with project A's type -- and by then
+  // isLoadingTypes is false and workItemType is non-empty, so Submit is enabled
+  // and the ticket is filed against B with a type B may not even have.
+  const typesRequestId = useRef(0);
   const [isLoadingTypes, setIsLoadingTypes] = useState(false);
   const [requiredFields, setRequiredFields] = useState<
     { referenceName: string; name: string; type: string; allowedValues?: string[] }[]
@@ -49,7 +58,7 @@ export default function NewTicketPage() {
     priority: 3,
     assignee: '',
     tags: '',
-    workItemType: 'Task',
+    workItemType: '',
     iterationPath: '',
     areaPath: '',
   });
@@ -92,6 +101,7 @@ export default function NewTicketPage() {
 
   const fetchWorkItemTypes = useCallback(
     async (projectName: string) => {
+      const requestId = ++typesRequestId.current;
       setIsLoadingTypes(true);
       // Drop the previous project's type up front. Leaving it set means a
       // failed or empty response leaves the form holding a type the new
@@ -104,6 +114,9 @@ export default function NewTicketPage() {
         );
         if (!response.ok) throw new Error('Failed to fetch work item types');
         const data = await response.json();
+        // A newer project was picked while this was in flight — its response is
+        // the one that matters, so drop this one rather than clobbering it.
+        if (requestId !== typesRequestId.current) return;
         const types: WorkItemType[] = data.types || [];
         setWorkItemTypes(types);
         if (types.length > 0) {
@@ -111,10 +124,14 @@ export default function NewTicketPage() {
           setForm((prev) => ({ ...prev, workItemType: taskType?.name || types[0].name }));
         }
       } catch (err) {
+        if (requestId !== typesRequestId.current) return;
         console.error('Failed to fetch work item types:', err);
         setWorkItemTypes([]);
       } finally {
-        setIsLoadingTypes(false);
+        // Only the newest request may clear the spinner. A superseded one
+        // finishing first would otherwise re-enable Submit while the list the
+        // user is actually waiting for is still loading.
+        if (requestId === typesRequestId.current) setIsLoadingTypes(false);
       }
     },
     [get]
