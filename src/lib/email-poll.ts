@@ -135,7 +135,26 @@ export async function pollMailbox(mailbox: string): Promise<PollSummary> {
     try {
       attachments = await fetchAttachments(token, mailbox, message.id);
     } catch (err) {
-      console.warn(`[Poll] failed to fetch attachments for ${message.id}:`, err);
+      // Do not ingest a message whose attachments could not be listed.
+      //
+      // Swallowing this produced a ticket with no attachments and no error,
+      // and the success path then marked the message read — so a timeout on a
+      // screenshot-only email lost the screenshot permanently, with the ticket
+      // showing a dead `cid:` reference and nothing to retry. Failing the
+      // message leaves it unread for the next poll, which is the whole point
+      // of only marking read on success.
+      console.error(`[Poll] failed to list attachments for ${message.id}:`, err);
+      summary.failed += 1;
+      summary.results.push({
+        messageId: message.id,
+        subject: message.subject,
+        result: {
+          success: false,
+          status: 502,
+          error: `Failed to list attachments: ${err instanceof Error ? err.message : String(err)}`,
+        },
+      });
+      continue;
     }
 
     const result = await ingestEmail({
@@ -198,6 +217,46 @@ async function listUnread(token: string, mailbox: string): Promise<GraphMessage[
   return json.value || [];
 }
 
+/**
+ * Read a response body, giving up once it passes `limit` bytes.
+ *
+ * `Content-Length` is absent on a chunked response, which is the normal case
+ * for a large file from OneDrive/SharePoint — exactly when the cap matters.
+ * Buffering first and measuring afterwards therefore checked the size only
+ * once the whole file was already in memory, so the limit bounded what was
+ * *kept*, never what was *read*.
+ *
+ * Accumulating chunk by chunk and cancelling on the first one that crosses the
+ * line bounds it in both cases. Returns null when the limit is passed, so the
+ * caller can fall back to a link.
+ */
+async function readCapped(res: Response, limit: number): Promise<Buffer | null> {
+  if (!res.body) {
+    // No stream to read incrementally (a mocked or already-buffered response).
+    const buf = Buffer.from(await res.arrayBuffer());
+    return buf.byteLength > limit ? null : buf;
+  }
+
+  const reader = res.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks);
+}
+
 async function fetchAttachments(
   token: string,
   mailbox: string,
@@ -249,6 +308,10 @@ async function fetchAttachments(
         // URL when Graph exposes it; otherwise surface the source URL so the
         // agent can click through.
         const downloadUrl = a['@microsoft.graph.downloadUrl'];
+        // `sourceUrl` is documented on the beta `referenceAttachment` resource
+        // only; a v1.0 response routinely omits it. It is read opportunistically
+        // rather than relied on, and the `unavailable` note below is what runs
+        // in the normal case.
         const sourceUrl = a.sourceUrl;
         if (downloadUrl) {
           try {
@@ -256,19 +319,16 @@ async function fetchAttachments(
               signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
             });
             if (fileRes.ok) {
-              // Trust the declared length when there is one, and check the
-              // real size after buffering when there is not — a chunked
-              // response can lie by omission.
               const declared = Number(fileRes.headers.get('content-length'));
-              if (Number.isFinite(declared) && declared > MAX_DOWNLOAD_BYTES) {
+              if (declared > MAX_DOWNLOAD_BYTES) {
                 console.warn(
                   `[Poll] referenceAttachment ${a.id} (${filename}) is ${declared} bytes — over the ${MAX_DOWNLOAD_BYTES} limit, falling back to link`
                 );
               } else {
-                const buf = Buffer.from(await fileRes.arrayBuffer());
-                if (buf.byteLength > MAX_DOWNLOAD_BYTES) {
+                const buf = await readCapped(fileRes, MAX_DOWNLOAD_BYTES);
+                if (!buf) {
                   console.warn(
-                    `[Poll] referenceAttachment ${a.id} (${filename}) downloaded ${buf.byteLength} bytes — over the ${MAX_DOWNLOAD_BYTES} limit, falling back to link`
+                    `[Poll] referenceAttachment ${a.id} (${filename}) exceeded the ${MAX_DOWNLOAD_BYTES} limit while downloading — falling back to link`
                   );
                 } else {
                   result.push({
@@ -295,9 +355,13 @@ async function fetchAttachments(
         if (sourceUrl) {
           result.push({ filename, contentType, referenceUrl: sourceUrl });
         } else {
+          // Neither a download nor a link. Record it on the ticket rather than
+          // dropping it: the message is marked read either way, so a silent
+          // skip loses the file permanently and tells nobody it existed.
           console.warn(
-            `[Poll] referenceAttachment ${a.id} (${filename}) has no sourceUrl — skipping`
+            `[Poll] referenceAttachment ${a.id} (${filename}) has neither downloadUrl nor sourceUrl — recording as unavailable`
           );
+          result.push({ filename, contentType, unavailable: true });
         }
         break;
       }

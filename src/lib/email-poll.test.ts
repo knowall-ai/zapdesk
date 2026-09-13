@@ -99,13 +99,19 @@ describe('pollMailbox — attachment fetching', () => {
     expect(calls.filter((c) => c.includes('/attachments'))).toHaveLength(1);
   });
 
-  it('ingests the email anyway when the attachment fetch fails', async () => {
-    // A ticket with a missing file beats no ticket at all; the appendix is
-    // what tells the agent something is missing.
+  it('leaves the email for the next poll when the attachment fetch fails', async () => {
+    // Ingesting anyway looked like the forgiving choice, but the success path
+    // marks the message read — so a timeout on a screenshot-only email created
+    // a ticket with a dead `cid:` reference, no attachment, no error, and
+    // nothing left to retry. Failing the message keeps it unread instead.
+    // Marking read is a PATCH with the flag in the body, so the URL alone
+    // cannot distinguish it from the list query (`$filter=isRead eq false`).
+    const methods: string[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: string) => {
+      vi.fn(async (url: string, init?: RequestInit) => {
         const u = String(url);
+        methods.push(init?.method ?? 'GET');
         if (u.includes('/attachments')) throw new Error('Graph is having a day');
         if (u.includes('/messages')) {
           return { ok: true, status: 200, json: async () => ({ value: [message()] }) } as Response;
@@ -116,7 +122,14 @@ describe('pollMailbox — attachment fetching', () => {
 
     const summary = await pollMailbox(MAILBOX);
 
-    expect(summary.ingested).toBe(1);
-    expect(ingestEmail).toHaveBeenCalledTimes(1);
+    expect(summary.ingested).toBe(0);
+    expect(summary.failed).toBe(1);
+    expect(ingestEmail).not.toHaveBeenCalled();
+    expect(summary.results[0].result).toMatchObject({
+      success: false,
+      error: expect.stringContaining('Failed to list attachments'),
+    });
+    // Left unread, so the next poll picks it up again.
+    expect(methods).not.toContain('PATCH');
   });
 });

@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { buildAppendixHtml, splicedInlineCids } from './email-ingest';
-import type { IngestableEmail } from './email-ingest';
 
 const inline = (filename: string, contentId?: string) => ({
   filename,
@@ -18,16 +17,13 @@ const fail = (filename: string, hasFallbackLink = false) => ({
 });
 
 describe('splicedInlineCids', () => {
-  const email = (body: string, bodyType: 'html' | 'text'): IngestableEmail => ({
-    from: 'someone@example.com',
-    subject: 's',
-    body,
-    bodyType,
-  });
+  // Rendered output, not the incoming body: splicing rewrites `cid:` to the
+  // uploaded URL, so the URL being present is what proves the image survived.
+  const rendered = (...urls: string[]) => urls.map((u) => `<p>text</p><img src="${u}">`).join('');
 
-  it('reports the ids an HTML body actually referenced', () => {
+  it('reports the ids whose image is in the rendered body', () => {
     const uploaded = [inline('a.png', 'abc'), inline('b.png', 'def')];
-    const spliced = splicedInlineCids(email('<img src="cid:abc">', 'html'), uploaded);
+    const spliced = splicedInlineCids(rendered(uploaded[0].url), uploaded);
     expect(spliced).toEqual(new Set(['abc']));
   });
 
@@ -35,7 +31,21 @@ describe('splicedInlineCids', () => {
     // The text path never rewrites cid: references, so an inline image with a
     // contentId is not in the body — it has to show up in the appendix.
     const uploaded = [inline('a.png', 'abc')];
-    expect(splicedInlineCids(email('plain words', 'text'), uploaded).size).toBe(0);
+    expect(splicedInlineCids('<pre>plain words</pre>', uploaded).size).toBe(0);
+  });
+
+  it('does not claim an image that truncation removed from the body', () => {
+    // A long body followed by an inline image: the image is rewritten but then
+    // truncated away. Reading the incoming body instead called it spliced, and
+    // the appendix skipped it as already visible — so it appeared nowhere.
+    const uploaded = [inline('shot.png', 'shot')];
+    const truncated = '<p>' + 'x'.repeat(50_000) + '</p>';
+    expect(splicedInlineCids(truncated, uploaded).size).toBe(0);
+  });
+
+  it('ignores an attachment with no content id', () => {
+    const uploaded = [inline('a.png', undefined)];
+    expect(splicedInlineCids(rendered(uploaded[0].url), uploaded).size).toBe(0);
   });
 });
 

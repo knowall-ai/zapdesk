@@ -121,17 +121,58 @@ export function sanitizeEmailHtml(html: string): string {
       // through only for images, which is how Outlook embeds pasted
       // screenshots; every other media type can carry markup.
       //
-      // Best-effort by design: this is a regex over untrusted markup, so an
-      // attacker with enough encoding tricks can get past it. It is
+      // The scheme is judged on the *decoded* value. Matching the literal text
+      // missed `href="jav&#x61;script:alert(1)"` — the entity is decoded by the
+      // parser long after this runs, so the string checks saw "jav&#x61;script"
+      // and let it through.
+      //
+      // Still best-effort by design: this is a regex over untrusted markup, so
+      // an attacker with enough encoding tricks can get past it. It is
       // defence-in-depth ahead of the render-time sanitisers — ZapDesk's own,
       // and DevOps's — not a substitute for them.
-      .replace(/(href|src)\s*=\s*"\s*(?:javascript|vbscript):[^"]*"/gi, '$1="#"')
-      .replace(/(href|src)\s*=\s*'\s*(?:javascript|vbscript):[^']*'/gi, "$1='#'")
-      .replace(/(href|src)\s*=\s*(?:javascript|vbscript):[^\s>]*/gi, '$1="#"')
-      .replace(/(href|src)\s*=\s*"\s*data:(?!image\/)[^"]*"/gi, '$1="#"')
-      .replace(/(href|src)\s*=\s*'\s*data:(?!image\/)[^']*'/gi, "$1='#'")
-      .replace(/(href|src)\s*=\s*data:(?!image\/)[^\s>]*/gi, '$1="#"')
+      .replace(
+        /\b(href|src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi,
+        (match, attr: string, dq?: string, sq?: string, bare?: string) => {
+          const raw = dq ?? sq ?? bare ?? '';
+          return isDangerousUrl(raw) ? `${attr}="#"` : match;
+        }
+      )
   );
+}
+
+/**
+ * Decode the HTML entities a URL scheme can hide behind.
+ *
+ * Only enough to judge the scheme: numeric and hex character references plus
+ * the handful of named ones that appear in obfuscated payloads. This is not a
+ * general entity decoder and its output is never rendered — it exists solely
+ * so the scheme test below sees what the browser's parser will see.
+ */
+function decodeForSchemeCheck(value: string): string {
+  return value
+    .replace(/&#x([0-9a-f]+);?/gi, (_m, hex: string) =>
+      String.fromCodePoint(parseInt(hex, 16) || 0)
+    )
+    .replace(/&#(\d+);?/g, (_m, dec: string) => String.fromCodePoint(parseInt(dec, 10) || 0))
+    .replace(/&colon;?/gi, ':')
+    .replace(/&Tab;?/gi, '\t')
+    .replace(/&NewLine;?/gi, '\n');
+}
+
+/**
+ * True when an attribute value resolves to a scheme that must not survive.
+ *
+ * Whitespace and control characters are stripped before testing because the
+ * HTML parser ignores them inside a scheme: `java\tscript:` and `java\nscript:`
+ * both navigate.
+ */
+function isDangerousUrl(value: string): boolean {
+  const normalised = decodeForSchemeCheck(value)
+    .replace(/[\s\u0000-\u001f]/g, '')
+    .toLowerCase();
+  if (/^(javascript|vbscript):/.test(normalised)) return true;
+  // `data:` carries markup for every type except images.
+  return normalised.startsWith('data:') && !normalised.startsWith('data:image/');
 }
 
 /**
@@ -207,16 +248,39 @@ export function collectReferencedCids(html: string): Set<string> {
 }
 
 /**
+ * Truncate HTML without cutting through a tag.
+ *
+ * Slicing the raw string at a character count lands wherever it lands. A
+ * 60,000-character data-URL image cut mid-attribute left an unterminated
+ * `<img src="...`, which destroys that image and swallows the markup after it
+ * as the parser keeps looking for a closing quote.
+ *
+ * Backing up to the last tag boundary keeps the output parseable. The partial
+ * element is dropped whole rather than emitted broken -- content is lost
+ * either way at this point, and losing it cleanly is the difference between
+ * one missing image and a mangled rest-of-body.
+ *
+ * Elements left open by the cut are not closed here; the render-time
+ * sanitiser parses and reserialises, which balances them.
+ */
+function truncateHtml(html: string, max: number): string {
+  if (html.length <= max) return html;
+  const head = html.slice(0, max);
+  const lastOpen = head.lastIndexOf('<');
+  const lastClose = head.lastIndexOf('>');
+  // An unmatched "<" after the last ">" means the cut landed inside a tag.
+  const safe = lastOpen > lastClose ? head.slice(0, lastOpen) : head;
+  return safe + '<p><em>[truncated]</em></p>';
+}
+
+/**
  * Sanitise + signature-strip + truncate an HTML email body for safe storage
  * in a DevOps work item. Mirror of `renderEmailBody` for the HTML path.
  */
 export function renderEmailBodyHtml(rawHtml: string): string {
   const sanitised = sanitizeEmailHtml(rawHtml);
   const stripped = stripHtmlSignature(sanitised);
-  const truncated =
-    stripped.length > MAX_BODY_CHARS
-      ? stripped.slice(0, MAX_BODY_CHARS) + '<p><em>[truncated]</em></p>'
-      : stripped;
+  const truncated = truncateHtml(stripped, MAX_BODY_CHARS);
   // A screenshot-only email has no text nodes at all. Testing text alone threw
   // away the inline image that rewriteCidReferences had just spliced in, and
   // replaced the whole body with "No content" — so embedded media counts as

@@ -82,3 +82,63 @@ describe('rewriteCidReferences', () => {
     expect(out).toBe('<img src="cid:missing">');
   });
 });
+
+describe('sanitizeEmailHtml — encoded schemes', () => {
+  it('neutralises a javascript: scheme hidden behind a hex entity', () => {
+    const out = sanitizeEmailHtml('<a href="jav&#x61;script:alert(1)">click</a>');
+    expect(out).not.toMatch(/&#x61;script:/i);
+    expect(out).toContain('href="#"');
+  });
+
+  it('neutralises a decimal-entity scheme', () => {
+    const out = sanitizeEmailHtml('<a href="jav&#97;script:alert(1)">click</a>');
+    expect(out).toContain('href="#"');
+  });
+
+  it('neutralises a scheme split by a tab', () => {
+    const out = sanitizeEmailHtml('<a href="java\tscript:alert(1)">click</a>');
+    expect(out).toContain('href="#"');
+  });
+
+  it('still neutralises the plain form', () => {
+    expect(sanitizeEmailHtml('<a href="javascript:alert(1)">x</a>')).toContain('href="#"');
+  });
+
+  it('still blocks non-image data: URLs', () => {
+    expect(sanitizeEmailHtml('<a href="data:text/html,<b>x</b>">x</a>')).toContain('href="#"');
+  });
+
+  it('leaves an ordinary link and an inline image alone', () => {
+    const out = sanitizeEmailHtml(
+      '<a href="https://example.com/x">x</a><img src="data:image/png;base64,AA==">'
+    );
+    expect(out).toContain('https://example.com/x');
+    expect(out).toContain('data:image/png;base64,AA==');
+  });
+});
+
+describe('renderEmailBodyHtml — truncation', () => {
+  it('does not leave a tag unterminated when the cut lands inside one', () => {
+    // A long body followed by a huge data-URL image: the cut falls inside the
+    // src attribute, which used to emit `<img src="data:...` with no closing
+    // quote and swallow everything after it.
+    const body =
+      '<p>' +
+      'x'.repeat(49_900) +
+      '</p><img src="data:image/png;base64,' +
+      'A'.repeat(5_000) +
+      '">';
+    const out = renderEmailBodyHtml(body);
+    const opens = (out.match(/</g) || []).length;
+    const closes = (out.match(/>/g) || []).length;
+    expect(opens).toBe(closes);
+    expect(out).not.toMatch(/<img[^>]*$/);
+    expect(out).toContain('[truncated]');
+  });
+
+  it('leaves a short body untouched', () => {
+    const out = renderEmailBodyHtml('<p>hello</p>');
+    expect(out).toContain('<p>hello</p>');
+    expect(out).not.toContain('[truncated]');
+  });
+});
