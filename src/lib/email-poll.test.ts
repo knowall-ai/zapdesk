@@ -133,3 +133,135 @@ describe('pollMailbox — attachment fetching', () => {
     expect(methods).not.toContain('PATCH');
   });
 });
+
+describe('pollMailbox — reference attachment size cap', () => {
+  beforeEach(() => {
+    ingestEmail.mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** A chunked response: no Content-Length, body delivered in pieces. */
+  function streamed(totalBytes: number, chunkBytes = 1024 * 1024) {
+    let sent = 0;
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => null }, // chunked — this is the case that broke
+      body: {
+        getReader: () => ({
+          read: async () => {
+            if (sent >= totalBytes) return { done: true, value: undefined };
+            const size = Math.min(chunkBytes, totalBytes - sent);
+            sent += size;
+            return { done: false, value: new Uint8Array(size) };
+          },
+          cancel: async () => {},
+          releaseLock: () => {},
+        }),
+      },
+    } as unknown as Response;
+  }
+
+  function stubWithDownload(response: Response) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.startsWith('https://download/')) return response;
+        if (u.includes('/attachments')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              value: [
+                {
+                  id: 'att-1',
+                  name: 'huge.zip',
+                  contentType: 'application/zip',
+                  '@odata.type': '#microsoft.graph.referenceAttachment',
+                  '@microsoft.graph.downloadUrl': 'https://download/huge.zip',
+                  sourceUrl: 'https://sharepoint/huge.zip',
+                },
+              ],
+            }),
+          } as Response;
+        }
+        if (u.includes('/messages')) {
+          return { ok: true, status: 200, json: async () => ({ value: [message()] }) } as Response;
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      })
+    );
+  }
+
+  it('falls back to the link when a chunked download passes the cap', async () => {
+    // 30 MiB with no Content-Length. Previously Number(null) === 0 passed the
+    // guard and arrayBuffer() buffered the lot before any size was checked.
+    stubWithDownload(streamed(30 * 1024 * 1024));
+
+    await pollMailbox(MAILBOX);
+
+    const [passed] = ingestEmail.mock.calls[0] as unknown as [
+      { attachments?: Array<{ filename: string; content?: string; referenceUrl?: string }> },
+    ];
+    const att = passed.attachments?.[0];
+    expect(att?.filename).toBe('huge.zip');
+    expect(att?.content).toBeUndefined();
+    expect(att?.referenceUrl).toBe('https://sharepoint/huge.zip');
+  });
+
+  it('keeps a chunked download that stays under the cap', async () => {
+    stubWithDownload(streamed(2 * 1024 * 1024));
+
+    await pollMailbox(MAILBOX);
+
+    const [passed] = ingestEmail.mock.calls[0] as unknown as [
+      { attachments?: Array<{ filename: string; content?: string }> },
+    ];
+    expect(passed.attachments?.[0]?.content).toBeTruthy();
+  });
+
+  it('records an unavailable attachment rather than skipping it', async () => {
+    // v1.0 referenceAttachment with neither a download URL nor sourceUrl —
+    // the normal case, since sourceUrl is documented on beta only.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/attachments')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              value: [
+                {
+                  id: 'att-2',
+                  name: 'contract.pdf',
+                  contentType: 'application/pdf',
+                  '@odata.type': '#microsoft.graph.referenceAttachment',
+                },
+              ],
+            }),
+          } as Response;
+        }
+        if (u.includes('/messages')) {
+          return { ok: true, status: 200, json: async () => ({ value: [message()] }) } as Response;
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      })
+    );
+
+    await pollMailbox(MAILBOX);
+
+    const [passed] = ingestEmail.mock.calls[0] as unknown as [
+      { attachments?: Array<{ filename: string; unavailable?: boolean }> },
+    ];
+    expect(passed.attachments?.[0]).toMatchObject({
+      filename: 'contract.pdf',
+      unavailable: true,
+    });
+  });
+});
