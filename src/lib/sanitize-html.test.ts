@@ -76,9 +76,21 @@ describe('sanitizeUserHtml with mentions', () => {
     expect(out).toBe('<p>ping <span class="mention">@bob</span> please</p>');
   });
 
-  it('matches a two-word display name', () => {
-    const out = sanitizeUserHtml('<p>@John Doe took it</p>', { mentions: true });
+  it('matches a two-word display name when the roster is supplied', () => {
+    const out = sanitizeUserHtml('<p>@John Doe took it</p>', {
+      mentions: true,
+      mentionNames: ['John Doe'],
+    });
     expect(out).toContain('<span class="mention">@John Doe</span>');
+  });
+
+  it('matches only the first word without the roster', () => {
+    // Where a multi-word name ends cannot be derived from the prose. Guessing
+    // from capitalisation swallowed "@Jane Doe Please"; matching one token is
+    // the safe default until the names arrive. See `lib/mentions`.
+    const out = sanitizeUserHtml('<p>@John Doe took it</p>', { mentions: true });
+    expect(out).toContain('<span class="mention">@John</span>');
+    expect(out).toContain('Doe took it');
   });
 
   it('does not run past the name into the rest of the sentence', () => {

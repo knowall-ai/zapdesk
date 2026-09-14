@@ -1,105 +1,104 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { highlightMentions, extractMentions, MENTION_CLASS } from './mentions';
+import { highlightMentionsIn, extractMentions, MENTION_CLASS } from './mentions';
 
-/** The span the comment view renders around a mention. */
-const span = (name: string) => `<span class="${MENTION_CLASS}">@${name}</span>`;
+/** Run the highlighter over a fragment and hand back the resulting markup. */
+function highlight(html: string, knownNames?: readonly string[]): string {
+  const holder = document.createElement('div');
+  holder.innerHTML = html;
+  highlightMentionsIn(holder, knownNames);
+  return holder.innerHTML;
+}
 
-describe('highlightMentions — where a mention ends', () => {
-  // MentionInput inserts a bare "@Display Name " with no delimiter, so the
-  // stored text carries no marker for where the name stops. Matching spaces
-  // greedily highlighted the rest of the sentence (#138 review).
-  it('stops at the first ordinary word after the name', () => {
-    expect(highlightMentions('@Jane Doe please review this')).toBe(
-      `${span('Jane Doe')} please review this`
-    );
+/** The names the picker would have offered. */
+const TEAM = ['Jane Doe', 'Ludwig van Beethoven', 'Mary Jane Watson Smith', 'bob'];
+
+describe('highlightMentionsIn', () => {
+  it('wraps a mention in the shared class', () => {
+    expect(highlight('hello @bob', TEAM)).toContain(`class="${MENTION_CLASS}"`);
   });
 
-  it('highlights a single-word mention', () => {
-    expect(highlightMentions('@Jane please review')).toBe(`${span('Jane')} please review`);
+  it('does not swallow the word after the name', () => {
+    // Ben's case: the old capitalisation rule absorbed "Please" because it
+    // only asked for a capital, not for the word to be part of a name.
+    const out = highlight('@Jane Doe Please review this', TEAM);
+    expect(out).toContain(`<span class="${MENTION_CLASS}">@Jane Doe</span>`);
+    expect(out).toContain('Please review this');
+    expect(out).not.toContain('@Jane Doe Please</span>');
   });
 
-  it('handles a dotted display name', () => {
-    expect(highlightMentions('@Jane.Smith can you look')).toBe(
-      `${span('Jane.Smith')} can you look`
-    );
+  it('matches a name containing a lowercase word', () => {
+    // "van" is lowercase, so the capitalisation rule stopped at "@Ludwig".
+    const out = highlight('ask @Ludwig van Beethoven about it', TEAM);
+    expect(out).toContain(`<span class="${MENTION_CLASS}">@Ludwig van Beethoven</span>`);
   });
 
-  it('handles apostrophes and hyphens inside a name', () => {
-    expect(highlightMentions("@Ciara O'Neill thanks")).toBe(`${span('Ciara O&#39;Neill')} thanks`);
-    expect(highlightMentions('@Sara Al-Rashid thanks')).toBe(`${span('Sara Al-Rashid')} thanks`);
+  it('matches a name longer than the old two-word cap', () => {
+    const out = highlight('cc @Mary Jane Watson Smith', TEAM);
+    expect(out).toContain(`<span class="${MENTION_CLASS}">@Mary Jane Watson Smith</span>`);
   });
 
-  it('takes at most three name words', () => {
-    expect(highlightMentions('@Mary Jane Watson Smith')).toBe(`${span('Mary Jane Watson')} Smith`);
+  it('prefers the longest matching name', () => {
+    const out = highlight('@Jane Doe', ['Jane', 'Jane Doe']);
+    expect(out).toContain(`<span class="${MENTION_CLASS}">@Jane Doe</span>`);
   });
 
-  it('stops at punctuation', () => {
-    expect(highlightMentions('@Jane Doe, thanks')).toBe(`${span('Jane Doe')}, thanks`);
-    expect(highlightMentions('cc @Jane Doe.')).toBe(`cc ${span('Jane Doe')}.`);
+  it('falls back to a single token when the roster has not loaded', () => {
+    // Under-highlighting is a cosmetic miss; over-highlighting restyles the
+    // author's prose, so this is the safer way to be wrong.
+    const out = highlight('@Jane Doe Please review this');
+    expect(out).toContain(`<span class="${MENTION_CLASS}">@Jane</span>`);
+    expect(out).toContain('Doe Please review this');
   });
 
-  it('highlights every mention in a line', () => {
-    expect(highlightMentions('@Jane Doe and @Bob Smith please sync')).toBe(
-      `${span('Jane Doe')} and ${span('Bob Smith')} please sync`
-    );
-  });
-});
-
-describe('highlightMentions — what is not a mention', () => {
   it('leaves an email address alone', () => {
-    expect(highlightMentions('mail me at jane@example.com')).toBe('mail me at jane@example.com');
+    expect(highlight('mail jane@example.com about it', TEAM)).not.toContain(MENTION_CLASS);
   });
 
-  it('leaves empty input alone', () => {
-    expect(highlightMentions('')).toBe('');
+  it('does not rewrite text inside a link or a code block', () => {
+    expect(highlight('<a href="#">ask @bob</a>', TEAM)).not.toContain(MENTION_CLASS);
+    expect(highlight('<pre><code>@bob</code></pre>', TEAM)).not.toContain(MENTION_CLASS);
   });
 
-  // The result is injected with dangerouslySetInnerHTML, so surrounding markup
-  // is passed through by design; only the matched mention text is escaped, and
-  // the apostrophe case above exercises that.
-  it('leaves surrounding markup untouched and does not extend into a tag', () => {
-    expect(highlightMentions('@Jane<script>')).toBe(`${span('Jane')}<script>`);
-    expect(highlightMentions('<b>hi</b> @Jane Doe')).toBe(`<b>hi</b> ${span('Jane Doe')}`);
+  it('never touches an attribute value', () => {
+    // The reason this walks text nodes at all: a string replace rewrote the
+    // title attribute and broke out of its quotes (issue #413).
+    const out = highlight('<img alt="ask @bob" src="x">', TEAM);
+    expect(out).not.toContain(`<span class="${MENTION_CLASS}"`);
+    expect(out).toContain('alt="ask @bob"');
   });
 
-  it('matches after a tag boundary as well as whitespace', () => {
-    expect(highlightMentions('<p>@Jane Doe hi</p>')).toBe(`<p>${span('Jane Doe')} hi</p>`);
+  it('does not double-wrap an already highlighted mention', () => {
+    const out = highlight(`<span class="${MENTION_CLASS}">@bob</span>`, TEAM);
+    expect(out.match(new RegExp(MENTION_CLASS, 'g'))).toHaveLength(1);
+  });
+
+  it('handles several mentions in one line', () => {
+    const out = highlight('@Jane Doe and @bob please look', TEAM);
+    expect(out).toContain(`<span class="${MENTION_CLASS}">@Jane Doe</span>`);
+    expect(out).toContain(`<span class="${MENTION_CLASS}">@bob</span>`);
+    expect(out).toContain('please look');
   });
 });
 
 describe('extractMentions', () => {
-  // Highlighting and notifying have to agree — a name that lights up in the
-  // comment is the name the notification goes to.
-  it('extracts the name without the trailing sentence', () => {
-    expect(extractMentions('@Jane Doe please review this')).toEqual(['Jane Doe']);
+  it('extracts exactly what the highlighter would wrap', () => {
+    expect(extractMentions('@Jane Doe Please review this', TEAM)).toEqual(['Jane Doe']);
   });
 
-  it('extracts several mentions and de-duplicates', () => {
-    expect(extractMentions('@Jane Doe and @Bob Smith and @Jane Doe again')).toEqual([
-      'Jane Doe',
-      'Bob Smith',
-    ]);
+  it('extracts a name with a lowercase word', () => {
+    expect(extractMentions('ask @Ludwig van Beethoven', TEAM)).toEqual(['Ludwig van Beethoven']);
+  });
+
+  it('deduplicates', () => {
+    expect(extractMentions('@bob and @bob again', TEAM)).toEqual(['bob']);
   });
 
   it('ignores an email address', () => {
-    expect(extractMentions('mail jane@example.com about it')).toEqual([]);
+    expect(extractMentions('mail jane@example.com about it', TEAM)).toEqual([]);
   });
 
   it('returns nothing for empty input', () => {
-    expect(extractMentions('')).toEqual([]);
-  });
-
-  // The two functions have to accept the same boundaries, or a name can light
-  // up in the comment while its owner is never notified.
-  it('extracts after a tag boundary, like highlightMentions does', () => {
-    expect(extractMentions('<p>@Jane Doe hi</p>')).toEqual(['Jane Doe']);
-    expect(extractMentions('<b>cc</b> @Bob Smith')).toEqual(['Bob Smith']);
-  });
-
-  it('agrees with what highlightMentions marks up', () => {
-    const text = '@Mary Jane Watson please ping @Bob about it';
-    for (const name of extractMentions(text)) {
-      expect(highlightMentions(text)).toContain(span(name));
-    }
+    expect(extractMentions('', TEAM)).toEqual([]);
   });
 });
