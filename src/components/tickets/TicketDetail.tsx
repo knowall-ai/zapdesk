@@ -34,7 +34,8 @@ import type {
 } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { ensureActiveState } from '@/types';
-import { highlightMentions } from '@/lib/mentions';
+import { sanitizeUserHtml, htmlToPlainText } from '@/lib/sanitize-html';
+import UserHtml from '@/components/common/UserHtml';
 import {
   formatFileSize,
   validateFile,
@@ -92,6 +93,14 @@ const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
   { value: 4, label: 'Low' },
 ];
 
+/**
+ * The full-page ticket view: description, fields, attachments and comments.
+ *
+ * Every field that holds Azure DevOps HTML renders through `UserHtml`. The one
+ * exception is the description editor, which is `contentEditable` and carries a
+ * `ref`, so it cannot be a component — it sets sanitised markup directly, and
+ * sanitises again on save (issue #413).
+ */
 export default function TicketDetail({
   ticket,
   comments,
@@ -493,7 +502,9 @@ export default function TicketDetail({
     // the read-only view, and React skips the innerHTML update when the rewrite is
     // a no-op (a description with no DevOps attachments).
     if (descriptionRef.current) {
-      descriptionRef.current.innerHTML = rewriteAttachmentUrls(ticket.description);
+      descriptionRef.current.innerHTML = sanitizeUserHtml(
+        rewriteAttachmentUrls(ticket.description)
+      );
     }
   };
 
@@ -501,7 +512,11 @@ export default function TicketDetail({
     if (!onDescriptionChange || !descriptionRef.current) return;
     setIsSavingDescription(true);
     try {
-      await onDescriptionChange(descriptionRef.current.innerHTML);
+      // Sanitise on the way out as well as on the way in. A paste into a
+      // contentEditable carries whatever markup was on the clipboard, and
+      // writing that to DevOps would make ZapDesk the injection vector for
+      // every other client reading the work item.
+      await onDescriptionChange(sanitizeUserHtml(descriptionRef.current.innerHTML));
       setIsEditingDescription(false);
     } catch (error) {
       console.error('Failed to save description:', error);
@@ -575,9 +590,7 @@ export default function TicketDetail({
   };
 
   const handleStartEditResolution = () => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = ticket.resolution || '';
-    setEditResolution(tempDiv.textContent || tempDiv.innerText || '');
+    setEditResolution(htmlToPlainText(ticket.resolution));
     setIsEditingResolution(true);
   };
 
@@ -600,9 +613,7 @@ export default function TicketDetail({
   };
 
   const handleStartEditMitigation = () => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = ticket.mitigation || '';
-    setEditMitigation(tempDiv.textContent || tempDiv.innerText || '');
+    setEditMitigation(htmlToPlainText(ticket.mitigation));
     setIsEditingMitigation(true);
   };
 
@@ -922,15 +933,20 @@ export default function TicketDetail({
                         }
                       : {}),
                   }}
+                  // The one place a raw sink survives: this element is
+                  // contentEditable and carries a ref, so it cannot be a
+                  // <UserHtml>. The value is sanitised the same way.
                   dangerouslySetInnerHTML={{
                     // While editing, the DOM is the source of truth for the save
                     // (handleSaveDescription reads innerHTML back), so it must hold the
                     // original DevOps URLs — otherwise an unrelated edit would persist
                     // our relative /api/devops/attachments/... proxy URLs to DevOps,
                     // where they are meaningless. Rewrite only for read-only display.
-                    __html: isEditingDescription
-                      ? ticket.description || ''
-                      : rewriteAttachmentUrls(ticket.description),
+                    __html: sanitizeUserHtml(
+                      isEditingDescription
+                        ? ticket.description || ''
+                        : rewriteAttachmentUrls(ticket.description)
+                    ),
                   }}
                 />
               ) : (
@@ -947,10 +963,10 @@ export default function TicketDetail({
                   >
                     System Info
                   </h4>
-                  <div
+                  <UserHtml
                     className="prose prose-sm prose-invert user-content max-w-none"
                     style={{ color: 'var(--text-secondary)' }}
-                    dangerouslySetInnerHTML={{ __html: rewriteAttachmentUrls(ticket.systemInfo) }}
+                    html={ticket.systemInfo}
                   />
                 </div>
               )}
@@ -965,10 +981,10 @@ export default function TicketDetail({
                 >
                   Reproduction Steps
                 </h3>
-                <div
+                <UserHtml
                   className="prose prose-sm prose-invert user-content max-w-none"
                   style={{ color: 'var(--text-secondary)' }}
-                  dangerouslySetInnerHTML={{ __html: rewriteAttachmentUrls(ticket.reproSteps) }}
+                  html={ticket.reproSteps}
                 />
               </div>
             )}
@@ -1029,10 +1045,10 @@ export default function TicketDetail({
                     autoFocus
                   />
                 ) : ticket.resolution ? (
-                  <div
+                  <UserHtml
                     className="prose prose-sm prose-invert user-content max-w-none"
                     style={{ color: 'var(--text-secondary)' }}
-                    dangerouslySetInnerHTML={{ __html: rewriteAttachmentUrls(ticket.resolution) }}
+                    html={ticket.resolution}
                   />
                 ) : (
                   <button
@@ -1229,12 +1245,11 @@ export default function TicketDetail({
                               {format(comment.createdAt, 'dd MMM yyyy, HH:mm')}
                             </span>
                           </div>
-                          <div
+                          <UserHtml
                             className="user-content text-sm"
                             style={{ color: 'var(--text-secondary)' }}
-                            dangerouslySetInnerHTML={{
-                              __html: highlightMentions(rewriteAttachmentUrls(comment.content)),
-                            }}
+                            html={comment.content}
+                            mentions
                           />
                         </div>
                       </div>
