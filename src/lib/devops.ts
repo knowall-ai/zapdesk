@@ -25,6 +25,7 @@ import type {
   ClassificationNode,
 } from '@/types';
 import { parseSLAFromDescription, calculateTicketSLA, DEFAULT_SLA_LEVEL } from './sla';
+import { debugLog } from './debug';
 import {
   getMitigationFieldRef,
   getResolutionFieldRef,
@@ -1353,6 +1354,8 @@ export class AzureDevOpsService {
   ): Promise<DevOpsWorkItem> {
     const patchDocument = [{ op: 'add', path: '/fields/System.State', value: state }];
 
+    debugLog('[devops.updateTicketState] PATCH', { projectName, workItemId, state });
+
     const response = await fetch(
       `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?api-version=7.0`,
       {
@@ -1378,7 +1381,22 @@ export class AzureDevOpsService {
             const parsed = JSON.parse(body) as { message?: string };
             if (parsed.message) detail = parsed.message;
           } catch {
-            detail = body.slice(0, 500);
+            // Not JSON — most likely an HTML error page from a proxy in
+            // front of DevOps. Keep the whole thing in the server log, but
+            // only hand the client a short plain-text snippet: markup
+            // carries no usable reason and can echo infrastructure detail
+            // back to every authenticated caller.
+            const excerpt = body.slice(0, 2000);
+            console.error('[devops.updateTicketState] non-JSON error body', {
+              projectName,
+              workItemId,
+              state,
+              status: response.status,
+              bodyLength: body.length,
+              body: excerpt + (body.length > excerpt.length ? '… [truncated]' : ''),
+            });
+            const text = body.replace(/\s+/g, ' ').trim();
+            if (text && !/[<>]/.test(text)) detail = text.slice(0, 200);
           }
         }
       } catch {

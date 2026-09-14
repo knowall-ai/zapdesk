@@ -8,6 +8,7 @@ import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { TicketDetail } from '@/components/tickets';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
+import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { hasTicketTag } from '@/lib/tags';
 import type { Ticket, TicketComment, Attachment, WorkItemUpdate } from '@/types';
 
@@ -18,6 +19,7 @@ export default function TicketDetailPage() {
   const pathname = usePathname();
   const ticketId = params.id as string;
   const { selectedOrganization } = useOrganization();
+  const { refresh: refreshCounts } = useTicketCounts();
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [comments, setComments] = useState<TicketComment[]>([]);
@@ -183,6 +185,7 @@ export default function TicketDetailPage() {
       });
       if (!response.ok) throw new Error('Failed to update state');
       await fetchTicket();
+      refreshCounts();
       toast.success(`Status updated to "${newState}"`);
     } catch (error) {
       console.error('Failed to update state:', error);
@@ -204,6 +207,7 @@ export default function TicketDetailPage() {
       });
       if (!response.ok) throw new Error('Failed to update assignee');
       await fetchTicket();
+      refreshCounts();
       toast.success('Assignee updated');
     } catch (error) {
       console.error('Failed to update assignee:', error);
@@ -356,6 +360,7 @@ export default function TicketDetailPage() {
         throw new Error(data.error || 'Failed to delete');
       }
       toast.success(`Deleted #${ticketId}`);
+      refreshCounts();
       router.push('/tickets');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete');

@@ -227,6 +227,19 @@ export interface WorkItemFieldChange {
   newValue?: string;
 }
 
+/** Sidebar view counts. Every field is derived from ticket status and assignee,
+ * so any mutation to either invalidates all of them (issue #404). */
+export interface TicketCounts {
+  yourActive: number;
+  ratedLast7Days: number;
+  unassigned: number;
+  allActive: number;
+  recentlyUpdated: number;
+  createdToday: number;
+  pending: number;
+  recentlySolved: number;
+}
+
 export interface WorkItemUpdate {
   id: number;
   rev: number;

@@ -26,6 +26,7 @@ import {
   type AllowedStates,
 } from '@/lib/kanban-columns';
 import type { StandupColumn, StandupWorkItem } from '@/types';
+import { debugLog, debugWarn } from '@/lib/debug';
 
 // Done-category columns only show items changed in the last 7 days; this hint
 // explains the cutoff so users don't think older items have vanished.
@@ -245,7 +246,16 @@ export default function KanbanGroupSection({
 
       const activeItemId = active.id as number;
       const targetCol = findColumn(activeItemId);
-      if (!targetCol) return;
+      if (!targetCol) {
+        // Not gated: the dragged card is in no column at all, which means our
+        // local state and the columns disagree. That is a real fault, not a
+        // user action, and it is rare enough not to be per-drag noise.
+        console.warn('[Standup DnD] dropped item is in no column', { activeItemId });
+        // handleDragOver may already have moved the card in localItems, so
+        // bail out through the same rollback every other early return uses.
+        syncFromProps();
+        return;
+      }
 
       // Find original column from props
       const originalCol = columns.find((c) => c.items.some((i) => i.id === activeItemId));
@@ -265,25 +275,57 @@ export default function KanbanGroupSection({
         )
       ) {
         syncFromProps();
+        // Gated, unlike the fault above: a blocked drop is an ordinary,
+        // expected outcome — the column is already disabled as a drop target
+        // and the user gets a toast — so logging it every time is exactly the
+        // per-drag noise this PR set out to remove.
+        debugWarn('[Standup DnD] drop blocked by the type’s state list', {
+          itemId: activeItemId,
+          workItemType: dragged.workItemType,
+          project: dragged.project,
+          fromColumn: originalCol?.name,
+          targetColumn: targetCol,
+        });
         toast.error(`${dragged.workItemType} work items have no "${targetCol}" state`);
         return;
       }
 
+      // The column label is not necessarily the state name — "To Do" is the
+      // state "Todo" in the KnowAll process — so translate before writing.
+      const resolvedState = resolveStateForColumn(
+        dragged?.project,
+        dragged?.workItemType,
+        targetCol,
+        allowedStatesByProjectType
+      );
+
+      debugLog('[Standup DnD] drag end', {
+        itemId: activeItemId,
+        workItemType: dragged?.workItemType,
+        project: dragged?.project,
+        fromColumn: originalCol?.name,
+        targetColumn: targetCol,
+        resolvedState,
+        blockedColumns: [...blockedColumns],
+      });
+
       setIsUpdating(true);
       try {
-        // The column label is not necessarily the state name — "To Do" is the
-        // state "Todo" in the KnowAll process — so translate before writing.
-        await onStateChange(
-          activeItemId,
-          resolveStateForColumn(
-            dragged?.project,
-            dragged?.workItemType,
-            targetCol,
-            allowedStatesByProjectType
-          )
-        );
+        await onStateChange(activeItemId, resolvedState);
+        debugLog('[Standup DnD] state change succeeded', {
+          itemId: activeItemId,
+          resolvedState,
+        });
       } catch (error) {
-        console.error('Failed to update state:', error);
+        // Not gated: a rejected transition is rare and its detail is the
+        // whole point of issue #391.
+        console.error('[Standup DnD] state change failed — rolling back', {
+          itemId: activeItemId,
+          fromColumn: originalCol?.name,
+          targetColumn: targetCol,
+          resolvedState,
+          error,
+        });
         syncFromProps();
         // Surface the upstream reason. A work item can only enter states its
         // own work item type defines, so drops onto a column the type has no
@@ -298,7 +340,7 @@ export default function KanbanGroupSection({
         setIsUpdating(false);
       }
     },
-    [onStateChange, findColumn, columns, allowedStatesByProjectType, syncFromProps]
+    [onStateChange, findColumn, columns, allowedStatesByProjectType, syncFromProps, blockedColumns]
   );
 
   const handleDragCancel = useCallback(() => {

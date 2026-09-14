@@ -10,6 +10,7 @@ import { TicketList } from '@/components/tickets';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import ZapDialog from '@/components/tickets/ZapDialog';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
+import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { ticketToWorkItem } from '@/lib/devops';
 import type { Ticket, WorkItem, User, WorkItemType } from '@/types';
 
@@ -31,6 +32,7 @@ function TicketsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { selectedOrganization } = useOrganization();
+  const { refresh: refreshCounts } = useTicketCounts();
   const view = searchParams.get('view') || 'all-unsolved';
   const displayParam = searchParams.get('display');
   const isKanbanView = view === 'kanban';
@@ -121,6 +123,7 @@ function TicketsPageContent() {
         setTickets((prev) =>
           prev.map((t) => (t.id === ticketId ? { ...t, devOpsState: newState } : t))
         );
+        refreshCounts();
         toast.success(`Status updated to "${newState}"`);
       } catch (error) {
         console.error('Failed to update ticket state:', error);
@@ -128,7 +131,7 @@ function TicketsPageContent() {
         throw error; // Re-throw so KanbanBoard can handle rollback
       }
     },
-    [selectedOrganization]
+    [selectedOrganization, refreshCounts]
   );
 
   const handleWorkItemClick = useCallback(
@@ -177,6 +180,7 @@ function TicketsPageContent() {
             prev && prev.id === updatedTicket.id ? updatedTicket : prev
           );
         }
+        refreshCounts();
         toast.success('Assignee updated');
       } catch (error) {
         console.error('Failed to update assignee:', error);
@@ -184,7 +188,7 @@ function TicketsPageContent() {
         throw error;
       }
     },
-    [tickets, selectedOrganization]
+    [tickets, selectedOrganization, refreshCounts]
   );
 
   const handleDialogPriorityChange = useCallback(
