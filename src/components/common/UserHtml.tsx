@@ -12,6 +12,8 @@ interface UserHtmlProps {
   as?: 'div' | 'p' | 'span';
   /** Highlight `@mentions`. Comment bodies only, not descriptions. */
   mentions?: boolean;
+  /** Display names that may be mentioned, so multi-word names match whole. */
+  mentionNames?: readonly string[];
 }
 
 /**
@@ -35,8 +37,9 @@ export default function UserHtml({
   style,
   as = 'div',
   mentions = false,
+  mentionNames,
 }: UserHtmlProps) {
   const Tag = as;
-  const __html = sanitizeUserHtml(rewriteAttachmentUrls(html ?? ''), { mentions });
+  const __html = sanitizeUserHtml(rewriteAttachmentUrls(html ?? ''), { mentions, mentionNames });
   return <Tag className={className} style={style} dangerouslySetInnerHTML={{ __html }} />;
 }

@@ -2,25 +2,49 @@
  * Utility functions for @mention handling.
  */
 
-/**
- * A mention is `@` followed by a word, optionally continuing into up to two
- * capitalised words so display names like `@John Doe` and `@Mary Jane Smith`
- * are matched whole.
- *
- * The capitalisation rule is what bounds the match. An earlier version allowed
- * any run of word characters and spaces, which was survivable only because it
- * ran against raw HTML where a `<` eventually stopped it. Running against text
- * content — which is what we now do, and must do — an unbounded pattern would
- * swallow the rest of the sentence after `@bob`. The trade is that a lowercase
- * surname (`@john doe`) matches only `@john`.
- */
-const MENTION_PATTERN = /(^|\s)@([A-Za-z0-9][\w.'-]*(?:\s[A-Z][\w.'-]*){0,2})/g;
+/** One name token: a word, possibly carrying dots, hyphens or apostrophes. */
+const NAME_TOKEN = String.raw`[A-Za-z0-9][\w.'-]*`;
 
 /** Class applied to a highlighted mention. Kept here so CSS and JS agree. */
 export const MENTION_CLASS = 'mention';
 
 /** Elements whose text is not prose, and must not be rewritten. */
 const SKIP_ELEMENTS = new Set(['A', 'CODE', 'PRE', 'SCRIPT', 'STYLE', 'TEXTAREA']);
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Where a mention ends cannot be derived from the surrounding prose.
+ *
+ * `MentionInput` inserts a bare `@Display Name ` with no delimiter, so nothing
+ * in the stored text marks where the name stops. Matching greedily swallowed
+ * the rest of the sentence; requiring following words to be capitalised —
+ * the previous rule here — guessed wrong in both directions:
+ *
+ *   "@Jane Doe Please review this"  highlighted "@Jane Doe Please"
+ *   "@Ludwig van Beethoven"         stopped at "@Ludwig", `van` being lowercase
+ *   "@Mary Jane Watson Smith"       lost "Smith" to the two-word cap
+ *
+ * No refinement of the guess is correct, so stop guessing and compare against
+ * the people who can actually be mentioned. Given that list the match is exact
+ * for any number of words and any capitalisation, and it fixes comments
+ * already stored as well as new ones.
+ *
+ * Without the list only a single token is matched. Under-highlighting is a
+ * cosmetic miss; over-highlighting silently restyles the author's prose, so
+ * that is the safer way to be wrong.
+ */
+function mentionPattern(knownNames?: readonly string[]): RegExp {
+  const names = [...new Set((knownNames ?? []).map((n) => n.trim()).filter(Boolean))]
+    // Longest first, so "@Jane Doe Smith" wins over a also-known "@Jane Doe".
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp);
+
+  const body = names.length > 0 ? `(?:${names.join('|')}|${NAME_TOKEN})` : NAME_TOKEN;
+  return new RegExp(String.raw`(^|\s)@(${body})`, 'gi');
+}
 
 /**
  * True when `node` sits inside an element whose text must be left alone — a
@@ -51,10 +75,15 @@ function isInsideSkipped(node: Node): boolean {
  * quote break that is an injection vector in its own right (issue #413).
  *
  * Requires a DOM, so call it on a sanitised fragment in the browser.
+ *
+ * @param root The node whose text is rewritten in place.
+ * @param knownNames Display names that may be mentioned — see
+ *   {@link mentionPattern} for why supplying them matters.
  */
-export function highlightMentionsIn(root: ParentNode & Node): void {
+export function highlightMentionsIn(root: ParentNode & Node, knownNames?: readonly string[]): void {
   const doc = root.ownerDocument ?? document;
   const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const pattern = mentionPattern(knownNames);
 
   const targets: Text[] = [];
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -65,15 +94,15 @@ export function highlightMentionsIn(root: ParentNode & Node): void {
   }
 
   for (const text of targets) {
-    MENTION_PATTERN.lastIndex = 0;
-    if (!MENTION_PATTERN.test(text.data)) continue;
-    MENTION_PATTERN.lastIndex = 0;
+    pattern.lastIndex = 0;
+    if (!pattern.test(text.data)) continue;
+    pattern.lastIndex = 0;
 
     const fragment = doc.createDocumentFragment();
     let cursor = 0;
     let match: RegExpExecArray | null;
 
-    while ((match = MENTION_PATTERN.exec(text.data)) !== null) {
+    while ((match = pattern.exec(text.data)) !== null) {
       const [full, prefix, name] = match;
       const start = match.index + prefix.length;
 
@@ -102,15 +131,17 @@ export function highlightMentionsIn(root: ParentNode & Node): void {
  * Extract all mentioned names from a plain-text string.
  *
  * @param text The text to extract mentions from.
+ * @param knownNames As for {@link highlightMentionsIn}. Both must be given the
+ *   same list, or a name can highlight without being extracted.
  * @returns Mentioned names without the leading `@`, deduplicated.
  */
-export function extractMentions(text: string): string[] {
+export function extractMentions(text: string, knownNames?: readonly string[]): string[] {
   if (!text) return [];
 
+  const pattern = mentionPattern(knownNames);
   const mentions: string[] = [];
-  MENTION_PATTERN.lastIndex = 0;
   let match: RegExpExecArray | null;
-  while ((match = MENTION_PATTERN.exec(text)) !== null) {
+  while ((match = pattern.exec(text)) !== null) {
     mentions.push(match[2].trim());
   }
 

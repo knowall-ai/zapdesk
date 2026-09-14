@@ -22,6 +22,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useMentionableUsers } from '@/hooks/useMentionableUsers';
 import type {
   Ticket,
   TicketComment,
@@ -218,6 +219,7 @@ export default function TicketDetail({
   // Description editing state
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [isSavingDescription, setIsSavingDescription] = useState(false);
+  const mentionNames = useMentionableUsers();
   const descriptionRef = useRef<HTMLDivElement>(null);
 
   // Tag editing state
@@ -1250,6 +1252,7 @@ export default function TicketDetail({
                             style={{ color: 'var(--text-secondary)' }}
                             html={comment.content}
                             mentions
+                            mentionNames={mentionNames}
                           />
                         </div>
                       </div>
