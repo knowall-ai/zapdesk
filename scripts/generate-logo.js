@@ -9,14 +9,15 @@
  *
  * Usage: node scripts/generate-logo.js
  *
- * WARNING - this script has drifted from the assets it claims to generate.
- * It still draws the older stylized "D" mark, while the committed
- * public/assets/*.svg carry the lightning bolt that ZapDeskIcon renders in the
- * app. Running it as-is would replace the bolt with the "D" and regress the
- * logo everywhere it is used, including outbound email.
+ * The lightning bolt is the brand mark. Its geometry is the same shape the
+ * app renders in `components/common/ZapDeskIcon.tsx`, expressed once in
+ * `boltPolygon` below and scaled to each asset, so the two cannot drift.
  *
- * The wordmark colour below is kept in step with the committed SVGs so the two
- * do not diverge further, but fix the icon path before running this again.
+ * This script previously drew an older stylized "D". The committed logos had
+ * moved to the bolt but the generator had not, so running it silently
+ * replaced the bolt with the "D" across every asset -- including the one
+ * outbound email embeds. A warning comment was not enough: the script still
+ * exited successfully and wrote the files.
  *
  * Outputs:
  *   - public/assets/icon.svg       - Standalone icon (64x64)
@@ -29,6 +30,38 @@ const fs = require('fs');
 const path = require('path');
 
 // Brand colors
+/**
+ * The lightning bolt, as points for an SVG `<polygon>`.
+ *
+ * Coordinates are ZapDeskIcon's 64x64 viewBox, scaled and offset to wherever
+ * the caller is drawing. Keeping one definition is the point -- the drift this
+ * script suffered came from the mark being written out by hand in three
+ * places.
+ *
+ * @param {number} size Edge length of the square the bolt sits in.
+ * @param {number} x Left edge of that square.
+ * @param {number} y Top edge of that square.
+ * @returns {string} A `points` attribute value.
+ */
+const BOLT_POINTS_64 = [
+  [37, 5],
+  [17, 35.5],
+  [29.5, 35.5],
+  [24.5, 59],
+  [47, 28],
+  [34.5, 28],
+];
+
+function boltPolygon(size, x = 0, y = 0) {
+  const k = size / 64;
+  return BOLT_POINTS_64.map(([px, py]) => `${round(x + px * k)},${round(y + py * k)}`).join(' ');
+}
+
+/** Trim floating-point noise so the generated SVGs stay readable. */
+function round(n) {
+  return Math.round(n * 100) / 100;
+}
+
 const COLORS = {
   primary: '#22c55e', // Main brand green
   primaryLight: '#4ade80', // Lighter green for gradients
@@ -73,31 +106,8 @@ function generateIconSVG(size = 64) {
   <!-- Subtle shine overlay -->
   <rect x="0" y="0" width="${size}" height="${size}" rx="${8 * s}" ry="${8 * s}" fill="url(#shineGradient)" />
 
-  <!-- Stylized "D" with arrow cutout on left stroke -->
-  <!-- The D is constructed as a path with:
-       - Left vertical stroke with arrow pointing right
-       - Curved right side forming the bowl
-  -->
-  <path
-    d="M ${14 * s} ${12 * s}
-       L ${14 * s} ${26 * s}
-       L ${22 * s} ${32 * s}
-       L ${14 * s} ${38 * s}
-       L ${14 * s} ${52 * s}
-       L ${28 * s} ${52 * s}
-       C ${48 * s} ${52 * s} ${54 * s} ${42 * s} ${54 * s} ${32 * s}
-       C ${54 * s} ${22 * s} ${48 * s} ${12 * s} ${28 * s} ${12 * s}
-       Z
-
-       M ${24 * s} ${20 * s}
-       L ${28 * s} ${20 * s}
-       C ${42 * s} ${20 * s} ${46 * s} ${26 * s} ${46 * s} ${32 * s}
-       C ${46 * s} ${38 * s} ${42 * s} ${44 * s} ${28 * s} ${44 * s}
-       L ${24 * s} ${44 * s}
-       Z"
-    fill="${COLORS.white}"
-    fill-rule="evenodd"
-  />
+  <!-- Lightning bolt -->
+  <polygon points="${boltPolygon(size)}" fill="${COLORS.white}" />
 </svg>`;
 }
 
@@ -125,26 +135,10 @@ function generateFullLogoDark(width = 400, height = 100) {
   <rect x="10" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="8" ry="8" fill="url(#metalGradientFull)" />
   <rect x="10" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="8" ry="8" fill="url(#shineGradientFull)" />
 
-  <!-- Stylized D with arrow cutout on left stroke (scaled for 60x60 icon) -->
-  <path
-    d="M ${10 + 13.125} ${iconY + 11.25}
-       L ${10 + 13.125} ${iconY + 24.375}
-       L ${10 + 20.625} ${iconY + 30}
-       L ${10 + 13.125} ${iconY + 35.625}
-       L ${10 + 13.125} ${iconY + 48.75}
-       L ${10 + 26.25} ${iconY + 48.75}
-       C ${10 + 45} ${iconY + 48.75} ${10 + 50.625} ${iconY + 39.375} ${10 + 50.625} ${iconY + 30}
-       C ${10 + 50.625} ${iconY + 20.625} ${10 + 45} ${iconY + 11.25} ${10 + 26.25} ${iconY + 11.25}
-       Z
-
-       M ${10 + 22.5} ${iconY + 18.75}
-       L ${10 + 26.25} ${iconY + 18.75}
-       C ${10 + 39.375} ${iconY + 18.75} ${10 + 43.125} ${iconY + 24.375} ${10 + 43.125} ${iconY + 30}
-       C ${10 + 43.125} ${iconY + 35.625} ${10 + 39.375} ${iconY + 41.25} ${10 + 26.25} ${iconY + 41.25}
-       L ${10 + 22.5} ${iconY + 41.25}
-       Z"
+  <!-- Lightning bolt (scaled for 60x60 icon) -->
+  <polygon
+    points="${boltPolygon(iconSize, 10, iconY)}"
     fill="${COLORS.white}"
-    fill-rule="evenodd"
   />
 
   <!-- "ZapDesk" wordmark, single brand green -->
@@ -180,26 +174,10 @@ function generateFullLogoLight(width = 400, height = 100) {
   <rect x="10" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="8" ry="8" fill="url(#metalGradientFullLight)" />
   <rect x="10" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="8" ry="8" fill="url(#shineGradientFullLight)" />
 
-  <!-- Stylized D with arrow cutout on left stroke (scaled for 60x60 icon) -->
-  <path
-    d="M ${10 + 13.125} ${iconY + 11.25}
-       L ${10 + 13.125} ${iconY + 24.375}
-       L ${10 + 20.625} ${iconY + 30}
-       L ${10 + 13.125} ${iconY + 35.625}
-       L ${10 + 13.125} ${iconY + 48.75}
-       L ${10 + 26.25} ${iconY + 48.75}
-       C ${10 + 45} ${iconY + 48.75} ${10 + 50.625} ${iconY + 39.375} ${10 + 50.625} ${iconY + 30}
-       C ${10 + 50.625} ${iconY + 20.625} ${10 + 45} ${iconY + 11.25} ${10 + 26.25} ${iconY + 11.25}
-       Z
-
-       M ${10 + 22.5} ${iconY + 18.75}
-       L ${10 + 26.25} ${iconY + 18.75}
-       C ${10 + 39.375} ${iconY + 18.75} ${10 + 43.125} ${iconY + 24.375} ${10 + 43.125} ${iconY + 30}
-       C ${10 + 43.125} ${iconY + 35.625} ${10 + 39.375} ${iconY + 41.25} ${10 + 26.25} ${iconY + 41.25}
-       L ${10 + 22.5} ${iconY + 41.25}
-       Z"
+  <!-- Lightning bolt (scaled for 60x60 icon) -->
+  <polygon
+    points="${boltPolygon(iconSize, 10, iconY)}"
     fill="${COLORS.white}"
-    fill-rule="evenodd"
   />
 
   <!-- "ZapDesk" wordmark, single brand green -->
@@ -252,7 +230,7 @@ function main() {
 
   console.log('\nAll logo assets generated successfully!');
   console.log('\nDesign features:');
-  console.log('  - Stylized "D" with bold geometric form');
+  console.log('  - Lightning bolt, matching ZapDeskIcon in the app');
   console.log('  - Arrow cutout on left stroke pointing into the D');
   console.log('  - Metallic gradient for modern depth');
   console.log('  - Brand green (#22c55e) maintained');
