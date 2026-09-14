@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { format } from 'date-fns';
 import { Send, Zap, Paperclip, Loader2 } from 'lucide-react';
 import Avatar from '@/components/common/Avatar';
+import UserHtml from '@/components/common/UserHtml';
 import MentionInput from '@/components/common/MentionInput';
-import { highlightMentions } from '@/lib/mentions';
-import { rewriteAttachmentUrls, buildAttachmentProxyUrl } from '@/lib/attachment-utils';
+import { buildAttachmentProxyUrl } from '@/lib/attachment-utils';
 import type { TicketComment, User, Attachment } from '@/types';
 
 interface CommentSectionProps {
@@ -22,6 +22,12 @@ interface CommentSectionProps {
   isTicket?: boolean;
 }
 
+/**
+ * The comment thread on a ticket or work item, plus the composer beneath it.
+ *
+ * Comment bodies are Azure DevOps HTML and render through `UserHtml`, which
+ * sanitises them and highlights `@mentions` (issue #413).
+ */
 export default function CommentSection({
   comments,
   isLoading = false,
@@ -153,15 +159,11 @@ export default function CommentSection({
                       {format(comment.createdAt, 'dd MMM yyyy, HH:mm')}
                     </span>
                   </div>
-                  <div
+                  <UserHtml
                     className={`user-content ${compact ? 'prose prose-sm prose-invert max-w-none text-sm' : 'text-sm'}`}
                     style={{ color: 'var(--text-secondary)' }}
-                    // Rewrite first, then highlight — the same order
-                    // TicketDetail uses, so inline screenshots resolve through
-                    // the attachment proxy and mentions are still marked up.
-                    dangerouslySetInnerHTML={{
-                      __html: highlightMentions(rewriteAttachmentUrls(comment.content)),
-                    }}
+                    html={comment.content}
+                    mentions
                   />
                 </div>
               </div>
@@ -201,8 +203,8 @@ export default function CommentSection({
               onPaste={onUploadAttachment ? handlePaste : undefined}
               placeholder={
                 compact
-                  ? 'Add a comment... Use @ to mention. Paste images with Ctrl+V'
-                  : 'Type your reply... Use @ to mention. Paste images with Ctrl+V'
+                  ? 'Add a comment... Paste images with Ctrl+V'
+                  : 'Type your reply... Paste images with Ctrl+V'
               }
               className={`input w-full resize-none ${compact ? 'min-h-[60px] text-sm' : 'min-h-[100px]'}`}
               disabled={isSubmitting || isPastingImage}

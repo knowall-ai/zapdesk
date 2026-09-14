@@ -11,12 +11,67 @@ This guide covers testing strategies and procedures for ZapDesk.
 
 === Unit Tests
 
-Unit tests for utility functions and services.
+Unit tests for utility functions and services, run with Vitest. Files are
+`src/**/*.test.ts`.
 
 [source,bash]
 ----
-npm run test:unit
+bun run test:unit         # single run
+bun run test:unit:watch   # watch mode
 ----
+
+==== Test environment
+
+`vitest.config.ts` runs on the `node` environment, which is what most utility
+tests want and is the faster of the two.
+
+Tests that need a real DOM opt in per file with a docblock on the first line,
+rather than switching the whole suite to `jsdom`:
+
+[source,typescript]
+----
+// @vitest-environment jsdom
+----
+
+`src/lib/sanitize-html.test.ts` uses this, because DOMPurify sanitises by
+parsing markup into a DOM and walking it — there is nothing to test against
+without one. `jsdom` is a dev dependency and is only loaded by files carrying
+the docblock.
+
+==== HTML sanitisation coverage
+
+`src/lib/sanitize-html.test.ts` covers the boundary described in
+`SOLUTION_DESIGN.adoc` under _Rendering Work Item HTML_, in four groups:
+
+* *Vectors that must not survive* — `<script>`, inline event handlers
+  (`onerror`, `onclick`), `javascript:` URLs including control-character
+  variants such as `java<TAB>script:`, `vbscript:`, non-image `data:` URLs,
+  `<iframe>` and `<form>`.
+* *Formatting that must survive* — bold, lists, links, tables with `colspan`,
+  `width` and `align`, inline `style`, and the base64 `data:image` URIs the
+  DevOps editor pastes. This half is the one that catches over-tightening: an
+  earlier `ALLOWED_URI_REGEXP` silently stripped table attributes, and only
+  these tests found it.
+* *Inline CSS* — that fetching functions, every `position`, the other routes out
+  of the box (`z-index`, `transform`, `float`, `inset`, `opacity`, …) and
+  negative margins are dropped from a `style` attribute, while the colours,
+  fonts, spacing and borders beside them survive. DOMPurify does not read CSS, so this group covers
+  code that is entirely ours.
++
+NOTE: One case is weaker under `jsdom` than it looks. `sanitizeStyle` defends
+against CSS escapes (`u\72 l(…)` resolves to `url(…)` in a browser) by judging
+the *parsed* value. A real browser resolves the escape and the function
+allowlist then rejects it; `jsdom` rejects the escaped declaration at the parser
+and never emits it. Both block the payload, so the assertion holds either way —
+but in this environment it proves the output is safe rather than which half
+stopped it.
+* *Mentions* — that `@mentions` are wrapped in prose, that they are left alone
+  inside links and code blocks, and that a mention inside an attribute value is
+  no longer rewritten.
+
+When changing the allowlist, add a test to both of the first two groups: one
+proving the new vector is blocked, one proving the content you meant to keep
+still renders.
 
 === Integration Tests
 
@@ -24,7 +79,7 @@ Integration tests for API routes.
 
 [source,bash]
 ----
-npm run test:integration
+bun run test:integration
 ----
 
 === End-to-End Tests
@@ -33,7 +88,7 @@ Playwright tests for full user flows.
 
 [source,bash]
 ----
-npm run test:e2e
+bun run test:e2e
 ----
 
 == Running Tests
@@ -43,13 +98,13 @@ npm run test:e2e
 1. Install dependencies:
 [source,bash]
 ----
-npm install
+bun install
 ----
 
 2. Install Playwright browsers:
 [source,bash]
 ----
-npx playwright install
+bunx playwright install
 ----
 
 3. Set up test environment:
@@ -62,7 +117,7 @@ cp .env.example .env.test
 
 [source,bash]
 ----
-npm test
+bun run test
 ----
 
 === Run Specific Tests
@@ -70,16 +125,16 @@ npm test
 [source,bash]
 ----
 # Unit tests only
-npm run test:unit
+bun run test:unit
 
 # Integration tests only
-npm run test:integration
+bun run test:integration
 
 # E2E tests only
-npm run test:e2e
+bun run test:e2e
 
 # Specific test file
-npx playwright test tests/tickets.spec.ts
+bunx playwright test tests/tickets.spec.ts
 ----
 
 == Manual Testing Checklist
@@ -232,14 +287,14 @@ CI tests use:
 
 [source,bash]
 ----
-npx playwright test --ui
+bunx playwright test --ui
 ----
 
 === Debug Mode
 
 [source,bash]
 ----
-npx playwright test --debug
+bunx playwright test --debug
 ----
 
 === Test Report
@@ -248,7 +303,7 @@ View HTML test report:
 
 [source,bash]
 ----
-npx playwright show-report
+bunx playwright show-report
 ----
 
 == Performance Testing
