@@ -40,6 +40,8 @@ export default function NewTicketPage() {
   // isLoadingTypes is false and workItemType is non-empty, so Submit is enabled
   // and the ticket is filed against B with a type B may not even have.
   const typesRequestId = useRef(0);
+  /** Same guard for required-field discovery — see fetchRequiredFields. */
+  const fieldsRequestId = useRef(0);
   const [isLoadingTypes, setIsLoadingTypes] = useState(false);
   const [requiredFields, setRequiredFields] = useState<
     { referenceName: string; name: string; type: string; allowedValues?: string[] }[]
@@ -139,6 +141,12 @@ export default function NewTicketPage() {
 
   const fetchRequiredFields = useCallback(
     async (projectName: string, workItemType: string) => {
+      // Same ordering guard as the type list, and for the same reason: this
+      // fires on every project *and* type change, so two requests are easily
+      // in flight at once. A late response would otherwise install the wrong
+      // project's required fields and wipe whatever the user had typed into
+      // the current ones.
+      const requestId = ++fieldsRequestId.current;
       setIsLoadingRequiredFields(true);
       try {
         const response = await get(
@@ -146,14 +154,18 @@ export default function NewTicketPage() {
         );
         if (!response.ok) throw new Error('Failed to fetch required fields');
         const data = await response.json();
+        if (requestId !== fieldsRequestId.current) return;
         setRequiredFields(data.fields || []);
         setAdditionalFieldValues({});
       } catch (err) {
+        if (requestId !== fieldsRequestId.current) return;
         console.error('Failed to fetch required fields:', err);
         setRequiredFields([]);
         setAdditionalFieldValues({});
       } finally {
-        setIsLoadingRequiredFields(false);
+        // Only the newest request clears the flag — a superseded one finishing
+        // first would re-enable Submit while the real fields are still coming.
+        if (requestId === fieldsRequestId.current) setIsLoadingRequiredFields(false);
       }
     },
     [get]
@@ -243,6 +255,18 @@ export default function NewTicketPage() {
     e.preventDefault();
     if (!form.project || !form.subject.trim() || !form.iterationPath || !form.areaPath) {
       setError('Please fill in all required fields: Project, Subject, Iteration, and Area');
+      return;
+    }
+    // Asserted here as well as on the button. The disabled attribute is a
+    // hint, not a guarantee — a keyboard submit, an autofill, or a form
+    // submitted while a fetch is still in flight all reach this handler, and
+    // creating the ticket mid-discovery omits fields the project mandates.
+    if (isLoadingTypes || isLoadingRequiredFields) {
+      setError('Still loading this project’s fields — try again in a moment.');
+      return;
+    }
+    if (!form.workItemType) {
+      setError('Please choose a work item type.');
       return;
     }
 
@@ -393,6 +417,13 @@ export default function NewTicketPage() {
                 !form.subject.trim() ||
                 isLoadingTypes ||
                 !form.workItemType ||
+                // Required-field discovery is keyed on the work item type, so
+                // it can only start once types have loaded. In that window
+                // isLoadingTypes is already false while requiredFields still
+                // holds the previous type's set (or none at all), so the check
+                // below passes vacuously and the ticket is created without the
+                // mandatory fields — failing server-side.
+                isLoadingRequiredFields ||
                 !form.iterationPath ||
                 !form.areaPath ||
                 requiredFields.some(
