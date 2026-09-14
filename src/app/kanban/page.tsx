@@ -12,6 +12,7 @@ import { StandupSummaryCards, KanbanGroupSection } from '@/components/standup';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import { useDevOpsApi } from '@/hooks';
 import { ticketToWorkItem } from '@/lib/devops';
+import { debugLog } from '@/lib/debug';
 import type { StandupData, StandupColumn, StandupWorkItem, Ticket } from '@/types';
 
 type GroupBy = 'project' | 'person';
@@ -340,6 +341,7 @@ function StandupPageContent() {
     async (itemId: number, targetState: string, project?: string) => {
       const body: Record<string, unknown> = { state: targetState };
       if (project) body.project = project;
+      debugLog('[Kanban] PATCH /state', { itemId, targetState, project });
       const response = await devOpsPatch(`/api/devops/tickets/${itemId}/state`, body);
 
       if (!response.ok) {
@@ -347,6 +349,16 @@ function StandupPageContent() {
         // (KanbanBoard drag, dialog state dropdown) can show the actual
         // workflow-rule message — not just "Failed to update state".
         const data = await response.json().catch(() => ({}));
+        // Not gated: this only fires on a rejected transition, and the status
+        // plus upstream reason is the whole point of issue #391.
+        console.error('[Kanban] state PATCH rejected', {
+          itemId,
+          targetState,
+          project,
+          status: response.status,
+          statusText: response.statusText,
+          error: data.error,
+        });
         throw new Error(data.error || 'Failed to update state');
       }
 

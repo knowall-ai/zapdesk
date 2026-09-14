@@ -14,7 +14,7 @@
  */
 
 import { getMailGraphToken } from './email';
-import { ingestEmail, type IngestResult } from './email-ingest';
+import { ingestEmail, type IngestEmailAttachment, type IngestResult } from './email-ingest';
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 
@@ -22,24 +22,57 @@ const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 // schedule even 25 / minute = 1500 / hour which is plenty for B2B support.
 const MAX_PER_POLL = 25;
 
+/**
+ * Every outbound request here gets a deadline.
+ *
+ * The poll runs on a timer against Graph and OneDrive/SharePoint, and a
+ * request with no timeout waits forever: a stalled attachment download blocks
+ * ticket creation on the new-ticket path and comment processing on replies,
+ * with no error and nothing to retry.
+ */
+const GRAPH_TIMEOUT_MS = 30_000;
+
+/**
+ * Downloads get longer — a large OneDrive file is legitimately slow — but not
+ * unlimited.
+ */
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+
+/**
+ * Ceiling on a single downloaded attachment.
+ *
+ * The body is buffered into memory and base64-encoded, which inflates it by a
+ * third, so an unbounded download is a way to exhaust the process. Files past
+ * this are surfaced as a link instead, which is what happens for any file
+ * Graph declines to give us a download URL for anyway.
+ */
+const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
+
 interface GraphMessage {
   id: string;
   subject?: string;
   from?: { emailAddress?: { address?: string; name?: string } };
   /** Only the new content of the message, with quoted thread stripped by Graph. */
   uniqueBody?: { contentType: string; content: string };
-  hasAttachments?: boolean;
   receivedDateTime?: string;
 }
 
-interface GraphFileAttachment {
+interface GraphAttachment {
   '@odata.type': string;
   id: string;
-  name: string;
-  contentType: string;
-  size: number;
-  isInline: boolean;
-  contentBytes: string;
+  name?: string;
+  contentType?: string;
+  size?: number;
+  isInline?: boolean;
+  contentId?: string | null;
+  /** Present on `#microsoft.graph.fileAttachment`. */
+  contentBytes?: string;
+  /** Present on `#microsoft.graph.referenceAttachment`. */
+  sourceUrl?: string;
+  /** Microsoft Graph sometimes exposes a direct download for reference attachments. */
+  '@microsoft.graph.downloadUrl'?: string;
+  /** Present on `#microsoft.graph.itemAttachment`. */
+  item?: { subject?: string };
 }
 
 export interface PollSummary {
@@ -87,19 +120,48 @@ export async function pollMailbox(mailbox: string): Promise<PollSummary> {
     const fromName = message.from?.emailAddress?.name;
     const from = fromName ? `${fromName} <${fromAddress}>` : fromAddress;
 
-    let attachments: Array<{ filename: string; contentType: string; content: string }> | undefined;
-    if (message.hasAttachments) {
-      try {
-        attachments = await fetchAttachments(token, mailbox, message.id);
-      } catch (err) {
-        console.warn(`[Poll] failed to fetch attachments for ${message.id}:`, err);
-      }
+    // Fetched unconditionally, and deliberately not gated on
+    // `message.hasAttachments`. Graph documents that flag as excluding inline
+    // attachments, so a message whose only attachment is a pasted screenshot
+    // reports false -- and pasting a screenshot into the body with no file
+    // attached is the single most common way a customer reports a problem.
+    // Gating on it fetched nothing, uploaded nothing, and left a dead `cid:`
+    // reference rendering as a broken image on the ticket.
+    //
+    // The cost is one Graph call per unread message. That is the right trade
+    // for the guarantee this whole path is built around: nothing on an email
+    // disappears from the ticket without being accounted for.
+    let attachments: IngestEmailAttachment[] | undefined;
+    try {
+      attachments = await fetchAttachments(token, mailbox, message.id);
+    } catch (err) {
+      // Do not ingest a message whose attachments could not be listed.
+      //
+      // Swallowing this produced a ticket with no attachments and no error,
+      // and the success path then marked the message read — so a timeout on a
+      // screenshot-only email lost the screenshot permanently, with the ticket
+      // showing a dead `cid:` reference and nothing to retry. Failing the
+      // message leaves it unread for the next poll, which is the whole point
+      // of only marking read on success.
+      console.error(`[Poll] failed to list attachments for ${message.id}:`, err);
+      summary.failed += 1;
+      summary.results.push({
+        messageId: message.id,
+        subject: message.subject,
+        result: {
+          success: false,
+          status: 502,
+          error: `Failed to list attachments: ${err instanceof Error ? err.message : String(err)}`,
+        },
+      });
+      continue;
     }
 
     const result = await ingestEmail({
       from,
       subject: message.subject || '(no subject)',
       body: message.uniqueBody?.content || '',
+      bodyType: message.uniqueBody?.contentType === 'html' ? 'html' : 'text',
       attachments,
     });
 
@@ -133,17 +195,18 @@ async function listUnread(token: string, mailbox: string): Promise<GraphMessage[
   const url =
     `${GRAPH_BASE_URL}/users/${encodeURIComponent(mailbox)}/mailFolders('Inbox')/messages` +
     `?$filter=isRead eq false` +
-    `&$select=id,subject,from,uniqueBody,hasAttachments,receivedDateTime` +
+    `&$select=id,subject,from,uniqueBody,receivedDateTime` +
     `&$orderby=receivedDateTime desc` +
     `&$top=${MAX_PER_POLL}`;
 
   const res = await fetch(url, {
+    signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
     headers: {
       Authorization: `Bearer ${token}`,
-      // Plain text instead of HTML — drops inline CSS, embedded images, etc.
-      // Combined with $select=uniqueBody this gives us only the new content
-      // the customer wrote, in a form we can safely escape and re-wrap.
-      Prefer: 'outlook.body-content-type="text"',
+      // HTML so `<img src="cid:...">` references survive — we rewrite them
+      // post-upload to keep pasted screenshots inline. The body is sanitised
+      // and signature-stripped in `email-clean.ts` before storage.
+      Prefer: 'outlook.body-content-type="html"',
     },
   });
   if (!res.ok) {
@@ -154,36 +217,169 @@ async function listUnread(token: string, mailbox: string): Promise<GraphMessage[
   return json.value || [];
 }
 
+/**
+ * Read a response body, giving up once it passes `limit` bytes.
+ *
+ * `Content-Length` is absent on a chunked response, which is the normal case
+ * for a large file from OneDrive/SharePoint — exactly when the cap matters.
+ * Buffering first and measuring afterwards therefore checked the size only
+ * once the whole file was already in memory, so the limit bounded what was
+ * *kept*, never what was *read*.
+ *
+ * Accumulating chunk by chunk and cancelling on the first one that crosses the
+ * line bounds it in both cases. Returns null when the limit is passed, so the
+ * caller can fall back to a link.
+ */
+async function readCapped(res: Response, limit: number): Promise<Buffer | null> {
+  if (!res.body) {
+    // No stream to read incrementally (a mocked or already-buffered response).
+    const buf = Buffer.from(await res.arrayBuffer());
+    return buf.byteLength > limit ? null : buf;
+  }
+
+  const reader = res.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks);
+}
+
 async function fetchAttachments(
   token: string,
   mailbox: string,
   messageId: string
-): Promise<Array<{ filename: string; contentType: string; content: string }>> {
-  const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}/attachments`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+): Promise<IngestEmailAttachment[]> {
+  // `$expand=microsoft.graph.itemAttachment/item` is required for forwarded
+  // .eml previews to include the inner message subject; without it `item` is
+  // null and we can't surface a useful note.
+  const url =
+    `${GRAPH_BASE_URL}/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}/attachments` +
+    `?$expand=microsoft.graph.itemAttachment/item`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
+  });
   if (!res.ok) {
     throw new Error(`Graph list-attachments failed (${res.status}): ${await res.text()}`);
   }
-  const json = (await res.json()) as { value?: GraphFileAttachment[] };
-  const result: Array<{ filename: string; contentType: string; content: string }> = [];
+  const json = (await res.json()) as { value?: GraphAttachment[] };
+  const result: IngestEmailAttachment[] = [];
+
   for (const a of json.value || []) {
-    // Only fileAttachment with contentBytes — itemAttachment (forwarded message)
-    // and referenceAttachment (cloud links) need different handling and are rare
-    // in support traffic.
-    //
-    // Inline attachments (`isInline=true`) are also uploaded: Outlook and Gmail
-    // flag pasted screenshots and dragged-in images as inline even when users
-    // expect them as attachments, so dropping them silently loses common
-    // support artifacts. We extract the body as plain `uniqueBody`, so the
-    // inline reference in the HTML is gone — surfacing the file on the ticket
-    // is what matters.
-    if (a['@odata.type'] !== '#microsoft.graph.fileAttachment') continue;
-    if (!a.contentBytes) continue;
-    result.push({
-      filename: a.name || `attachment-${a.id}`,
-      contentType: a.contentType || 'application/octet-stream',
-      content: a.contentBytes,
-    });
+    const filename = a.name || `attachment-${a.id}`;
+    const contentType = a.contentType || 'application/octet-stream';
+
+    switch (a['@odata.type']) {
+      case '#microsoft.graph.fileAttachment': {
+        if (!a.contentBytes) {
+          console.warn(
+            `[Poll] fileAttachment ${a.id} (${filename}) has no contentBytes — skipping`
+          );
+          continue;
+        }
+        // Inline files (pasted screenshots, signature images) are kept: the
+        // body fetch is HTML now, so `<img src="cid:...">` references can be
+        // rewritten to point at the uploaded DevOps URL.
+        result.push({
+          filename,
+          contentType,
+          content: a.contentBytes,
+          contentId: a.contentId || undefined,
+          isInline: Boolean(a.isInline),
+        });
+        break;
+      }
+      case '#microsoft.graph.referenceAttachment': {
+        // Outlook converts files >35 MB (and any file when "Modern Attachments"
+        // is enabled) to OneDrive / SharePoint links. Try the direct download
+        // URL when Graph exposes it; otherwise surface the source URL so the
+        // agent can click through.
+        const downloadUrl = a['@microsoft.graph.downloadUrl'];
+        // `sourceUrl` is documented on the beta `referenceAttachment` resource
+        // only; a v1.0 response routinely omits it. It is read opportunistically
+        // rather than relied on, and the `unavailable` note below is what runs
+        // in the normal case.
+        const sourceUrl = a.sourceUrl;
+        if (downloadUrl) {
+          try {
+            const fileRes = await fetch(downloadUrl, {
+              signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+            });
+            if (fileRes.ok) {
+              const declared = Number(fileRes.headers.get('content-length'));
+              if (declared > MAX_DOWNLOAD_BYTES) {
+                console.warn(
+                  `[Poll] referenceAttachment ${a.id} (${filename}) is ${declared} bytes — over the ${MAX_DOWNLOAD_BYTES} limit, falling back to link`
+                );
+              } else {
+                const buf = await readCapped(fileRes, MAX_DOWNLOAD_BYTES);
+                if (!buf) {
+                  console.warn(
+                    `[Poll] referenceAttachment ${a.id} (${filename}) exceeded the ${MAX_DOWNLOAD_BYTES} limit while downloading — falling back to link`
+                  );
+                } else {
+                  result.push({
+                    filename,
+                    contentType,
+                    content: buf.toString('base64'),
+                    referenceUrl: sourceUrl,
+                  });
+                  break;
+                }
+              }
+            } else {
+              console.warn(
+                `[Poll] referenceAttachment ${a.id} (${filename}) downloadUrl returned ${fileRes.status} — falling back to link`
+              );
+            }
+          } catch (err) {
+            console.warn(
+              `[Poll] referenceAttachment ${a.id} (${filename}) download failed — falling back to link:`,
+              err
+            );
+          }
+        }
+        if (sourceUrl) {
+          result.push({ filename, contentType, referenceUrl: sourceUrl });
+        } else {
+          // Neither a download nor a link. Record it on the ticket rather than
+          // dropping it: the message is marked read either way, so a silent
+          // skip loses the file permanently and tells nobody it existed.
+          console.warn(
+            `[Poll] referenceAttachment ${a.id} (${filename}) has neither downloadUrl nor sourceUrl — recording as unavailable`
+          );
+          result.push({ filename, contentType, unavailable: true });
+        }
+        break;
+      }
+      case '#microsoft.graph.itemAttachment': {
+        // Forwarded .eml — Graph won't give us bytes through this endpoint, so
+        // record a tagged note so the message doesn't vanish silently. A
+        // future change can fetch the inner MIME and re-ingest.
+        result.push({
+          filename,
+          contentType,
+          itemSubject: a.item?.subject || filename,
+        });
+        break;
+      }
+      default: {
+        console.warn(`[Poll] unknown attachment type ${a['@odata.type']} (${filename}) — skipping`);
+      }
+    }
   }
   return result;
 }
@@ -193,6 +389,7 @@ async function markRead(token: string, mailbox: string, messageId: string): Prom
     `${GRAPH_BASE_URL}/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}`,
     {
       method: 'PATCH',
+      signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',

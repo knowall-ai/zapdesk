@@ -196,6 +196,125 @@ ZapDesk is a customer support ticketing portal that provides a Zendesk-like expe
 * Validates sender domain for project mapping
 * Rate limiting recommended at infrastructure level
 
+=== Rendering Work Item HTML
+
+Azure DevOps stores descriptions, repro steps, resolutions and comments as
+HTML, so ZapDesk has to render markup rather than text. Every render site is
+therefore an injection sink: anyone who can comment on a work item in the org
+could otherwise run script in the browser of anyone who opens that ticket in
+ZapDesk.
+
+*The boundary is `src/lib/sanitize-html.ts`.* Nothing from Azure DevOps reaches
+the DOM as markup without passing through it.
+
+[cols="1,3"]
+|===
+|Piece |Responsibility
+
+|`sanitizeUserHtml(html, { mentions })`
+|Runs DOMPurify against an allowlist shaped around what the DevOps rich-text
+editor emits. Returns markup safe to pass to `dangerouslySetInnerHTML`.
+
+|`htmlToPlainText(html, maxLength)`
+|Reduces work item HTML to text for previews, decoding entities and truncating
+against the *text* length. Render the result as a text node, never as HTML.
+
+|`UserHtml` (`src/components/common/UserHtml.tsx`)
+|The component every read-only render site uses. Rewrites attachment URLs to
+the proxy, then sanitises.
+
+|`highlightMentionsIn(root)` (`src/lib/mentions.ts`)
+|Wraps `@mentions` in `<span class="mention">` across the text nodes of the
+already-sanitised DOM.
+|===
+
+==== Why a component rather than a helper
+
+There were eleven call sites using `dangerouslySetInnerHTML` directly, none of
+them sanitising. Consolidating them into `UserHtml` matters as much as the
+sanitiser itself: the next person rendering comment HTML reaches for the
+component rather than the raw attribute, so the sanitiser cannot be forgotten
+at a new call site.
+
+*When adding a render site, use `UserHtml`.* Do not call
+`dangerouslySetInnerHTML` directly.
+
+==== The one documented exception
+
+`TicketDetail`'s description editor is `contentEditable` and carries a `ref`,
+so it cannot be a component. It sets sanitised markup directly, and sanitises
+again on save — `contentEditable` accepts whatever markup was on the clipboard,
+so the value going back to Azure DevOps is cleaned too.
+
+==== Allowlist decisions
+
+* *`style` is allowed, `class` is not.* DevOps inlines colours and alignment on
+  spans and table cells, and dropping `style` mangles pasted content. `class` is
+  different — our own stylesheet gives class names meaning, and a comment author
+  should not be able to borrow UI chrome.
+* *Inline CSS is filtered by us, not by DOMPurify.* DOMPurify is an HTML
+  sanitiser, not a CSS one, and passes a declaration list through untouched.
+  `sanitizeStyle` does that half. Nothing it removes executes script in a
+  current browser — the risks are quieter than XSS, which is exactly why they
+  are easy to miss:
++
+[cols="1,3"]
+|===
+|Dropped |Why
+
+|Any function outside the safe set — `url(…)`, `image-set(…)`, `element(…)`,
+`expression(…)`, …
+|Fetches. A `background-image` pointing at an attacker's host turns opening a
+ticket into a beacon reporting who read it and when, from inside an
+authenticated session.
+
+|Any property outside the formatting set — `position` (all of them), `z-index`,
+`transform`, `float`, `inset`, `opacity`, `pointer-events`, …
+|Positioning lets an element cover the page — an overlay over the real controls,
+drawn by someone whose only privilege is commenting on a work item. `position:
+relative` with offsets and a `z-index` does this as well as `fixed` does, which
+is why the properties are an allowlist rather than a list of the bad ones.
+
+|A negative length on `margin` or `text-indent`
+|Spacing is allowed because pasted content is full of it, but a negative margin
+pulls an element across whatever sits beside it — the same overlay, by the only
+route the property allowlist leaves open.
+|===
++
+*The value is parsed before it is judged.* Matching the raw attribute text is
+not enough: a CSS escape walks straight past it, because `u\72 l(…)` is not the
+string `url(` but the browser resolves it to one, and `\66 ixed` resolves to
+`fixed`. `sanitizeStyle` assigns the value to `cssText` on an element in an
+inert document, so the same engine that will later render the CSS parses it
+first — escapes resolved, shorthands expanded, values normalised, and anything
+the parser rejects gone before the policy runs. The element is never attached
+and never rendered, so parsing fetches nothing.
++
+*Both lists are allowlists, so they fail closed.* Naming the properties and
+functions that are dangerous today means whatever CSS gains next is admitted by
+default — and the whole point of this pass is that CSS can fetch and can
+reposition. So a declaration survives only if its property is formatting
+(`ALLOWED_CSS_PREFIXES` — colours, fonts, text, spacing, borders, sizing,
+matched by prefix because the parser expands shorthands) *and* every function in
+its value computes locally (`SAFE_CSS_FUNCTIONS` — colours, arithmetic).
+Anything else takes its declaration with it.
++
+Colours, fonts, alignment, spacing, borders and cell widths — everything the
+DevOps editor emits — survive, normalised by the parser (`#ff0000` comes back
+as `rgb(255, 0, 0)`). If every declaration is dropped the attribute is removed
+rather than left empty.
+* *Mentions are applied to text nodes, not to the markup string.* A string
+  replace cannot tell prose from an attribute value, so a comment containing
+  `<a title="ask @bob">` previously had its _attribute_ rewritten — mangled
+  markup, and a quote break that is an injection vector in its own right.
+
+==== Server-side behaviour
+
+DOMPurify needs a DOM. Every caller is a client component whose content arrives
+from a client-side fetch, so these branches never render during SSR. If one
+ever does, `sanitizeUserHtml` degrades to stripped plain text rather than
+trusting the input.
+
 == Multi-Tenant Design
 
 === Project-Based Tenancy

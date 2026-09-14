@@ -25,6 +25,26 @@ interface StateMetadata {
    * project may have one (#391).
    */
   statesByProjectType: Record<string, Record<string, string[]>>;
+  /**
+   * Project -> work item type -> state name -> that state's category *for that
+   * type*.
+   *
+   * `categories` above flattens this by state name, which is lossy: two work
+   * item types can use the same state name in different categories, and the
+   * last one written wins. That flat map is fine for column ordering, but not
+   * for deciding whether a given item is Removed — see `getStandupData` (#277).
+   */
+  categoriesByProjectType: Record<string, Record<string, Record<string, string>>>;
+  /**
+   * False when any project's type list or any type's state list failed to
+   * load, so `categoriesByProjectType` describes only part of the org.
+   *
+   * It matters because the two halves of the Removed filter fail in opposite
+   * directions. Dropping a state name from the WIQL query is unrecoverable —
+   * items never fetched can't be filtered back in — so a partial picture must
+   * not be treated as agreement that a name is Removed everywhere (#277).
+   */
+  discoveryComplete: boolean;
 }
 
 // Per-org TTL cache + in-flight dedup for state metadata.
@@ -44,7 +64,12 @@ async function fetchStateMetadata(
   const cached = stateCategoryCacheByOrg.get(organization);
   if (cached) {
     if (Date.now() - cached.timestamp < STATE_CACHE_TTL_MS) {
-      return { categories: cached.categories, statesByProjectType: cached.statesByProjectType };
+      return {
+        categories: cached.categories,
+        statesByProjectType: cached.statesByProjectType,
+        categoriesByProjectType: cached.categoriesByProjectType,
+        discoveryComplete: cached.discoveryComplete,
+      };
     }
     // Expired — evict so the map doesn't accumulate stale per-org entries forever.
     stateCategoryCacheByOrg.delete(organization);
@@ -71,7 +96,12 @@ async function doFetchStateMetadata(
   accessToken: string,
   organization: string
 ): Promise<StateMetadata> {
-  const empty: StateMetadata = { categories: {}, statesByProjectType: {} };
+  const empty: StateMetadata = {
+    categories: {},
+    statesByProjectType: {},
+    categoriesByProjectType: {},
+    discoveryComplete: false,
+  };
 
   // Reuse the cached project list rather than re-fetching independently
   let projects: { name: string }[] = [];
@@ -84,6 +114,7 @@ async function doFetchStateMetadata(
 
   const stateCategories: Record<string, string> = {};
   const statesByProjectType: Record<string, Record<string, Set<string>>> = {};
+  const categoriesByProjectType: Record<string, Record<string, Record<string, string>>> = {};
 
   // Fetch states from ALL projects to cover different process templates
   const projectResults = await Promise.allSettled(
@@ -99,7 +130,7 @@ async function doFetchStateMetadata(
         }
       );
 
-      if (!typesResponse.ok) return { project: project.name, types: [] };
+      if (!typesResponse.ok) return { project: project.name, types: [], complete: false };
 
       const typesData = await typesResponse.json();
       const types: { name: string }[] = typesData.value || [];
@@ -117,42 +148,56 @@ async function doFetchStateMetadata(
             }
           );
 
-          if (!statesResponse.ok) return { type: witType.name, states: [] };
+          if (!statesResponse.ok) return { type: witType.name, states: [], complete: false };
           const statesData = await statesResponse.json();
           return {
             type: witType.name,
             states: (statesData.value || []) as { name: string; category: string }[],
+            complete: true,
           };
         })
       );
 
+      const settled = stateResults.filter(
+        (
+          r
+        ): r is PromiseFulfilledResult<{
+          type: string;
+          states: { name: string; category: string }[];
+          complete: boolean;
+        }> => r.status === 'fulfilled'
+      );
+
       return {
         project: project.name,
-        types: stateResults
-          .filter(
-            (
-              r
-            ): r is PromiseFulfilledResult<{
-              type: string;
-              states: { name: string; category: string }[];
-            }> => r.status === 'fulfilled'
-          )
-          .map((r) => r.value),
+        types: settled.map((r) => r.value),
+        // A rejected request, or one that answered non-OK, leaves this
+        // project's picture incomplete.
+        complete: settled.length === stateResults.length && settled.every((r) => r.value.complete),
       };
     })
   );
 
+  let discoveryComplete = true;
   for (const result of projectResults) {
-    if (result.status !== 'fulfilled') continue;
-    const { project, types } = result.value;
+    if (result.status !== 'fulfilled') {
+      discoveryComplete = false;
+      continue;
+    }
+    const { project, types, complete } = result.value;
+    if (!complete) discoveryComplete = false;
     for (const { type, states } of types) {
       for (const state of states) {
-        // Categories stay org-wide: they only drive column *ordering*, which
-        // is a union across templates by design.
+        // Categories stay org-wide here: they only drive column *ordering*,
+        // which is a union across templates by design.
         stateCategories[state.name] = state.category;
         // Allowed states are kept per project, because a state defined only in
         // another project's process template must not unblock a column here.
         ((statesByProjectType[project] ??= {})[type] ??= new Set()).add(state.name);
+        // The category is kept per project and type too. The flat map above
+        // loses it when two types share a state name in different categories,
+        // and "is this item Removed?" has to be answered per item (#277).
+        ((categoriesByProjectType[project] ??= {})[type] ??= {})[state.name] = state.category;
       }
     }
   }
@@ -167,6 +212,8 @@ async function doFetchStateMetadata(
         ),
       ])
     ),
+    categoriesByProjectType,
+    discoveryComplete,
   };
 }
 
@@ -239,18 +286,24 @@ export async function GET(request: NextRequest) {
 
     // Step 1: Fetch state categories dynamically from DevOps (cached + deduped)
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
-    const { categories: stateCategories, statesByProjectType } = await fetchStateMetadata(
-      devopsService,
-      session.accessToken,
-      organization
-    );
+    const {
+      categories: stateCategories,
+      statesByProjectType,
+      categoriesByProjectType,
+      discoveryComplete,
+    } = await fetchStateMetadata(devopsService, session.accessToken, organization);
 
     if (Object.keys(stateCategories).length === 0) {
       return NextResponse.json({ error: 'Failed to fetch state categories' }, { status: 500 });
     }
 
     // Step 2: Fetch work items using dynamic state lists
-    const { items } = await devopsService.getStandupData(targetDate, stateCategories);
+    const { items } = await devopsService.getStandupData(
+      targetDate,
+      stateCategories,
+      categoriesByProjectType,
+      discoveryComplete
+    );
 
     // Step 2b: If currentSprintOnly, fetch current iterations and filter
     let currentIterations: Map<string, string> | null = null;
@@ -289,13 +342,14 @@ export async function GET(request: NextRequest) {
       displayColumns.map((c) => [normalizeStateName(c.name), c.name])
     );
 
-    // Map non-display states to the fallback column for their category
+    // Map non-display states to the fallback column for their category.
+    // 'Removed' is omitted because getStandupData filters those out before
+    // we get here (issue #277).
     const categoryFallback: Record<string, string> = {
       Proposed: 'New',
       InProgress: 'Active',
       Resolved: 'Resolved',
       Completed: 'Closed',
-      Removed: 'Closed',
     };
 
     // Resolve any DevOps state to one of the 6 display columns
