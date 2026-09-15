@@ -8,7 +8,7 @@
  */
 
 import { getProjectFromEmail } from '@/lib/devops';
-import { sendTicketConfirmation } from '@/lib/email';
+import { sendCustomerReplyNotification, sendTicketConfirmation } from '@/lib/email';
 import {
   escapeHtml,
   renderEmailBody,
@@ -199,7 +199,11 @@ async function handleThreadReply(
   ${appendix}
 </div>`.trim();
 
-    await devops.addComment(ticketId, commentHtml);
+    const updatedWorkItem = await devops.addComment(ticketId, commentHtml);
+
+    // Notify before linking attachments, not after: the comment is already on
+    // the ticket, so a later link failure must not cost the agent their alert.
+    notifyAgentOfReply(updatedWorkItem, ticketId, senderEmail, renderForNotification(renderedBody));
 
     if (projectName) {
       await reportUnlinkedAttachments(
@@ -209,11 +213,101 @@ async function handleThreadReply(
       );
     }
     console.log(`Added email reply to ticket #${ticketId} from ${senderEmail}`);
+
     return { success: true, action: 'comment_added', ticketId };
   } catch (error) {
     console.error(`Failed to add comment to ticket #${ticketId}:`, error);
     return { success: false, status: 500, error: 'Failed to add comment to ticket' };
   }
+}
+
+interface WorkItemFieldsResponse {
+  fields?: {
+    'System.Title'?: string;
+    'System.AssignedTo'?: { uniqueName?: string; displayName?: string } | string;
+  };
+}
+
+/**
+ * Strip inline images from a stored comment body before it is emailed to the
+ * assigned agent.
+ *
+ * The stored rendering points every inline image at its DevOps attachment URL,
+ * which needs a signed-in session. A mail client fetching one unauthenticated
+ * gets a 401 and draws a broken-image box, so the notification is *worse* for
+ * carrying them. The agent follows the ticket link to see the real thing.
+ *
+ * Regex, not a parser, to match the rest of this module's best-effort
+ * treatment of inbound markup — and the input here is already sanitised.
+ */
+export function renderForNotification(storedHtml: string): string {
+  let removed = 0;
+  const withoutImages = storedHtml.replace(/<img\b[^>]*>/gi, () => {
+    removed += 1;
+    return '';
+  });
+  if (removed === 0) return storedHtml;
+  const label = removed === 1 ? 'image' : 'images';
+  return `${withoutImages}
+<p style="color: #71717a; font-size: 13px;"><em>${removed} inline ${label} omitted — open the ticket to view.</em></p>`;
+}
+
+/**
+ * The fallback address for tickets with no assignee, or null when it must not
+ * be used.
+ *
+ * Refuses the address when it is the mailbox ZapDesk polls. Sending there means
+ * the poller ingests ZapDesk's own notification, and because the subject
+ * carries the `[ZapDesk #N]` reference it lands as a reply on the same ticket —
+ * which notifies again. Still unassigned, still the same address: an unbounded
+ * loop that also fills the ticket with its own noise.
+ *
+ * Only the polled mailbox is checked, not MAIL_FROM. Sending to the from
+ * address is odd but harmless unless that mailbox is also polled, and silently
+ * dropping notifications for a config that works is worse than allowing it.
+ *
+ * Skipping loudly rather than refusing to start is deliberate. This address is
+ * an optional fallback; failing startup over it would turn a degraded
+ * notification into an outage of the whole app.
+ */
+function supportTeamFallback(): string | null {
+  const group = (process.env.SUPPORT_TEAM_NOTIFY_EMAIL || '').trim();
+  if (!group) return null;
+  const polled = (process.env.MAIL_POLL_MAILBOX || '').trim();
+  if (polled && group.toLowerCase() === polled.toLowerCase()) {
+    console.error(
+      `[Notify] SUPPORT_TEAM_NOTIFY_EMAIL (${group}) is the mailbox ZapDesk polls — ignoring it, because notifying it would loop.`
+    );
+    return null;
+  }
+  return group;
+}
+
+function notifyAgentOfReply(
+  workItem: WorkItemFieldsResponse | null | undefined,
+  ticketId: number,
+  senderEmail: string,
+  renderedBodyHtml: string
+): void {
+  const fields = workItem?.fields ?? {};
+  const title = fields['System.Title'] || `Ticket #${ticketId}`;
+  const assigned = fields['System.AssignedTo'];
+  const assignedEmail = typeof assigned === 'object' && assigned ? assigned.uniqueName : undefined;
+  // Groups and team identities have a uniqueName like `[Project]\Team Name`
+  // which won't contain `@`. Treat anything that doesn't look like an email
+  // address as "no assignee" and fall back to the configured team address.
+  const recipient =
+    assignedEmail && assignedEmail.includes('@') ? assignedEmail : (supportTeamFallback() ?? '');
+  if (!recipient) {
+    console.log(
+      `[Notify] No agent assigned and SUPPORT_TEAM_NOTIFY_EMAIL not set — skipping notification for ticket #${ticketId}`
+    );
+    return;
+  }
+  // Fire-and-forget — must never block or fail the comment add.
+  sendCustomerReplyNotification(ticketId, title, recipient, senderEmail, renderedBodyHtml).catch(
+    () => {}
+  );
 }
 
 class AzureDevOpsServiceWithPAT {

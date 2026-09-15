@@ -3,6 +3,26 @@
  * All templates share a common card layout with branding.
  */
 
+/**
+ * Escape a plain-text value for interpolation into an HTML email.
+ *
+ * Everything these templates render is attacker-reachable: a ticket subject,
+ * a requester name and a customer address all arrive on an inbound email that
+ * anyone can send. Interpolated raw they inject markup into mail delivered to
+ * an agent — and back to the customer. Fields already carrying HTML (the
+ * `*Html` ones, produced by renderEmailBody) are deliberately not escaped.
+ */
+function escapeText(value: string): string {
+  const entities: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  };
+  return String(value ?? '').replace(/[&<>"']/g, (char) => entities[char]);
+}
+
 const APP_NAME = process.env.APP_NAME || 'ZapDesk';
 const APP_URL = process.env.APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000';
 
@@ -55,7 +75,7 @@ function statusBadge(status: string): string {
   if (lower.includes('active') || lower.includes('progress')) cls = 'badge-active';
   else if (lower.includes('resolved') || lower.includes('done')) cls = 'badge-resolved';
   else if (lower.includes('closed') || lower.includes('removed')) cls = 'badge-closed';
-  return `<span class="badge ${cls}">${status}</span>`;
+  return `<span class="badge ${cls}">${escapeText(status)}</span>`;
 }
 
 export function ticketConfirmationTemplate(opts: {
@@ -65,10 +85,10 @@ export function ticketConfirmationTemplate(opts: {
 }): string {
   const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
   return layoutWrapper(`
-    <p>Hi ${opts.requesterName || 'there'},</p>
+    <p>Hi ${escapeText(opts.requesterName || 'there')},</p>
     <div class="content">
       <p>We've received your request and created ticket <strong>#${opts.ticketId}</strong>.</p>
-      <p class="meta"><strong>Subject:</strong> ${opts.subject}</p>
+      <p class="meta"><strong>Subject:</strong> ${escapeText(opts.subject)}</p>
       <p>Our team will review your request and get back to you as soon as possible.</p>
       <p style="text-align: center; margin-top: 24px;">
         <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
@@ -97,7 +117,7 @@ function renderHistory(history: HistoryEntry[]): string {
       return `
     <div style="border-left: 3px solid #d4d4d8; padding: 8px 12px; margin: 12px 0; color: #52525b; font-size: 13px;">
       <p style="margin: 0 0 6px; color: #71717a; font-size: 12px;">
-        <strong>${h.authorName}</strong> · ${when}
+        <strong>${escapeText(h.authorName)}</strong> · ${when}
       </p>
       <div>${h.contentHtml}</div>
     </div>`;
@@ -120,7 +140,7 @@ export function agentReplyTemplate(opts: {
 }): string {
   const ticketUrl = opts.ticketUrl || `${APP_URL}/tickets/${opts.ticketId}`;
   return layoutWrapper(`
-    <p class="meta">${opts.agentName} replied to ticket <strong>#${opts.ticketId}</strong>:</p>
+    <p class="meta">${escapeText(opts.agentName)} replied to ticket <strong>#${opts.ticketId}</strong>:</p>
     <div class="content">
       ${opts.replyContent}
     </div>
@@ -128,6 +148,26 @@ export function agentReplyTemplate(opts: {
       <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
     </p>
     ${renderHistory(opts.history || [])}
+  `);
+}
+
+export function customerReplyNotificationTemplate(opts: {
+  ticketId: number;
+  ticketSubject: string;
+  customerEmail: string;
+  replyContentHtml: string;
+}): string {
+  const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
+  return layoutWrapper(`
+    <p class="meta">New customer reply on ticket <strong>#${opts.ticketId}</strong></p>
+    <p class="meta"><strong>Subject:</strong> ${escapeText(opts.ticketSubject)}</p>
+    <p class="meta"><strong>From:</strong> ${escapeText(opts.customerEmail)}</p>
+    <div class="content">
+      ${opts.replyContentHtml}
+    </div>
+    <p style="text-align: center; margin-top: 24px;">
+      <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
+    </p>
   `);
 }
 
@@ -140,13 +180,13 @@ export function statusChangeTemplate(opts: {
 }): string {
   const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
   return layoutWrapper(`
-    <p>Hi ${opts.requesterName || 'there'},</p>
+    <p>Hi ${escapeText(opts.requesterName || 'there')},</p>
     <div class="content">
       <p>The status of your ticket <strong>#${opts.ticketId}</strong> has been updated:</p>
       <p style="text-align: center; font-size: 16px;">
         ${statusBadge(opts.oldStatus)} &rarr; ${statusBadge(opts.newStatus)}
       </p>
-      <p class="meta"><strong>Subject:</strong> ${opts.subject}</p>
+      <p class="meta"><strong>Subject:</strong> ${escapeText(opts.subject)}</p>
       <p style="text-align: center; margin-top: 24px;">
         <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
       </p>
