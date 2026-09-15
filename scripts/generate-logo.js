@@ -9,9 +9,14 @@
  *
  * Usage: node scripts/generate-logo.js
  *
- * The lightning bolt is the brand mark. Its geometry is the same shape the
- * app renders in `components/common/ZapDeskIcon.tsx`, expressed once in
- * `boltPolygon` below and scaled to each asset, so the two cannot drift.
+ * The lightning bolt is the brand mark. Every asset this script writes takes
+ * its geometry from the single `BOLT_POINTS_64` definition below, scaled to
+ * size, so the generated files cannot disagree with each other.
+ *
+ * That definition is still a separate literal from the polygon the app renders
+ * in `components/common/ZapDeskIcon.tsx`: nothing in the language keeps them
+ * in step, and editing one without the other will drift. `src/lib/brand-mark.test.ts`
+ * compares them, and the committed assets, on every run.
  *
  * This script previously drew an older stylized "D". The committed logos had
  * moved to the bolt but the generator had not, so running it silently
@@ -231,7 +236,7 @@ function main() {
   console.log('\nAll logo assets generated successfully!');
   console.log('\nDesign features:');
   console.log('  - Lightning bolt, matching ZapDeskIcon in the app');
-  console.log('  - Arrow cutout on left stroke pointing into the D');
+  console.log('  - Rounded square tile behind the mark');
   console.log('  - Metallic gradient for modern depth');
   console.log('  - Brand green (#22c55e) maintained');
 }
