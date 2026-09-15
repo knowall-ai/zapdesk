@@ -1,12 +1,33 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { toast } from 'sonner';
 import { X, Copy, Check, Zap, ExternalLink, Loader2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { User } from '@/types';
 import { DEFAULT_ZAP_PRESETS } from '@/types';
 import Avatar from '../common/Avatar';
 import { lightningUri } from '@/lib/lnurl';
+
+/** Bounds for a custom zap amount, in whole sats. */
+const MIN_ZAP_SATS = 1;
+const MAX_ZAP_SATS = 1_000_000;
+
+/**
+ * Parse the free-text custom amount.
+ *
+ * The input carries min/max, but the browser only enforces those on form
+ * submission and this dialog never submits one — so "1.5" reached
+ * `parseInt` and became 1, and a value above the cap went through as typed.
+ * Whole sats within the advertised range only; anything else is 0, which
+ * every caller already treats as "nothing to send".
+ */
+function parseZapAmount(raw: string): number {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return 0;
+  const value = Number(trimmed);
+  return value >= MIN_ZAP_SATS && value <= MAX_ZAP_SATS ? value : 0;
+}
 
 interface ZapDialogProps {
   isOpen: boolean;
@@ -45,7 +66,7 @@ function ZapDialogContent({
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
 
-  const actualAmount = isCustom ? parseInt(customAmount) || 0 : selectedAmount;
+  const actualAmount = isCustom ? parseZapAmount(customAmount) : selectedAmount;
 
   // Fetch actual BOLT11 invoice from LNURL-pay endpoint
   const fetchInvoice = useCallback(async () => {
@@ -212,12 +233,23 @@ function ZapDialogContent({
 
     setZapConfirmed(true);
 
-    // Call the callback to post a comment on the ticket
+    // Persistent confirmation — the in-dialog success card disappears when
+    // the dialog auto-closes; a toast survives so the user has a clear
+    // signal that the zap landed even after the dialog is gone.
+    toast.success(`⚡ Sent ${actualAmount.toLocaleString()} sats to ${agent.displayName}`);
+
+    // Post a comment on the ticket so the zap is recorded in the activity log.
+    // If that fails, the payment itself still went through from the wallet's
+    // perspective — but surface the comment failure so the user knows it
+    // wasn't logged on the ticket and can retry / add it manually.
     if (onZapSent) {
       try {
         await onZapSent(actualAmount);
       } catch (err) {
         console.error('[ZapDialog] Failed to post zap comment:', err);
+        toast.error(
+          'Zap sent, but failed to record it on the ticket — you may want to add a comment manually.'
+        );
       }
     }
 
@@ -320,8 +352,8 @@ function ZapDialogContent({
                 }}
                 onFocus={() => setIsCustom(true)}
                 className="input flex-1"
-                min="1"
-                max="1000000"
+                min={MIN_ZAP_SATS}
+                max={MAX_ZAP_SATS}
               />
               <span
                 className="flex items-center px-3 text-sm"

@@ -34,8 +34,14 @@ import type {
 } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { ensureActiveState } from '@/types';
-import { highlightMentions } from '@/lib/mentions';
-import { formatFileSize, validateFile } from '@/lib/attachment-utils';
+import { sanitizeUserHtml, htmlToPlainText } from '@/lib/sanitize-html';
+import UserHtml from '@/components/common/UserHtml';
+import {
+  formatFileSize,
+  validateFile,
+  rewriteAttachmentUrls,
+  buildAttachmentProxyUrl,
+} from '@/lib/attachment-utils';
 import { hasTicketTag } from '@/lib/tags';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
@@ -54,6 +60,7 @@ import {
 } from '@/config/process-templates';
 import { useClickOutside } from '@/hooks';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
+import { assigneeIdentity } from '@/lib/assignee';
 
 type DetailTab = 'details' | 'history';
 
@@ -86,6 +93,14 @@ const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
   { value: 4, label: 'Low' },
 ];
 
+/**
+ * The full-page ticket view: description, fields, attachments and comments.
+ *
+ * Every field that holds Azure DevOps HTML renders through `UserHtml`. The one
+ * exception is the description editor, which is `contentEditable` and carries a
+ * `ref`, so it cannot be a component — it sets sanitised markup directly, and
+ * sanitises again on save (issue #413).
+ */
 export default function TicketDetail({
   ticket,
   comments,
@@ -483,9 +498,13 @@ export default function TicketDetail({
 
   const handleCancelEditDescription = () => {
     setIsEditingDescription(false);
-    // Reset content back to original
+    // Reset content back to original. Use the rewritten form: we are returning to
+    // the read-only view, and React skips the innerHTML update when the rewrite is
+    // a no-op (a description with no DevOps attachments).
     if (descriptionRef.current) {
-      descriptionRef.current.innerHTML = ticket.description || '';
+      descriptionRef.current.innerHTML = sanitizeUserHtml(
+        rewriteAttachmentUrls(ticket.description)
+      );
     }
   };
 
@@ -493,7 +512,11 @@ export default function TicketDetail({
     if (!onDescriptionChange || !descriptionRef.current) return;
     setIsSavingDescription(true);
     try {
-      await onDescriptionChange(descriptionRef.current.innerHTML);
+      // Sanitise on the way out as well as on the way in. A paste into a
+      // contentEditable carries whatever markup was on the clipboard, and
+      // writing that to DevOps would make ZapDesk the injection vector for
+      // every other client reading the work item.
+      await onDescriptionChange(sanitizeUserHtml(descriptionRef.current.innerHTML));
       setIsEditingDescription(false);
     } catch (error) {
       console.error('Failed to save description:', error);
@@ -553,12 +576,8 @@ export default function TicketDetail({
         const orgMatch = attachment.url?.match(/dev\.azure\.com\/([^/]+)/);
         const attachmentId = idMatch ? idMatch[1] : null;
         const org = orgMatch ? orgMatch[1] : '';
-        const params = new URLSearchParams({
-          fileName: file.name,
-          ...(org && { org }),
-        });
         const imgSrc = attachmentId
-          ? `/api/devops/attachments/${attachmentId}?${params.toString()}`
+          ? buildAttachmentProxyUrl(attachmentId, file.name, org)
           : attachment.url;
         const imgHtml = `<img src="${imgSrc}" alt="${file.name}" />`;
         setNewComment((prev) => (prev ? `${prev}\n${imgHtml}` : imgHtml));
@@ -571,9 +590,7 @@ export default function TicketDetail({
   };
 
   const handleStartEditResolution = () => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = ticket.resolution || '';
-    setEditResolution(tempDiv.textContent || tempDiv.innerText || '');
+    setEditResolution(htmlToPlainText(ticket.resolution));
     setIsEditingResolution(true);
   };
 
@@ -596,9 +613,7 @@ export default function TicketDetail({
   };
 
   const handleStartEditMitigation = () => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = ticket.mitigation || '';
-    setEditMitigation(tempDiv.textContent || tempDiv.innerText || '');
+    setEditMitigation(htmlToPlainText(ticket.mitigation));
     setIsEditingMitigation(true);
   };
 
@@ -918,8 +933,20 @@ export default function TicketDetail({
                         }
                       : {}),
                   }}
+                  // The one place a raw sink survives: this element is
+                  // contentEditable and carries a ref, so it cannot be a
+                  // <UserHtml>. The value is sanitised the same way.
                   dangerouslySetInnerHTML={{
-                    __html: ticket.description || '',
+                    // While editing, the DOM is the source of truth for the save
+                    // (handleSaveDescription reads innerHTML back), so it must hold the
+                    // original DevOps URLs — otherwise an unrelated edit would persist
+                    // our relative /api/devops/attachments/... proxy URLs to DevOps,
+                    // where they are meaningless. Rewrite only for read-only display.
+                    __html: sanitizeUserHtml(
+                      isEditingDescription
+                        ? ticket.description || ''
+                        : rewriteAttachmentUrls(ticket.description)
+                    ),
                   }}
                 />
               ) : (
@@ -936,10 +963,10 @@ export default function TicketDetail({
                   >
                     System Info
                   </h4>
-                  <div
+                  <UserHtml
                     className="prose prose-sm prose-invert user-content max-w-none"
                     style={{ color: 'var(--text-secondary)' }}
-                    dangerouslySetInnerHTML={{ __html: ticket.systemInfo }}
+                    html={ticket.systemInfo}
                   />
                 </div>
               )}
@@ -954,10 +981,10 @@ export default function TicketDetail({
                 >
                   Reproduction Steps
                 </h3>
-                <div
+                <UserHtml
                   className="prose prose-sm prose-invert user-content max-w-none"
                   style={{ color: 'var(--text-secondary)' }}
-                  dangerouslySetInnerHTML={{ __html: ticket.reproSteps }}
+                  html={ticket.reproSteps}
                 />
               </div>
             )}
@@ -1018,10 +1045,10 @@ export default function TicketDetail({
                     autoFocus
                   />
                 ) : ticket.resolution ? (
-                  <div
+                  <UserHtml
                     className="prose prose-sm prose-invert user-content max-w-none"
                     style={{ color: 'var(--text-secondary)' }}
-                    dangerouslySetInnerHTML={{ __html: ticket.resolution }}
+                    html={ticket.resolution}
                   />
                 ) : (
                   <button
@@ -1218,12 +1245,11 @@ export default function TicketDetail({
                               {format(comment.createdAt, 'dd MMM yyyy, HH:mm')}
                             </span>
                           </div>
-                          <div
+                          <UserHtml
                             className="user-content text-sm"
                             style={{ color: 'var(--text-secondary)' }}
-                            dangerouslySetInnerHTML={{
-                              __html: highlightMentions(comment.content),
-                            }}
+                            html={comment.content}
+                            mentions
                           />
                         </div>
                       </div>
@@ -1502,7 +1528,7 @@ export default function TicketDetail({
                       filteredMembers.map((member) => (
                         <button
                           key={member.id}
-                          onClick={() => handleAssigneeSelect(member.email || member.id)}
+                          onClick={() => handleAssigneeSelect(assigneeIdentity(member))}
                           className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
                           style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
                         >

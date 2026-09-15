@@ -19,6 +19,11 @@ export async function POST(request: NextRequest) {
       from: payload.from,
       subject: payload.subject,
       body: payload.body,
+      // Forward the body type. Omitting it defaulted every webhook body to the
+      // text path, so an HTML sender's markup was escaped into a <pre> block —
+      // and its cid: image references were never rewritten, so pasted
+      // screenshots showed as broken images.
+      bodyType: payload.bodyType,
       attachments: payload.attachments,
     });
 

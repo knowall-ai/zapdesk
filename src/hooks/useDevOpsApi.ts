@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
+import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 
 interface FetchOptions extends Omit<RequestInit, 'headers'> {
   headers?: Record<string, string>;
@@ -13,6 +14,7 @@ interface FetchOptions extends Omit<RequestInit, 'headers'> {
  */
 export function useDevOpsApi() {
   const { selectedOrganization } = useOrganization();
+  const { refresh: refreshCounts } = useTicketCounts();
 
   /**
    * Fetch wrapper that automatically adds the x-devops-org header
@@ -34,12 +36,24 @@ export function useDevOpsApi() {
         'x-devops-org': selectedOrganization.accountName,
       };
 
-      return fetch(url, {
+      const response = await fetch(url, {
         ...options,
         headers,
       });
+
+      // Any successful write can move a ticket between sidebar buckets — or
+      // remove it from all of them — so the counts are invalidated here rather
+      // than at each call site, where the next one added would forget (#404).
+      // Refreshes are coalesced by the provider, so a bulk action still costs
+      // one recount. A comment or attachment write triggers a redundant one;
+      // that is cheaper than the class of staleness bugs the alternative
+      // invites.
+      const method = (options.method || 'GET').toUpperCase();
+      if (method !== 'GET' && response.ok) refreshCounts();
+
+      return response;
     },
-    [selectedOrganization]
+    [selectedOrganization, refreshCounts]
   );
 
   /**
