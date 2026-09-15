@@ -1,6 +1,7 @@
 'use client';
 
 import { AlertTriangle } from 'lucide-react';
+import { templateSupportIssueUrl } from '@/lib/github';
 
 interface UnsupportedTemplateWarningProps {
   templateName: string;
@@ -8,11 +9,11 @@ interface UnsupportedTemplateWarningProps {
 }
 
 /**
- * Displays a warning when a project uses a process template that is not yet supported.
+ * Displays a warning when a project uses a process template that is not yet
+ * supported, with a link to ask for it.
  *
- * TODO: Add link to request template support once GitHub integration is implemented.
- * See src/lib/github.ts for planned approach using OAuth to discover user's repos.
- * Tracking issue: #186
+ * The link builds its URL through `@/lib/github` rather than spelling it out,
+ * so the repository stays configurable and in one place (#186).
  */
 export function UnsupportedTemplateWarning({
   templateName,
@@ -37,7 +38,15 @@ export function UnsupportedTemplateWarning({
             {templateName}&rdquo; process template which is not yet supported in ZapDesk. Some
             features like ticket creation may not work correctly.
           </p>
-          {/* TODO: Re-enable once GitHub integration is implemented (see #186) */}
+          <a
+            href={templateSupportIssueUrl(templateName)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-block text-sm hover:underline"
+            style={{ color: 'var(--primary)' }}
+          >
+            Request support for this template &rarr;
+          </a>
         </div>
       </div>
     </div>
