@@ -14,20 +14,32 @@ import type { TeamMember, TeamMemberStatus, Ticket } from '@/types';
 const STALE_TICKET_DAYS = 3;
 
 /**
- * Read a positive integer from the environment, falling back when it is unset
- * or unparseable.
+ * Read a non-negative integer from the environment, falling back when it is
+ * unset or not one.
  *
- * Exported for the sake of its own tests: a malformed threshold silently
- * becoming `NaN` would make every comparison false, quietly marking the whole
- * team "On Track".
+ * The whole string must be an integer. `parseInt` stops at the first
+ * non-digit, so `"2abc"` used to yield 2 and `"1.5"` yielded 1 -- a typo
+ * silently became a threshold nobody chose.
+ *
+ * Negatives are rejected outright. Ticket counts are never below zero, so a
+ * negative threshold makes every `>` comparison true and reports the entire
+ * team as "Needs Attention".
+ *
+ * There is deliberately no upper cap: an implausibly large threshold is a
+ * legitimate way to switch an escalation band off, and is visible in the
+ * config rather than silent.
  */
 export function getIntEnv(envName: string, defaultValue: number): number {
-  const raw = process.env[envName];
-  if (raw === undefined || raw === null || raw.trim() === '') {
+  const raw = process.env[envName]?.trim();
+  if (!raw) return defaultValue;
+  if (!/^\d+$/.test(raw)) {
+    console.warn(
+      `[Team] ${envName} must be a non-negative integer (got "${raw}") -- using ${defaultValue}.`
+    );
     return defaultValue;
   }
-  const parsed = parseInt(raw, 10);
-  return Number.isNaN(parsed) ? defaultValue : parsed;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) ? parsed : defaultValue;
 }
 
 /** Workload thresholds, all overridable per deployment. */
@@ -144,6 +156,18 @@ export function calculateNeedsAttention(
  */
 export function isInternalUser(email: string, internalDomain: string): boolean {
   if (!email || !internalDomain) return false;
-  const memberDomain = email.includes('@') ? email.split('@')[1].toLowerCase() : '';
-  return memberDomain === internalDomain.toLowerCase();
+
+  // Exactly one `@`, with something either side. Splitting on the first `@`
+  // and trusting the remainder let `@knowall.ai` through with an empty local
+  // part, and read `user@knowall.ai@evil.example` as belonging to knowall.ai.
+  const at = email.indexOf('@');
+  if (at <= 0 || at !== email.lastIndexOf('@')) return false;
+
+  const memberDomain = email
+    .slice(at + 1)
+    .trim()
+    .toLowerCase();
+  if (!memberDomain) return false;
+
+  return memberDomain === internalDomain.trim().toLowerCase();
 }

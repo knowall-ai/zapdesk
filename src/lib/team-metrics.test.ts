@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   calculateAvgResolutionTime,
   calculateAvgResponseTime,
@@ -32,6 +32,7 @@ afterEach(() => {
     if (was === undefined) delete process.env[v];
     else process.env[v] = was;
   }
+  vi.restoreAllMocks();
 });
 
 const hour = 1000 * 60 * 60;
@@ -62,6 +63,30 @@ describe('getIntEnv', () => {
   it('accepts zero as a real value, not a missing one', () => {
     process.env.TEAM_THRESHOLD_BEHIND_PENDING = '0';
     expect(getIntEnv('TEAM_THRESHOLD_BEHIND_PENDING', 2)).toBe(0);
+  });
+
+  // parseInt stops at the first non-digit, so these used to yield 2 and 1 --
+  // a typo silently becoming a threshold nobody chose.
+  it('rejects a value that is only partly a number', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const bad of ['2abc', '1.5', '2 3', '0x10', '1e3', '+4']) {
+      process.env.TEAM_THRESHOLD_BEHIND_PENDING = bad;
+      expect(getIntEnv('TEAM_THRESHOLD_BEHIND_PENDING', 2), bad).toBe(2);
+    }
+    expect(warn).toHaveBeenCalled();
+  });
+
+  // Ticket counts are never below zero, so a negative threshold makes every
+  // comparison true and reports the whole team as Needs Attention.
+  it('rejects a negative threshold', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    process.env.TEAM_THRESHOLD_BEHIND_PENDING = '-1';
+    expect(getIntEnv('TEAM_THRESHOLD_BEHIND_PENDING', 2)).toBe(2);
+  });
+
+  it('tolerates surrounding whitespace on a valid value', () => {
+    process.env.TEAM_THRESHOLD_BEHIND_PENDING = '  7  ';
+    expect(getIntEnv('TEAM_THRESHOLD_BEHIND_PENDING', 2)).toBe(7);
   });
 });
 
@@ -239,5 +264,24 @@ describe('isInternalUser', () => {
     expect(isInternalUser('', 'knowall.ai')).toBe(false);
     expect(isInternalUser('ben@knowall.ai', '')).toBe(false);
     expect(isInternalUser('not-an-email', 'knowall.ai')).toBe(false);
+  });
+
+  // Splitting on the first `@` and trusting the remainder let both of these
+  // count as colleagues, putting malformed external records on the team list.
+  it('rejects an address with no local part', () => {
+    expect(isInternalUser('@knowall.ai', 'knowall.ai')).toBe(false);
+  });
+
+  it('rejects an address carrying a second @', () => {
+    expect(isInternalUser('user@knowall.ai@evil.example', 'knowall.ai')).toBe(false);
+    expect(isInternalUser('user@evil.example@knowall.ai', 'knowall.ai')).toBe(false);
+  });
+
+  it('rejects an address with no domain part', () => {
+    expect(isInternalUser('ben@', 'knowall.ai')).toBe(false);
+  });
+
+  it('tolerates surrounding whitespace', () => {
+    expect(isInternalUser('ben@ knowall.ai ', ' knowall.ai ')).toBe(true);
   });
 });
