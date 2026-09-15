@@ -9,27 +9,73 @@
 
 import { getProjectFromEmail } from '@/lib/devops';
 import { sendCustomerReplyNotification, sendTicketConfirmation } from '@/lib/email';
-import { escapeHtml, renderEmailBody } from '@/lib/email-clean';
+import {
+  escapeHtml,
+  renderEmailBody,
+  renderEmailBodyHtml,
+  rewriteCidReferences,
+} from '@/lib/email-clean';
 
 const TICKET_REF_REGEX = /\[ZapDesk #(\d+)\]/;
+
+/**
+ * Deadline on every DevOps call made while ingesting an email.
+ *
+ * Ingestion runs unattended off the poller, so a request that never returns
+ * stalls the whole inbox rather than failing one message. Uploads get longer
+ * than the metadata calls because a large attachment is legitimately slow.
+ */
+const DEVOPS_TIMEOUT_MS = 30_000;
+const DEVOPS_UPLOAD_TIMEOUT_MS = 60_000;
+
+export interface IngestEmailAttachment {
+  filename: string;
+  contentType: string;
+  /** Base64 file contents. Required for file attachments; absent for reference-only / item attachments. */
+  content?: string;
+  /** Microsoft Graph contentId — used to rewrite `cid:` refs in HTML body. */
+  contentId?: string;
+  /** True if the mail client flagged this as inline (pasted screenshot, signature image). */
+  isInline?: boolean;
+  /** OneDrive / SharePoint link surfaced when the file isn't embedded. */
+  referenceUrl?: string;
+  /** Subject of a forwarded `.eml` (item attachment) — surfaced as a note. */
+  itemSubject?: string;
+  /**
+   * The attachment exists on the message but could not be retrieved — Graph
+   * gave neither contents, a download URL, nor a link. Recorded rather than
+   * skipped so the ticket says a file was attached: the message is marked read
+   * regardless, so dropping it silently loses the file with no trace.
+   */
+  unavailable?: boolean;
+}
 
 export interface IngestableEmail {
   /** Raw `From` value — `Name <user@domain>` or bare `user@domain`. */
   from: string;
   subject: string;
   /**
-   * Plain-text body of the message. Passed through `renderEmailBody`, which
-   * strips signatures, HTML-escapes the content, and wraps it in a `<pre>`
-   * block — raw HTML in this field is escaped, not preserved.
+   * Body of the message. When `bodyType` is `'text'` (the default) the body
+   * is HTML-escaped and wrapped in a `<pre>` block for safe rendering. When
+   * `'html'` it is sanitised, signature-stripped, and `cid:` references are
+   * rewritten to point at the uploaded DevOps attachments.
    */
   body: string;
-  attachments?: Array<{ filename: string; contentType: string; content: string }>;
+  bodyType?: 'html' | 'text';
+  attachments?: IngestEmailAttachment[];
 }
 
 export type IngestResult =
   | { success: true; action: 'ticket_created'; ticketId: number; project: string }
   | { success: true; action: 'comment_added'; ticketId: number }
   | { success: false; status: number; error: string };
+
+interface UploadedAttachment {
+  filename: string;
+  url: string;
+  contentId?: string;
+  isInline: boolean;
+}
 
 export async function ingestEmail(email: IngestableEmail): Promise<IngestResult> {
   if (!email.from || !email.subject) {
@@ -51,7 +97,7 @@ export async function ingestEmail(email: IngestableEmail): Promise<IngestResult>
   const ticketMatch = email.subject.match(TICKET_REF_REGEX);
   if (ticketMatch) {
     const ticketId = parseInt(ticketMatch[1], 10);
-    return handleThreadReply(encodedPat, ticketId, senderEmail, email.body);
+    return handleThreadReply(encodedPat, ticketId, senderEmail, email);
   }
   return handleNewTicket(encodedPat, senderEmail, email);
 }
@@ -70,25 +116,46 @@ async function handleNewTicket(
   const devops = new AzureDevOpsServiceWithPAT(encodedPat);
   const priority = determinePriority(email.subject);
 
+  // Upload binary attachments first so we have URLs for cid: rewriting and
+  // can include the inline images in the description body. Failures are
+  // logged but never block ticket creation — the customer gets the ticket
+  // either way and we keep enough metadata to investigate.
+  const { uploaded, referenceLinks, itemNotes, failures } = await uploadAttachmentBlobs(
+    devops,
+    projectName,
+    email.attachments,
+    null
+  );
+
+  const description = formatEmailBody(
+    email,
+    senderEmail,
+    uploaded,
+    referenceLinks,
+    itemNotes,
+    failures
+  );
+
   const workItem = await devops.createTicket(
     projectName,
     email.subject,
-    formatEmailBody(email.body, senderEmail),
+    description,
     senderEmail,
     priority
   );
   const ticketId = workItem.id;
   console.log(`Created ticket #${ticketId} from email: ${senderEmail}`);
 
-  if (email.attachments?.length) {
-    for (const attachment of email.attachments) {
-      try {
-        await devops.uploadAttachment(projectName, ticketId, attachment);
-      } catch (err) {
-        console.error(`Failed to upload attachment ${attachment.filename}:`, err);
-      }
-    }
+  // Re-log any earlier upload failures with the ticket id now that we have it.
+  for (const f of failures) {
+    console.error(`[Ingest] ticket #${ticketId} attachment failed (${f.filename}):`, f.error);
   }
+
+  await reportUnlinkedAttachments(
+    devops,
+    ticketId,
+    await linkUploadedAttachments(devops, ticketId, uploaded)
+  );
 
   // Fire-and-forget — never block ticket creation on email send.
   sendTicketConfirmation(ticketId, email.subject, senderEmail).catch(() => {});
@@ -100,22 +167,52 @@ async function handleThreadReply(
   encodedPat: string,
   ticketId: number,
   senderEmail: string,
-  body: string
+  email: IngestableEmail
 ): Promise<IngestResult> {
   const devops = new AzureDevOpsServiceWithPAT(encodedPat);
   try {
-    const renderedBody = renderEmailBody(body);
+    const projectName = await devops.getProjectForWorkItem(ticketId);
+
+    const { uploaded, referenceLinks, itemNotes, failures } = await uploadAttachmentBlobs(
+      devops,
+      projectName,
+      email.attachments,
+      ticketId
+    );
+    for (const f of failures) {
+      console.error(`[Ingest] ticket #${ticketId} attachment failed (${f.filename}):`, f.error);
+    }
+
+    const renderedBody = renderEmailBodyForStorage(email, uploaded);
+    const appendix = buildAppendixHtml(
+      uploaded,
+      referenceLinks,
+      itemNotes,
+      failures,
+      splicedInlineCids(renderedBody, uploaded)
+    );
     const commentHtml = `
 <div style="font-family: sans-serif;">
   <p><strong>Email reply from:</strong> ${escapeHtml(senderEmail)}</p>
   <hr/>
   ${renderedBody}
+  ${appendix}
 </div>`.trim();
 
     const updatedWorkItem = await devops.addComment(ticketId, commentHtml);
-    console.log(`Added email reply to ticket #${ticketId} from ${senderEmail}`);
 
-    notifyAgentOfReply(updatedWorkItem, ticketId, senderEmail, renderedBody);
+    // Notify before linking attachments, not after: the comment is already on
+    // the ticket, so a later link failure must not cost the agent their alert.
+    notifyAgentOfReply(updatedWorkItem, ticketId, senderEmail, renderForNotification(renderedBody));
+
+    if (projectName) {
+      await reportUnlinkedAttachments(
+        devops,
+        ticketId,
+        await linkUploadedAttachments(devops, ticketId, uploaded)
+      );
+    }
+    console.log(`Added email reply to ticket #${ticketId} from ${senderEmail}`);
 
     return { success: true, action: 'comment_added', ticketId };
   } catch (error) {
@@ -129,6 +226,30 @@ interface WorkItemFieldsResponse {
     'System.Title'?: string;
     'System.AssignedTo'?: { uniqueName?: string; displayName?: string } | string;
   };
+}
+
+/**
+ * Strip inline images from a stored comment body before it is emailed to the
+ * assigned agent.
+ *
+ * The stored rendering points every inline image at its DevOps attachment URL,
+ * which needs a signed-in session. A mail client fetching one unauthenticated
+ * gets a 401 and draws a broken-image box, so the notification is *worse* for
+ * carrying them. The agent follows the ticket link to see the real thing.
+ *
+ * Regex, not a parser, to match the rest of this module's best-effort
+ * treatment of inbound markup — and the input here is already sanitised.
+ */
+export function renderForNotification(storedHtml: string): string {
+  let removed = 0;
+  const withoutImages = storedHtml.replace(/<img\b[^>]*>/gi, () => {
+    removed += 1;
+    return '';
+  });
+  if (removed === 0) return storedHtml;
+  const label = removed === 1 ? 'image' : 'images';
+  return `${withoutImages}
+<p style="color: #71717a; font-size: 13px;"><em>${removed} inline ${label} omitted — open the ticket to view.</em></p>`;
 }
 
 function notifyAgentOfReply(
@@ -209,6 +330,7 @@ class AzureDevOpsServiceWithPAT {
         method: 'POST',
         headers: { ...this.headers, 'Content-Type': 'application/json-patch+json' },
         body: JSON.stringify(patchDocument),
+        signal: AbortSignal.timeout(DEVOPS_TIMEOUT_MS),
       }
     );
     if (!response.ok) {
@@ -226,6 +348,7 @@ class AzureDevOpsServiceWithPAT {
         method: 'PATCH',
         headers: { ...this.headers, 'Content-Type': 'application/json-patch+json' },
         body: JSON.stringify(patchDocument),
+        signal: AbortSignal.timeout(DEVOPS_TIMEOUT_MS),
       }
     );
     if (!response.ok) {
@@ -235,11 +358,11 @@ class AzureDevOpsServiceWithPAT {
     return response.json();
   }
 
-  async uploadAttachment(
+  /** Upload a single file blob and return the attachment URL — does NOT link it. */
+  async uploadAttachmentBlob(
     projectName: string,
-    workItemId: number,
     attachment: { filename: string; contentType: string; content: string }
-  ) {
+  ): Promise<string> {
     const buffer = Buffer.from(attachment.content, 'base64');
     const uploadResponse = await fetch(
       `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/attachments?fileName=${encodeURIComponent(attachment.filename)}&api-version=7.0`,
@@ -250,22 +373,28 @@ class AzureDevOpsServiceWithPAT {
           'Content-Type': 'application/octet-stream',
         },
         body: buffer,
+        signal: AbortSignal.timeout(DEVOPS_UPLOAD_TIMEOUT_MS),
       }
     );
     if (!uploadResponse.ok) {
-      throw new Error(`Failed to upload attachment: ${uploadResponse.statusText}`);
+      throw new Error(
+        `Failed to upload attachment: ${uploadResponse.status} ${uploadResponse.statusText}`
+      );
     }
     const uploadData = await uploadResponse.json();
-    const attachmentUrl = uploadData.url;
+    return uploadData.url as string;
+  }
 
+  /** Attach an already-uploaded blob to a work item by URL. */
+  async linkAttachment(workItemId: number, url: string, filename: string): Promise<void> {
     const patchDocument = [
       {
         op: 'add',
         path: '/relations/-',
         value: {
           rel: 'AttachedFile',
-          url: attachmentUrl,
-          attributes: { comment: `Email attachment: ${attachment.filename}` },
+          url,
+          attributes: { comment: `Email attachment: ${filename}` },
         },
       },
     ];
@@ -275,12 +404,312 @@ class AzureDevOpsServiceWithPAT {
         method: 'PATCH',
         headers: { ...this.headers, 'Content-Type': 'application/json-patch+json' },
         body: JSON.stringify(patchDocument),
+        signal: AbortSignal.timeout(DEVOPS_TIMEOUT_MS),
       }
     );
     if (!linkResponse.ok) {
       throw new Error(`Failed to link attachment: ${linkResponse.statusText}`);
     }
   }
+
+  /** Resolve the project name for a work item — needed for the thread-reply attachment path. */
+  async getProjectForWorkItem(workItemId: number): Promise<string | null> {
+    const res = await fetch(
+      `${this.baseUrl}/_apis/wit/workitems/${workItemId}?fields=System.TeamProject&api-version=7.0`,
+      { headers: this.headers, signal: AbortSignal.timeout(DEVOPS_TIMEOUT_MS) }
+    );
+    if (!res.ok) {
+      console.warn(
+        `[Ingest] could not resolve project for work item ${workItemId}: ${res.status} ${res.statusText}`
+      );
+      return null;
+    }
+    const data = await res.json();
+    return data.fields?.['System.TeamProject'] || null;
+  }
+}
+
+/**
+ * An attachment that could not be uploaded.
+ *
+ * `hasFallbackLink` records whether *this* attachment also produced a
+ * reference link. The appendix used to work that out by matching filenames
+ * against the link list, which quietly broke on the most common case there is:
+ * two attachments named `image001.png`, where a link belonging to one hid the
+ * failure of the other.
+ */
+export interface UploadFailure {
+  filename: string;
+  error: unknown;
+  hasFallbackLink: boolean;
+}
+
+interface UploadGroup {
+  uploaded: UploadedAttachment[];
+  referenceLinks: Array<{ filename: string; url: string }>;
+  itemNotes: Array<{ subject: string }>;
+  failures: UploadFailure[];
+}
+
+async function uploadAttachmentBlobs(
+  devops: AzureDevOpsServiceWithPAT,
+  projectName: string | null,
+  attachments: IngestEmailAttachment[] | undefined,
+  workItemIdForLogging: number | null
+): Promise<UploadGroup> {
+  const out: UploadGroup = { uploaded: [], referenceLinks: [], itemNotes: [], failures: [] };
+  if (!attachments?.length) return out;
+
+  for (const a of attachments) {
+    // Graph gave us nothing to work with — no contents, no download URL, no
+    // link. Nothing can be uploaded, but the file was on the email, so it is
+    // recorded as a failure rather than skipped: the appendix then names it,
+    // which is the difference between an agent knowing a file is missing and
+    // believing the customer never sent one.
+    if (a.unavailable) {
+      out.failures.push({
+        filename: a.filename,
+        error: 'Attachment could not be retrieved from the mail server',
+        hasFallbackLink: false,
+      });
+      continue;
+    }
+    if (a.itemSubject && !a.content) {
+      out.itemNotes.push({ subject: a.itemSubject });
+      continue;
+    }
+    if (a.content) {
+      if (!projectName) {
+        // The reply path resolves the project from the work item and returns
+        // null on any non-OK response, so this is reachable in normal
+        // operation. There is nowhere to upload to, but the file must not
+        // disappear silently: surface the source link where we have one, and
+        // record the failure so the appendix can say what is missing.
+        if (a.referenceUrl) {
+          out.referenceLinks.push({ filename: a.filename, url: a.referenceUrl });
+        }
+        out.failures.push({
+          filename: a.filename,
+          error: 'No project resolved for upload',
+          hasFallbackLink: Boolean(a.referenceUrl),
+        });
+        continue;
+      }
+      try {
+        const url = await devops.uploadAttachmentBlob(projectName, {
+          filename: a.filename,
+          contentType: a.contentType,
+          content: a.content,
+        });
+        out.uploaded.push({
+          filename: a.filename,
+          url,
+          contentId: a.contentId,
+          isInline: Boolean(a.isInline),
+        });
+      } catch (err) {
+        const idTag = workItemIdForLogging ? ` ticket #${workItemIdForLogging}` : '';
+        console.error(`[Ingest] upload failed for ${a.filename}${idTag}:`, err);
+        out.failures.push({
+          filename: a.filename,
+          error: err,
+          hasFallbackLink: Boolean(a.referenceUrl),
+        });
+        if (a.referenceUrl) {
+          out.referenceLinks.push({ filename: a.filename, url: a.referenceUrl });
+        }
+      }
+      continue;
+    }
+    if (a.referenceUrl) {
+      out.referenceLinks.push({ filename: a.filename, url: a.referenceUrl });
+    }
+  }
+  return out;
+}
+
+/**
+ * Attach the uploaded blobs to the work item, and say so on the ticket when
+ * that fails.
+ *
+ * A failure here leaves the file uploaded to DevOps but linked to nothing: it
+ * exists at a URL nobody will ever visit. Previously the catch only logged, so
+ * ingestion reported success, the poller marked the message read, and the
+ * attachment was gone with no trace on the ticket.
+ *
+ * The fix is deliberately not to throw. Both callers run *after* the ticket or
+ * comment has been written, so propagating would return failure for work that
+ * partly succeeded — the message would stay unread and the next poll would
+ * create a second ticket for the same email. A duplicate ticket is a worse
+ * outcome than an unlinked file. So the failures are returned, and the caller
+ * records them on the ticket where someone will see them.
+ */
+async function linkUploadedAttachments(
+  devops: AzureDevOpsServiceWithPAT,
+  ticketId: number,
+  uploaded: UploadedAttachment[]
+): Promise<UploadedAttachment[]> {
+  const unlinked: UploadedAttachment[] = [];
+  for (const u of uploaded) {
+    try {
+      await devops.linkAttachment(ticketId, u.url, u.filename);
+    } catch (err) {
+      console.error(
+        `[Ingest] failed to link attachment ${u.filename} to ticket #${ticketId}:`,
+        err
+      );
+      unlinked.push(u);
+    }
+  }
+  return unlinked;
+}
+
+/**
+ * Tell the ticket about files that were uploaded but could not be attached.
+ *
+ * Best-effort by nature: if this comment cannot be posted either, there is
+ * nowhere left to report it and the log is the last word.
+ */
+async function reportUnlinkedAttachments(
+  devops: AzureDevOpsServiceWithPAT,
+  ticketId: number,
+  unlinked: UploadedAttachment[]
+): Promise<void> {
+  if (unlinked.length === 0) return;
+  const items = unlinked
+    .map((u) => `<li><a href="${escapeHtml(u.url)}">${escapeHtml(u.filename)}</a></li>`)
+    .join('');
+  try {
+    await devops.addComment(
+      ticketId,
+      `<div style="font-family: sans-serif;"><p><strong>Attachment warning:</strong> ` +
+        `${unlinked.length} file(s) from this email were uploaded but could not be attached ` +
+        `to this work item. They remain reachable at these URLs:</p><ul>${items}</ul></div>`
+    );
+  } catch (err) {
+    console.error(
+      `[Ingest] could not report ${unlinked.length} unlinked attachment(s) on ticket #${ticketId}:`,
+      err
+    );
+  }
+}
+
+function buildCidMap(
+  uploaded: UploadedAttachment[]
+): Map<string, { url: string; filename: string }> {
+  const map = new Map<string, { url: string; filename: string }>();
+  for (const u of uploaded) {
+    if (!u.contentId) continue;
+    map.set(u.contentId, { url: u.url, filename: u.filename });
+    map.set(u.contentId.toLowerCase(), { url: u.url, filename: u.filename });
+  }
+  return map;
+}
+
+function renderEmailBodyForStorage(email: IngestableEmail, uploaded: UploadedAttachment[]): string {
+  if (email.bodyType === 'html') {
+    const cidMap = buildCidMap(uploaded);
+    const rewritten = rewriteCidReferences(email.body, cidMap);
+    return renderEmailBodyHtml(rewritten);
+  }
+  return renderEmailBody(email.body);
+}
+
+/**
+ * The content ids that actually ended up inline in the *rendered* body.
+ *
+ * Read from the rendered output rather than the incoming body, because the two
+ * can disagree. This used to scan `email.body` for `cid:` references and treat
+ * every match as spliced, which the appendix then skipped as already visible.
+ * But `renderEmailBodyHtml` truncates long bodies, so a message of ~50,000
+ * characters followed by `<img src="cid:shot">` lost the image from the body
+ * *and* had it excluded from the appendix — the screenshot appeared nowhere on
+ * the ticket.
+ *
+ * Testing for the uploaded URL is what makes this exact: splicing rewrites
+ * `cid:` to that URL, so its presence in the final HTML is direct evidence the
+ * image survived. It also falls out correctly for a plain-text body, which
+ * rewrites nothing and so splices nothing, whatever content ids the
+ * attachments carry.
+ */
+/** Exported for tests alongside `buildAppendixHtml`. */
+export function splicedInlineCids(
+  renderedBody: string,
+  uploaded: UploadedAttachment[]
+): Set<string> {
+  const spliced = new Set<string>();
+  for (const u of uploaded) {
+    const cid = u.contentId?.toLowerCase();
+    if (cid && u.url && renderedBody.includes(u.url)) spliced.add(cid);
+  }
+  return spliced;
+}
+
+/**
+ * Exported for tests: it encodes the rule that nothing on an email may
+ * disappear from the rendered ticket without being accounted for.
+ */
+export function buildAppendixHtml(
+  uploaded: UploadedAttachment[],
+  referenceLinks: Array<{ filename: string; url: string }>,
+  itemNotes: Array<{ subject: string }>,
+  failures: UploadFailure[],
+  splicedCids: Set<string>
+): string {
+  const parts: string[] = [];
+
+  // Inline images the body actually referenced via cid: are already rewritten
+  // in place, so don't duplicate them. Everything else inline needs showing
+  // here or it is invisible to the reader.
+  //
+  // The test is what was spliced, not whether a contentId exists. Keying on
+  // the id alone hid two real cases: a plain-text body, which splices nothing
+  // and left every inline image unrendered, and an HTML body carrying a
+  // contentId it never referenced.
+  const orphanInline = uploaded.filter(
+    (u) => u.isInline && !(u.contentId && splicedCids.has(u.contentId.toLowerCase()))
+  );
+  if (orphanInline.length) {
+    const items = orphanInline
+      .map(
+        (u) =>
+          `<li><img src="${escapeHtml(u.url)}" alt="${escapeHtml(u.filename)}" style="max-width: 600px;" /></li>`
+      )
+      .join('');
+    parts.push(`<p><strong>Inline images:</strong></p><ul>${items}</ul>`);
+  }
+
+  if (referenceLinks.length) {
+    const items = referenceLinks
+      .map(
+        (r) =>
+          `<li><a href="${escapeHtml(r.url)}" rel="noopener noreferrer">${escapeHtml(r.filename)}</a></li>`
+      )
+      .join('');
+    parts.push(`<p><strong>Cloud attachments:</strong></p><ul>${items}</ul>`);
+  }
+
+  if (itemNotes.length) {
+    const items = itemNotes
+      .map((n) => `<li>Forwarded message: ${escapeHtml(n.subject)} (not extracted)</li>`)
+      .join('');
+    parts.push(`<p><strong>Forwarded messages:</strong></p><ul>${items}</ul>`);
+  }
+
+  // Name what could not be attached. An agent seeing "3 attachments" in the
+  // customer's email and nothing in the ticket has no way to tell whether the
+  // customer forgot or ZapDesk dropped them — and the file is not linked to
+  // the work item either, so there is nowhere else to look.
+  const unattached = failures.filter((f) => !f.hasFallbackLink);
+  if (unattached.length) {
+    const items = unattached.map((f) => `<li>${escapeHtml(f.filename)}</li>`).join('');
+    parts.push(
+      `<p><strong>Attachments that could not be added:</strong></p><ul>${items}</ul>` +
+        `<p><em>These were on the email but could not be uploaded. Ask the sender to resend them if they are needed.</em></p>`
+    );
+  }
+
+  return parts.length ? `<hr/>${parts.join('')}` : '';
 }
 
 function extractEmail(from: string): string | null {
@@ -298,12 +727,28 @@ function determinePriority(subject: string): number {
   return 3;
 }
 
-function formatEmailBody(body: string, senderEmail: string): string {
+function formatEmailBody(
+  email: IngestableEmail,
+  senderEmail: string,
+  uploaded: UploadedAttachment[],
+  referenceLinks: Array<{ filename: string; url: string }>,
+  itemNotes: Array<{ subject: string }>,
+  failures: UploadFailure[]
+): string {
+  const renderedBody = renderEmailBodyForStorage(email, uploaded);
+  const appendix = buildAppendixHtml(
+    uploaded,
+    referenceLinks,
+    itemNotes,
+    failures,
+    splicedInlineCids(renderedBody, uploaded)
+  );
   return `
 <div style="font-family: sans-serif;">
   <p><strong>From:</strong> ${escapeHtml(senderEmail)}</p>
   <hr/>
-  ${renderEmailBody(body)}
+  ${renderedBody}
+  ${appendix}
 </div>
   `.trim();
 }

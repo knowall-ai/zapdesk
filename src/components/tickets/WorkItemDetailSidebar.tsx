@@ -18,6 +18,7 @@ import type { WorkItemActions } from '@/hooks/useWorkItemActions';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
 import { useClickOutside } from '@/hooks';
+import { assigneeIdentity } from '@/lib/assignee';
 import { useCallback, useState } from 'react';
 
 interface WorkItemDetailSidebarProps {
@@ -213,7 +214,7 @@ export default function WorkItemDetailSidebar({
                 actions.filteredMembers.map((member) => (
                   <button
                     key={member.id}
-                    onClick={() => actions.handleAssigneeSelect(member.email || member.id)}
+                    onClick={() => actions.handleAssigneeSelect(assigneeIdentity(member))}
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
                     style={{
                       color: 'var(--text-primary)',

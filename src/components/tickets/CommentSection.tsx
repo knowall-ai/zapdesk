@@ -4,7 +4,9 @@ import { useState } from 'react';
 import { format } from 'date-fns';
 import { Send, Zap, Paperclip, Loader2 } from 'lucide-react';
 import Avatar from '@/components/common/Avatar';
+import UserHtml from '@/components/common/UserHtml';
 import MentionInput from '@/components/common/MentionInput';
+import { buildAttachmentProxyUrl } from '@/lib/attachment-utils';
 import type { TicketComment, User, Attachment } from '@/types';
 
 interface CommentSectionProps {
@@ -20,6 +22,12 @@ interface CommentSectionProps {
   isTicket?: boolean;
 }
 
+/**
+ * The comment thread on a ticket or work item, plus the composer beneath it.
+ *
+ * Comment bodies are Azure DevOps HTML and render through `UserHtml`, which
+ * sanitises them and highlights `@mentions` (issue #413).
+ */
 export default function CommentSection({
   comments,
   isLoading = false,
@@ -84,12 +92,8 @@ export default function CommentSection({
         const orgMatch = attachment.url?.match(/dev\.azure\.com\/([^/]+)/);
         const attachmentId = idMatch ? idMatch[1] : null;
         const org = orgMatch ? orgMatch[1] : '';
-        const params = new URLSearchParams({
-          fileName: namedFile.name,
-          ...(org && { org }),
-        });
         const imgSrc = attachmentId
-          ? `/api/devops/attachments/${attachmentId}?${params.toString()}`
+          ? buildAttachmentProxyUrl(attachmentId, namedFile.name, org)
           : attachment.url;
         const imgHtml = `<img src="${imgSrc}" alt="${namedFile.name}" />`;
         setNewComment((prev) => (prev ? `${prev}\n${imgHtml}` : imgHtml));
@@ -155,10 +159,11 @@ export default function CommentSection({
                       {format(comment.createdAt, 'dd MMM yyyy, HH:mm')}
                     </span>
                   </div>
-                  <div
+                  <UserHtml
                     className={`user-content ${compact ? 'prose prose-sm prose-invert max-w-none text-sm' : 'text-sm'}`}
                     style={{ color: 'var(--text-secondary)' }}
-                    dangerouslySetInnerHTML={{ __html: comment.content }}
+                    html={comment.content}
+                    mentions
                   />
                 </div>
               </div>

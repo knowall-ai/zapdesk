@@ -142,13 +142,17 @@ export function useWorkItemActions({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStateDropdownOpen]);
 
-  // Fetch team members when assignee dropdown opens
+  // Fetch team members when assignee dropdown opens.
+  // Use devOpsGet (not bare fetch) so the x-devops-org header is included —
+  // otherwise the route falls back to the default org and lists the wrong
+  // people, and any assignee picked from that list is an identity DevOps
+  // can't resolve in the *actual* selected org (silent no-op on PATCH).
   useEffect(() => {
     if (isAssigneeDropdownOpen && teamMembers.length === 0 && project) {
       const fetchMembers = async () => {
         setIsLoadingMembers(true);
         try {
-          const response = await fetch(
+          const response = await devOpsGet(
             `/api/devops/projects/${encodeURIComponent(project)}/members`
           );
           if (response.ok) {
@@ -248,10 +252,12 @@ export function useWorkItemActions({
     async (memberId: string | null) => {
       if (!onAssigneeChange) return;
       setIsUpdatingAssignee(true);
+      // Close the dropdown regardless of success/failure so the parent's
+      // toast feedback is the user-visible signal, not a stuck dropdown.
+      setIsAssigneeDropdownOpen(false);
+      setAssigneeSearch('');
       try {
         await onAssigneeChange(memberId);
-        setIsAssigneeDropdownOpen(false);
-        setAssigneeSearch('');
       } finally {
         setIsUpdatingAssignee(false);
       }
