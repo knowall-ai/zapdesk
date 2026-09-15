@@ -20,8 +20,8 @@ const DEFAULT_REPO_URL = 'https://github.com/knowall-ai/zapdesk';
  * would let a bad deployment value turn every one of these links into a
  * `javascript:` payload. Anything else is ignored in favour of the default.
  *
- * Trailing slashes and a `.git` suffix are tolerated, since both are what you
- * get from copying a clone URL out of GitHub.
+ * Trailing slashes and a `.git` suffix are tolerated in any combination, since
+ * both are what you get from copying a clone URL out of GitHub.
  */
 export function githubRepoUrl(): string {
   const configured = (process.env.NEXT_PUBLIC_GITHUB_REPO_URL || '').trim();
@@ -44,7 +44,12 @@ export function githubRepoUrl(): string {
     return DEFAULT_REPO_URL;
   }
 
-  return configured.replace(/\.git$/, '').replace(/\/+$/, '');
+  // Slashes first: `.../repo.git/` would otherwise keep its `.git`, because
+  // the suffix only matches at the very end of the string.
+  return configured
+    .replace(/\/+$/, '')
+    .replace(/\.git$/, '')
+    .replace(/\/+$/, '');
 }
 
 /** Fields GitHub's new-issue form accepts as query parameters. */

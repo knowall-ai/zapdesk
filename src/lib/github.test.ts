@@ -1,10 +1,20 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { githubRepoUrl, newIssueUrl, templateSupportIssueUrl } from './github';
 
 const DEFAULT = 'https://github.com/knowall-ai/zapdesk';
 
-afterEach(() => {
+// Save and restore rather than just deleting: a developer with this set in
+// their shell would otherwise see the unset-case tests fail here and have the
+// variable silently removed from the rest of the run.
+const original = process.env.NEXT_PUBLIC_GITHUB_REPO_URL;
+
+beforeEach(() => {
   delete process.env.NEXT_PUBLIC_GITHUB_REPO_URL;
+});
+
+afterEach(() => {
+  if (original === undefined) delete process.env.NEXT_PUBLIC_GITHUB_REPO_URL;
+  else process.env.NEXT_PUBLIC_GITHUB_REPO_URL = original;
   vi.restoreAllMocks();
 });
 
@@ -19,10 +29,18 @@ describe('githubRepoUrl', () => {
   });
 
   it('tolerates the trailing slash and .git you get from a clone URL', () => {
-    process.env.NEXT_PUBLIC_GITHUB_REPO_URL = 'https://github.com/acme/helpdesk.git';
-    expect(githubRepoUrl()).toBe('https://github.com/acme/helpdesk');
-    process.env.NEXT_PUBLIC_GITHUB_REPO_URL = 'https://github.com/acme/helpdesk///';
-    expect(githubRepoUrl()).toBe('https://github.com/acme/helpdesk');
+    const expected = 'https://github.com/acme/helpdesk';
+    for (const configured of [
+      'https://github.com/acme/helpdesk.git',
+      'https://github.com/acme/helpdesk///',
+      // Both at once. Stripping `.git` first leaves it in place, because the
+      // suffix only matches at the end of the string.
+      'https://github.com/acme/helpdesk.git/',
+      'https://github.com/acme/helpdesk.git///',
+    ]) {
+      process.env.NEXT_PUBLIC_GITHUB_REPO_URL = configured;
+      expect(githubRepoUrl(), configured).toBe(expected);
+    }
   });
 
   it('treats blank and whitespace-only values as unset', () => {
