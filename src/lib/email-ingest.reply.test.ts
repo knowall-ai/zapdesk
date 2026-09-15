@@ -113,3 +113,75 @@ describe('merge point: a customer reply still notifies the assigned agent', () =
     expect(emailed).toContain('1 inline image omitted');
   });
 });
+
+describe('unassigned tickets fall back to the support team, but never into a loop', () => {
+  const unassigned = () =>
+    ingestEmail({
+      from: 'cust@example.com',
+      subject: 'Re: [ZapDesk #7145] Printer on fire',
+      body: 'Any update?',
+    });
+
+  beforeEach(() => {
+    seen.length = 0;
+    process.env.AZURE_DEVOPS_PAT = 'test-pat';
+    process.env.AZURE_DEVOPS_ORG = 'KnowAll';
+    h.sendCustomerReplyNotification.mockClear();
+    // The PATCH response drives the assignee; hand back a ticket with none.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        seen.push({ url, init });
+        if ((init?.method ?? 'GET').toUpperCase() === 'PATCH') {
+          return json({ fields: { 'System.Title': 'Printer on fire' } });
+        }
+        if (url.includes('fields=System.TeamProject')) {
+          return json({ fields: { 'System.TeamProject': 'Support' } });
+        }
+        return json({});
+      })
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.SUPPORT_TEAM_NOTIFY_EMAIL;
+    delete process.env.MAIL_POLL_MAILBOX;
+  });
+
+  it('notifies the support team when it is a different address', async () => {
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support-team@knowall.ai';
+    process.env.MAIL_POLL_MAILBOX = 'support@knowall.ai';
+    await unassigned();
+    expect(h.sendCustomerReplyNotification).toHaveBeenCalledTimes(1);
+    const args = h.sendCustomerReplyNotification.mock.calls[0] as unknown as unknown[];
+    expect(args[2]).toBe('support-team@knowall.ai');
+  });
+
+  // The loop: ZapDesk mails the mailbox it polls, the poller ingests its own
+  // notification, the `[ZapDesk #N]` subject files it as a reply on the same
+  // still-unassigned ticket, and it notifies again. Unbounded.
+  it('refuses to notify the mailbox it polls', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support@knowall.ai';
+    process.env.MAIL_POLL_MAILBOX = 'support@knowall.ai';
+    await unassigned();
+    expect(h.sendCustomerReplyNotification).not.toHaveBeenCalled();
+    expect(err).toHaveBeenCalledWith(expect.stringContaining('would loop'));
+    err.mockRestore();
+  });
+
+  it('compares the two case- and whitespace-insensitively', async () => {
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = '  Support@KnowAll.ai ';
+    process.env.MAIL_POLL_MAILBOX = 'support@knowall.ai';
+    await unassigned();
+    expect(h.sendCustomerReplyNotification).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing when no fallback is configured', async () => {
+    process.env.MAIL_POLL_MAILBOX = 'support@knowall.ai';
+    await unassigned();
+    expect(h.sendCustomerReplyNotification).not.toHaveBeenCalled();
+  });
+});

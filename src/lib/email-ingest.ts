@@ -252,6 +252,37 @@ export function renderForNotification(storedHtml: string): string {
 <p style="color: #71717a; font-size: 13px;"><em>${removed} inline ${label} omitted — open the ticket to view.</em></p>`;
 }
 
+/**
+ * The fallback address for tickets with no assignee, or null when it must not
+ * be used.
+ *
+ * Refuses the address when it is the mailbox ZapDesk polls. Sending there means
+ * the poller ingests ZapDesk's own notification, and because the subject
+ * carries the `[ZapDesk #N]` reference it lands as a reply on the same ticket —
+ * which notifies again. Still unassigned, still the same address: an unbounded
+ * loop that also fills the ticket with its own noise.
+ *
+ * Only the polled mailbox is checked, not MAIL_FROM. Sending to the from
+ * address is odd but harmless unless that mailbox is also polled, and silently
+ * dropping notifications for a config that works is worse than allowing it.
+ *
+ * Skipping loudly rather than refusing to start is deliberate. This address is
+ * an optional fallback; failing startup over it would turn a degraded
+ * notification into an outage of the whole app.
+ */
+function supportTeamFallback(): string | null {
+  const group = (process.env.SUPPORT_TEAM_NOTIFY_EMAIL || '').trim();
+  if (!group) return null;
+  const polled = (process.env.MAIL_POLL_MAILBOX || '').trim();
+  if (polled && group.toLowerCase() === polled.toLowerCase()) {
+    console.error(
+      `[Notify] SUPPORT_TEAM_NOTIFY_EMAIL (${group}) is the mailbox ZapDesk polls — ignoring it, because notifying it would loop.`
+    );
+    return null;
+  }
+  return group;
+}
+
 function notifyAgentOfReply(
   workItem: WorkItemFieldsResponse | null | undefined,
   ticketId: number,
@@ -266,9 +297,7 @@ function notifyAgentOfReply(
   // which won't contain `@`. Treat anything that doesn't look like an email
   // address as "no assignee" and fall back to the configured team address.
   const recipient =
-    assignedEmail && assignedEmail.includes('@')
-      ? assignedEmail
-      : process.env.SUPPORT_TEAM_NOTIFY_EMAIL || '';
+    assignedEmail && assignedEmail.includes('@') ? assignedEmail : (supportTeamFallback() ?? '');
   if (!recipient) {
     console.log(
       `[Notify] No agent assigned and SUPPORT_TEAM_NOTIFY_EMAIL not set — skipping notification for ticket #${ticketId}`
