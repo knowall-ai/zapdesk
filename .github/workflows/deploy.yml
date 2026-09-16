@@ -92,12 +92,14 @@ jobs:
               {"name": "AZURE_DEVOPS_ORG", "value": "KnowAll"},
               {"name": "AZURE_DEVOPS_PAT", "value": "${{ secrets.AZURE_DEVOPS_PAT }}"},
               {"name": "EMAIL_WEBHOOK_SECRET", "value": "${{ secrets.EMAIL_WEBHOOK_SECRET }}"},
-              {"name": "SMTP_HOST", "value": "smtp.office365.com"},
-              {"name": "SMTP_PORT", "value": "587"},
-              {"name": "SMTP_USER", "value": "zapdesk@knowall.ai"},
-              {"name": "SMTP_PASSWORD", "value": "${{ secrets.SMTP_PASSWORD }}"},
-              {"name": "SMTP_FROM", "value": "zapdesk@knowall.ai"},
-              {"name": "SMTP_FROM_NAME", "value": "ZapDesk Support"}
+              {"name": "APP_URL", "value": "https://zapdesk.knowall.ai"},
+              {"name": "MAIL_FROM", "value": "${{ secrets.MAIL_POLL_MAILBOX }}"},
+              {"name": "MAIL_FROM_NAME", "value": "ZapDesk Support"},
+              {"name": "MAIL_POLL_MAILBOX", "value": "${{ secrets.MAIL_POLL_MAILBOX }}"},
+              {"name": "MAIL_TENANT_ID", "value": "${{ secrets.MAIL_TENANT_ID }}"},
+              {"name": "MAIL_CLIENT_ID", "value": "${{ secrets.MAIL_CLIENT_ID }}"},
+              {"name": "MAIL_CLIENT_SECRET", "value": "${{ secrets.MAIL_CLIENT_SECRET }}"},
+              {"name": "SUPPORT_TEAM_NOTIFY_EMAIL", "value": "${{ secrets.SUPPORT_TEAM_NOTIFY_EMAIL }}"}
             ]
 
   notify:
