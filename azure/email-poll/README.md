@@ -47,9 +47,10 @@ trigger stays too small to hide a bug.
 fail 100 runs in a row. `readConfig` fails loudly and names it, because in
 Azure there is no red ✗ — only a trace nobody reads unless an alert fires.
 
-**NCRONTAB takes six fields, not five.** The leading field is seconds, so
-cron's `*/5 * * * *` becomes `0 */5 * * * *`. A five-field value here is a
-silent misconfiguration, not an error.
+**NCRONTAB's sixth field is optional second-level precision.** Six fields put
+seconds first, so cron's `*/5 * * * *` may be written `0 */5 * * * *`; the
+five-field form is accepted too and runs at second 0. Verified against Core
+Tools 4.12.1 — a five-field expression loads and fires on the minute.
 
 ## Running it locally
 
