@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -31,6 +31,17 @@ export default function NewTicketPage() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [workItemTypes, setWorkItemTypes] = useState<WorkItemType[]>([]);
+  // Monotonic id of the most recent work-item-type request.
+  //
+  // Switching project twice in quick succession fires two fetches, and nothing
+  // guarantees they resolve in order. When the first project's response lands
+  // last it overwrites the second project's type list and selected type, so the
+  // form ends up showing project B with project A's type -- and by then
+  // isLoadingTypes is false and workItemType is non-empty, so Submit is enabled
+  // and the ticket is filed against B with a type B may not even have.
+  const typesRequestId = useRef(0);
+  /** Same guard for required-field discovery — see fetchRequiredFields. */
+  const fieldsRequestId = useRef(0);
   const [isLoadingTypes, setIsLoadingTypes] = useState(false);
   const [requiredFields, setRequiredFields] = useState<
     { referenceName: string; name: string; type: string; allowedValues?: string[] }[]
@@ -49,7 +60,7 @@ export default function NewTicketPage() {
     priority: 3,
     assignee: '',
     tags: '',
-    workItemType: 'Task',
+    workItemType: '',
     iterationPath: '',
     areaPath: '',
   });
@@ -92,13 +103,22 @@ export default function NewTicketPage() {
 
   const fetchWorkItemTypes = useCallback(
     async (projectName: string) => {
+      const requestId = ++typesRequestId.current;
       setIsLoadingTypes(true);
+      // Drop the previous project's type up front. Leaving it set means a
+      // failed or empty response leaves the form holding a type the new
+      // project may not have -- and fetchRequiredFields is keyed on it, so the
+      // required fields would be fetched for the wrong type too.
+      setForm((prev) => ({ ...prev, workItemType: '' }));
       try {
         const response = await get(
           `/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`
         );
         if (!response.ok) throw new Error('Failed to fetch work item types');
         const data = await response.json();
+        // A newer project was picked while this was in flight — its response is
+        // the one that matters, so drop this one rather than clobbering it.
+        if (requestId !== typesRequestId.current) return;
         const types: WorkItemType[] = data.types || [];
         setWorkItemTypes(types);
         if (types.length > 0) {
@@ -106,10 +126,14 @@ export default function NewTicketPage() {
           setForm((prev) => ({ ...prev, workItemType: taskType?.name || types[0].name }));
         }
       } catch (err) {
+        if (requestId !== typesRequestId.current) return;
         console.error('Failed to fetch work item types:', err);
         setWorkItemTypes([]);
       } finally {
-        setIsLoadingTypes(false);
+        // Only the newest request may clear the spinner. A superseded one
+        // finishing first would otherwise re-enable Submit while the list the
+        // user is actually waiting for is still loading.
+        if (requestId === typesRequestId.current) setIsLoadingTypes(false);
       }
     },
     [get]
@@ -117,6 +141,12 @@ export default function NewTicketPage() {
 
   const fetchRequiredFields = useCallback(
     async (projectName: string, workItemType: string) => {
+      // Same ordering guard as the type list, and for the same reason: this
+      // fires on every project *and* type change, so two requests are easily
+      // in flight at once. A late response would otherwise install the wrong
+      // project's required fields and wipe whatever the user had typed into
+      // the current ones.
+      const requestId = ++fieldsRequestId.current;
       setIsLoadingRequiredFields(true);
       try {
         const response = await get(
@@ -124,14 +154,18 @@ export default function NewTicketPage() {
         );
         if (!response.ok) throw new Error('Failed to fetch required fields');
         const data = await response.json();
+        if (requestId !== fieldsRequestId.current) return;
         setRequiredFields(data.fields || []);
         setAdditionalFieldValues({});
       } catch (err) {
+        if (requestId !== fieldsRequestId.current) return;
         console.error('Failed to fetch required fields:', err);
         setRequiredFields([]);
         setAdditionalFieldValues({});
       } finally {
-        setIsLoadingRequiredFields(false);
+        // Only the newest request clears the flag — a superseded one finishing
+        // first would re-enable Submit while the real fields are still coming.
+        if (requestId === fieldsRequestId.current) setIsLoadingRequiredFields(false);
       }
     },
     [get]
@@ -221,6 +255,18 @@ export default function NewTicketPage() {
     e.preventDefault();
     if (!form.project || !form.subject.trim() || !form.iterationPath || !form.areaPath) {
       setError('Please fill in all required fields: Project, Subject, Iteration, and Area');
+      return;
+    }
+    // Asserted here as well as on the button. The disabled attribute is a
+    // hint, not a guarantee — a keyboard submit, an autofill, or a form
+    // submitted while a fetch is still in flight all reach this handler, and
+    // creating the ticket mid-discovery omits fields the project mandates.
+    if (isLoadingTypes || isLoadingRequiredFields) {
+      setError('Still loading this project’s fields — try again in a moment.');
+      return;
+    }
+    if (!form.workItemType) {
+      setError('Please choose a work item type.');
       return;
     }
 
@@ -369,6 +415,15 @@ export default function NewTicketPage() {
                 isSubmitting ||
                 !form.project ||
                 !form.subject.trim() ||
+                isLoadingTypes ||
+                !form.workItemType ||
+                // Required-field discovery is keyed on the work item type, so
+                // it can only start once types have loaded. In that window
+                // isLoadingTypes is already false while requiredFields still
+                // holds the previous type's set (or none at all), so the check
+                // below passes vacuously and the ticket is created without the
+                // mandatory fields — failing server-side.
+                isLoadingRequiredFields ||
                 !form.iterationPath ||
                 !form.areaPath ||
                 requiredFields.some(
@@ -411,6 +466,7 @@ export default function NewTicketPage() {
                     ...prev,
                     project: e.target.value,
                     assignee: '',
+                    workItemType: '',
                     iterationPath: '',
                     areaPath: '',
                   }))
@@ -428,76 +484,42 @@ export default function NewTicketPage() {
             )}
           </div>
 
-          {/* Area */}
-          <div>
-            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-              Area *
-            </label>
-            {isLoadingAreas ? (
-              <div
-                className="flex items-center gap-2 text-sm"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                <Loader2 className="animate-spin" size={14} />
-                Loading...
-              </div>
-            ) : (
-              <select
-                value={form.areaPath}
-                onChange={(e) => setForm((prev) => ({ ...prev, areaPath: e.target.value }))}
-                className="input w-full"
-                disabled={!form.project || areas.length === 0}
-                required
-              >
-                <option value="">Select area...</option>
-                {areas.map((node) => (
-                  <option key={node.id} value={node.path}>
-                    {node.path}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          {/* Iteration */}
-          <div>
-            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-              Iteration *
-            </label>
-            {isLoadingIterations ? (
-              <div
-                className="flex items-center gap-2 text-sm"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                <Loader2 className="animate-spin" size={14} />
-                Loading...
-              </div>
-            ) : (
-              <select
-                value={form.iterationPath}
-                onChange={(e) => setForm((prev) => ({ ...prev, iterationPath: e.target.value }))}
-                className="input w-full"
-                disabled={!form.project || iterations.length === 0}
-                required
-              >
-                <option value="">Select iteration...</option>
-                {iterations.map((node) => (
-                  <option key={node.id} value={node.path}>
-                    {node.path}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          {/* Work Item Type - fixed to Task */}
+          {/* Work Item Type */}
           <div>
             <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
               Type
             </label>
-            <select className="input w-full" disabled>
-              <option>Task</option>
-            </select>
+            {isLoadingTypes ? (
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 className="animate-spin" size={14} />
+                Loading...
+              </div>
+            ) : (
+              <select
+                value={form.workItemType}
+                onChange={(e) => setForm((prev) => ({ ...prev, workItemType: e.target.value }))}
+                className="input w-full"
+                disabled={!form.project || workItemTypes.length === 0}
+              >
+                {/* No hardcoded "Task" fallback. Offering a type that is not in
+                    the fetched list is how the form came to submit a type the
+                    project does not have. */}
+                <option value="">Select type...</option>
+                {workItemTypes.map((type) => (
+                  <option key={type.name} value={type.name}>
+                    {type.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {!isLoadingTypes && form.project && workItemTypes.length === 0 && (
+              <p className="mt-1 text-xs" style={{ color: 'var(--priority-urgent)' }}>
+                Could not load work item types for this project. Reselect the project to try again.
+              </p>
+            )}
           </div>
 
           {/* Assignee */}
@@ -575,12 +597,12 @@ export default function NewTicketPage() {
             </select>
           </div>
 
-          {/* Work Item Type */}
+          {/* Area */}
           <div>
             <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-              Type
+              Area *
             </label>
-            {isLoadingTypes ? (
+            {isLoadingAreas ? (
               <div
                 className="flex items-center gap-2 text-sm"
                 style={{ color: 'var(--text-muted)' }}
@@ -590,20 +612,49 @@ export default function NewTicketPage() {
               </div>
             ) : (
               <select
-                value={form.workItemType}
-                onChange={(e) => setForm((prev) => ({ ...prev, workItemType: e.target.value }))}
+                value={form.areaPath}
+                onChange={(e) => setForm((prev) => ({ ...prev, areaPath: e.target.value }))}
                 className="input w-full"
-                disabled={!form.project || workItemTypes.length === 0}
+                disabled={!form.project || areas.length === 0}
+                required
               >
-                {workItemTypes.length === 0 ? (
-                  <option value="Task">Task</option>
-                ) : (
-                  workItemTypes.map((type) => (
-                    <option key={type.name} value={type.name}>
-                      {type.name}
-                    </option>
-                  ))
-                )}
+                <option value="">Select area...</option>
+                {areas.map((node) => (
+                  <option key={node.id} value={node.path}>
+                    {node.path}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Iteration */}
+          <div>
+            <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
+              Iteration *
+            </label>
+            {isLoadingIterations ? (
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 className="animate-spin" size={14} />
+                Loading...
+              </div>
+            ) : (
+              <select
+                value={form.iterationPath}
+                onChange={(e) => setForm((prev) => ({ ...prev, iterationPath: e.target.value }))}
+                className="input w-full"
+                disabled={!form.project || iterations.length === 0}
+                required
+              >
+                <option value="">Select iteration...</option>
+                {iterations.map((node) => (
+                  <option key={node.id} value={node.path}>
+                    {node.path}
+                  </option>
+                ))}
               </select>
             )}
           </div>
