@@ -4,8 +4,9 @@ import { drainMailbox, readConfig } from '../poll';
 /**
  * Timer trigger replacing the `Poll support mailbox` GitHub Action.
  *
- * The schedule is NCRONTAB, which takes six fields rather than cron's five —
- * the leading one is seconds. `0 * * * * *` is every minute, which GitHub's
+ * The schedule is NCRONTAB. Six fields gives second-level precision, with the
+ * leading field the seconds; a five-field cron expression is also accepted and
+ * treated as second 0. Either way `0 * * * * *` is every minute, which GitHub's
  * scheduler could not offer: its floor is five minutes on every plan, and
  * scheduled runs are best-effort and routinely late under load.
  */
