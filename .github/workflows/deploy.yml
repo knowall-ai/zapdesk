@@ -1,16 +1,19 @@
 name: Deploy to Azure App Service
 
 # Deployment-specific values come from repository variables (Settings ->
-# Secrets and variables -> Actions -> Variables), not secrets: neither is
+# Secrets and variables -> Actions -> Variables), not secrets: none is
 # sensitive, and variables stay readable once set.
 #
-#   APP_URL         canonical site URL, e.g. https://zapdesk.knowall.ai
-#   MAIL_FROM_NAME  display name on outbound mail, e.g. "KnowAll AI Support"
+#   APP_URL            canonical site URL, e.g. https://zapdesk.knowall.ai
+#   MAIL_FROM_NAME     display name on outbound mail, e.g. "KnowAll AI Support"
+#   AZURE_WEBAPP_NAME  App Service to deploy to, e.g. zapdesk-knowallai
+#   AZURE_DEVOPS_ORG   Azure DevOps organisation, e.g. KnowAll
 #
-# Neither has a default. The deploy checks both are set and stops if either
+# None has a default. The deploy checks all four are set and stops if any
 # is missing, because a default that silently disagrees with reality is a
-# misconfiguration nobody can see -- and it would leave the production URL
-# hardcoded in this file, which is what the variables exist to remove.
+# misconfiguration nobody can see -- and it would leave production values
+# hardcoded in this file, which is what the variables exist to remove. No
+# deployment-specific value is written into this workflow any more.
 
 on:
   # Deploy when a release tag is created (e.g., v1.0.0)
@@ -21,7 +24,7 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: zapdesk-knowallai
+  AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
   BUN_VERSION: '1.2'
 
 jobs:
@@ -38,10 +41,14 @@ jobs:
         env:
           APP_URL: ${{ vars.APP_URL }}
           MAIL_FROM_NAME: ${{ vars.MAIL_FROM_NAME }}
+          AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+          AZURE_DEVOPS_ORG: ${{ vars.AZURE_DEVOPS_ORG }}
         run: |
           missing=""
           [ -n "$APP_URL" ] || missing="$missing APP_URL"
           [ -n "$MAIL_FROM_NAME" ] || missing="$missing MAIL_FROM_NAME"
+          [ -n "$AZURE_WEBAPP_NAME" ] || missing="$missing AZURE_WEBAPP_NAME"
+          [ -n "$AZURE_DEVOPS_ORG" ] || missing="$missing AZURE_DEVOPS_ORG"
           if [ -n "$missing" ]; then
             echo "::error::Missing repository variables:$missing"
             echo "Set them at Settings > Secrets and variables > Actions > Variables"
@@ -120,7 +127,7 @@ jobs:
               {"name": "AZURE_AD_CLIENT_ID", "value": "${{ secrets.AZURE_AD_CLIENT_ID }}"},
               {"name": "AZURE_AD_CLIENT_SECRET", "value": "${{ secrets.AZURE_AD_CLIENT_SECRET }}"},
               {"name": "AZURE_AD_TENANT_ID", "value": "${{ secrets.AZURE_AD_TENANT_ID }}"},
-              {"name": "AZURE_DEVOPS_ORG", "value": "KnowAll"},
+              {"name": "AZURE_DEVOPS_ORG", "value": "${{ vars.AZURE_DEVOPS_ORG }}"},
               {"name": "AZURE_DEVOPS_PAT", "value": "${{ secrets.AZURE_DEVOPS_PAT }}"},
               {"name": "EMAIL_WEBHOOK_SECRET", "value": "${{ secrets.EMAIL_WEBHOOK_SECRET }}"},
               {"name": "APP_URL", "value": "${{ vars.APP_URL }}"},
