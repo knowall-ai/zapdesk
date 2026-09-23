@@ -7,9 +7,10 @@ name: Deploy to Azure App Service
 #   APP_URL         canonical site URL, e.g. https://zapdesk.knowall.ai
 #   MAIL_FROM_NAME  display name on outbound mail, e.g. "KnowAll AI Support"
 #
-# Both fall back to the KnowAll production values when unset, so a fork that
-# sets neither still deploys exactly as before rather than writing empty
-# settings into App Service and breaking every link in outbound email.
+# Neither has a default. The deploy checks both are set and stops if either
+# is missing, because a default that silently disagrees with reality is a
+# misconfiguration nobody can see -- and it would leave the production URL
+# hardcoded in this file, which is what the variables exist to remove.
 
 on:
   # Deploy when a release tag is created (e.g., v1.0.0)
@@ -28,6 +29,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check required configuration
+        # No fallback defaults: a default that silently disagrees with reality is
+        # a misconfiguration you cannot see. Fail here, naming what is missing,
+        # rather than deploying an empty APP_URL and breaking every link in
+        # outbound mail. Values go through env rather than being interpolated
+        # into the script, so a variable's contents can never become shell.
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          MAIL_FROM_NAME: ${{ vars.MAIL_FROM_NAME }}
+        run: |
+          missing=""
+          [ -n "$APP_URL" ] || missing="$missing APP_URL"
+          [ -n "$MAIL_FROM_NAME" ] || missing="$missing MAIL_FROM_NAME"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository variables:$missing"
+            echo "Set them at Settings > Secrets and variables > Actions > Variables"
+            exit 1
+          fi
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -45,8 +65,8 @@ jobs:
           # Build-time environment variables (non-sensitive)
           NEXT_TELEMETRY_DISABLED: 1
           # Runtime config (public)
-          NEXTAUTH_URL: ${{ vars.APP_URL || 'https://zapdesk.knowall.ai' }}
-          APP_URL: ${{ vars.APP_URL || 'https://zapdesk.knowall.ai' }}
+          NEXTAUTH_URL: ${{ vars.APP_URL }}
+          APP_URL: ${{ vars.APP_URL }}
 
       - name: Prepare standalone deployment
         run: |
@@ -68,7 +88,7 @@ jobs:
     needs: build
     environment:
       name: production
-      url: ${{ vars.APP_URL || 'https://zapdesk.knowall.ai' }}
+      url: ${{ vars.APP_URL }}
 
     steps:
       - name: Download artifact
@@ -95,7 +115,7 @@ jobs:
           mask-inputs: true
           app-settings-json: |
             [
-              {"name": "NEXTAUTH_URL", "value": "${{ vars.APP_URL || 'https://zapdesk.knowall.ai' }}"},
+              {"name": "NEXTAUTH_URL", "value": "${{ vars.APP_URL }}"},
               {"name": "NEXTAUTH_SECRET", "value": "${{ secrets.NEXTAUTH_SECRET }}"},
               {"name": "AZURE_AD_CLIENT_ID", "value": "${{ secrets.AZURE_AD_CLIENT_ID }}"},
               {"name": "AZURE_AD_CLIENT_SECRET", "value": "${{ secrets.AZURE_AD_CLIENT_SECRET }}"},
@@ -103,9 +123,9 @@ jobs:
               {"name": "AZURE_DEVOPS_ORG", "value": "KnowAll"},
               {"name": "AZURE_DEVOPS_PAT", "value": "${{ secrets.AZURE_DEVOPS_PAT }}"},
               {"name": "EMAIL_WEBHOOK_SECRET", "value": "${{ secrets.EMAIL_WEBHOOK_SECRET }}"},
-              {"name": "APP_URL", "value": "${{ vars.APP_URL || 'https://zapdesk.knowall.ai' }}"},
+              {"name": "APP_URL", "value": "${{ vars.APP_URL }}"},
               {"name": "MAIL_FROM", "value": "${{ secrets.MAIL_POLL_MAILBOX }}"},
-              {"name": "MAIL_FROM_NAME", "value": "${{ vars.MAIL_FROM_NAME || 'ZapDesk Support' }}"},
+              {"name": "MAIL_FROM_NAME", "value": "${{ vars.MAIL_FROM_NAME }}"},
               {"name": "MAIL_POLL_MAILBOX", "value": "${{ secrets.MAIL_POLL_MAILBOX }}"},
               {"name": "MAIL_TENANT_ID", "value": "${{ secrets.MAIL_TENANT_ID }}"},
               {"name": "MAIL_CLIENT_ID", "value": "${{ secrets.MAIL_CLIENT_ID }}"},
@@ -121,7 +141,7 @@ jobs:
     steps:
       - name: Notify on success
         if: ${{ needs.deploy.result == 'success' }}
-        run: echo "Deployment to ${{ vars.APP_URL || 'https://zapdesk.knowall.ai' }} completed successfully!"
+        run: echo "Deployment to ${{ vars.APP_URL }} completed successfully!"
 
       - name: Notify on failure
         if: ${{ needs.deploy.result == 'failure' }}
