@@ -26,11 +26,11 @@ jobs:
     steps:
       - name: Drain support mailbox
         env:
-          BASE_URL: ${{ secrets.ZAPDESK_BASE_URL }}
+          BASE_URL: ${{ vars.APP_URL }}
           SECRET: ${{ secrets.EMAIL_WEBHOOK_SECRET }}
         run: |
           if [ -z "$BASE_URL" ] || [ -z "$SECRET" ]; then
-            echo "::error::ZAPDESK_BASE_URL and EMAIL_WEBHOOK_SECRET secrets must be configured."
+            echo "::error::The APP_URL variable and EMAIL_WEBHOOK_SECRET secret must be configured."
             exit 1
           fi
           response=$(curl -fsSL -X POST "${BASE_URL%/}/api/email/poll" \
