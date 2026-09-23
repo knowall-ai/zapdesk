@@ -141,7 +141,9 @@ jobs:
     steps:
       - name: Notify on success
         if: ${{ needs.deploy.result == 'success' }}
-        run: echo "Deployment to ${{ vars.APP_URL }} completed successfully!"
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: echo "Deployment to $APP_URL completed successfully!"
 
       - name: Notify on failure
         if: ${{ needs.deploy.result == 'failure' }}
