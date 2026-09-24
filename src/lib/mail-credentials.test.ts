@@ -134,6 +134,51 @@ describe('verifyMailCredentials', () => {
     expect(JSON.stringify(result)).not.toContain(creds.clientSecret);
   });
 
+  // Entra ID is not observed to echo the secret back, but the message is
+  // upstream text that leaves the process in an API response.
+  it('strips the client secret out of an upstream diagnostic', async () => {
+    const fetchImpl = vi.fn(async () =>
+      aadError(`AADSTS50000: Token request failed for secret ${creds.clientSecret} here.`)
+    );
+    const result = await verifyMailCredentials(creds, fetchImpl as unknown as typeof fetch);
+    expect(JSON.stringify(result)).not.toContain(creds.clientSecret);
+  });
+
+  // Deliberate: the client ID is what says *which* app registration failed,
+  // and it is public anyway. Masking it would cost the diagnostic and protect
+  // nothing. Pinned so nobody 'fixes' it into ***.
+  it('keeps the client id, which names the failing app', async () => {
+    const fetchImpl = vi.fn(async () => aadError(EXPIRED_SECRET));
+    const result = await verifyMailCredentials(creds, fetchImpl as unknown as typeof fetch);
+    expect(result.code).toBe('AADSTS7000222');
+    expect(JSON.stringify(result)).not.toContain('***');
+  });
+
+  it('survives a non-string error_description rather than throwing', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error_description: { code: 7000222 } }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        })
+    );
+    const result = await verifyMailCredentials(creds, fetchImpl as unknown as typeof fetch);
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/401/);
+  });
+
+  it('falls back to a string error when error_description is not one', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error_description: 42, error: 'invalid_client' }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        })
+    );
+    const result = await verifyMailCredentials(creds, fetchImpl as unknown as typeof fetch);
+    expect(result.message).toBe('invalid_client');
+  });
+
   it('requests a client-credentials token for Graph', async () => {
     const fetchImpl = vi.fn(async () => new Response('{"access_token":"t"}', { status: 200 }));
     await verifyMailCredentials(creds, fetchImpl as unknown as typeof fetch);

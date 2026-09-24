@@ -85,6 +85,25 @@ export function describeAadError(errorDescription: string): MailCredentialCheck 
 }
 
 /**
+ * Strip the client secret out of text that came from Entra ID.
+ *
+ * Entra ID has never been seen to echo the secret back, and the old comment
+ * here said so and left it at that. But this is upstream text we do not
+ * control and it leaves the process in an API response, so the guarantee is
+ * worth enforcing rather than assuming.
+ *
+ * The tenant and client IDs are deliberately left alone. They are public
+ * identifiers -- a client ID appears in the OAuth URLs a signed-in user can
+ * already read -- and they are the part of the message that says *which* app
+ * registration failed. Masking them would cost the whole diagnostic value and
+ * protect nothing: AADSTS7000222 naming app "***" tells an operator nothing.
+ */
+function withoutSecret(text: string, secret: string): string {
+  if (!secret || !text.includes(secret)) return text;
+  return text.split(secret).join('***');
+}
+
+/**
  * Ask Entra ID for a token with the configured mail credentials.
  *
  * Deliberately bypasses the token cache in `email.ts`. A cached token outlives
@@ -134,14 +153,20 @@ export async function verifyMailCredentials(
 
   if (response.ok) return { ok: true };
 
-  // The body is Entra ID's own error, which never echoes the secret back.
   let description = '';
   try {
-    const data = (await response.json()) as { error_description?: string; error?: string };
-    description = data.error_description || data.error || '';
+    // Not assumed to be strings. A proxy or gateway in front of Entra ID can
+    // return JSON whose `error` is an object or a number, and describeAadError
+    // splits the value -- which would throw, and turn a bad credential into a
+    // 500 from the route that exists to report bad credentials.
+    const data = (await response.json()) as Record<string, unknown>;
+    if (typeof data.error_description === 'string') description = data.error_description;
+    else if (typeof data.error === 'string') description = data.error;
   } catch {
     description = '';
   }
+
+  description = withoutSecret(description, clientSecret);
 
   if (!description) {
     return {
