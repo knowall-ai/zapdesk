@@ -4,6 +4,8 @@
   </a>
 </p>
 
+[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/knowall-ai/zapdesk?label=CodeRabbit+Reviews&labelColor=171717&color=FF570A)](https://coderabbit.ai)
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="public/assets/logo.svg">
