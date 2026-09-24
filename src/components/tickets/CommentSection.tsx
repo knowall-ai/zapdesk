@@ -7,6 +7,7 @@ import Avatar from '@/components/common/Avatar';
 import UserHtml from '@/components/common/UserHtml';
 import MentionInput from '@/components/common/MentionInput';
 import { buildAttachmentProxyUrl } from '@/lib/attachment-utils';
+import { useMentionableUsers } from '@/hooks/useMentionableUsers';
 import type { TicketComment, User, Attachment } from '@/types';
 
 interface CommentSectionProps {
@@ -38,6 +39,7 @@ export default function CommentSection({
   compact = false,
   isTicket = true,
 }: CommentSectionProps) {
+  const mentionNames = useMentionableUsers();
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPastingImage, setIsPastingImage] = useState(false);
@@ -164,6 +166,7 @@ export default function CommentSection({
                     style={{ color: 'var(--text-secondary)' }}
                     html={comment.content}
                     mentions
+                    mentionNames={mentionNames}
                   />
                 </div>
               </div>

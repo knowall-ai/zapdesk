@@ -415,6 +415,11 @@ export function htmlToPlainText(html: string | null | undefined, maxLength?: num
 export interface SanitizeOptions {
   /** Wrap `@mentions` in `<span class="mention">`. Comments only. */
   mentions?: boolean;
+  /**
+   * Display names that may be mentioned. Without them a multi-word name
+   * highlights only its first word -- see the note in `lib/mentions`.
+   */
+  mentionNames?: readonly string[];
 }
 
 /**
@@ -443,7 +448,7 @@ export function sanitizeUserHtml(
     RETURN_DOM_FRAGMENT: true,
   }) as unknown as DocumentFragment;
 
-  highlightMentionsIn(fragment);
+  highlightMentionsIn(fragment, options.mentionNames);
 
   const holder = document.createElement('div');
   holder.appendChild(fragment);
