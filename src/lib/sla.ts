@@ -122,8 +122,28 @@ export function getSLAPolicy(level: SLALevel): SLAPolicy {
 /**
  * Get SLA targets for a specific priority level
  */
+/**
+ * Policy targets are keyed on the priority names this codebase used before the
+ * rename, and those keys are part of the SLAPolicy shape rather than something
+ * a rename here can reach.
+ *
+ * Without the translation, `Critical`.toLowerCase() looks up a `critical` key
+ * that does not exist, `getSLATargets` returns undefined, and calculateTicketSLA
+ * reads firstResponseMinutes off it and throws.
+ */
+const POLICY_TARGET_KEYS: Record<string, 'urgent' | 'high' | 'normal' | 'low'> = {
+  critical: 'urgent',
+  urgent: 'urgent',
+  high: 'high',
+  medium: 'normal',
+  normal: 'normal',
+  low: 'low',
+};
+
 export function getSLATargets(policy: SLAPolicy, priority: TicketPriority): SLATargets {
-  const priorityKey = priority.toLowerCase() as 'urgent' | 'high' | 'normal' | 'low';
+  // Falls back rather than returning undefined: priority comes from DevOps and
+  // may hold a value this codebase does not know.
+  const priorityKey = POLICY_TARGET_KEYS[priority.toLowerCase()] ?? 'normal';
   return policy.targets[priorityKey];
 }
 
@@ -172,7 +192,7 @@ export function calculateTicketSLA(
   slaLevel: SLALevel = DEFAULT_SLA_LEVEL
 ): TicketSLAInfo {
   const policy = getSLAPolicy(slaLevel);
-  const targets = getSLATargets(policy, ticket.priority ?? 'Normal');
+  const targets = getSLATargets(policy, ticket.priority ?? 'Medium');
 
   // Calculate first response SLA
   const firstResponseMet = !!ticket.firstResponseAt;

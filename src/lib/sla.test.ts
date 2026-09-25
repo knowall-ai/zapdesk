@@ -425,3 +425,43 @@ describe('getSLAConfig with a legacy SLA_CONFIG', () => {
     warn.mockRestore();
   });
 });
+
+// The policy path is separate from the config path above, and its targets are
+// keyed on the pre-rename names as part of the SLAPolicy shape.
+describe('getSLATargets after the priority rename', () => {
+  it.each(['Critical', 'High', 'Medium', 'Low'])('resolves targets for %s', (priority) => {
+    const targets = getSLATargets(getSLAPolicy('Bronze'), priority);
+    expect(targets).toBeDefined();
+    expect(typeof targets.firstResponseMinutes).toBe('number');
+  });
+
+  it('maps Critical onto the urgent targets', () => {
+    const policy = getSLAPolicy('Gold');
+    expect(getSLATargets(policy, 'Critical')).toEqual(policy.targets.urgent);
+  });
+
+  it('maps Medium onto the normal targets', () => {
+    const policy = getSLAPolicy('Gold');
+    expect(getSLATargets(policy, 'Medium')).toEqual(policy.targets.normal);
+  });
+
+  it('still accepts the old names', () => {
+    const policy = getSLAPolicy('Silver');
+    expect(getSLATargets(policy, 'Urgent')).toEqual(policy.targets.urgent);
+    expect(getSLATargets(policy, 'Normal')).toEqual(policy.targets.normal);
+  });
+
+  it('falls back for a priority it does not know', () => {
+    const policy = getSLAPolicy('Bronze');
+    expect(getSLATargets(policy, 'Whatever')).toEqual(policy.targets.normal);
+  });
+
+  it('calculates ticket SLA for a Critical ticket without throwing', () => {
+    const ticket = {
+      priority: 'Critical',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      status: 'New',
+    };
+    expect(() => calculateTicketSLA(ticket as never)).not.toThrow();
+  });
+});
