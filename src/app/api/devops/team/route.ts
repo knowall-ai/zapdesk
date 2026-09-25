@@ -1,7 +1,14 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { AzureDevOpsService } from '@/lib/devops';
+import type { TeamMember, TeamStats, TicketStatus } from '@/types';
+import {
+  calculateAvgResolutionTime,
+  calculateAvgResponseTime,
+  calculateMemberStatus,
+  calculateNeedsAttention,
+  isInternalUser,
+} from '@/lib/team-metrics';
 import { requirePermission, isAuthed } from '@/lib/api-auth';
-import type { TeamMember, TeamMemberStatus, TeamStats, TicketStatus, Ticket } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -174,98 +181,4 @@ export async function GET(request: NextRequest) {
     console.error('Error fetching team data:', error);
     return NextResponse.json({ error: 'Failed to fetch team data' }, { status: 500 });
   }
-}
-
-// Team status thresholds — configurable via environment variables
-function getIntEnv(envName: string, defaultValue: number): number {
-  const raw = process.env[envName];
-  if (raw === undefined || raw === null || raw.trim() === '') {
-    return defaultValue;
-  }
-  const parsed = parseInt(raw, 10);
-  return Number.isNaN(parsed) ? defaultValue : parsed;
-}
-
-const THRESHOLD_NEEDS_ATTENTION_PENDING = getIntEnv('TEAM_THRESHOLD_NEEDS_ATTENTION_PENDING', 5);
-const THRESHOLD_NEEDS_ATTENTION_ASSIGNED = getIntEnv('TEAM_THRESHOLD_NEEDS_ATTENTION_ASSIGNED', 15);
-const THRESHOLD_BEHIND_PENDING = getIntEnv('TEAM_THRESHOLD_BEHIND_PENDING', 2);
-const THRESHOLD_BEHIND_ASSIGNED = getIntEnv('TEAM_THRESHOLD_BEHIND_ASSIGNED', 10);
-
-function calculateMemberStatus(member: TeamMember): TeamMemberStatus {
-  if (
-    member.pendingTickets > THRESHOLD_NEEDS_ATTENTION_PENDING ||
-    member.ticketsAssigned > THRESHOLD_NEEDS_ATTENTION_ASSIGNED
-  ) {
-    return 'Needs Attention';
-  }
-  if (
-    member.pendingTickets > THRESHOLD_BEHIND_PENDING ||
-    member.ticketsAssigned > THRESHOLD_BEHIND_ASSIGNED
-  ) {
-    return 'Behind';
-  }
-  return 'On Track';
-}
-
-function calculateAvgResponseTime(member: TeamMember): string {
-  // In a real implementation, this would calculate from actual response data
-  // For now, estimate based on workload
-  if (member.ticketsAssigned > 10) {
-    return '> 4 hours';
-  }
-  if (member.ticketsAssigned > 5) {
-    return '2-4 hours';
-  }
-  return '< 2 hours';
-}
-
-function calculateAvgResolutionTime(resolutionTimesMs: number[] | undefined): string {
-  if (!resolutionTimesMs || resolutionTimesMs.length === 0) {
-    return '-';
-  }
-
-  const avgMs = resolutionTimesMs.reduce((sum, t) => sum + t, 0) / resolutionTimesMs.length;
-  const avgHours = avgMs / (1000 * 60 * 60);
-  const avgDays = avgHours / 24;
-
-  if (avgDays >= 7) {
-    const weeks = Math.round(avgDays / 7);
-    return `${weeks}w`;
-  }
-  if (avgDays >= 1) {
-    const days = Math.round(avgDays);
-    return `${days}d`;
-  }
-  if (avgHours >= 1) {
-    const hours = Math.round(avgHours);
-    return `${hours}h`;
-  }
-  return '< 1h';
-}
-
-function calculateNeedsAttention(tickets: Ticket[]): number {
-  const threeDaysAgo = new Date();
-  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-
-  return tickets.filter((t) => {
-    // Unassigned tickets
-    if (!t.assignee && (t.status === 'New' || t.status === 'Open')) {
-      return true;
-    }
-    // Stale tickets (not updated in 3 days and still open)
-    if (
-      t.updatedAt < threeDaysAgo &&
-      (t.status === 'Open' || t.status === 'In Progress' || t.status === 'Pending')
-    ) {
-      return true;
-    }
-    return false;
-  }).length;
-}
-
-function isInternalUser(email: string, internalDomain: string): boolean {
-  if (!email || !internalDomain) return false;
-  // Check if the email belongs to the same domain as the current user
-  const memberDomain = email.includes('@') ? email.split('@')[1].toLowerCase() : '';
-  return memberDomain === internalDomain;
 }

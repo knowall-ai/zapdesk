@@ -10,6 +10,8 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import type { Organization, SLALevel, Epic } from '@/types';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
+import { htmlToPlainText } from '@/lib/sanitize-html';
+import { templateSupportIssueUrl } from '@/lib/github';
 
 interface ProjectWithSLA extends Organization {
   sla?: SLALevel;
@@ -18,6 +20,14 @@ interface ProjectWithSLA extends Organization {
   isTemplateSupported?: boolean;
 }
 
+/**
+ * Project detail page: the project's SLA and settings, plus its epics.
+ *
+ * Epic descriptions arrive from Azure DevOps as HTML. The preview beneath each
+ * epic title is a plain-text summary — `htmlToPlainText` decodes the entities
+ * and truncates against the *text* length, so it renders as a text node rather
+ * than through an HTML sink (issue #413).
+ */
 export default function ProjectDetailPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -341,10 +351,10 @@ export default function ProjectDetailPage() {
                   </p>
                   <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
                     The &ldquo;{project.processTemplate}&rdquo; template is not yet supported by
-                    DevDesk. Epic navigation is not available for this project.
+                    ZapDesk. Epic navigation is not available for this project.
                   </p>
                   <a
-                    href="https://github.com/knowall-ai/devdesk/issues/new?title=Support%20for%20new%20process%20template&labels=enhancement"
+                    href={templateSupportIssueUrl(project.processTemplate)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm hover:underline"
@@ -385,12 +395,9 @@ export default function ProjectDetailPage() {
                             <p
                               className="line-clamp-2 text-sm"
                               style={{ color: 'var(--text-muted)' }}
-                              dangerouslySetInnerHTML={{
-                                __html:
-                                  epic.description.replace(/<[^>]*>/g, '').slice(0, 200) +
-                                  (epic.description.length > 200 ? '...' : ''),
-                              }}
-                            />
+                            >
+                              {htmlToPlainText(epic.description, 200)}
+                            </p>
                           )}
                           <div
                             className="mt-2 flex items-center gap-4 text-xs"

@@ -10,7 +10,8 @@ import {
   hasResolutionField,
 } from '@/config/process-templates';
 import { hasTicketTag } from '@/lib/tags';
-import { rewriteAttachmentUrls } from '@/lib/attachment-utils';
+import { htmlToPlainText } from '@/lib/sanitize-html';
+import UserHtml from '@/components/common/UserHtml';
 import Avatar from '../common/Avatar';
 import CommentSection from './CommentSection';
 import ZapDialog from './ZapDialog';
@@ -34,6 +35,7 @@ interface WorkItemDetailContentProps {
   processTemplate?: string;
 }
 
+/** Format an hours value for display, dropping a trailing `.0`. */
 const formatHours = (hours: number) => {
   // Whole hours read cleanly as "8"; anything else keeps one decimal so a
   // half-hour estimate isn't rounded away (StandupKanbanCard does the same).
@@ -41,6 +43,7 @@ const formatHours = (hours: number) => {
   return hours.toFixed(1);
 };
 
+/** The Resolution field: read-only sanitised HTML, or an editor when editing. */
 function ResolutionField({
   workItem,
   onUpdate,
@@ -54,9 +57,7 @@ function ResolutionField({
 
   const handleStartEdit = () => {
     // Strip HTML for editing
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = workItem.resolution || '';
-    setEditValue(tempDiv.textContent || tempDiv.innerText || '');
+    setEditValue(htmlToPlainText(workItem.resolution));
     setIsEditing(true);
   };
 
@@ -133,10 +134,10 @@ function ResolutionField({
           autoFocus
         />
       ) : workItem.resolution ? (
-        <div
+        <UserHtml
           className="prose prose-sm prose-invert user-content max-w-none"
           style={{ color: 'var(--text-secondary)' }}
-          dangerouslySetInnerHTML={{ __html: rewriteAttachmentUrls(workItem.resolution) }}
+          html={workItem.resolution}
         />
       ) : (
         <button
@@ -152,6 +153,7 @@ function ResolutionField({
   );
 }
 
+/** The Mitigation field (Risk work items). Plain text, so no HTML sink here. */
 function MitigationField({
   workItem,
   onUpdate,
@@ -164,9 +166,7 @@ function MitigationField({
   const [isSaving, setIsSaving] = useState(false);
 
   const handleStartEdit = () => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = workItem.mitigation || '';
-    setEditValue(tempDiv.textContent || tempDiv.innerText || '');
+    setEditValue(htmlToPlainText(workItem.mitigation));
     setIsEditing(true);
   };
 
@@ -258,6 +258,13 @@ function MitigationField({
   );
 }
 
+/**
+ * The body of the work item detail dialog — description, repro steps,
+ * resolution and the type-specific fields around them.
+ *
+ * The rich-text fields hold Azure DevOps HTML and render through `UserHtml`,
+ * which sanitises before the markup reaches the DOM (issue #413).
+ */
 export default function WorkItemDetailContent({
   workItem,
   comments,
@@ -289,9 +296,7 @@ export default function WorkItemDetailContent({
 
   const handleStartEdit = () => {
     setEditTitle(workItem.title);
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = workItem.description || '';
-    setEditDescription(tempDiv.textContent || tempDiv.innerText || '');
+    setEditDescription(htmlToPlainText(workItem.description));
     setIsEditing(true);
   };
 
@@ -309,9 +314,7 @@ export default function WorkItemDetailContent({
       if (editTitle !== workItem.title) {
         updates.title = editTitle;
       }
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = workItem.description || '';
-      const originalText = tempDiv.textContent || tempDiv.innerText || '';
+      const originalText = htmlToPlainText(workItem.description);
       if (editDescription !== originalText) {
         updates.description = editDescription;
       }
@@ -405,15 +408,17 @@ export default function WorkItemDetailContent({
                   {format(workItem.createdAt, 'dd MMM yyyy, HH:mm')}
                 </span>
               </div>
-              <div
-                className="prose prose-sm prose-invert user-content max-w-none"
-                style={{ color: 'var(--text-secondary)' }}
-                dangerouslySetInnerHTML={{
-                  __html: workItem.description
-                    ? rewriteAttachmentUrls(workItem.description)
-                    : '<em>No description provided</em>',
-                }}
-              />
+              {workItem.description ? (
+                <UserHtml
+                  className="prose prose-sm prose-invert user-content max-w-none"
+                  style={{ color: 'var(--text-secondary)' }}
+                  html={workItem.description}
+                />
+              ) : (
+                <p className="text-sm italic" style={{ color: 'var(--text-muted)' }}>
+                  No description provided
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -433,10 +438,10 @@ export default function WorkItemDetailContent({
               placeholder="Add a description..."
             />
           ) : workItem.description ? (
-            <div
+            <UserHtml
               className="prose prose-sm prose-invert user-content max-w-none"
               style={{ color: 'var(--text-secondary)' }}
-              dangerouslySetInnerHTML={{ __html: rewriteAttachmentUrls(workItem.description) }}
+              html={workItem.description}
             />
           ) : (
             <p className="text-sm italic" style={{ color: 'var(--text-muted)' }}>
@@ -452,10 +457,10 @@ export default function WorkItemDetailContent({
           <h3 className="mb-2 text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
             Customer Response
           </h3>
-          <div
+          <UserHtml
             className="prose prose-sm prose-invert user-content max-w-none"
             style={{ color: 'var(--text-secondary)' }}
-            dangerouslySetInnerHTML={{ __html: rewriteAttachmentUrls(workItem.customerResponse) }}
+            html={workItem.customerResponse}
           />
         </div>
       )}

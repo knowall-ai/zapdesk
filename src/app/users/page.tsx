@@ -2,10 +2,11 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { Avatar, LoadingSpinner, AccessDenied } from '@/components/common';
 import { usePermissions } from '@/components/providers/PermissionProvider';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { Search, Plus, Upload, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -15,6 +16,7 @@ export default function UsersPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const { hasPermission } = usePermissions();
+  const { selectedOrganization } = useOrganization();
   // Hoisted so the data effects below can check it too. Rendering AccessDenied
   // while still firing the requests behind it wastes a DevOps round trip per
   // page load and fills the console with 403s that describe nothing wrong.
@@ -25,6 +27,7 @@ export default function UsersPage() {
   const [domainFilter, setDomainFilter] = useState<string>('all');
   const [accessLevelFilter, setAccessLevelFilter] = useState<string>('all');
   const [showNotImplemented, setShowNotImplemented] = useState(false);
+  const notImplementedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -76,10 +79,24 @@ export default function UsersPage() {
     return matchesSearch && matchesDomain && matchesAccessLevel;
   });
 
+  // Each click restarts the countdown instead of stacking timers. Without
+  // this, clicking Bulk import and then Add user a second later dismissed the
+  // toast after one second -- the first click's timer was still running and
+  // closed the second click's message early.
   const handleNotImplemented = () => {
     setShowNotImplemented(true);
-    setTimeout(() => setShowNotImplemented(false), 3000);
+    clearTimeout(notImplementedTimer.current);
+    notImplementedTimer.current = setTimeout(() => setShowNotImplemented(false), 3000);
   };
+
+  useEffect(() => () => clearTimeout(notImplementedTimer.current), []);
+
+  // The organisation the user is actually working in. This link was hardcoded
+  // to KnowAll, so anyone in another organisation was sent to a settings page
+  // they may not even have access to -- and told to manage users there.
+  const orgUsersUrl = selectedOrganization
+    ? `https://dev.azure.com/${encodeURIComponent(selectedOrganization.accountName)}/_settings/users`
+    : null;
 
   if (status === 'loading') {
     return (
@@ -119,15 +136,21 @@ export default function UsersPage() {
             <p className="font-medium">Not yet implemented</p>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
               Please manage users in{' '}
-              <a
-                href="https://dev.azure.com/KnowAll/_settings/users"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline"
-                style={{ color: 'var(--primary)' }}
-              >
-                Azure DevOps
-              </a>
+              {orgUsersUrl ? (
+                <a
+                  href={orgUsersUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                  style={{ color: 'var(--primary)' }}
+                >
+                  Azure DevOps
+                </a>
+              ) : (
+                // No organisation selected yet, so there is no settings page to
+                // point at. Naming it without a link beats a link that 404s.
+                'Azure DevOps'
+              )}
             </p>
           </div>
         )}

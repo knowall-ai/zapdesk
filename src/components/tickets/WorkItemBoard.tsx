@@ -22,7 +22,9 @@ import {
 } from 'lucide-react';
 import type { Ticket, WorkItem, WorkItemType } from '@/types';
 import { TICKET_WORK_ITEM_TYPES } from '@/types';
+import { toast } from 'sonner';
 import { useClickOutside } from '@/hooks/useClickOutside';
+import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import KanbanBoard from './KanbanBoard';
@@ -125,11 +127,41 @@ interface GroupedItems {
 }
 
 // Bulk action definitions
+/**
+ * Pull an error string out of a response body.
+ *
+ * Our own routes always send `{ error: string }`, but a gateway, proxy or auth
+ * interstitial can answer with JSON of any shape. Without this check a
+ * non-string `error` would reach the toast and render as "[object Object]" —
+ * the same opaque failure message this component set out to stop showing.
+ */
+function errorTextFrom(data: unknown): string {
+  if (typeof data !== 'object' || data === null) return '';
+  const { error } = data as { error?: unknown };
+  return typeof error === 'string' ? error : '';
+}
+
+/** "1 item" / "2 items" without a dependency. */
+function plural(count: number): string {
+  return count === 1 ? '' : 's';
+}
+
+interface BulkFailure {
+  id: number;
+  ok: false;
+  reason: string;
+}
+
+interface BulkOutcome {
+  succeeded: number[];
+  failed: BulkFailure[];
+}
+
 interface BulkAction {
   id: string;
   label: string;
   icon: React.ReactNode;
-  handler: (itemIds: number[]) => Promise<void>;
+  handler: (itemIds: number[]) => Promise<BulkOutcome>;
   confirmMessage?: string;
 }
 
@@ -254,6 +286,7 @@ export default function WorkItemBoard({
   const [showBulkMenu, setShowBulkMenu] = useState(false);
   const [showGroupByMenu, setShowGroupByMenu] = useState(false);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const { refresh: refreshCounts } = useTicketCounts();
   const bulkMenuRef = useRef<HTMLDivElement>(null);
   const groupByMenuRef = useClickOutside<HTMLDivElement>(
     () => setShowGroupByMenu(false),
@@ -286,123 +319,148 @@ export default function WorkItemBoard({
     setShowBulkMenu(false);
 
     try {
-      await action.handler(itemIds);
-      setSelectedItems(new Set());
+      const { succeeded, failed } = await action.handler(itemIds);
+
+      // Keep the ones that failed selected, so the user can retry or fix them
+      // without hunting through the list to re-tick them.
+      setSelectedItems(new Set(failed.map((f) => f.id)));
+
+      if (failed.length === 0) {
+        toast.success(
+          `${action.label}: ${succeeded.length} item${plural(succeeded.length)} updated`
+        );
+      } else {
+        console.error(`Bulk action ${action.id} had failures:`, failed);
+        // Distinct reasons, not one line per item: a workflow rule usually
+        // rejects every item of the same type for the same reason, and twenty
+        // copies of it tells the user nothing extra.
+        const reasons = [...new Set(failed.map((f) => f.reason))];
+        const detail = reasons.slice(0, 2).join(' · ');
+        const more = reasons.length > 2 ? ` (+${reasons.length - 2} more)` : '';
+        const prefix =
+          succeeded.length > 0
+            ? `${succeeded.length} updated, ${failed.length} failed`
+            : `${failed.length} item${plural(failed.length)} failed`;
+        toast.error(`${prefix}: ${detail}${more}`, { duration: 8000 });
+      }
+
       onRefresh?.();
     } catch (error) {
+      // Only reached if the handler itself threw — the per-item path reports
+      // its own failures.
       console.error(`Bulk action ${action.id} failed:`, error);
-      alert(`Failed to ${action.label.toLowerCase()}. Please try again.`);
+      toast.error(
+        error instanceof Error && error.message
+          ? `Failed to ${action.label.toLowerCase()}: ${error.message}`
+          : `Failed to ${action.label.toLowerCase()}`
+      );
     } finally {
       setBulkActionLoading(false);
+      // In the finally, not the success path: a bulk handler throws if *any*
+      // request failed, but the ones that succeeded have already moved between
+      // states or been reassigned, so the counts are stale either way (#404).
+      // Coalesced to a single recount.
+      refreshCounts();
     }
   };
+
+  // One request per selected item, reporting each outcome individually.
+  //
+  // The four bulk actions used to carry four copies of this, and each of them
+  // collapsed every failure into "Please try again". A bulk action is
+  // partially-succeeding by nature — some items move, some are rejected by
+  // their own workflow rules — so telling the user only that "something
+  // failed" hides both which items moved and why the rest did not (#297).
+  const runBulkRequests = useCallback(
+    async (
+      itemIds: number[],
+      buildRequest: (
+        item: Ticket | WorkItem | undefined,
+        id: number
+      ) => { url: string; body: unknown }
+    ): Promise<BulkOutcome> => {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (organization) {
+        headers['x-devops-org'] = organization;
+      }
+
+      const settled = await Promise.all(
+        itemIds.map(async (id) => {
+          const item = items.find((i) => i.id === id);
+          const { url, body } = buildRequest(item, id);
+          try {
+            const response = await fetch(url, {
+              method: 'PATCH',
+              headers,
+              body: JSON.stringify(body),
+            });
+            if (response.ok) return { id, ok: true as const };
+            const data: unknown = await response.json().catch(() => null);
+            return {
+              id,
+              ok: false as const,
+              reason: errorTextFrom(data) || `${response.status} ${response.statusText}`,
+            };
+          } catch (error) {
+            return {
+              id,
+              ok: false as const,
+              reason: error instanceof Error ? error.message : 'Request failed',
+            };
+          }
+        })
+      );
+
+      return {
+        succeeded: settled.filter((r) => r.ok).map((r) => r.id),
+        failed: settled.filter((r) => !r.ok) as BulkFailure[],
+      };
+    },
+    [items, organization]
+  );
 
   // Define bulk actions
   const bulkActions: BulkAction[] = [
     {
       id: 'set-in-progress',
-      label: 'Set to Active',
+      label: 'Set to In Progress',
       icon: <PlayCircle size={16} />,
-      handler: async (itemIds) => {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (organization) {
-          headers['x-devops-org'] = organization;
-        }
-        const results = await Promise.all(
-          itemIds.map((id) => {
-            const item = items.find((i) => i.id === id);
-            return fetch(`/api/devops/tickets/${id}/status`, {
-              method: 'PATCH',
-              headers,
-              body: JSON.stringify({ status: 'In Progress', project: item?.project }),
-            });
-          })
-        );
-        const failed = results.filter((r) => !r.ok);
-        if (failed.length > 0) {
-          throw new Error(`${failed.length} of ${results.length} updates failed`);
-        }
-      },
+      handler: (itemIds) =>
+        runBulkRequests(itemIds, (item, id) => ({
+          url: `/api/devops/tickets/${id}/status`,
+          body: { status: 'In Progress', project: item?.project },
+        })),
     },
     {
       id: 'reopen',
       label: 'Re-open',
       icon: <RotateCcw size={16} />,
-      handler: async (itemIds) => {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (organization) {
-          headers['x-devops-org'] = organization;
-        }
-        const results = await Promise.all(
-          itemIds.map((id) => {
-            const item = items.find((i) => i.id === id);
-            return fetch(`/api/devops/tickets/${id}/status`, {
-              method: 'PATCH',
-              headers,
-              body: JSON.stringify({ status: 'Open', project: item?.project }),
-            });
-          })
-        );
-        const failed = results.filter((r) => !r.ok);
-        if (failed.length > 0) {
-          throw new Error(`${failed.length} of ${results.length} updates failed`);
-        }
-      },
+      handler: (itemIds) =>
+        runBulkRequests(itemIds, (item, id) => ({
+          url: `/api/devops/tickets/${id}/status`,
+          body: { status: 'Open', project: item?.project },
+        })),
     },
     {
       id: 'close',
       label: 'Close',
       icon: <CheckCircle size={16} />,
       confirmMessage: 'Are you sure you want to close the selected items?',
-      handler: async (itemIds) => {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (organization) {
-          headers['x-devops-org'] = organization;
-        }
-        const results = await Promise.all(
-          itemIds.map((id) => {
-            const item = items.find((i) => i.id === id);
-            return fetch(`/api/devops/tickets/${id}/status`, {
-              method: 'PATCH',
-              headers,
-              body: JSON.stringify({ status: 'Closed', project: item?.project }),
-            });
-          })
-        );
-        const failed = results.filter((r) => !r.ok);
-        if (failed.length > 0) {
-          throw new Error(`${failed.length} of ${results.length} updates failed`);
-        }
-      },
+      handler: (itemIds) =>
+        runBulkRequests(itemIds, (item, id) => ({
+          url: `/api/devops/tickets/${id}/status`,
+          body: { status: 'Closed', project: item?.project },
+        })),
     },
     {
       id: 'assign-to-me',
       label: 'Assign to me',
       icon: <UserCheck size={16} />,
-      handler: async (itemIds) => {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (organization) {
-          headers['x-devops-org'] = organization;
-        }
-        const results = await Promise.all(
-          itemIds.map((id) => {
-            const item = items.find((i) => i.id === id);
-            return fetch(`/api/devops/tickets/${id}`, {
-              method: 'PATCH',
-              headers,
-              body: JSON.stringify({ assignToMe: true, project: item?.project }),
-            });
-          })
-        );
-        const failed = results.filter((r) => !r.ok);
-        if (failed.length > 0) {
-          const errorBodies = await Promise.all(
-            failed.map((r) => r.json().catch(() => ({ error: r.statusText })))
-          );
-          const messages = errorBodies.map((b) => b.error || 'Unknown error').join('; ');
-          throw new Error(`${failed.length} of ${results.length} updates failed: ${messages}`);
-        }
-      },
+      handler: (itemIds) =>
+        runBulkRequests(itemIds, (item, id) => ({
+          url: `/api/devops/tickets/${id}`,
+          body: { assignToMe: true, project: item?.project },
+        })),
     },
   ];
 

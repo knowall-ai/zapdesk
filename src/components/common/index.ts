@@ -7,3 +7,4 @@ export { default as ProjectList } from './ProjectList';
 export { default as FileIcon } from './FileIcon';
 export { default as PermissionGate } from './PermissionGate';
 export { default as AccessDenied } from './AccessDenied';
+export { default as UserHtml } from './UserHtml';
