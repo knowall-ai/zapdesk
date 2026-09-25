@@ -299,20 +299,48 @@ const DEFAULT_SLA_CONFIG: SLAConfig = {
 const CONFIG_AT_RISK_THRESHOLD = 25; // 25% remaining = at risk
 
 /**
- * Get SLA configuration, allowing for environment variable overrides
+ * Priority names this codebase used before they were renamed to match what
+ * Azure DevOps actually returns.
+ *
+ * SLA_CONFIG is set per deployment, so a rename here cannot reach it. Left
+ * untranslated, a config written against the old names yields no entry for
+ * `Critical` or `Medium`, and the deadline functions read
+ * `resolutionTimeHours` off undefined and throw.
+ */
+const LEGACY_PRIORITY_KEYS: Record<string, TicketPriority> = {
+  Urgent: 'Critical',
+  Normal: 'Medium',
+};
+
+/**
+ * Get SLA configuration, allowing for environment variable overrides.
+ *
+ * Overrides are merged onto the defaults rather than replacing them, so a
+ * config naming only some priorities leaves the rest at their defaults instead
+ * of removing them.
  */
 export function getSLAConfig(): SLAConfig {
   const envConfig = process.env.SLA_CONFIG;
+  if (!envConfig) return DEFAULT_SLA_CONFIG;
 
-  if (envConfig) {
-    try {
-      return JSON.parse(envConfig) as SLAConfig;
-    } catch {
-      console.warn('Failed to parse SLA_CONFIG environment variable, using defaults');
+  try {
+    const parsed = JSON.parse(envConfig) as Record<string, SLAPriorityTargets>;
+    const config: SLAConfig = { ...DEFAULT_SLA_CONFIG };
+    for (const [key, targets] of Object.entries(parsed)) {
+      const priority = LEGACY_PRIORITY_KEYS[key] ?? key;
+      if (priority in DEFAULT_SLA_CONFIG) {
+        config[priority] = targets;
+      } else {
+        // Said rather than swallowed: a typo here means the intended target
+        // silently never applies, and the default looks like it worked.
+        console.warn(`SLA_CONFIG names an unknown priority "${key}" — ignoring it.`);
+      }
     }
+    return config;
+  } catch {
+    console.warn('Failed to parse SLA_CONFIG environment variable, using defaults');
+    return DEFAULT_SLA_CONFIG;
   }
-
-  return DEFAULT_SLA_CONFIG;
 }
 
 /**
@@ -320,7 +348,10 @@ export function getSLAConfig(): SLAConfig {
  */
 export function getSLATargetsForPriority(priority: TicketPriority): SLAPriorityTargets {
   const config = getSLAConfig();
-  return config[priority];
+  // Priority arrives from DevOps, which is free to hold a value this codebase
+  // does not know. Returning undefined here means a thrown TypeError two frames
+  // later, in a deadline calculation that reports nothing useful about why.
+  return config[priority] ?? DEFAULT_SLA_CONFIG[priority] ?? DEFAULT_SLA_CONFIG.Medium;
 }
 
 /**
