@@ -1,25 +1,25 @@
 # ZapDesk mailbox poller (Azure Functions)
 
 A timer trigger that asks the deployed app to drain the support mailbox, once a
-minute. It is the Azure equivalent of `.github/workflows/email-poll.yml`, which
-does the same thing on a GitHub Actions schedule.
-
-**Nothing is retired by this project existing.** The workflow is still the
-deployed mechanism. Adopting this one is a separate decision — see
-_Should you actually switch?_ below.
+minute. It replaces `.github/workflows/email-poll.yml`, which did the same job
+on a schedule.
 
 ## Why it exists
 
-|                    | GitHub Actions                                            | This                                |
-| ------------------ | --------------------------------------------------------- | ----------------------------------- |
-| Fastest schedule   | **5 minutes**, on every plan                              | 1 minute, or faster                 |
-| Punctuality        | Best-effort; routinely late under load                    | Timer-driven                        |
-| Auto-disable       | Scheduled workflows stop after 60 days of repo inactivity | Never                               |
-| Failure visibility | Red ✗ in the Actions tab                                  | Application Insights **only**       |
-| Cost (public repo) | Free                                                      | Storage account, roughly £1–2/month |
+Two hard limits made a scheduled workflow the wrong home for this:
 
-The 5-minute floor is a hard GitHub limit; a comment in the workflow claims
-`'* * * * *'` works on paid plans, and that is not true.
+- **The schedule floor is five minutes.** A comment in the workflow claimed
+  `'* * * * *'` works on paid plans; it does not.
+- **Scheduled workflows stop after 60 days of repository inactivity**, quietly,
+  and stay stopped until somebody notices and re-enables them.
+
+A timer trigger has neither limit. The trade is visibility: a failed run here
+leaves a trace in Application Insights rather than a red ✗ on a page someone
+might glance at, which is what the alert below is for.
+
+**Do not run both.** Two pollers against one mailbox can pick up the same
+message before either marks it read. Disable the workflow in the same change
+that deploys this.
 
 ## Layout
 
@@ -43,9 +43,9 @@ trigger stays too small to hide a bug.
 | `POLL_SCHEDULE`        | Optional NCRONTAB override; defaults to `0 * * * * *`           |
 | `AzureWebJobsStorage`  | Required by the runtime to hold the timer's schedule state      |
 
-`ZAPDESK_BASE_URL` is the setting whose absence caused the GitHub workflow to
-fail 100 runs in a row. `readConfig` fails loudly and names it, because in
-Azure there is no red ✗ — only a trace nobody reads unless an alert fires.
+`readConfig` fails loudly and names whichever setting is missing, rather than
+polling a half-configured endpoint. A missing base URL is how inbound mail
+stopped for four months without anyone noticing.
 
 **NCRONTAB's sixth field is optional second-level precision.** Six fields put
 seconds first, so cron's `*/5 * * * *` may be written `0 */5 * * * *`; the
@@ -86,15 +86,3 @@ Azure has no equivalent of a red cross in the Actions tab. Without an alert,
 this fails exactly as silently as the workflow did — which is how that one sat
 broken for four months before anyone noticed. Create an Application Insights
 alert on failed `pollMailbox` invocations as part of the migration, not after.
-
-## Should you actually switch?
-
-Only after the existing workflow has been proven to work. The polling failures
-were never about the host: `ZAPDESK_BASE_URL` was simply never set as a repo
-secret. Migrating first moves a broken configuration somewhere that costs money
-and reports failure less visibly.
-
-The strong case for switching arrives if ZapDesk ever becomes a private
-repository. Polling every minute is then roughly 43,000 Actions minutes a
-month against a 2,000–3,000 free allowance, and this project stops being a
-preference.
