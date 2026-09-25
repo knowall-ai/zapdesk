@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requirePermission, isAuthed } from '@/lib/api-auth';
 import type { User } from '@/types';
 
 export async function GET(
@@ -9,16 +8,14 @@ export async function GET(
   { params }: { params: Promise<{ project: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requirePermission('projects:view');
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     await params; // Consume params to satisfy Next.js
 
     const organization = request.headers.get('x-devops-org') || undefined;
-    const devopsService = new AzureDevOpsService(session.accessToken, organization);
+    const devopsService = new AzureDevOpsService(session.accessToken!, organization);
 
     // Get all users with entitlements (includes users not on specific teams)
     const allUsers = await devopsService.getAllUsersWithEntitlements();

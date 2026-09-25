@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
+import { requireAuth, isAuthed } from '@/lib/api-auth';
+// DevOpsField moved to @/lib/devops-fields on main, alongside the shared
+// allowed-values resolution this route now uses.
 import { resolveAllowedValues, type DevOpsField } from '@/lib/devops-fields';
 
 // Allowed priority field reference names to prevent arbitrary field injection
@@ -16,11 +17,9 @@ export async function GET(
   { params }: { params: Promise<{ project: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAuth();
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const { project } = await params;
     const projectName = decodeURIComponent(project);
@@ -30,7 +29,7 @@ export async function GET(
       return NextResponse.json({ error: 'No organization specified' }, { status: 400 });
     }
 
-    const hasAccess = await validateOrganizationAccess(session.accessToken, organization);
+    const hasAccess = await validateOrganizationAccess(session.accessToken!, organization);
     if (!hasAccess) {
       return NextResponse.json(
         { error: 'Access denied to the specified organization' },
@@ -40,7 +39,7 @@ export async function GET(
 
     const workItemType = request.nextUrl.searchParams.get('workItemType') || 'Task';
     const authHeaders = {
-      Authorization: `Bearer ${session.accessToken}`,
+      Authorization: `Bearer ${session.accessToken!}`,
       'Content-Type': 'application/json',
     };
 

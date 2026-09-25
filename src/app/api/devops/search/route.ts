@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requireAuth, isAuthed } from '@/lib/api-auth';
 
 interface SearchResult {
   type: 'ticket' | 'user' | 'organization';
@@ -15,18 +14,16 @@ interface SearchResult {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAuth();
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const organization = request.headers.get('x-devops-org');
     if (!organization) {
       return NextResponse.json({ error: 'No organization specified' }, { status: 400 });
     }
 
-    const hasAccess = await validateOrganizationAccess(session.accessToken, organization);
+    const hasAccess = await validateOrganizationAccess(session.accessToken!, organization);
     if (!hasAccess) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
@@ -38,7 +35,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ results: [] });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken, organization);
+    const devopsService = new AzureDevOpsService(session.accessToken!, organization);
     const results: SearchResult[] = [];
 
     // Numeric-only queries are almost always direct work item ID lookups

@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requireAuth, requireAnyPermission, isAuthed } from '@/lib/api-auth';
+import { hasPermission } from '@/lib/permissions';
 import { isEmailTicket, extractRequesterEmail, sendAgentReply } from '@/lib/email';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAnyPermission(['tickets:view_all', 'tickets:view_own']);
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const { id } = await params;
     const ticketId = parseInt(id, 10);
@@ -22,7 +20,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const organization = request.headers.get('x-devops-org') || undefined;
-    const devopsService = new AzureDevOpsService(session.accessToken, organization);
+    const devopsService = new AzureDevOpsService(session.accessToken!, organization);
 
     // Get all projects to find the work item
     const projects = await devopsService.getProjects();
@@ -49,11 +47,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAuth();
+    if (!isAuthed(auth)) return auth;
+    const { session, permissions } = auth;
 
     const { id } = await params;
     const ticketId = parseInt(id, 10);
@@ -69,8 +65,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Comment is required' }, { status: 400 });
     }
 
+    // Block internal notes for users without permission
+    if (isInternal && !hasPermission(permissions, 'tickets:create_internal_notes')) {
+      return NextResponse.json(
+        { error: 'You do not have permission to create internal notes' },
+        { status: 403 }
+      );
+    }
+
     const organization = request.headers.get('x-devops-org') || undefined;
-    const devopsService = new AzureDevOpsService(session.accessToken, organization);
+    const devopsService = new AzureDevOpsService(session.accessToken!, organization);
 
     // Get all projects to find the ticket
     const projects = await devopsService.getProjects();

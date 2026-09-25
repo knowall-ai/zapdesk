@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requirePermission, isAuthed } from '@/lib/api-auth';
 import type { Customer } from '@/types';
 
 /** If a display name is a full email address, derive a readable name from it */
@@ -18,13 +17,11 @@ function normalizeDisplayName(name: string): string {
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    const auth = await requirePermission('users:view');
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken!);
 
     // Fetch tickets, projects, and all users from entitlements API in parallel
     const [tickets, projects, allUsersWithLicenses] = await Promise.all([

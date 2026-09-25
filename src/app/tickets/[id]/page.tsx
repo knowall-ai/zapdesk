@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { TicketDetail } from '@/components/tickets';
+import { usePermissions } from '@/components/providers/PermissionProvider';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { hasTicketTag } from '@/lib/tags';
@@ -18,6 +19,7 @@ export default function TicketDetailPage() {
   const params = useParams();
   const pathname = usePathname();
   const ticketId = params.id as string;
+  const { hasPermission } = usePermissions();
   const { selectedOrganization } = useOrganization();
   const { refresh: refreshCounts } = useTicketCounts();
 
@@ -399,26 +401,35 @@ export default function TicketDetailPage() {
     return null;
   }
 
+  const canChangeStatus = hasPermission('tickets:change_status');
+  const canAssign = hasPermission('tickets:assign');
+  const canEdit = hasPermission('tickets:edit');
+  const canDelete = hasPermission('tickets:delete');
+  const canSeeInternalNotes = hasPermission('tickets:create_internal_notes');
+
+  // Filter internal notes for users without permission
+  const visibleComments = canSeeInternalNotes ? comments : comments.filter((c) => !c.isInternal);
+
   return (
     <MainLayout>
       <TicketDetail
         key={ticketId}
         ticket={ticket}
-        comments={comments}
+        comments={visibleComments}
         history={history}
         historyLoading={historyLoading}
         onAddComment={handleAddComment}
-        onStateChange={handleStateChange}
-        onAssigneeChange={handleAssigneeChange}
-        onPriorityChange={handlePriorityChange}
-        onTypeChange={handleTypeChange}
-        onTagsChange={handleTagsChange}
-        onDescriptionChange={handleDescriptionChange}
-        onResolutionChange={handleResolutionChange}
-        onMitigationChange={handleMitigationChange}
-        onUploadAttachment={handleUploadAttachment}
+        onStateChange={canChangeStatus ? handleStateChange : undefined}
+        onAssigneeChange={canAssign ? handleAssigneeChange : undefined}
+        onPriorityChange={canEdit ? handlePriorityChange : undefined}
+        onTypeChange={canEdit ? handleTypeChange : undefined}
+        onTagsChange={canEdit ? handleTagsChange : undefined}
+        onDescriptionChange={canEdit ? handleDescriptionChange : undefined}
+        onResolutionChange={canEdit ? handleResolutionChange : undefined}
+        onMitigationChange={canEdit ? handleMitigationChange : undefined}
+        onUploadAttachment={canEdit ? handleUploadAttachment : undefined}
         onRefreshTicket={fetchTicket}
-        onDelete={handleDelete}
+        onDelete={canDelete ? handleDelete : undefined}
       />
     </MainLayout>
   );

@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requireAnyPermission, isAuthed } from '@/lib/api-auth';
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAnyPermission(['tickets:view_all', 'tickets:view_own']);
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const { id } = await params;
     const ticketId = parseInt(id, 10);
@@ -18,7 +15,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken!);
     const found = await devopsService.findProjectForWorkItem(ticketId);
 
     if (!found) {

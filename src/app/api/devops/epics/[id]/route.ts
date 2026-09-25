@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requirePermission, isAuthed } from '@/lib/api-auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { getTemplateConfig } from '@/config/process-templates';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requirePermission('projects:view');
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     // Get organization from header (client sends from localStorage selection)
     const devOpsOrg = request.headers.get('x-devops-org');
@@ -21,7 +18,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     // Validate user has access to the requested organization
-    const hasAccess = await validateOrganizationAccess(session.accessToken, devOpsOrg);
+    const hasAccess = await validateOrganizationAccess(session.accessToken!, devOpsOrg);
     if (!hasAccess) {
       return NextResponse.json(
         { error: 'Access denied to the specified organization' },
@@ -43,7 +40,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'Project parameter is required' }, { status: 400 });
     }
 
-    const devOpsService = new AzureDevOpsService(session.accessToken, devOpsOrg);
+    // requireAuth has already established the token is present.
+    const devOpsService = new AzureDevOpsService(session.accessToken!, devOpsOrg);
     const [epic, featureStates] = await Promise.all([
       devOpsService.getEpicHierarchy(project, epicId),
       devOpsService.getWorkItemTypeStates(project, 'Feature'),

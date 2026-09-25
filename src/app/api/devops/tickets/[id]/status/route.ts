@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
 import { resolveStateForStatus, categoriesForStatus } from '@/lib/state-categories';
+import { requirePermission, isAuthed } from '@/lib/api-auth';
 import type { TicketStatus } from '@/types';
 
 const VALID_STATUSES: TicketStatus[] = [
@@ -21,11 +20,9 @@ const MAX_PROJECT_LENGTH = 64;
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requirePermission('tickets:change_status');
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const { id } = await params;
     // parseInt alone accepts "123abc" and forwards 123.
@@ -77,7 +74,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const projectHint = trimmedProject || undefined;
 
     const organization = request.headers.get('x-devops-org') || undefined;
-    const devopsService = new AzureDevOpsService(session.accessToken, organization);
+    const devopsService = new AzureDevOpsService(session.accessToken!, organization);
 
     // Locate the work item. We need its type and current state, not just its
     // project: the state name to write depends on both.
