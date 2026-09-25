@@ -32,13 +32,18 @@ and the next poll drains it. So hand over with a gap, never a handshake.
    is installed and its settings are loaded, but the timer does not fire.
 2. Check the deployment came up and the settings are right — a missing one
    shows up here, before anything is polling.
-3. Disable `.github/workflows/email-poll.yml`. Nothing is polling now.
-4. Remove `AzureWebJobs.pollMailbox.Disabled`, or set it to `false`.
+3. Disable `.github/workflows/email-poll.yml`, then check the Actions tab and
+   wait out or cancel any run still in flight. Disabling stops future
+   triggers; it does not stop a run that is already polling, and a poll can
+   hold for up to 90 seconds.
+4. Only once no run is active: remove `AzureWebJobs.pollMailbox.Disabled`, or
+   set it to `false`.
 5. Watch for a successful `pollMailbox` invocation in Application Insights.
 
-Rollback is the same steps backwards: disable the Function, re-enable the
-workflow. Whatever arrived in between is still sitting unread and gets drained
-by whichever poller comes back.
+Rollback is the same steps backwards, with the same care in the middle:
+disable the Function, confirm no `pollMailbox` invocation is still running,
+then re-enable the workflow. Whatever arrived in between is still sitting
+unread and gets drained by whichever poller comes back.
 
 ## Layout
 
