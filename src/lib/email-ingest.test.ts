@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAppendixHtml, splicedInlineCids } from './email-ingest';
+import { buildAppendixHtml, renderForNotification, splicedInlineCids } from './email-ingest';
 
 const inline = (filename: string, contentId?: string) => ({
   filename,
@@ -112,5 +112,69 @@ describe('buildAppendixHtml', () => {
 
   it('is empty when there is nothing to report', () => {
     expect(buildAppendixHtml([], [], [], [], none)).toBe('');
+  });
+});
+
+describe('renderForNotification', () => {
+  // renderEmailBodyHtml strips script, svg, iframe and javascript: hrefs, but
+  // keeps style attributes -- and a style can still carry a javascript: url.
+  // The ticket view survives that because it re-sanitises through DOMPurify;
+  // a mail client gets no such pass.
+  it.each([
+    '<div style="background:url(javascript:alert(1))">x</div>',
+    "<div style='width:expression(alert(1))'>x</div>",
+    '<div style=background:url(javascript:alert(1))>x</div>',
+  ])('drops style attributes that could carry script: %s', (html) => {
+    const out = renderForNotification(html);
+    expect(out).not.toMatch(/javascript\s*:/i);
+    expect(out).not.toMatch(/expression\s*\(/i);
+    expect(out).not.toMatch(/\sstyle\s*=/i);
+  });
+
+  it('keeps the markup that carries meaning', () => {
+    const out = renderForNotification(
+      '<p style="color:red"><strong>Hi</strong></p><a href="https://x.test">link</a>'
+    );
+    expect(out).toContain('<strong>Hi</strong>');
+    expect(out).toContain('href="https://x.test"');
+    expect(out).not.toContain('style=');
+  });
+  // The agent notification carries a copy of the reply. Inline images in the
+  // stored body point at DevOps attachment URLs that need a signed-in session,
+  // so a mail client renders them as broken boxes. Dropping them is the fix.
+  it('strips an inline image and says one was omitted', () => {
+    const html = '<p>See this</p><img src="https://devops/attachments/shot.png" alt="shot.png" />';
+    const out = renderForNotification(html);
+    expect(out).not.toContain('<img');
+    expect(out).toContain('<p>See this</p>');
+    expect(out).toContain('1 inline image omitted');
+  });
+
+  it('pluralises the note when several images go', () => {
+    const html = '<img src="a.png"><p>hi</p><IMG SRC="b.png">';
+    const out = renderForNotification(html);
+    expect(out).not.toMatch(/<img/i);
+    expect(out).toContain('2 inline images omitted');
+  });
+
+  it('returns an image-free body untouched, note and all', () => {
+    const html = '<pre>plain reply</pre>';
+    expect(renderForNotification(html)).toBe(html);
+    expect(renderForNotification(html)).not.toContain('omitted');
+  });
+
+  it('leaves surrounding markup alone', () => {
+    const html = '<p>before</p><img src="x.png"><blockquote>after</blockquote>';
+    const out = renderForNotification(html);
+    expect(out).toContain('<blockquote>after</blockquote>');
+    expect(out).toContain('<p>before</p>');
+  });
+
+  // A word boundary, not a bare prefix match: <image> and <imgfoo> are not
+  // images, and an earlier version of this guard carried a literal backspace
+  // where the \b belonged, which matched nothing at all.
+  it('does not strip a tag that merely starts with img', () => {
+    const html = '<imgx data-a="1">kept</imgx>';
+    expect(renderForNotification(html)).toBe(html);
   });
 });
