@@ -17,9 +17,13 @@ A timer trigger has neither limit. The trade is visibility: a failed run here
 leaves a trace in Application Insights rather than a red ✗ on a page someone
 might glance at, which is what the alert below is for.
 
-**Do not run both.** Two pollers against one mailbox can pick up the same
-message before either marks it read. Disable the workflow in the same change
-that deploys this.
+**Do not run both**, and do not disable the workflow first. Two pollers against
+one mailbox can pick up the same message before either marks it read — but
+disabling the only working scheduler before this one has proven itself stops
+inbound mail entirely if the deployment or its settings are wrong. Order:
+deploy, wait for a successful `pollMailbox` invocation in Application Insights,
+then disable `.github/workflows/email-poll.yml`. If anything fails, re-enable
+the workflow — it is the rollback.
 
 ## Layout
 
@@ -83,7 +87,13 @@ func azure functionapp publish <function-app-name>
 ```
 
 Then set all four under **Configuration → Application settings**, ideally as
-Key Vault references. A missing one fails at load and names itself.
+Key Vault references.
+
+They fail at different moments, which matters when reading a trace. A missing
+`POLL_SCHEDULE` throws at module load, so the Function never registers. A
+missing `APP_URL` or `EMAIL_WEBHOOK_SECRET` is only reached when `readConfig`
+runs inside an invocation, so the Function loads cleanly and then fails on
+every tick. Both name the setting.
 
 ### Set the alert before you cut over
 
