@@ -28,7 +28,7 @@ const json = (body: unknown) =>
 
 const seen: { url: string; init?: RequestInit }[] = [];
 
-function stubFetch() {
+function stubFetch(assignee = 'agent@knowall.ai') {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     seen.push({ url, init });
@@ -48,7 +48,7 @@ function stubFetch() {
       return json({
         fields: {
           'System.Title': 'Printer on fire',
-          'System.AssignedTo': { uniqueName: 'agent@knowall.ai', displayName: 'Agent' },
+          'System.AssignedTo': { uniqueName: assignee, displayName: 'Agent' },
         },
       });
     }
@@ -183,5 +183,55 @@ describe('unassigned tickets fall back to the support team, but never into a loo
     process.env.MAIL_POLL_MAILBOX = 'support@knowall.ai';
     await unassigned();
     expect(h.sendCustomerReplyNotification).not.toHaveBeenCalled();
+  });
+});
+
+// The same loop reached the other way. Assigning a ticket to a shared support
+// account is ordinary, and if that account is the polled mailbox the guard on
+// the fallback address never runs -- the assignee branch returns first.
+describe('a ticket assigned to the polled mailbox', () => {
+  beforeEach(() => {
+    seen.length = 0;
+    process.env.AZURE_DEVOPS_PAT = 'test-pat';
+    process.env.AZURE_DEVOPS_ORG = 'KnowAll';
+    h.sendCustomerReplyNotification.mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.SUPPORT_TEAM_NOTIFY_EMAIL;
+    delete process.env.MAIL_POLL_MAILBOX;
+  });
+
+  const reply = () =>
+    ingestEmail({
+      from: 'Customer <cust@example.com>',
+      subject: 'Re: [ZapDesk #7145] Printer on fire',
+      body: 'Still broken.',
+    });
+
+  it('uses the team address instead of notifying itself', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal('fetch', stubFetch('support@knowall.ai'));
+    process.env.MAIL_POLL_MAILBOX = 'support@knowall.ai';
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support-team@knowall.ai';
+
+    await reply();
+
+    const args = h.sendCustomerReplyNotification.mock.calls[0] as unknown as unknown[];
+    expect(args[2]).toBe('support-team@knowall.ai');
+    expect(err).toHaveBeenCalledWith(expect.stringContaining('would loop'));
+    err.mockRestore();
+  });
+
+  it('sends nothing when the team address is unset', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal('fetch', stubFetch('Support@KnowAll.ai'));
+    process.env.MAIL_POLL_MAILBOX = 'support@knowall.ai';
+
+    await reply();
+
+    expect(h.sendCustomerReplyNotification).not.toHaveBeenCalled();
+    err.mockRestore();
   });
 });

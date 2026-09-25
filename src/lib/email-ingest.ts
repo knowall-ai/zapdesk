@@ -229,6 +229,25 @@ interface WorkItemFieldsResponse {
 }
 
 /**
+ * Drop every `style` attribute from a body bound for email.
+ *
+ * `renderEmailBodyHtml` neutralises tags and URL attributes -- script, svg,
+ * iframe, object and `javascript:` hrefs are all gone by the time a body is
+ * stored -- but it keeps `style`, and a style can still carry
+ * `background:url(javascript:...)` or `width:expression(...)`. That is
+ * harmless in the ticket view, which re-sanitises through DOMPurify before
+ * rendering. This body goes somewhere with no such pass, into a mail client
+ * whose renderer we do not choose.
+ *
+ * Removed wholesale rather than filtered. Partial CSS sanitising is a game of
+ * spotting the next encoding, and inline styles off an inbound email are
+ * worth nothing here -- the notification template brings its own.
+ */
+function withoutStyleAttributes(html: string): string {
+  return html.replace(/\sstyle\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+}
+
+/**
  * Strip inline images from a stored comment body before it is emailed to the
  * assigned agent.
  *
@@ -241,12 +260,13 @@ interface WorkItemFieldsResponse {
  * treatment of inbound markup — and the input here is already sanitised.
  */
 export function renderForNotification(storedHtml: string): string {
+  const plain = withoutStyleAttributes(storedHtml);
   let removed = 0;
-  const withoutImages = storedHtml.replace(/<img\b[^>]*>/gi, () => {
+  const withoutImages = plain.replace(/<img\b[^>]*>/gi, () => {
     removed += 1;
     return '';
   });
-  if (removed === 0) return storedHtml;
+  if (removed === 0) return withoutImages;
   const label = removed === 1 ? 'image' : 'images';
   return `${withoutImages}
 <p style="color: #71717a; font-size: 13px;"><em>${removed} inline ${label} omitted — open the ticket to view.</em></p>`;
@@ -270,11 +290,23 @@ export function renderForNotification(storedHtml: string): string {
  * an optional fallback; failing startup over it would turn a degraded
  * notification into an outage of the whole app.
  */
+/**
+ * Is this the mailbox ZapDesk polls?
+ *
+ * Shared by both notification paths deliberately. The loop does not care how
+ * an address was chosen -- an assignee whose `uniqueName` is the support
+ * mailbox produces exactly the same cycle as a group address that is, and a
+ * shared support account is a perfectly ordinary thing to assign a ticket to.
+ */
+function isPolledMailbox(address: string): boolean {
+  const polled = (process.env.MAIL_POLL_MAILBOX || '').trim().toLowerCase();
+  return polled !== '' && address.trim().toLowerCase() === polled;
+}
+
 function supportTeamFallback(): string | null {
   const group = (process.env.SUPPORT_TEAM_NOTIFY_EMAIL || '').trim();
   if (!group) return null;
-  const polled = (process.env.MAIL_POLL_MAILBOX || '').trim();
-  if (polled && group.toLowerCase() === polled.toLowerCase()) {
+  if (isPolledMailbox(group)) {
     console.error(
       `[Notify] SUPPORT_TEAM_NOTIFY_EMAIL (${group}) is the mailbox ZapDesk polls — ignoring it, because notifying it would loop.`
     );
@@ -296,8 +328,16 @@ function notifyAgentOfReply(
   // Groups and team identities have a uniqueName like `[Project]\Team Name`
   // which won't contain `@`. Treat anything that doesn't look like an email
   // address as "no assignee" and fall back to the configured team address.
-  const recipient =
-    assignedEmail && assignedEmail.includes('@') ? assignedEmail : (supportTeamFallback() ?? '');
+  const assignee =
+    assignedEmail && assignedEmail.includes('@') && !isPolledMailbox(assignedEmail)
+      ? assignedEmail
+      : null;
+  if (assignedEmail && assignedEmail.includes('@') && !assignee) {
+    console.error(
+      `[Notify] Ticket #${ticketId} is assigned to ${assignedEmail}, the mailbox ZapDesk polls — notifying it would loop, so falling back to the team address.`
+    );
+  }
+  const recipient = assignee ?? supportTeamFallback() ?? '';
   if (!recipient) {
     console.log(
       `[Notify] No agent assigned and SUPPORT_TEAM_NOTIFY_EMAIL not set — skipping notification for ticket #${ticketId}`

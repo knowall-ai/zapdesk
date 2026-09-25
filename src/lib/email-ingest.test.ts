@@ -116,6 +116,29 @@ describe('buildAppendixHtml', () => {
 });
 
 describe('renderForNotification', () => {
+  // renderEmailBodyHtml strips script, svg, iframe and javascript: hrefs, but
+  // keeps style attributes -- and a style can still carry a javascript: url.
+  // The ticket view survives that because it re-sanitises through DOMPurify;
+  // a mail client gets no such pass.
+  it.each([
+    '<div style="background:url(javascript:alert(1))">x</div>',
+    "<div style='width:expression(alert(1))'>x</div>",
+    '<div style=background:url(javascript:alert(1))>x</div>',
+  ])('drops style attributes that could carry script: %s', (html) => {
+    const out = renderForNotification(html);
+    expect(out).not.toMatch(/javascript\s*:/i);
+    expect(out).not.toMatch(/expression\s*\(/i);
+    expect(out).not.toMatch(/\sstyle\s*=/i);
+  });
+
+  it('keeps the markup that carries meaning', () => {
+    const out = renderForNotification(
+      '<p style="color:red"><strong>Hi</strong></p><a href="https://x.test">link</a>'
+    );
+    expect(out).toContain('<strong>Hi</strong>');
+    expect(out).toContain('href="https://x.test"');
+    expect(out).not.toContain('style=');
+  });
   // The agent notification carries a copy of the reply. Inline images in the
   // stored body point at DevOps attachment URLs that need a signed-in session,
   // so a mail client renders them as broken boxes. Dropping them is the fix.
