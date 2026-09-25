@@ -94,9 +94,13 @@ export function describeAadError(errorDescription: string): MailCredentialCheck 
  *
  * The tenant and client IDs are deliberately left alone. They are public
  * identifiers -- a client ID appears in the OAuth URLs a signed-in user can
- * already read -- and they are the part of the message that says *which* app
- * registration failed. Masking them would cost the whole diagnostic value and
- * protect nothing: AADSTS7000222 naming app "***" tells an operator nothing.
+ * already read -- and where they survive into the result they are what says
+ * *which* app registration failed. Masking them would cost that and protect
+ * nothing.
+ *
+ * They only reach the reader for codes KNOWN_CODES does not cover: a
+ * recognised code returns a fixed message and the upstream text is discarded
+ * entirely, IDs included. This function is about the unrecognised case.
  */
 function withoutSecret(text: string, secret: string): string {
   if (!secret || !text.includes(secret)) return text;
@@ -160,8 +164,13 @@ export async function verifyMailCredentials(
     // splits the value -- which would throw, and turn a bad credential into a
     // 500 from the route that exists to report bad credentials.
     const data = (await response.json()) as Record<string, unknown>;
-    if (typeof data.error_description === 'string') description = data.error_description;
-    else if (typeof data.error === 'string') description = data.error;
+    // Empty counts as absent, not as an answer. A gateway returning
+    // `{error_description: '', error: 'invalid_client'}` would otherwise
+    // select the empty string and throw away the only diagnostic in the body.
+    const described = [data.error_description, data.error].find(
+      (value): value is string => typeof value === 'string' && value.trim() !== ''
+    );
+    description = described ?? '';
   } catch {
     description = '';
   }

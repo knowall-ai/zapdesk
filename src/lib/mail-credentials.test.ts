@@ -148,10 +148,24 @@ describe('verifyMailCredentials', () => {
   // and it is public anyway. Masking it would cost the diagnostic and protect
   // nothing. Pinned so nobody 'fixes' it into ***.
   it('keeps the client id, which names the failing app', async () => {
-    const fetchImpl = vi.fn(async () => aadError(EXPIRED_SECRET));
+    const fetchImpl = vi.fn(async () =>
+      aadError(`AADSTS50000: App ${creds.clientId} was rejected.`)
+    );
     const result = await verifyMailCredentials(creds, fetchImpl as unknown as typeof fetch);
-    expect(result.code).toBe('AADSTS7000222');
-    expect(JSON.stringify(result)).not.toContain('***');
+    expect(result.code).toBe('AADSTS50000');
+    expect(result.message).toContain(creds.clientId);
+  });
+
+  it('falls through to error when error_description is empty', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error_description: '', error: 'invalid_client' }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        })
+    );
+    const result = await verifyMailCredentials(creds, fetchImpl as unknown as typeof fetch);
+    expect(result.message).toBe('invalid_client');
   });
 
   it('survives a non-string error_description rather than throwing', async () => {
