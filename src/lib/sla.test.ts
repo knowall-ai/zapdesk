@@ -10,6 +10,9 @@ import {
   getSLAStatusLabel,
   SLA_POLICIES,
   DEFAULT_SLA_LEVEL,
+  getSLAConfig,
+  getSLATargetsForPriority,
+  calculateResolutionDeadline,
 } from './sla';
 import type { Ticket, TicketPriority } from '@/types';
 
@@ -346,5 +349,119 @@ describe('SLA_POLICIES', () => {
 describe('DEFAULT_SLA_LEVEL', () => {
   it('should be Bronze', () => {
     expect(DEFAULT_SLA_LEVEL).toBe('Bronze');
+  });
+});
+
+// SLA_CONFIG is set per deployment, so renaming Urgent -> Critical and
+// Normal -> Medium in this codebase cannot reach a config already out there.
+// Untranslated, the lookup returns undefined and the deadline functions read
+// resolutionTimeHours off it and throw.
+describe('getSLAConfig with a legacy SLA_CONFIG', () => {
+  const legacy = JSON.stringify({
+    Urgent: { responseTimeHours: 1, resolutionTimeHours: 2 },
+    High: { responseTimeHours: 4, resolutionTimeHours: 8 },
+    Normal: { responseTimeHours: 9, resolutionTimeHours: 25 },
+    Low: { responseTimeHours: 24, resolutionTimeHours: 72 },
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('reads Urgent as Critical', () => {
+    vi.stubEnv('SLA_CONFIG', legacy);
+    expect(getSLATargetsForPriority('Critical')).toEqual({
+      responseTimeHours: 1,
+      resolutionTimeHours: 2,
+    });
+  });
+
+  it('reads Normal as Medium', () => {
+    vi.stubEnv('SLA_CONFIG', legacy);
+    expect(getSLATargetsForPriority('Medium')).toEqual({
+      responseTimeHours: 9,
+      resolutionTimeHours: 25,
+    });
+  });
+
+  it('calculates a deadline instead of throwing', () => {
+    vi.stubEnv('SLA_CONFIG', legacy);
+    const ticket = { priority: 'Critical', createdAt: '2026-01-01T00:00:00.000Z' };
+    const due = calculateResolutionDeadline(ticket as never);
+    expect(due.toISOString()).toBe('2026-01-01T02:00:00.000Z');
+  });
+
+  it('keeps defaults for priorities the config omits', () => {
+    vi.stubEnv(
+      'SLA_CONFIG',
+      JSON.stringify({ High: { responseTimeHours: 2, resolutionTimeHours: 3 } })
+    );
+    expect(getSLATargetsForPriority('High')).toEqual({
+      responseTimeHours: 2,
+      resolutionTimeHours: 3,
+    });
+    expect(getSLATargetsForPriority('Critical')).toEqual({
+      responseTimeHours: 1,
+      resolutionTimeHours: 4,
+    });
+  });
+
+  it('warns about a priority it does not recognise rather than storing it', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubEnv(
+      'SLA_CONFIG',
+      JSON.stringify({ Urgnet: { responseTimeHours: 1, resolutionTimeHours: 1 } })
+    );
+    expect(getSLAConfig().Urgnet).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Urgnet'));
+    warn.mockRestore();
+  });
+
+  it('falls back to defaults when the JSON is unparseable', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubEnv('SLA_CONFIG', '{not json');
+    expect(getSLATargetsForPriority('Critical')).toEqual({
+      responseTimeHours: 1,
+      resolutionTimeHours: 4,
+    });
+    warn.mockRestore();
+  });
+});
+
+// The policy path is separate from the config path above, and its targets are
+// keyed on the pre-rename names as part of the SLAPolicy shape.
+describe('getSLATargets after the priority rename', () => {
+  it.each(['Critical', 'High', 'Medium', 'Low'])('resolves targets for %s', (priority) => {
+    const targets = getSLATargets(getSLAPolicy('Bronze'), priority);
+    expect(targets).toBeDefined();
+    expect(typeof targets.firstResponseMinutes).toBe('number');
+  });
+
+  it('maps Critical onto the urgent targets', () => {
+    const policy = getSLAPolicy('Gold');
+    expect(getSLATargets(policy, 'Critical')).toEqual(policy.targets.urgent);
+  });
+
+  it('maps Medium onto the normal targets', () => {
+    const policy = getSLAPolicy('Gold');
+    expect(getSLATargets(policy, 'Medium')).toEqual(policy.targets.normal);
+  });
+
+  it('still accepts the old names', () => {
+    const policy = getSLAPolicy('Silver');
+    expect(getSLATargets(policy, 'Urgent')).toEqual(policy.targets.urgent);
+    expect(getSLATargets(policy, 'Normal')).toEqual(policy.targets.normal);
+  });
+
+  it('falls back for a priority it does not know', () => {
+    const policy = getSLAPolicy('Bronze');
+    expect(getSLATargets(policy, 'Whatever')).toEqual(policy.targets.normal);
+  });
+
+  it('calculates ticket SLA for a Critical ticket without throwing', () => {
+    const ticket = {
+      priority: 'Critical',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      status: 'New',
+    };
+    expect(() => calculateTicketSLA(ticket as never)).not.toThrow();
   });
 });
