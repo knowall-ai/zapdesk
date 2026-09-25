@@ -7,30 +7,27 @@ const ok = (body = 'fetched=1 ingested=1 failed=0') =>
 describe('readConfig', () => {
   it('reads both settings', () => {
     expect(
-      readConfig({ ZAPDESK_BASE_URL: 'https://zapdesk.knowall.ai', EMAIL_WEBHOOK_SECRET: 's' })
+      readConfig({ APP_URL: 'https://zapdesk.knowall.ai', EMAIL_WEBHOOK_SECRET: 's' })
     ).toEqual({ baseUrl: 'https://zapdesk.knowall.ai', secret: 's' });
   });
 
   it('trims surrounding whitespace', () => {
-    expect(readConfig({ ZAPDESK_BASE_URL: '  https://x  ', EMAIL_WEBHOOK_SECRET: ' s ' })).toEqual({
+    expect(readConfig({ APP_URL: '  https://x  ', EMAIL_WEBHOOK_SECRET: ' s ' })).toEqual({
       baseUrl: 'https://x',
       secret: 's',
     });
   });
 
-  // The GitHub workflow this replaces failed 100 runs in a row for exactly
-  // this reason, so the message has to name what is missing and where to put
-  // it — an Application Insights trace is all the operator gets.
+  // A half-configured poller fails every run until someone reads a trace, so
+  // the message has to name what is missing and where to put it.
   it('names every missing setting', () => {
-    expect(() => readConfig({})).toThrow(/ZAPDESK_BASE_URL, EMAIL_WEBHOOK_SECRET/);
-    expect(() => readConfig({ EMAIL_WEBHOOK_SECRET: 's' })).toThrow(/ZAPDESK_BASE_URL/);
-    expect(() => readConfig({ ZAPDESK_BASE_URL: 'https://x' })).toThrow(/EMAIL_WEBHOOK_SECRET/);
+    expect(() => readConfig({})).toThrow(/APP_URL, EMAIL_WEBHOOK_SECRET/);
+    expect(() => readConfig({ EMAIL_WEBHOOK_SECRET: 's' })).toThrow(/APP_URL/);
+    expect(() => readConfig({ APP_URL: 'https://x' })).toThrow(/EMAIL_WEBHOOK_SECRET/);
   });
 
   it('treats a whitespace-only setting as missing', () => {
-    expect(() => readConfig({ ZAPDESK_BASE_URL: '   ', EMAIL_WEBHOOK_SECRET: 's' })).toThrow(
-      /ZAPDESK_BASE_URL/
-    );
+    expect(() => readConfig({ APP_URL: '   ', EMAIL_WEBHOOK_SECRET: 's' })).toThrow(/APP_URL/);
   });
 
   it('says where to set them', () => {
@@ -42,13 +39,13 @@ describe('readConfig', () => {
   // remote host that is a credential on the wire.
   it('refuses plain http to a remote host', () => {
     expect(() =>
-      readConfig({ ZAPDESK_BASE_URL: 'http://zapdesk.knowall.ai', EMAIL_WEBHOOK_SECRET: 's' })
+      readConfig({ APP_URL: 'http://zapdesk.knowall.ai', EMAIL_WEBHOOK_SECRET: 's' })
     ).toThrow(/must use https/);
   });
 
   it('allows plain http only for loopback, where nothing leaves the machine', () => {
     for (const host of ['http://localhost:3102', 'http://127.0.0.1:3102', 'http://[::1]:3102']) {
-      expect(readConfig({ ZAPDESK_BASE_URL: host, EMAIL_WEBHOOK_SECRET: 's' }).baseUrl).toBe(host);
+      expect(readConfig({ APP_URL: host, EMAIL_WEBHOOK_SECRET: 's' }).baseUrl).toBe(host);
     }
   });
 
@@ -56,7 +53,7 @@ describe('readConfig', () => {
   // elsewhere; only an exact loopback host is safe over http.
   it('is not fooled by a hostname that merely starts with a loopback name', () => {
     for (const host of ['http://localhost.evil.example', 'http://127.0.0.1.evil.example']) {
-      expect(() => readConfig({ ZAPDESK_BASE_URL: host, EMAIL_WEBHOOK_SECRET: 's' })).toThrow(
+      expect(() => readConfig({ APP_URL: host, EMAIL_WEBHOOK_SECRET: 's' })).toThrow(
         /must use https/
       );
     }
@@ -64,20 +61,19 @@ describe('readConfig', () => {
 
   it('always allows https', () => {
     expect(
-      readConfig({ ZAPDESK_BASE_URL: 'https://zapdesk.knowall.ai', EMAIL_WEBHOOK_SECRET: 's' })
-        .baseUrl
+      readConfig({ APP_URL: 'https://zapdesk.knowall.ai', EMAIL_WEBHOOK_SECRET: 's' }).baseUrl
     ).toBe('https://zapdesk.knowall.ai');
   });
 
   it('rejects a base URL that is not a URL', () => {
-    expect(() =>
-      readConfig({ ZAPDESK_BASE_URL: 'zapdesk.knowall.ai', EMAIL_WEBHOOK_SECRET: 's' })
-    ).toThrow(/not a valid URL/);
+    expect(() => readConfig({ APP_URL: 'zapdesk.knowall.ai', EMAIL_WEBHOOK_SECRET: 's' })).toThrow(
+      /not a valid URL/
+    );
   });
 
   it('rejects a scheme that is neither http nor https', () => {
     expect(() =>
-      readConfig({ ZAPDESK_BASE_URL: 'ftp://zapdesk.knowall.ai', EMAIL_WEBHOOK_SECRET: 's' })
+      readConfig({ APP_URL: 'ftp://zapdesk.knowall.ai', EMAIL_WEBHOOK_SECRET: 's' })
     ).toThrow(/must use https/);
   });
 });
@@ -118,8 +114,8 @@ describe('drainMailbox', () => {
   });
 
   // `fetch` resolves for 4xx and 5xx, so without this a failed poll would be
-  // recorded as a successful invocation — the silent failure mode that let the
-  // old workflow rot unnoticed.
+  // recorded as a successful invocation — silent failure, the worst kind for
+  // something nobody watches.
   it.each([
     [401, 'Unauthorized'],
     [404, 'Not Found'],

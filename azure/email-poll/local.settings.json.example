@@ -3,7 +3,7 @@
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "node",
-    "ZAPDESK_BASE_URL": "http://localhost:3102",
+    "APP_URL": "http://localhost:3102",
     "EMAIL_WEBHOOK_SECRET": "the-same-secret-the-app-uses",
     "POLL_SCHEDULE": "0 * * * * *"
   }

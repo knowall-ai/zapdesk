@@ -25,7 +25,7 @@ that deploys this.
 
 ```
 src/poll.ts                   the work, with no Functions dependency
-src/poll.test.ts              15 tests against it
+src/poll.test.ts              unit tests against it
 src/functions/pollMailbox.ts  the timer trigger, a thin adapter
 host.json                     2-minute function timeout
 ```
@@ -36,12 +36,17 @@ trigger stays too small to hide a bug.
 
 ## Settings
 
+All four are required. None has a default.
+
 | Setting                | Purpose                                                         |
 | ---------------------- | --------------------------------------------------------------- |
-| `ZAPDESK_BASE_URL`     | Base URL of the deployed app, e.g. `https://zapdesk.knowall.ai` |
+| `APP_URL`              | Base URL of the deployed app, e.g. `https://zapdesk.knowall.ai` |
 | `EMAIL_WEBHOOK_SECRET` | Must match the app's own value, or every poll gets a 401        |
-| `POLL_SCHEDULE`        | Optional NCRONTAB override; defaults to `0 * * * * *`           |
+| `POLL_SCHEDULE`        | NCRONTAB expression; `0 * * * * *` is every minute              |
 | `AzureWebJobsStorage`  | Required by the runtime to hold the timer's schedule state      |
+
+`APP_URL` is the same variable the deploy workflow sets on the web app, named
+the same thing on purpose: one value, whichever resource is reading it.
 
 `readConfig` fails loudly and names whichever setting is missing, rather than
 polling a half-configured endpoint. A missing base URL is how inbound mail
@@ -77,12 +82,12 @@ npm run build    # tsc
 func azure functionapp publish <function-app-name>
 ```
 
-Then set `ZAPDESK_BASE_URL` and `EMAIL_WEBHOOK_SECRET` under
-**Configuration → Application settings**, ideally as Key Vault references.
+Then set all four under **Configuration → Application settings**, ideally as
+Key Vault references. A missing one fails at load and names itself.
 
 ### Set the alert before you cut over
 
-Azure has no equivalent of a red cross in the Actions tab. Without an alert,
-this fails exactly as silently as the workflow did — which is how that one sat
-broken for four months before anyone noticed. Create an Application Insights
-alert on failed `pollMailbox` invocations as part of the migration, not after.
+Nothing here surfaces a failure on its own — a failed poll is a trace in
+Application Insights and nothing else, and a mailbox that has stopped being
+drained looks exactly like a mailbox with nothing in it. Create an alert on
+failed `pollMailbox` invocations as part of the migration, not after it.

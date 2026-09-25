@@ -46,21 +46,21 @@ function isLoopback(hostname: string): boolean {
  * `EMAIL_WEBHOOK_SECRET` travels in a request header, and the receiving route
  * can only check it after it has already crossed the network. Over plain HTTP
  * to anything but loopback that is a credential on the wire, so a misconfigured
- * `ZAPDESK_BASE_URL` is refused rather than quietly downgraded.
+ * `APP_URL` is refused rather than quietly downgraded.
  */
 function assertSafeTransport(baseUrl: string): void {
   let url: URL;
   try {
     url = new URL(baseUrl);
   } catch {
-    throw new Error(`ZAPDESK_BASE_URL is not a valid URL: ${baseUrl}`);
+    throw new Error(`APP_URL is not a valid URL: ${baseUrl}`);
   }
 
   if (url.protocol === 'https:') return;
   if (url.protocol === 'http:' && isLoopback(url.hostname)) return;
 
   throw new Error(
-    `ZAPDESK_BASE_URL must use https (got ${url.protocol}//${url.host}). ` +
+    `APP_URL must use https (got ${url.protocol}//${url.host}). ` +
       'Plain http is accepted only for localhost, because the webhook secret is ' +
       'sent as a header and would otherwise cross the network in cleartext.'
   );
@@ -76,12 +76,10 @@ function assertSafeTransport(baseUrl: string): void {
 export function readConfig(
   env: Readonly<Record<string, string | undefined>> = process.env
 ): PollConfig {
-  const baseUrl = env.ZAPDESK_BASE_URL?.trim();
+  const baseUrl = env.APP_URL?.trim();
   const secret = env.EMAIL_WEBHOOK_SECRET?.trim();
 
-  const missing = [!baseUrl && 'ZAPDESK_BASE_URL', !secret && 'EMAIL_WEBHOOK_SECRET'].filter(
-    Boolean
-  );
+  const missing = [!baseUrl && 'APP_URL', !secret && 'EMAIL_WEBHOOK_SECRET'].filter(Boolean);
 
   if (missing.length > 0) {
     throw new Error(
@@ -149,10 +147,9 @@ export async function drainMailbox(
     signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
   });
 
-  // `fetch` resolves for 4xx and 5xx alike, so a failed poll would otherwise
-  // look like a successful invocation. The GitHub workflow this replaces got
-  // that behaviour free from `curl -f`. Read the body only after the status is
-  // known, and only as much of it as is going to be reported.
+  // `fetch` resolves for 4xx and 5xx alike, so without this check a failed
+  // poll would be recorded as a successful invocation. Read the body only
+  // after the status is known, and only as much of it as gets reported.
   if (!response.ok) {
     const body = await readCapped(response, ERROR_BODY_CHARS);
     throw new Error(`Poll failed: ${response.status} ${response.statusText} — ${body}`);
