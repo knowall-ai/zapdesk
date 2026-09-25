@@ -17,13 +17,28 @@ A timer trigger has neither limit. The trade is visibility: a failed run here
 leaves a trace in Application Insights rather than a red ✗ on a page someone
 might glance at, which is what the alert below is for.
 
-**Do not run both**, and do not disable the workflow first. Two pollers against
-one mailbox can pick up the same message before either marks it read — but
-disabling the only working scheduler before this one has proven itself stops
-inbound mail entirely if the deployment or its settings are wrong. Order:
-deploy, wait for a successful `pollMailbox` invocation in Application Insights,
-then disable `.github/workflows/email-poll.yml`. If anything fails, re-enable
-the workflow — it is the rollback.
+### Cutover
+
+**Never let both run at once, and never verify by overlapping them.** Each poll
+lists unread messages and only then marks them read, and `POST /api/email/poll`
+has no concurrency guard and no idempotency on the Graph message id. Two
+pollers can therefore both pick up one message and file it twice — a duplicate
+ticket, or a comment posted twice on a real customer thread.
+
+A gap is safe where an overlap is not: mail simply waits unread in the mailbox
+and the next poll drains it. So hand over with a gap, never a handshake.
+
+1. Deploy with `AzureWebJobs.pollMailbox.Disabled` set to `true`. The Function
+   is installed and its settings are loaded, but the timer does not fire.
+2. Check the deployment came up and the settings are right — a missing one
+   shows up here, before anything is polling.
+3. Disable `.github/workflows/email-poll.yml`. Nothing is polling now.
+4. Remove `AzureWebJobs.pollMailbox.Disabled`, or set it to `false`.
+5. Watch for a successful `pollMailbox` invocation in Application Insights.
+
+Rollback is the same steps backwards: disable the Function, re-enable the
+workflow. Whatever arrived in between is still sitting unread and gets drained
+by whichever poller comes back.
 
 ## Layout
 
