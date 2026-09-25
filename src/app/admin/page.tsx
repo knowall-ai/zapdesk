@@ -18,13 +18,9 @@ import {
   Inbox,
 } from 'lucide-react';
 import { getSupportedTemplates, getTemplateConfig } from '@/config/process-templates';
-
-interface MailCredentialCheck {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  hint?: string;
-}
+// Type-only, so the server module never reaches the client bundle. Declaring
+// a second copy here would let the two drift the moment a field is added.
+import type { MailCredentialCheck } from '@/lib/mail-credentials';
 
 interface EmailConfig {
   /** Present only when the config was fetched with `?verify=1`. */
