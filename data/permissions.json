@@ -46,17 +46,11 @@
       "name": "client",
       "label": "Client",
       "description": "View and create own tickets only",
-      "permissions": ["tickets:view_own", "tickets:create"]
+      "permissions": [
+        "tickets:view_own",
+        "tickets:create"
+      ]
     }
   ],
-  "users": [
-    {
-      "userId": "akash.jadhav@knowall.ai",
-      "email": "Akash.Jadhav@knowall.ai",
-      "displayName": "Akash Jadhav",
-      "role": "admin",
-      "updatedAt": "2026-03-05T00:00:00.000Z",
-      "updatedBy": "system"
-    }
-  ]
+  "users": []
 }
