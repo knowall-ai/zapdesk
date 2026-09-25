@@ -30,6 +30,25 @@ function mailTenantId(): string {
   return process.env.MAIL_TENANT_ID || process.env.AZURE_AD_TENANT_ID || '';
 }
 
+/**
+ * The credentials Graph calls are made with, for a liveness check.
+ *
+ * Exposed so `mail-credentials.ts` can test them against Entra ID without
+ * duplicating the MAIL_* / AZURE_AD_* fallback chain, which is precisely the
+ * sort of thing that drifts between two copies.
+ */
+export function mailGraphCredentials(): {
+  tenantId: string;
+  clientId: string;
+  clientSecret: string;
+} {
+  return {
+    tenantId: mailTenantId(),
+    clientId: mailClientId(),
+    clientSecret: mailClientSecret(),
+  };
+}
+
 /** Outbound is configured when we have a from address and Graph credentials. */
 export function isEmailConfigured(): boolean {
   return Boolean(MAIL_FROM() && mailClientId() && mailClientSecret() && mailTenantId());
