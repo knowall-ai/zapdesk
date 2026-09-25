@@ -285,6 +285,9 @@ export class DevOpsApiError extends Error {
   }
 }
 
+/** Ceiling on the org-level work item lookup, which callers await inline. */
+const ORG_LOOKUP_TIMEOUT_MS = 15_000;
+
 /**
  * State names that every work item type defining them treats as Removed.
  *
@@ -602,6 +605,49 @@ export class AzureDevOpsService {
     return response.json();
   }
 
+  // Org-level work item fetch — works without knowing the project up front.
+  // Used by routes that mutate a single work item: cheaper and more reliable
+  // than iterating every accessible project to find which one owns it.
+  // Pass `fields` to request a minimal payload (e.g. ['System.TeamProject'])
+  // when the caller only needs a specific field; omit it for the full expansion.
+  async getWorkItemByIdOrgLevel(
+    workItemId: number,
+    fields?: string[]
+  ): Promise<DevOpsWorkItem | null> {
+    const selector =
+      fields && fields.length > 0
+        ? `fields=${fields.map(encodeURIComponent).join(',')}`
+        : `$expand=all`;
+    // The PATCH handler awaits this before it can do anything, so a request
+    // that never settles leaves the whole type change hanging. AbortSignal
+    // .timeout needs no manual clear-up, unlike a setTimeout'd controller.
+    const response = await fetch(
+      `${this.baseUrl}/_apis/wit/workitems/${workItemId}?${selector}&api-version=7.1`,
+      { headers: this.headers, signal: AbortSignal.timeout(ORG_LOOKUP_TIMEOUT_MS) }
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      // Azure DevOps usually puts the actionable reason (permission scope,
+      // invalid request, etc.) in the response body — include it so the 500s
+      // surfaced by callers aren't just bare status codes.
+      let detail = '';
+      try {
+        const body = await response.text();
+        // DevOps can answer with an HTML error page, and this message is
+        // returned to the client by the type route — take the body only when
+        // it reads like a plain message, and keep it short.
+        const text = body.replace(/\s+/g, ' ').trim();
+        if (text && !/[<>]/.test(text)) detail = `: ${text.slice(0, 200)}`;
+      } catch {
+        // ignore — body read shouldn't mask the underlying HTTP failure
+      }
+      throw new Error(
+        `Failed to fetch work item ${workItemId}: ${response.status} ${response.statusText}${detail}`
+      );
+    }
+    return response.json();
+  }
+
   // Lightweight check if a work item exists (org-level, no project needed, minimal fields)
   // Returns: 'exists' | 'not_found' | 'error'
   async workItemExists(workItemId: number): Promise<'exists' | 'not_found' | 'error'> {
@@ -618,22 +664,16 @@ export class AzureDevOpsService {
   // Unlike getWorkItem, no project name is required and tag filters do not apply,
   // so this finds any work item the user can access (Bug, Checkpoint, Feature, etc.).
   async findWorkItemById(workItemId: number): Promise<DevOpsWorkItem | null> {
-    const fields = [
+    // Same org-level lookup as getWorkItemByIdOrgLevel, so it delegates rather
+    // than keeping a second copy that drifts — this one used to throw with
+    // only statusText, losing the reason DevOps gave.
+    return this.getWorkItemByIdOrgLevel(workItemId, [
       'System.Id',
       'System.Title',
       'System.State',
       'System.WorkItemType',
       'System.TeamProject',
-    ].join(',');
-    const response = await fetch(
-      `${this.baseUrl}/_apis/wit/workitems/${workItemId}?fields=${fields}&api-version=7.0`,
-      { headers: this.headers }
-    );
-    if (response.status === 404) return null;
-    if (!response.ok) {
-      throw new Error(`Failed to fetch work item ${workItemId}: ${response.statusText}`);
-    }
-    return response.json();
+    ]);
   }
 
   // Get comments for a work item

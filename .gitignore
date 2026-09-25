@@ -48,3 +48,6 @@ next-env.d.ts
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Local-only email template preview output
+email-preview.html

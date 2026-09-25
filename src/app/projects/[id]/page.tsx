@@ -11,6 +11,7 @@ import { format } from 'date-fns';
 import type { Organization, SLALevel, Epic } from '@/types';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { htmlToPlainText } from '@/lib/sanitize-html';
+import { templateSupportIssueUrl } from '@/lib/github';
 
 interface ProjectWithSLA extends Organization {
   sla?: SLALevel;
@@ -350,10 +351,10 @@ export default function ProjectDetailPage() {
                   </p>
                   <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
                     The &ldquo;{project.processTemplate}&rdquo; template is not yet supported by
-                    DevDesk. Epic navigation is not available for this project.
+                    ZapDesk. Epic navigation is not available for this project.
                   </p>
                   <a
-                    href="https://github.com/knowall-ai/devdesk/issues/new?title=Support%20for%20new%20process%20template&labels=enhancement"
+                    href={templateSupportIssueUrl(project.processTemplate)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm hover:underline"
