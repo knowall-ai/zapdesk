@@ -46,10 +46,7 @@
       "name": "client",
       "label": "Client",
       "description": "View and create own tickets only",
-      "permissions": [
-        "tickets:view_own",
-        "tickets:create"
-      ]
+      "permissions": ["tickets:view_own", "tickets:create"]
     }
   ],
   "users": []
