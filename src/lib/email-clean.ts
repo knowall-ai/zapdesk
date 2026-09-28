@@ -187,10 +187,17 @@ export function stripHtmlSignature(html: string): string {
   // Common hard markers — RFC 3676 delimiter rendered as HTML, mobile auto-
   // sigs, gmail/outlook signature blocks. Take the FIRST occurrence: anything
   // below it is signature.
+  //
+  // The `x_` prefix is not cosmetic. Graph rewrites markup when it builds
+  // `uniqueBody`, prefixing every id and class with `x_` so the fragment cannot
+  // collide with a host document. The poller reads `uniqueBody`, never `body`,
+  // so production only ever sees the prefixed form -- and an exact match on
+  // id="Signature" never fired against a real email. The class matchers already
+  // tolerated it by accident, being substring searches; this one did not.
   const hardMarkers: RegExp[] = [
     /<div[^>]*class="[^"]*gmail_signature[^"]*"[^>]*>/i,
-    /<div[^>]*id="Signature"[^>]*>/i,
-    /<div[^>]*class="[^"]*moz-signature[^"]*"[^>]*>/i,
+    /<div[^>]*id="(?:x_)?Signature"[^>]*>/i,
+    /<div[^>]*class="[^"]*(?:x_)?moz-signature[^"]*"[^>]*>/i,
     /(?:<br\s*\/?>\s*){1,3}--\s*(?:<br\s*\/?>|<\/?p>|<\/div>)/i,
     /(?:<br\s*\/?>|<p>|<div[^>]*>)\s*Sent from my (?:iPhone|iPad|Android|Galaxy|BlackBerry)/i,
     /(?:<br\s*\/?>|<p>|<div[^>]*>)\s*Sent from (?:Outlook|Mail) for (?:iOS|Android|Windows)/i,

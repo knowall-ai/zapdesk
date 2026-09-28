@@ -4,6 +4,7 @@ import {
   renderEmailBodyHtml,
   rewriteCidReferences,
   collectReferencedCids,
+  stripHtmlSignature,
 } from './email-clean';
 
 describe('sanitizeEmailHtml', () => {
@@ -140,5 +141,64 @@ describe('renderEmailBodyHtml — truncation', () => {
     const out = renderEmailBodyHtml('<p>hello</p>');
     expect(out).toContain('<p>hello</p>');
     expect(out).not.toContain('[truncated]');
+  });
+});
+
+// Graph rewrites markup when it builds `uniqueBody`, prefixing ids and classes
+// with `x_` so the fragment cannot collide with a host document. The poller
+// reads `uniqueBody` and never `body`, so these are the shapes production
+// actually sees -- the unprefixed fixtures below it never occur in the wild.
+describe('stripHtmlSignature — Graph uniqueBody shapes', () => {
+  const outlookUniqueBody = [
+    '<div dir="ltr">',
+    '<div>The printer jams every few pages.</div>',
+    '<div>ZD-MARKER</div>',
+    '<div id="x_Signature">',
+    '<div>Akash Jadhav</div>',
+    '<div>Technical Lead @ KnowAll AI Ltd</div>',
+    '<div>M: +91 9664362544</div>',
+    '</div>',
+    '<div>KnowAll AI Ltd is a limited company incorporated in England. ' +
+      'Registration No: 12039444.</div>',
+    '</div>',
+  ].join('');
+
+  it('cuts an Outlook signature carrying the x_ prefix', () => {
+    const out = stripHtmlSignature(outlookUniqueBody);
+    expect(out).toContain('ZD-MARKER');
+    expect(out).not.toContain('Technical Lead');
+  });
+
+  // The footer sits below the signature, so one cut removes both. Worth
+  // asserting: it is the part a customer would least like to see quoted back.
+  it('takes the company footer with it', () => {
+    expect(stripHtmlSignature(outlookUniqueBody)).not.toContain('12039444');
+  });
+
+  it('still cuts the unprefixed form', () => {
+    const out = stripHtmlSignature('<div>Body ZD-MARKER</div><div id="Signature">Sig</div>');
+    expect(out).toContain('ZD-MARKER');
+    expect(out).not.toContain('Sig');
+  });
+
+  it.each([
+    ['gmail', '<div class="x_gmail_signature">Sig</div>'],
+    ['thunderbird', '<div class="x_moz-signature">Sig</div>'],
+  ])('cuts a prefixed %s signature', (_name, sig) => {
+    const out = stripHtmlSignature('<div>Body ZD-MARKER</div>' + sig);
+    expect(out).toContain('ZD-MARKER');
+    expect(out).not.toContain('Sig');
+  });
+
+  it('leaves a body with no signature untouched', () => {
+    const body = '<div>Just a question, nothing else. ZD-MARKER</div>';
+    expect(stripHtmlSignature(body)).toBe(body);
+  });
+
+  it('survives the whole render, not just the stripper', () => {
+    const out = renderEmailBodyHtml(outlookUniqueBody);
+    expect(out).toContain('ZD-MARKER');
+    expect(out).not.toContain('Technical Lead');
+    expect(out).not.toContain('12039444');
   });
 });
