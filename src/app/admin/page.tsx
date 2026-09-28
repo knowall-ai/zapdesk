@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner, AzureDevOpsIcon, AccessDenied } from '@/components/common';
 import {
@@ -22,10 +22,27 @@ import { getSupportedTemplates, getTemplateConfig } from '@/config/process-templ
 // Type-only, so the server module never reaches the client bundle. Declaring
 // a second copy here would let the two drift the moment a field is added.
 import type { MailCredentialCheck } from '@/lib/mail-credentials';
+import type { Permission } from '@/types';
 import { usePermissions } from '@/components/providers/PermissionProvider';
 import PermissionsManager from '@/components/admin/PermissionsManager';
 
 type AdminTab = 'templates' | 'email' | 'permissions';
+
+/**
+ * Declared rather than written out three times, so a tab cannot pick up ARIA
+ * wiring the others lack -- which is how the first version ended up conveying
+ * its selected state in colour alone.
+ */
+const ADMIN_TABS: ReadonlyArray<{
+  id: AdminTab;
+  label: string;
+  Icon: typeof Code2;
+  permission?: Permission;
+}> = [
+  { id: 'templates', label: 'Process Templates', Icon: Code2 },
+  { id: 'email', label: 'Email Channel', Icon: Mail },
+  { id: 'permissions', label: 'Permissions', Icon: Shield, permission: 'admin:manage_roles' },
+];
 
 interface EmailConfig {
   /** Present only when the config was fetched with `?verify=1`. */
@@ -51,6 +68,38 @@ export default function AdminPage() {
   const router = useRouter();
   const { hasPermission } = usePermissions();
   const [activeTab, setActiveTab] = useState<AdminTab>('templates');
+  const tabRefs = useRef<Partial<Record<AdminTab, HTMLButtonElement | null>>>({});
+  const visibleTabs = ADMIN_TABS.filter((tab) => !tab.permission || hasPermission(tab.permission));
+
+  /**
+   * Arrow, Home and End move between tabs, as the ARIA tabs pattern requires.
+   * Declaring role="tab" without this is worse than leaving them plain buttons:
+   * a screen reader announces a tablist and then the expected keys do nothing.
+   */
+  const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const last = visibleTabs.length - 1;
+    let target: number;
+    switch (event.key) {
+      case 'ArrowRight':
+        target = index === last ? 0 : index + 1;
+        break;
+      case 'ArrowLeft':
+        target = index === 0 ? last : index - 1;
+        break;
+      case 'Home':
+        target = 0;
+        break;
+      case 'End':
+        target = last;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    const next = visibleTabs[target];
+    setActiveTab(next.id);
+    tabRefs.current[next.id]?.focus();
+  };
 
   const [emailConfig, setEmailConfig] = useState<EmailConfig | null>(null);
   const [emailConfigLoading, setEmailConfigLoading] = useState(true);
@@ -145,68 +194,47 @@ export default function AdminPage() {
         </div>
 
         {/* Tabs */}
-        <div className="mb-6 flex gap-0 border-b" style={{ borderColor: 'var(--border)' }}>
-          <button
-            onClick={() => setActiveTab('templates')}
-            className="relative px-4 py-2.5 text-sm font-medium transition-colors"
-            style={{
-              color: activeTab === 'templates' ? 'var(--primary)' : 'var(--text-muted)',
-            }}
-          >
-            <span className="flex items-center gap-2">
-              <Code2 size={16} />
-              Process Templates
-            </span>
-            {activeTab === 'templates' && (
-              <span
-                className="absolute right-0 bottom-0 left-0 h-0.5"
-                style={{ backgroundColor: 'var(--primary)' }}
-              />
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('email')}
-            className="relative px-4 py-2.5 text-sm font-medium transition-colors"
-            style={{
-              color: activeTab === 'email' ? 'var(--primary)' : 'var(--text-muted)',
-            }}
-          >
-            <span className="flex items-center gap-2">
-              <Mail size={16} />
-              Email Channel
-            </span>
-            {activeTab === 'email' && (
-              <span
-                className="absolute right-0 bottom-0 left-0 h-0.5"
-                style={{ backgroundColor: 'var(--primary)' }}
-              />
-            )}
-          </button>
-          {hasPermission('admin:manage_roles') && (
+        <div
+          role="tablist"
+          aria-label="Admin sections"
+          className="mb-6 flex gap-0 border-b"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          {visibleTabs.map(({ id, label, Icon }, index) => (
             <button
-              onClick={() => setActiveTab('permissions')}
-              className="relative px-4 py-2.5 text-sm font-medium transition-colors"
-              style={{
-                color: activeTab === 'permissions' ? 'var(--primary)' : 'var(--text-muted)',
+              key={id}
+              id={`admin-tab-${id}`}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === id}
+              aria-controls={`admin-panel-${id}`}
+              // Roving focus: one stop for the whole tablist, arrows move
+              // between tabs. Without it every tab is a separate tab stop.
+              tabIndex={activeTab === id ? 0 : -1}
+              ref={(el) => {
+                tabRefs.current[id] = el;
               }}
+              onClick={() => setActiveTab(id)}
+              onKeyDown={(event) => onTabKeyDown(event, index)}
+              className="relative px-4 py-2.5 text-sm font-medium transition-colors"
+              style={{ color: activeTab === id ? 'var(--primary)' : 'var(--text-muted)' }}
             >
               <span className="flex items-center gap-2">
-                <Shield size={16} />
-                Permissions
+                <Icon size={16} />
+                {label}
               </span>
-              {activeTab === 'permissions' && (
+              {activeTab === id && (
                 <span
                   className="absolute right-0 bottom-0 left-0 h-0.5"
                   style={{ backgroundColor: 'var(--primary)' }}
                 />
               )}
             </button>
-          )}
+          ))}
         </div>
-
         {/* Tab Content */}
         {activeTab === 'templates' && (
-          <section>
+          <section id="admin-panel-templates" role="tabpanel" aria-labelledby="admin-tab-templates">
             <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
               ZapDesk supports the following Azure DevOps process templates. Projects using
               unsupported templates will display a warning.
@@ -394,11 +422,20 @@ export default function AdminPage() {
           </section>
         )}
 
-        {activeTab === 'permissions' && <PermissionsManager />}
+        {activeTab === 'permissions' && (
+          <div id="admin-panel-permissions" role="tabpanel" aria-labelledby="admin-tab-permissions">
+            <PermissionsManager />
+          </div>
+        )}
 
         {/* Email Channel Section */}
         {activeTab === 'email' && (
-          <section className="mb-8">
+          <section
+            id="admin-panel-email"
+            role="tabpanel"
+            aria-labelledby="admin-tab-email"
+            className="mb-8"
+          >
             <div className="mb-4 flex items-center gap-2">
               <Mail size={20} style={{ color: 'var(--text-muted)' }} />
               <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
