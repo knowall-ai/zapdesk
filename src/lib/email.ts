@@ -11,11 +11,23 @@ import {
   ticketConfirmationTemplate,
   agentReplyTemplate,
   statusChangeTemplate,
+  customerReplyNotificationTemplate,
   layoutWrapper,
   type HistoryEntry,
 } from './email-templates';
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
+
+/**
+ * Ceiling on a single Graph call.
+ *
+ * Both of these are awaited from fire-and-forget notification paths, so a
+ * request that never settles is never noticed: the send just hangs forever,
+ * and a hung token request holds the shared `inFlight` promise so every later
+ * caller waits behind it too. AbortSignal.timeout is available on the Node 20+
+ * that Next 16 requires.
+ */
+const GRAPH_TIMEOUT_MS = 15_000;
 
 const MAIL_FROM = () => process.env.MAIL_FROM || '';
 const MAIL_FROM_NAME = () => process.env.MAIL_FROM_NAME || 'ZapDesk Support';
@@ -28,6 +40,25 @@ function mailClientSecret(): string {
 }
 function mailTenantId(): string {
   return process.env.MAIL_TENANT_ID || process.env.AZURE_AD_TENANT_ID || '';
+}
+
+/**
+ * The credentials Graph calls are made with, for a liveness check.
+ *
+ * Exposed so `mail-credentials.ts` can test them against Entra ID without
+ * duplicating the MAIL_* / AZURE_AD_* fallback chain, which is precisely the
+ * sort of thing that drifts between two copies.
+ */
+export function mailGraphCredentials(): {
+  tenantId: string;
+  clientId: string;
+  clientSecret: string;
+} {
+  return {
+    tenantId: mailTenantId(),
+    clientId: mailClientId(),
+    clientSecret: mailClientSecret(),
+  };
 }
 
 /** Outbound is configured when we have a from address and Graph credentials. */
@@ -67,6 +98,7 @@ export async function getMailGraphToken(): Promise<string> {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
         body: new URLSearchParams({
           client_id: mailClientId(),
           client_secret: mailClientSecret(),
@@ -176,6 +208,7 @@ async function sendViaGraph(options: GraphSendMailOptions): Promise<void> {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
+    signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
     body: JSON.stringify({ message, saveToSentItems: false }),
   });
 
@@ -273,6 +306,45 @@ export async function sendStatusChangeNotification(
   } catch (error) {
     console.error(
       `[Email] Failed to send status change notification for ticket #${ticketId}:`,
+      error
+    );
+  }
+}
+
+/**
+ * Notify the assigned agent (or fallback team) that a customer replied to a
+ * ticket via email. Sent on a fresh thread — no In-Reply-To pointing at the
+ * customer's email — so the internal conversation stays separate from the
+ * customer-facing one.
+ */
+export async function sendCustomerReplyNotification(
+  ticketId: number,
+  ticketSubject: string,
+  agentEmail: string,
+  customerEmail: string,
+  replyContentHtml: string
+): Promise<void> {
+  if (!isEmailConfigured()) return;
+  try {
+    const messageId = generateMessageId(ticketId, 'agent-notify');
+    const html = customerReplyNotificationTemplate({
+      ticketId,
+      ticketSubject,
+      customerEmail,
+      replyContentHtml,
+    });
+    await sendViaGraph({
+      to: agentEmail,
+      subject: `[ZapDesk #${ticketId}] New customer reply — "${ticketSubject}"`,
+      html,
+      messageId,
+    });
+    console.log(
+      `[Email] Customer reply notification sent for ticket #${ticketId} to ${agentEmail}`
+    );
+  } catch (error) {
+    console.error(
+      `[Email] Failed to send customer reply notification for ticket #${ticketId}:`,
       error
     );
   }

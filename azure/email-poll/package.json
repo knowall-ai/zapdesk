@@ -1,0 +1,25 @@
+{
+  "name": "zapdesk-email-poll",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Azure Functions timer trigger that drains the ZapDesk support mailbox.",
+  "main": "dist/src/functions/*.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "clean": "rimraf dist",
+    "prestart": "npm run clean && npm run build",
+    "start": "func start",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3",
+    "vitest": "^4.0.18"
+  }
+}

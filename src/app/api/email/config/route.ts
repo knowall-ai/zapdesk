@@ -1,15 +1,27 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { isEmailConfigured } from '@/lib/email';
+import { NextRequest, NextResponse } from 'next/server';
+import { requirePermission, isAuthed } from '@/lib/api-auth';
+import { isEmailConfigured, mailGraphCredentials } from '@/lib/email';
 import { pollMailboxFromEnv } from '@/lib/email-poll';
+import { verifyMailCredentials, type MailCredentialCheck } from '@/lib/mail-credentials';
 
-export async function GET() {
+/**
+ * Reports how email is configured, and — with `?verify=1` — whether those
+ * credentials actually work.
+ *
+ * The two are separate on purpose. Everything else here is a cheap read of
+ * environment variables; the check costs a round-trip to Entra ID, so it is
+ * opt-in rather than paid on every page load.
+ *
+ * Administrators only. Everything reported here -- which settings are present,
+ * which mailbox is polled, whether the credentials work -- describes the
+ * deployment rather than the caller, and `?verify=1` makes an outbound call on
+ * their behalf. Before roles existed this route settled for any session with an
+ * access token, which was the best it could do (#421 review).
+ */
+export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requirePermission('admin:access');
+    if (!isAuthed(auth)) return auth;
 
     const configured = isEmailConfigured();
     const from = process.env.MAIL_FROM || '';
@@ -26,7 +38,16 @@ export async function GET() {
     const pollMailbox = pollMailboxFromEnv();
     const outboundReady = isEmailConfigured();
 
+    // Presence is not health. Without this, the view can report every setting
+    // in place while Graph rejects them -- which is the state production was
+    // in, unnoticed, for four months (#421).
+    let credentials: MailCredentialCheck | undefined;
+    if (request.nextUrl.searchParams.get('verify') === '1') {
+      credentials = await verifyMailCredentials(mailGraphCredentials());
+    }
+
     return NextResponse.json({
+      ...(credentials ? { credentials } : {}),
       outbound: {
         configured,
         method: 'graph',

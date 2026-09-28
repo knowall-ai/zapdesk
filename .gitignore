@@ -54,3 +54,10 @@ data/permissions-audit.log
 
 # Local-only email template preview output
 email-preview.html
+
+# Azure Functions
+# local.settings.json holds the real webhook secret for local runs -- it is the
+# Functions equivalent of .env.local and must never be committed.
+azure/**/local.settings.json
+azure/**/node_modules/
+azure/**/dist/
