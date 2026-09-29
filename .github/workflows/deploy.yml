@@ -57,7 +57,12 @@ jobs:
           [ -n "$MAIL_FROM_NAME" ] || missing="$missing MAIL_FROM_NAME"
           [ -n "$AZURE_WEBAPP_NAME" ] || missing="$missing AZURE_WEBAPP_NAME"
           [ -n "$AZURE_DEVOPS_ORG" ] || missing="$missing AZURE_DEVOPS_ORG"
-          [ -n "$ZAPDESK_ADMIN_EMAILS" ] || missing="$missing ZAPDESK_ADMIN_EMAILS"
+          # Checked the way bootstrapAdminEmails() reads it: split on commas,
+          # trim, drop empties. A value of ", ," is a non-empty string and an
+          # empty list of administrators, so testing the string would pass the
+          # deploy straight into the lockout this check exists to prevent.
+          admins=$(printf %s "$ZAPDESK_ADMIN_EMAILS" | tr -d " 	,")
+          [ -n "$admins" ] || missing="$missing ZAPDESK_ADMIN_EMAILS"
           if [ -n "$missing" ]; then
             echo "::error::Missing repository variables:$missing"
             echo "Set them at Settings > Secrets and variables > Actions > Variables"
