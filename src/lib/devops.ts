@@ -26,6 +26,9 @@ import type {
 } from '@/types';
 import { parseSLAFromDescription, calculateTicketSLA, DEFAULT_SLA_LEVEL } from './sla';
 import { debugLog } from './debug';
+// Server-only module, and devops.ts is too -- no client component imports it,
+// so pulling in the Graph helpers alongside the parser costs nothing here.
+import { extractRequesterEmail } from './email';
 import {
   getMitigationFieldRef,
   getResolutionFieldRef,
@@ -165,6 +168,71 @@ function identityToUser(identity?: {
   };
 }
 
+/**
+
+ * Who raised this ticket.
+
+ *
+
+ * `System.CreatedBy` is the account that made the API call, which for an
+
+ * email ticket is whoever owns the PAT -- accurate from DevOps' point of view
+
+ * and useless as a requester, since every ticket the mailbox produces would
+
+ * name the same person.
+
+ *
+
+ * Ingest records the real sender on the work item as an `email-from:` tag, so
+
+ * that is preferred where it exists. A ticket raised in the UI has no such tag
+
+ * and falls back, where the creator genuinely is the requester.
+
+ *
+
+ * There is no DevOps identity behind the address, so no id and no avatar to
+
+ * fetch: the id is the address itself, which at least stays stable per person.
+
+ */
+
+function resolveRequester(
+  tags: string | undefined,
+
+  createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string }
+): Customer {
+  const email = extractRequesterEmail(tags ?? '');
+
+  if (!email) return identityToCustomer(createdBy);
+
+  return {
+    id: email,
+
+    displayName: displayNameFromEmail(email),
+
+    email,
+
+    timezone: 'Europe/Dublin',
+
+    tags: [],
+
+    lastUpdated: new Date(),
+  };
+}
+
+/** `valeriia.khudiakova@x` -> `Valeriia Khudiakova`, for a sender we know only by address. */
+
+function displayNameFromEmail(email: string): string {
+  const local = email.split('@')[0];
+
+  return local
+    .replace(/[._-]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+}
+
 // Convert DevOps identity to Customer
 // Uses avatar API as fallback when imageUrl is not provided
 function identityToCustomer(identity: {
@@ -234,7 +302,7 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     devOpsState: fields['System.State'], // Preserve original DevOps state
     workItemType: fields['System.WorkItemType'], // Azure DevOps work item type
     priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
-    requester: identityToCustomer(fields['System.CreatedBy']),
+    requester: resolveRequester(fields['System.Tags'], fields['System.CreatedBy']),
     assignee: identityToUser(fields['System.AssignedTo']),
     organization,
     tags:
