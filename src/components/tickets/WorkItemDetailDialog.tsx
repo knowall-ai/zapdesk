@@ -160,13 +160,13 @@ export default function WorkItemDetailDialog({
   }, [workItem?.id, workItem?.project, fetchDevOps, hasOrganization]);
 
   const handleAddComment = useCallback(
-    async (comment: string) => {
+    async (comment: string, isInternal = false) => {
       if (!workItem || !hasOrganization) return;
       try {
         const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}/comments`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ comment }),
+          body: JSON.stringify({ comment, isInternal }),
         });
         if (!response.ok) {
           const data = await response.json().catch(() => ({}));
