@@ -133,12 +133,13 @@ export default function TicketDetail({
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
   const [newComment, setNewComment] = useState('');
 
-  // Public is the default deliberately. An agent who forgets to choose sends
-
-  // a reply the customer sees, which is the mistake that merely looks
-
-  // unpolished -- the other way round leaks internal discussion to them.
-
+  // Public is the default because it is the common action and matches what
+  // agents expect from Zendesk. The cost is real and worth naming rather than
+  // dressing up: an agent who means to leave an internal note and forgets to
+  // switch sends it to the customer. Defaulting to internal would trade that
+  // for a reply the customer never receives, which is quieter and arguably
+  // worse. The mitigation is making the internal state unmistakable, not
+  // pretending the trade does not exist.
   const [isInternalNote, setIsInternalNote] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
@@ -1342,7 +1343,7 @@ export default function TicketDetail({
               <p className="mt-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                 {isInternalNote
                   ? 'Stays on the ticket. The requester is not emailed.'
-                  : 'Emailed to the requester and visible to them in DevOps.'}
+                  : 'Visible to the requester in DevOps, and emailed if the ticket arrived by email.'}
               </p>
             </div>
           ) : (

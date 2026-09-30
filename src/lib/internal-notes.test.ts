@@ -71,3 +71,46 @@ describe('getWorkItemComments maps the marker', () => {
     expect(comments[1].content).toBe('Thanks, that worked.');
   });
 });
+
+// The reply history the comments route emails to the customer is filtered here.
+// It used to match on the marker text, which stopped excluding anything the
+// moment the marker began being stripped on read -- so the two changes were
+// individually correct and together a leak. This pins the composition.
+describe('reply history excludes internal notes', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('filters on isInternal, where a text match would no longer work', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          comments: [
+            {
+              id: 1,
+              text: '[Internal Note] Firewall change, do not tell them yet.',
+              createdDate: '2026-01-01T00:00:00Z',
+              createdBy: { id: 'u1', displayName: 'Agent', uniqueName: 'a@x.test' },
+            },
+            {
+              id: 2,
+              text: 'We are looking into it.',
+              createdDate: '2026-01-01T01:00:00Z',
+              createdBy: { id: 'u1', displayName: 'Agent', uniqueName: 'a@x.test' },
+            },
+          ],
+        })
+      )
+    );
+
+    const comments = await new AzureDevOpsService('token').getWorkItemComments('Proj', 1);
+
+    // What the route does now.
+    const history = comments.filter((c) => !c.isInternal);
+    expect(history).toHaveLength(1);
+    expect(history[0].content).toBe('We are looking into it.');
+
+    // What it used to do — kept as the reason the fix exists.
+    const byText = comments.filter((c) => !c.content.includes('[Internal Note]'));
+    expect(byText).toHaveLength(2);
+  });
+});
