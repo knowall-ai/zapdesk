@@ -203,6 +203,35 @@ export function customerReplyNotificationTemplate(opts: {
   `);
 }
 
+/**
+ * Told an engineer a ticket is now theirs.
+ *
+ * Deliberately short. It exists to get someone's attention and give them a way
+ * in; the ticket itself is the place to read the detail, and duplicating it
+ * here only means two copies that disagree once anyone replies.
+ */
+export function assignmentNotificationTemplate(opts: {
+  ticketId: number;
+  ticketSubject: string;
+  assignedByName: string;
+  requesterEmail?: string;
+}): string {
+  const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
+  return layoutWrapper(`
+    <p class="meta">Ticket <strong>#${opts.ticketId}</strong> has been assigned to you</p>
+    <p class="meta"><strong>Subject:</strong> ${escapeText(opts.ticketSubject)}</p>
+    ${
+      opts.requesterEmail
+        ? `<p class="meta"><strong>Raised by:</strong> ${escapeText(opts.requesterEmail)}</p>`
+        : ''
+    }
+    <p class="meta"><strong>Assigned by:</strong> ${escapeText(opts.assignedByName)}</p>
+    <p style="text-align: center; margin-top: 24px;">
+      <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
+    </p>
+  `);
+}
+
 export function statusChangeTemplate(opts: {
   ticketId: number;
   subject: string;

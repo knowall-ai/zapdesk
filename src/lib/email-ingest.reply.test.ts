@@ -13,7 +13,11 @@ const h = vi.hoisted(() => ({
   sendCustomerReplyNotification: vi.fn(async () => undefined),
 }));
 
-vi.mock('@/lib/email', () => ({
+// Only the senders are stubbed. isPolledMailbox is a pure read of the
+// environment and the thing several of these tests are actually asserting on,
+// so it stays real -- a stubbed loop guard would prove nothing.
+vi.mock('@/lib/email', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/email')>()),
   sendCustomerReplyNotification: h.sendCustomerReplyNotification,
   sendTicketConfirmation: vi.fn(async () => undefined),
 }));

@@ -8,7 +8,11 @@
  */
 
 import { getProjectFromEmail } from '@/lib/devops';
-import { sendCustomerReplyNotification, sendTicketConfirmation } from '@/lib/email';
+import {
+  isPolledMailbox,
+  sendCustomerReplyNotification,
+  sendTicketConfirmation,
+} from '@/lib/email';
 import {
   escapeHtml,
   renderEmailBody,
@@ -290,19 +294,6 @@ export function renderForNotification(storedHtml: string): string {
  * an optional fallback; failing startup over it would turn a degraded
  * notification into an outage of the whole app.
  */
-/**
- * Is this the mailbox ZapDesk polls?
- *
- * Shared by both notification paths deliberately. The loop does not care how
- * an address was chosen -- an assignee whose `uniqueName` is the support
- * mailbox produces exactly the same cycle as a group address that is, and a
- * shared support account is a perfectly ordinary thing to assign a ticket to.
- */
-function isPolledMailbox(address: string): boolean {
-  const polled = (process.env.MAIL_POLL_MAILBOX || '').trim().toLowerCase();
-  return polled !== '' && address.trim().toLowerCase() === polled;
-}
-
 function supportTeamFallback(): string | null {
   const group = (process.env.SUPPORT_TEAM_NOTIFY_EMAIL || '').trim();
   if (!group) return null;

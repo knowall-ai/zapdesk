@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
+import { extractRequesterEmail, sendAssignmentNotification } from '@/lib/email';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -223,6 +224,25 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+
+    // Tell the new assignee. DevOps sends nothing for this, so until now a
+    // ticket could be handed to someone who only found out by looking (#7374).
+    //
+    // Fire-and-forget: the assignment is already saved, and a slow mail server
+    // must not turn a successful change into a reported failure.
+    if (updates.assignee) {
+      const assigneeEmail = ticket.assignee?.email;
+      if (assigneeEmail) {
+        sendAssignmentNotification({
+          ticketId,
+          subject: ticket.title,
+          assigneeEmail,
+          assignedByName: session.user?.name || 'A colleague',
+          assignedByEmail: session.user?.email ?? undefined,
+          requesterEmail: extractRequesterEmail(ticket.tags ?? []) ?? undefined,
+        }).catch(() => {});
+      }
+    }
 
     return NextResponse.json({ ticket });
   } catch (error) {
