@@ -51,6 +51,7 @@ export default function WorkItemDetailDialog({
 
   // Comments state (dialog fetches its own comments)
   const [comments, setComments] = useState<TicketComment[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isLoadingComments, setIsLoadingComments] = useState(false);
 
   // Delete (Recycle Bin) state — issue #374
@@ -159,6 +160,26 @@ export default function WorkItemDetailDialog({
     }
   }, [workItem?.id, workItem?.project, fetchDevOps, hasOrganization]);
 
+  /**
+   * The full ticket page reads attachments off the ticket payload; this dialog
+   * builds from a WorkItem, which carries none. Without this the dialog showed
+   * nothing at all, and an attachment could only be found by opening the work
+   * item in DevOps and knowing to look (#7373).
+   */
+  const fetchAttachments = useCallback(async () => {
+    if (!workItem?.project || !hasOrganization) return;
+    try {
+      const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}/attachments`);
+      if (response.ok) {
+        const data = await response.json();
+        setAttachments(data.attachments || []);
+      }
+    } catch (err) {
+      // Non-fatal: the rest of the dialog is still worth showing.
+      console.error('Failed to fetch attachments:', err);
+    }
+  }, [workItem?.id, workItem?.project, fetchDevOps, hasOrganization]);
+
   const handleAddComment = useCallback(
     async (comment: string) => {
       if (!workItem || !hasOrganization) return;
@@ -245,8 +266,9 @@ export default function WorkItemDetailDialog({
   useEffect(() => {
     if (isOpen && workItem) {
       fetchComments();
+      fetchAttachments();
     }
-  }, [isOpen, workItem, fetchComments]);
+  }, [isOpen, workItem, fetchComments, fetchAttachments]);
 
   // Re-verify ticket exists when user tabs back (e.g., after deleting in DevOps)
   useEffect(() => {
@@ -431,6 +453,7 @@ export default function WorkItemDetailDialog({
         <WorkItemDetailContent
           workItem={workItem}
           comments={comments}
+          attachments={attachments}
           isLoadingComments={isLoadingComments}
           onAddComment={handleAddComment}
           onUploadAttachment={handleUploadAttachment}

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { Pencil, Check, X, Loader2 } from 'lucide-react';
+import { Pencil, Check, X, Loader2, Download } from 'lucide-react';
 import type { WorkItem, TicketComment, Attachment } from '@/types';
 import {
   getTemplateConfig,
@@ -12,6 +12,7 @@ import {
 import { hasTicketTag } from '@/lib/tags';
 import { htmlToPlainText } from '@/lib/sanitize-html';
 import UserHtml from '@/components/common/UserHtml';
+import FileIcon from '@/components/common/FileIcon';
 import Avatar from '../common/Avatar';
 import CommentSection from './CommentSection';
 import ZapDialog from './ZapDialog';
@@ -19,6 +20,8 @@ import ZapDialog from './ZapDialog';
 interface WorkItemDetailContentProps {
   workItem: WorkItem;
   comments: TicketComment[];
+  /** Files attached to the work item. Absent and empty render the same. */
+  attachments?: Attachment[];
   isLoadingComments?: boolean;
   onAddComment?: (comment: string) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
@@ -268,6 +271,7 @@ function MitigationField({
 export default function WorkItemDetailContent({
   workItem,
   comments,
+  attachments,
   isLoadingComments = false,
   onAddComment,
   onUploadAttachment,
@@ -468,6 +472,36 @@ export default function WorkItemDetailContent({
       {/* Resolution (editable) - only for work item types that support it */}
       {showResolution && <ResolutionField workItem={workItem} onUpdate={onUpdate} />}
       {showMitigation && <MitigationField workItem={workItem} onUpdate={onUpdate} />}
+
+      {/* Attachments. Hidden when there are none -- an empty panel on the many
+          work items that have no files would be noise. When there are files it
+          has to be visible here: this dialog is where most people read a
+          ticket, and previously an attachment could only be found by opening
+          the work item in DevOps and knowing to look (#7373). */}
+      {attachments && attachments.length > 0 && (
+        <div className="card mt-4 p-4">
+          <h3 className="mb-3 text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
+            Attachments ({attachments.length})
+          </h3>
+          <div className="space-y-1">
+            {attachments.map((attachment) => (
+              <a
+                key={attachment.id}
+                href={attachment.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                style={{ color: 'var(--text-secondary)' }}
+                title={`Download ${attachment.fileName}`}
+              >
+                <FileIcon contentType={attachment.contentType} />
+                <span className="flex-1 truncate">{attachment.fileName}</span>
+                <Download size={12} style={{ color: 'var(--text-muted)' }} />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Effort tracking. Shown whenever the caller enables it, including when
           the hours are unset — "Remaining 0h" is information, an absent panel
