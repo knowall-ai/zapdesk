@@ -169,67 +169,60 @@ function identityToUser(identity?: {
 }
 
 /**
-
  * Who raised this ticket.
-
  *
-
- * `System.CreatedBy` is the account that made the API call, which for an
-
- * email ticket is whoever owns the PAT -- accurate from DevOps' point of view
-
- * and useless as a requester, since every ticket the mailbox produces would
-
- * name the same person.
-
+ * `System.CreatedBy` is the account that made the API call, which for an email
+ * ticket is whoever owns the PAT -- accurate from DevOps' point of view and
+ * useless as a requester, since every ticket the mailbox produces would name
+ * the same person.
  *
-
  * Ingest records the real sender on the work item as an `email-from:` tag, so
-
  * that is preferred where it exists. A ticket raised in the UI has no such tag
-
  * and falls back, where the creator genuinely is the requester.
-
  *
-
- * There is no DevOps identity behind the address, so no id and no avatar to
-
- * fetch: the id is the address itself, which at least stays stable per person.
-
+ * There is no DevOps identity behind a bare address, so there is no id and no
+ * avatar to fetch: the id is the address itself, which at least stays stable
+ * per person.
  */
-
 function resolveRequester(
   tags: string | undefined,
-
   createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string }
 ): Customer {
   const email = extractRequesterEmail(tags ?? '');
-
-  if (!email) return identityToCustomer(createdBy);
+  // Tags are editable by anyone with work item access, so the value after
+  // `email-from:` is not trustworthy. Anything that is not an address is
+  // treated as absent rather than displayed as one -- it would otherwise
+  // become the display name and the Customer id too.
+  if (!email || !looksLikeEmail(email)) return identityToCustomer(createdBy);
 
   return {
     id: email,
-
     displayName: displayNameFromEmail(email),
-
     email,
-
     timezone: 'Europe/Dublin',
-
     tags: [],
-
     lastUpdated: new Date(),
   };
 }
 
-/** `valeriia.khudiakova@x` -> `Valeriia Khudiakova`, for a sender we know only by address. */
+/**
+ * Deliberately permissive: exactly one `@`, something either side, no spaces.
+ *
+ * The job is rejecting a tag that plainly is not an address, not adjudicating
+ * RFC 5322. A stricter pattern would discard real addresses and send the
+ * requester back to being the PAT owner, which is the bug this exists to fix.
+ */
+function looksLikeEmail(value: string): boolean {
+  const parts = value.split('@');
+  return parts.length === 2 && parts.every((part) => part.length > 0 && !/\s/.test(part));
+}
 
+/** `first.last@example` -> `First Last`, for a sender we know only by address. */
 function displayNameFromEmail(email: string): string {
   const local = email.split('@')[0];
-
   return local
     .replace(/[._-]+/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .replace(/(^|\s)\w/g, (c) => c.toUpperCase())
     .trim();
 }
 
