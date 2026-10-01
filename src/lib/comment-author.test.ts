@@ -46,6 +46,17 @@ describe('commentAuthor', () => {
     });
   });
 
+  // A quoted reply further down the body carries the marker too. Taking that
+  // one would attribute the whole comment to whoever was quoted.
+  it('ignores the marker inside a quoted reply', () => {
+    const author = commentAuthor(
+      '<p>Chasing this up.</p><blockquote><p><strong>Email reply from:</strong> ' +
+        'someone.else@example.test</p></blockquote>',
+      PAT_OWNER
+    );
+    expect(author.email).toBe(PAT_OWNER.uniqueName);
+  });
+
   it('is not fooled by the phrase appearing without an address', () => {
     const author = commentAuthor('<p>Check the email reply from: the customer</p>', PAT_OWNER);
     expect(author.email).toBe(PAT_OWNER.uniqueName);

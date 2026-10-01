@@ -228,8 +228,11 @@ function looksLikeEmail(value: string): boolean {
  * No DevOps identity exists behind a bare address, so there is no avatar to
  * look up -- which is the point. Showing none beats showing the wrong face.
  */
+// Anchored at the start of the comment, where ingest writes the header. An
+// unanchored match would take the marker out of a quoted reply further down
+// the body and attribute the whole comment to whoever was quoted.
 const EMAIL_COMMENT_SENDER =
-  /(?:Email reply from:|Ticket created from email by)\s*(?:<\/strong>)?\s*([^\s<]+@[^\s<]+)/i;
+  /^\s*(?:<[^>]+>\s*)*(?:Email reply from:|Ticket created from email by)\s*(?:<\/strong>)?\s*([^\s<]+@[^\s<]+)/i;
 
 export function commentAuthor(
   text: string,
