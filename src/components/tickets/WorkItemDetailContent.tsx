@@ -12,6 +12,7 @@ import {
 import { hasTicketTag } from '@/lib/tags';
 import { htmlToPlainText } from '@/lib/sanitize-html';
 import UserHtml from '@/components/common/UserHtml';
+import { attachmentDownloadUrl } from '@/lib/attachment-utils';
 import FileIcon from '@/components/common/FileIcon';
 import Avatar from '../common/Avatar';
 import CommentSection from './CommentSection';
@@ -487,7 +488,7 @@ export default function WorkItemDetailContent({
             {attachments.map((attachment) => (
               <a
                 key={attachment.id}
-                href={attachment.url}
+                href={attachmentDownloadUrl(attachment)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"

@@ -67,6 +67,24 @@ export function buildAttachmentProxyUrl(
  * Safe to call on any HTML: content with no DevOps attachment URLs is returned
  * unchanged, and non-string input yields an empty string.
  */
+/**
+ * Download link for an attachment, routed through the authenticated proxy.
+ *
+ * `getWorkItemAttachments` returns raw dev.azure.com URLs, and those need a
+ * bearer token the browser does not send. A reader without a separate DevOps
+ * session in the same browser simply cannot open the file -- which, on a screen
+ * whose whole job is listing attachments, looks like the list is broken.
+ */
+export function attachmentDownloadUrl(attachment: {
+  id: string;
+  url?: string;
+  fileName?: string;
+}): string {
+  if (!attachment.id) return attachment.url ?? '';
+  const org = attachment.url ? /dev\.azure\.com\/([^/]+)/.exec(attachment.url)?.[1] : undefined;
+  return buildAttachmentProxyUrl(attachment.id, attachment.fileName, org);
+}
+
 export function rewriteAttachmentUrls(html: string | null | undefined): string {
   if (!html) return '';
 

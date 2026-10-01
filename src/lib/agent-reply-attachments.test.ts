@@ -82,4 +82,35 @@ describe('sendAgentReply carries pasted images', () => {
     await reply('<p>Just text.</p>');
     expect((sent.message as Record<string, unknown>).attachments).toBeUndefined();
   });
+
+  // A dropped image leaves its cid: pointing at nothing, which renders as a
+  // broken picture with no explanation. The comment claimed a note was added;
+  // now one is.
+  it('tells the customer when an image could not be included', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/oauth2/v2.0/token')) {
+          return Response.json({ access_token: 'token', expires_in: 3600 });
+        }
+        if (url.includes('/_apis/wit/attachments/')) {
+          return new Response('gone', { status: 404 });
+        }
+        if (url.includes('/sendMail')) {
+          sent = JSON.parse(String(init?.body));
+          return new Response(null, { status: 202 });
+        }
+        return new Response('{}', { status: 200 });
+      })
+    );
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await reply('<img src="/api/devops/attachments/abc?fileName=shot.png" />');
+
+    const html = ((sent.message as Record<string, unknown>).body as Record<string, string>).content;
+    expect(html).toContain('could not be included');
+    expect(html).toContain('shot.png');
+    err.mockRestore();
+  });
 });

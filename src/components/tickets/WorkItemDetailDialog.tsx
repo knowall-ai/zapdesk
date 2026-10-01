@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { ExternalLink, ChevronDown, Loader2, Maximize2, Trash2 } from 'lucide-react';
@@ -52,6 +52,8 @@ export default function WorkItemDetailDialog({
   // Comments state (dialog fetches its own comments)
   const [comments, setComments] = useState<TicketComment[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  /** Work item the visible attachments belong to, so a late reply can be ignored. */
+  const attachmentsFor = useRef<number | undefined>(undefined);
   const [isLoadingComments, setIsLoadingComments] = useState(false);
 
   // Delete (Recycle Bin) state — issue #374
@@ -168,11 +170,17 @@ export default function WorkItemDetailDialog({
    */
   const fetchAttachments = useCallback(async () => {
     if (!workItem?.project || !hasOrganization) return;
+    const requestedFor = workItem.id;
     try {
-      const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}/attachments`);
+      const response = await fetchDevOps(`/api/devops/tickets/${requestedFor}/attachments`);
       if (response.ok) {
         const data = await response.json();
-        setAttachments(data.attachments || []);
+        // Ignore a response that arrived after the dialog moved on. Without
+        // this, a slow request for the previous work item can land afterwards
+        // and show its files under the one now open.
+        setAttachments((current) =>
+          attachmentsFor.current === requestedFor ? data.attachments || [] : current
+        );
       }
     } catch (err) {
       // Non-fatal: the rest of the dialog is still worth showing.
@@ -265,6 +273,11 @@ export default function WorkItemDetailDialog({
   // Fetch comments when dialog opens with a work item
   useEffect(() => {
     if (isOpen && workItem) {
+      // Clear first: carrying the previous work item's files across would show
+      // them under this one until the new request lands, or for ever if it
+      // fails.
+      attachmentsFor.current = workItem.id;
+      setAttachments([]);
       fetchComments();
       fetchAttachments();
     }

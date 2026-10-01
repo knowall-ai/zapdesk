@@ -19,6 +19,8 @@
 export interface OutboundAttachment {
   /** DevOps attachment id, used to fetch the bytes. */
   id: string;
+  /** Organisation the attachment belongs to, when the URL named one. */
+  org?: string;
   /** Name shown in the mail client. */
   fileName: string;
   /** Matches the `cid:` in the rewritten HTML. */
@@ -33,6 +35,15 @@ export interface InlineRewrite {
 /** Proxy URLs this app emits, absolute or relative, with any query order. */
 const PROXY_SRC =
   /src=(["'])((?:https?:\/\/[^"']*)?\/api\/devops\/attachments\/([^"'?]+)[^"']*)\1/gi;
+
+/** `decodeURIComponent` that returns the input rather than throwing on `%ZZ`. */
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
 
 function fileNameFrom(url: string, fallback: string): string {
   const match = /[?&]fileName=([^&"']+)/i.exec(url);
@@ -60,15 +71,22 @@ export function inlineProxyImages(html: string): InlineRewrite {
   const seen = new Map<string, string>();
 
   const rewritten = html.replace(PROXY_SRC, (whole, quote, url, rawId) => {
-    const id = decodeURIComponent(rawId);
+    // A malformed escape would throw here, and this runs inside the try that
+    // sends the reply -- so one bad character in an agent's comment would cost
+    // the customer their email. The raw id is a usable fallback.
+    const id = safeDecode(rawId);
     const existing = seen.get(id);
     if (existing) return `src=${quote}cid:${existing}${quote}`;
 
     const fileName = fileNameFrom(url, `image-${attachments.length + 1}`);
+    // The proxy URL records which organisation the file lives in. Dropping it
+    // would send every fetch to AZURE_DEVOPS_ORG, which fails for a ticket
+    // belonging to another one.
+    const org = /[?&]org=([^&"']+)/i.exec(url)?.[1];
     // Domain-shaped so clients that expect an addr-spec do not discard it.
     const contentId = `zapdesk-${attachments.length + 1}-${id}@zapdesk`;
     seen.set(id, contentId);
-    attachments.push({ id, fileName, contentId });
+    attachments.push({ id, org: org ? safeDecode(org) : undefined, fileName, contentId });
     return `src=${quote}cid:${contentId}${quote}`;
   });
 

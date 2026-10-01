@@ -77,4 +77,28 @@ describe('inlineProxyImages', () => {
     const html = '<p>Just a sentence.</p>';
     expect(inlineProxyImages(html)).toEqual({ html, attachments: [] });
   });
+
+  // This runs inside the try that sends the reply, so a throw here costs the
+  // customer their email -- the exact rule this feature claims to follow.
+  it('survives a malformed escape in the attachment id', () => {
+    const { attachments } = inlineProxyImages(
+      '<img src="/api/devops/attachments/%ZZ?fileName=a.png" />'
+    );
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0].id).toBe('%ZZ');
+  });
+
+  // The proxy URL records the organisation. Dropping it sends every fetch to
+  // AZURE_DEVOPS_ORG, which fails for a ticket belonging to another one.
+  it('carries the organisation through from the URL', () => {
+    const { attachments } = inlineProxyImages(
+      '<img src="/api/devops/attachments/abc?fileName=a.png&org=OtherOrg" />'
+    );
+    expect(attachments[0].org).toBe('OtherOrg');
+  });
+
+  it('leaves the organisation unset when the URL names none', () => {
+    const { attachments } = inlineProxyImages('<img src="/api/devops/attachments/abc" />');
+    expect(attachments[0].org).toBeUndefined();
+  });
 });

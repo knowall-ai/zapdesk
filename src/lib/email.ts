@@ -8,6 +8,7 @@
  */
 
 import { inlineProxyImages, type OutboundAttachment } from './email-attachments';
+import { escapeHtml } from './email-clean';
 import {
   ticketConfirmationTemplate,
   agentReplyTemplate,
@@ -189,15 +190,18 @@ export interface GraphFileAttachment {
 }
 
 /**
- * Ceiling on what a single message will carry.
+ * Ceiling on what a single message will carry, measured as sent.
  *
  * Graph rejects a sendMail request over roughly 4MB outright, and the failure
  * is the whole message rather than the oversized part -- so a screenshot that
- * is too large would cost the customer their reply, not just the picture. The
- * cap is applied per message and anything beyond it is dropped with a note in
- * the body, which is the lesser loss.
+ * is too large would cost the customer their reply, not just the picture.
+ *
+ * Counted in base64, not raw bytes: contentBytes is base64 and roughly 4/3 the
+ * size of the file, so a 3MB raw cap would still produce a 4MB request and the
+ * rejection this exists to avoid. The headroom below 4MB is for the HTML body
+ * and the quoted history, which travel in the same request.
  */
-const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+const MAX_ATTACHMENT_BASE64_BYTES = 3 * 1024 * 1024;
 
 async function sendViaGraph(options: GraphSendMailOptions): Promise<void> {
   const token = await getMailGraphToken();
@@ -294,46 +298,66 @@ export async function sendTicketConfirmation(
 export async function fetchInlineAttachments(
   wanted: OutboundAttachment[],
   fetchImpl: typeof fetch = fetch
-): Promise<GraphFileAttachment[]> {
+): Promise<{ attachments: GraphFileAttachment[]; skipped: string[] }> {
   const pat = process.env.AZURE_DEVOPS_PAT;
-  const org = process.env.AZURE_DEVOPS_ORG;
-  if (!pat || !org || wanted.length === 0) return [];
+  const defaultOrg = process.env.AZURE_DEVOPS_ORG;
+  if (!pat || !defaultOrg || wanted.length === 0) return { attachments: [], skipped: [] };
 
   const auth = `Basic ${Buffer.from(`:${pat}`).toString('base64')}`;
   const collected: GraphFileAttachment[] = [];
+  const skipped: string[] = [];
   let total = 0;
 
   for (const item of wanted) {
     try {
       const response = await fetchImpl(
-        `https://dev.azure.com/${encodeURIComponent(org)}/_apis/wit/attachments/${encodeURIComponent(item.id)}?api-version=7.0`,
+        `https://dev.azure.com/${encodeURIComponent(item.org || defaultOrg)}/_apis/wit/attachments/${encodeURIComponent(item.id)}?api-version=7.0`,
         { headers: { Authorization: auth }, signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS) }
       );
       if (!response.ok) {
         console.error(`[Email] Attachment ${item.id} could not be read (${response.status}).`);
+        skipped.push(item.fileName);
         continue;
       }
 
-      const bytes = Buffer.from(await response.arrayBuffer());
-      if (total + bytes.byteLength > MAX_ATTACHMENT_BYTES) {
+      const contentBytes = Buffer.from(await response.arrayBuffer()).toString('base64');
+      if (total + contentBytes.length > MAX_ATTACHMENT_BASE64_BYTES) {
         console.error(`[Email] Attachment ${item.fileName} skipped: message size limit.`);
+        skipped.push(item.fileName);
         continue;
       }
-      total += bytes.byteLength;
+      total += contentBytes.length;
 
       collected.push({
         name: item.fileName,
         contentType: response.headers.get('content-type') || 'application/octet-stream',
-        contentBytes: bytes.toString('base64'),
+        contentBytes,
         contentId: item.contentId,
         isInline: true,
       });
     } catch (error) {
       console.error(`[Email] Attachment ${item.id} could not be read:`, error);
+      skipped.push(item.fileName);
     }
   }
 
-  return collected;
+  return { attachments: collected, skipped };
+}
+
+/**
+ * Say so when an image could not be sent.
+ *
+ * A dropped attachment leaves its `cid:` reference pointing at nothing, which
+ * a mail client renders as a broken image with no explanation. The customer
+ * cannot tell whether they are missing something important, and the agent has
+ * no idea anything went wrong. A line of text is the least we can do.
+ */
+function withSkippedNote(html: string, skipped: string[]): string {
+  if (skipped.length === 0) return html;
+  const names = skipped.map((n) => escapeHtml(n)).join(', ');
+  const label = skipped.length === 1 ? 'image' : 'images';
+  return `${html}
+<p style="color: #71717a; font-size: 13px;"><em>${skipped.length} ${label} could not be included (${names}). Open the ticket to view ${skipped.length === 1 ? 'it' : 'them'}.</em></p>`;
 }
 
 export async function sendAgentReply(
@@ -352,11 +376,11 @@ export async function sendAgentReply(
     // session can fetch. Sent as-is the customer gets a broken image where the
     // screenshot should be, so the bytes travel with the message instead.
     const inlined = inlineProxyImages(replyHtml);
-    const attachments = await fetchInlineAttachments(inlined.attachments);
+    const { attachments, skipped } = await fetchInlineAttachments(inlined.attachments);
     const html = agentReplyTemplate({
       ticketId,
       agentName,
-      replyContent: inlined.html,
+      replyContent: withSkippedNote(inlined.html, skipped),
       history,
     });
     await sendViaGraph({

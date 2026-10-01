@@ -42,6 +42,7 @@ import {
   validateFile,
   rewriteAttachmentUrls,
   buildAttachmentProxyUrl,
+  attachmentDownloadUrl,
 } from '@/lib/attachment-utils';
 import { hasTicketTag } from '@/lib/tags';
 import StatusBadge from '../common/StatusBadge';
@@ -1178,7 +1179,7 @@ export default function TicketDetail({
                   {ticket.attachments.map((attachment) => (
                     <a
                       key={attachment.id}
-                      href={attachment.url}
+                      href={attachmentDownloadUrl(attachment)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
@@ -1819,7 +1820,7 @@ export default function TicketDetail({
                   {ticket.attachments.map((attachment) => (
                     <a
                       key={attachment.id}
-                      href={attachment.url}
+                      href={attachmentDownloadUrl(attachment)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
