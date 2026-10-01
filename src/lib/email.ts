@@ -301,6 +301,16 @@ export async function sendAssignmentNotification(opts: {
     return;
   }
 
+  // The subject carries [ZapDesk #id], so a notification sent to the polled
+  // mailbox is read straight back in and filed as a comment on the very ticket
+  // it announces. The reply copy had this guard; this path did not.
+  if (isPolledMailbox(assignee)) {
+    console.error(
+      `[Email] Assignee ${assignee} is the polled mailbox - not notifying, it would be ingested.`
+    );
+    return;
+  }
+
   try {
     await sendViaGraph({
       to: assignee,

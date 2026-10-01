@@ -71,6 +71,22 @@ describe('assignment notification (#7374)', () => {
     expect(graph.sent()).toEqual({});
   });
 
+  // [ZapDesk #id] in the subject means the poller files it as a comment on the
+  // very ticket it is announcing.
+  it('refuses to notify the mailbox ZapDesk polls', async () => {
+    vi.stubEnv('MAIL_POLL_MAILBOX', 'support@example.test');
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await sendAssignmentNotification({
+      ticketId: 7400,
+      subject: 'Printer jam',
+      assigneeEmail: 'support@example.test',
+      assignedByName: 'Team Lead',
+    });
+    expect(graph.sent()).toEqual({});
+    expect(err).toHaveBeenCalledWith(expect.stringContaining('polled mailbox'));
+    err.mockRestore();
+  });
+
   it('sends nothing when the assignee is not an address', async () => {
     await sendAssignmentNotification({
       ticketId: 7400,
