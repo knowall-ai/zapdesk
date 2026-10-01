@@ -494,7 +494,7 @@ export default function WorkItemDetailSidebar({
       {showEffortHours && (
         <div>
           <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-            Hours
+            Effort Tracking
           </label>
           <div className="flex items-center gap-2">
             <Timer size={14} style={{ color: 'var(--text-muted)' }} />

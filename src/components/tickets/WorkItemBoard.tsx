@@ -1094,11 +1094,12 @@ export default function WorkItemBoard({
                         </td>
                       )}
                       {hasColumn('subject') && (
-                        <td className={cellPadding}>
+                        <td className={`${cellPadding} max-w-xs`}>
                           {onWorkItemClick ? (
                             <button
                               onClick={() => onWorkItemClick(item)}
-                              className="text-sm hover:underline"
+                              className="line-clamp-2 text-sm hover:underline"
+                              title={item.title}
                               style={{
                                 color: 'var(--text-primary)',
                                 cursor: 'pointer',
@@ -1114,7 +1115,8 @@ export default function WorkItemBoard({
                           ) : (
                             <Link
                               href={`/tickets/${item.id}`}
-                              className="text-sm hover:underline"
+                              className="line-clamp-2 text-sm hover:underline"
+                              title={item.title}
                               style={{ color: 'var(--text-primary)' }}
                             >
                               {item.title}
@@ -1162,7 +1164,7 @@ export default function WorkItemBoard({
                             item.createdAt instanceof Date
                               ? item.createdAt
                               : new Date(item.createdAt),
-                            'dd MMM yyyy'
+                            'dd MMM yyyy, HH:mm'
                           )}
                         </td>
                       )}
@@ -1183,7 +1185,7 @@ export default function WorkItemBoard({
                             item.updatedAt instanceof Date
                               ? item.updatedAt
                               : new Date(item.updatedAt),
-                            'dd MMM yyyy'
+                            'dd MMM yyyy, HH:mm'
                           )}
                         </td>
                       )}
