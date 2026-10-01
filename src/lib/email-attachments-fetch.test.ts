@@ -74,7 +74,7 @@ describe('fetchInlineAttachments', () => {
       vi.fn(async () => bytes(huge)) as never
     );
     expect(out).toEqual([]);
-    expect(skipped.length).toBeGreaterThanOrEqual(0);
+    expect(skipped).toEqual(['shot.png']);
     err.mockRestore();
   });
 
@@ -104,7 +104,7 @@ describe('fetchInlineAttachments', () => {
       }) as never
     );
     expect(out).toEqual([]);
-    expect(skipped.length).toBeGreaterThanOrEqual(0);
+    expect(skipped).toEqual(['shot.png']);
     err.mockRestore();
   });
 

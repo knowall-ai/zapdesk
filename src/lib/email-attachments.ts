@@ -82,7 +82,10 @@ export function inlineProxyImages(html: string): InlineRewrite {
     // The proxy URL records which organisation the file lives in. Dropping it
     // would send every fetch to AZURE_DEVOPS_ORG, which fails for a ticket
     // belonging to another one.
-    const org = /[?&]org=([^&"']+)/i.exec(url)?.[1];
+    // `&amp;` is how a browser writes an ampersand into an attribute, so the
+    // separator here is usually encoded. Matching only `&` found nothing and
+    // quietly sent every fetch to the default organisation.
+    const org = /[?&](?:amp;)?org=([^&"'<]+)/i.exec(url)?.[1];
     // Domain-shaped so clients that expect an addr-spec do not discard it.
     const contentId = `zapdesk-${attachments.length + 1}-${id}@zapdesk`;
     seen.set(id, contentId);

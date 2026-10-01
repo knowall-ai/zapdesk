@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { ExternalLink, ChevronDown, Loader2, Maximize2, Trash2 } from 'lucide-react';
@@ -34,6 +34,9 @@ interface WorkItemDetailDialogProps {
   ) => Promise<void>;
 }
 
+/** Stable reference, so deriving an empty list does not re-render on every pass. */
+const EMPTY_ATTACHMENTS: Attachment[] = [];
+
 export default function WorkItemDetailDialog({
   workItem,
   isOpen,
@@ -51,9 +54,20 @@ export default function WorkItemDetailDialog({
 
   // Comments state (dialog fetches its own comments)
   const [comments, setComments] = useState<TicketComment[]>([]);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  /** Work item the visible attachments belong to, so a late reply can be ignored. */
-  const attachmentsFor = useRef<number | undefined>(undefined);
+  /**
+   * Attachments together with the work item they were fetched for.
+   *
+   * Kept as one value, and the visible list derived from it, so a result can
+   * never outlive the item it belongs to: switching work items changes what is
+   * rendered immediately, with no reset to remember and no window where the
+   * previous item's files show under the new one.
+   */
+  const [fetchedAttachments, setFetchedAttachments] = useState<{
+    forId?: number;
+    items: Attachment[];
+  }>({ items: [] });
+  const attachments =
+    fetchedAttachments.forId === workItem?.id ? fetchedAttachments.items : EMPTY_ATTACHMENTS;
   const [isLoadingComments, setIsLoadingComments] = useState(false);
 
   // Delete (Recycle Bin) state — issue #374
@@ -175,12 +189,7 @@ export default function WorkItemDetailDialog({
       const response = await fetchDevOps(`/api/devops/tickets/${requestedFor}/attachments`);
       if (response.ok) {
         const data = await response.json();
-        // Ignore a response that arrived after the dialog moved on. Without
-        // this, a slow request for the previous work item can land afterwards
-        // and show its files under the one now open.
-        setAttachments((current) =>
-          attachmentsFor.current === requestedFor ? data.attachments || [] : current
-        );
+        setFetchedAttachments({ forId: requestedFor, items: data.attachments || [] });
       }
     } catch (err) {
       // Non-fatal: the rest of the dialog is still worth showing.
@@ -273,11 +282,6 @@ export default function WorkItemDetailDialog({
   // Fetch comments when dialog opens with a work item
   useEffect(() => {
     if (isOpen && workItem) {
-      // Clear first: carrying the previous work item's files across would show
-      // them under this one until the new request lands, or for ever if it
-      // fails.
-      attachmentsFor.current = workItem.id;
-      setAttachments([]);
       fetchComments();
       fetchAttachments();
     }

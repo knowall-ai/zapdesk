@@ -101,4 +101,13 @@ describe('inlineProxyImages', () => {
     const { attachments } = inlineProxyImages('<img src="/api/devops/attachments/abc" />');
     expect(attachments[0].org).toBeUndefined();
   });
+
+  // A browser writes an ampersand into an attribute as `&amp;`, so this is the
+  // shape the parser actually meets in a stored comment.
+  it('reads the organisation from an HTML-encoded URL', () => {
+    const { attachments } = inlineProxyImages(
+      '<img src="/api/devops/attachments/abc?fileName=a.png&amp;org=OtherOrg" />'
+    );
+    expect(attachments[0].org).toBe('OtherOrg');
+  });
 });
