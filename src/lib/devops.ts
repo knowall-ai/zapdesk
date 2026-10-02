@@ -26,6 +26,9 @@ import type {
 } from '@/types';
 import { parseSLAFromDescription, calculateTicketSLA, DEFAULT_SLA_LEVEL } from './sla';
 import { debugLog } from './debug';
+// Server-only module, and devops.ts is too -- no client component imports it,
+// so pulling in the Graph helpers alongside the parser costs nothing here.
+import { extractRequesterEmail } from './email';
 import {
   getMitigationFieldRef,
   getResolutionFieldRef,
@@ -165,6 +168,64 @@ function identityToUser(identity?: {
   };
 }
 
+/**
+ * Who raised this ticket.
+ *
+ * `System.CreatedBy` is the account that made the API call, which for an email
+ * ticket is whoever owns the PAT -- accurate from DevOps' point of view and
+ * useless as a requester, since every ticket the mailbox produces would name
+ * the same person.
+ *
+ * Ingest records the real sender on the work item as an `email-from:` tag, so
+ * that is preferred where it exists. A ticket raised in the UI has no such tag
+ * and falls back, where the creator genuinely is the requester.
+ *
+ * There is no DevOps identity behind a bare address, so there is no id and no
+ * avatar to fetch: the id is the address itself, which at least stays stable
+ * per person.
+ */
+function resolveRequester(
+  tags: string | undefined,
+  createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string }
+): Customer {
+  const email = extractRequesterEmail(tags ?? '');
+  // Tags are editable by anyone with work item access, so the value after
+  // `email-from:` is not trustworthy. Anything that is not an address is
+  // treated as absent rather than displayed as one -- it would otherwise
+  // become the display name and the Customer id too.
+  if (!email || !looksLikeEmail(email)) return identityToCustomer(createdBy);
+
+  return {
+    id: email,
+    displayName: displayNameFromEmail(email),
+    email,
+    timezone: 'Europe/Dublin',
+    tags: [],
+    lastUpdated: new Date(),
+  };
+}
+
+/**
+ * Deliberately permissive: exactly one `@`, something either side, no spaces.
+ *
+ * The job is rejecting a tag that plainly is not an address, not adjudicating
+ * RFC 5322. A stricter pattern would discard real addresses and send the
+ * requester back to being the PAT owner, which is the bug this exists to fix.
+ */
+function looksLikeEmail(value: string): boolean {
+  const parts = value.split('@');
+  return parts.length === 2 && parts.every((part) => part.length > 0 && !/\s/.test(part));
+}
+
+/** `first.last@example` -> `First Last`, for a sender we know only by address. */
+function displayNameFromEmail(email: string): string {
+  const local = email.split('@')[0];
+  return local
+    .replace(/[._-]+/g, ' ')
+    .replace(/(^|\s)\w/g, (c) => c.toUpperCase())
+    .trim();
+}
+
 // Convert DevOps identity to Customer
 // Uses avatar API as fallback when imageUrl is not provided
 function identityToCustomer(identity: {
@@ -234,7 +295,7 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     devOpsState: fields['System.State'], // Preserve original DevOps state
     workItemType: fields['System.WorkItemType'], // Azure DevOps work item type
     priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
-    requester: identityToCustomer(fields['System.CreatedBy']),
+    requester: resolveRequester(fields['System.Tags'], fields['System.CreatedBy']),
     assignee: identityToUser(fields['System.AssignedTo']),
     organization,
     tags:
@@ -361,6 +422,26 @@ export function isRemovedItem(
   if (perType === undefined) return false;
 
   return perType === 'Removed';
+}
+
+/**
+ * DevOps has no notion of a private comment, so an internal note is marked in
+ * the text itself. The prefix is the only record that a note was meant to stay
+ * off the customer's email -- the comments endpoint filters on it when building
+ * reply history, and reading it back is how the badge appears in the timeline.
+ *
+ * Matched at the start only, and tolerant of the leading markup DevOps wraps
+ * text in. A note quoting the phrase mid-body is not a note.
+ */
+const INTERNAL_NOTE_MARKER = /^(\s*(?:<[^>]+>\s*)*)\[Internal Note\]\s*/i;
+
+export function isInternalNote(text: string): boolean {
+  return INTERNAL_NOTE_MARKER.test(text ?? '');
+}
+
+/** Drop the marker for display; the badge says it better than the text does. */
+export function stripInternalNoteMarker(text: string): string {
+  return (text ?? '').replace(INTERNAL_NOTE_MARKER, '$1');
 }
 
 export class AzureDevOpsService {
@@ -697,7 +778,7 @@ export class AzureDevOpsService {
           createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string };
         }) => ({
           id: c.id,
-          content: c.text,
+          content: stripInternalNoteMarker(c.text),
           createdAt: new Date(c.createdDate),
           author: {
             id: c.createdBy.id,
@@ -705,7 +786,7 @@ export class AzureDevOpsService {
             email: c.createdBy.uniqueName,
             avatarUrl: c.createdBy.imageUrl,
           },
-          isInternal: false,
+          isInternal: isInternalNote(c.text),
         })
       ) || []
     );

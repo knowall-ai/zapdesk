@@ -7,6 +7,8 @@
  * the main app credentials when the dedicated ones are not set.
  */
 
+import { inlineProxyImages, type OutboundAttachment } from './email-attachments';
+import { escapeHtml } from './email-clean';
 import {
   assignmentNotificationTemplate,
   ticketConfirmationTemplate,
@@ -194,7 +196,30 @@ interface GraphSendMailOptions {
   html: string;
   messageId?: string;
   inReplyTo?: string;
+  attachments?: GraphFileAttachment[];
 }
+
+export interface GraphFileAttachment {
+  name: string;
+  contentType: string;
+  contentBytes: string;
+  contentId?: string;
+  isInline?: boolean;
+}
+
+/**
+ * Ceiling on what a single message will carry, measured as sent.
+ *
+ * Graph rejects a sendMail request over roughly 4MB outright, and the failure
+ * is the whole message rather than the oversized part -- so a screenshot that
+ * is too large would cost the customer their reply, not just the picture.
+ *
+ * Counted in base64, not raw bytes: contentBytes is base64 and roughly 4/3 the
+ * size of the file, so a 3MB raw cap would still produce a 4MB request and the
+ * rejection this exists to avoid. The headroom below 4MB is for the HTML body
+ * and the quoted history, which travel in the same request.
+ */
+const MAX_ATTACHMENT_BASE64_BYTES = 3 * 1024 * 1024;
 
 async function sendViaGraph(options: GraphSendMailOptions): Promise<void> {
   const token = await getMailGraphToken();
@@ -209,6 +234,17 @@ async function sendViaGraph(options: GraphSendMailOptions): Promise<void> {
 
   if (options.bcc?.length) {
     message.bccRecipients = options.bcc.map((address) => ({ emailAddress: { address } }));
+  }
+
+  if (options.attachments?.length) {
+    message.attachments = options.attachments.map((a) => ({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: a.name,
+      contentType: a.contentType,
+      contentBytes: a.contentBytes,
+      ...(a.contentId ? { contentId: a.contentId } : {}),
+      ...(a.isInline ? { isInline: true } : {}),
+    }));
   }
 
   if (options.inReplyTo) {
@@ -349,6 +385,81 @@ function copyRecipients(assigneeEmail: string | undefined, requesterEmail: strin
   return [assignee];
 }
 
+/**
+ * Fetch the bytes for images the reply references, so they travel with it.
+ *
+ * Uses the service PAT rather than the agent's token: this runs after the HTTP
+ * response has gone, so there is no session left to borrow.
+ *
+ * A failure here is never allowed to cost the reply. An image that cannot be
+ * fetched, or that would push the message past what Graph accepts, is dropped
+ * and the recipient gets the text -- which is the part that matters.
+ */
+export async function fetchInlineAttachments(
+  wanted: OutboundAttachment[],
+  fetchImpl: typeof fetch = fetch
+): Promise<{ attachments: GraphFileAttachment[]; skipped: string[] }> {
+  const pat = process.env.AZURE_DEVOPS_PAT;
+  const defaultOrg = process.env.AZURE_DEVOPS_ORG;
+  if (!pat || !defaultOrg || wanted.length === 0) return { attachments: [], skipped: [] };
+
+  const auth = `Basic ${Buffer.from(`:${pat}`).toString('base64')}`;
+  const collected: GraphFileAttachment[] = [];
+  const skipped: string[] = [];
+  let total = 0;
+
+  for (const item of wanted) {
+    try {
+      const response = await fetchImpl(
+        `https://dev.azure.com/${encodeURIComponent(item.org || defaultOrg)}/_apis/wit/attachments/${encodeURIComponent(item.id)}?api-version=7.0`,
+        { headers: { Authorization: auth }, signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS) }
+      );
+      if (!response.ok) {
+        console.error(`[Email] Attachment ${item.id} could not be read (${response.status}).`);
+        skipped.push(item.fileName);
+        continue;
+      }
+
+      const contentBytes = Buffer.from(await response.arrayBuffer()).toString('base64');
+      if (total + contentBytes.length > MAX_ATTACHMENT_BASE64_BYTES) {
+        console.error(`[Email] Attachment ${item.fileName} skipped: message size limit.`);
+        skipped.push(item.fileName);
+        continue;
+      }
+      total += contentBytes.length;
+
+      collected.push({
+        name: item.fileName,
+        contentType: response.headers.get('content-type') || 'application/octet-stream',
+        contentBytes,
+        contentId: item.contentId,
+        isInline: true,
+      });
+    } catch (error) {
+      console.error(`[Email] Attachment ${item.id} could not be read:`, error);
+      skipped.push(item.fileName);
+    }
+  }
+
+  return { attachments: collected, skipped };
+}
+
+/**
+ * Say so when an image could not be sent.
+ *
+ * A dropped attachment leaves its `cid:` reference pointing at nothing, which
+ * a mail client renders as a broken image with no explanation. The customer
+ * cannot tell whether they are missing something important, and the agent has
+ * no idea anything went wrong. A line of text is the least we can do.
+ */
+function withSkippedNote(html: string, skipped: string[]): string {
+  if (skipped.length === 0) return html;
+  const names = skipped.map((n) => escapeHtml(n)).join(', ');
+  const label = skipped.length === 1 ? 'image' : 'images';
+  return `${html}
+<p style="color: #71717a; font-size: 13px;"><em>${skipped.length} ${label} could not be included (${names}). Open the ticket to view ${skipped.length === 1 ? 'it' : 'them'}.</em></p>`;
+}
+
 export async function sendAgentReply(
   ticketId: number,
   subject: string,
@@ -370,13 +481,24 @@ export async function sendAgentReply(
   if (!isEmailConfigured()) return;
   try {
     const messageId = generateMessageId(ticketId);
-    const html = agentReplyTemplate({ ticketId, agentName, replyContent: replyHtml, history });
+    // Pasted images are stored as proxy URLs that only a signed-in ZapDesk
+    // session can fetch. Sent as-is the customer gets a broken image where the
+    // screenshot should be, so the bytes travel with the message instead.
+    const inlined = inlineProxyImages(replyHtml);
+    const { attachments, skipped } = await fetchInlineAttachments(inlined.attachments);
+    const html = agentReplyTemplate({
+      ticketId,
+      agentName,
+      replyContent: withSkippedNote(inlined.html, skipped),
+      history,
+    });
     await sendViaGraph({
       to: requesterEmail,
       subject: threadedSubject(ticketId, `Re: ${subject}`),
       html,
       messageId,
       bcc: copyRecipients(assigneeEmail, requesterEmail),
+      attachments,
       inReplyTo: originalMessageId,
     });
     console.log(`[Email] Agent reply sent for ticket #${ticketId} to ${requesterEmail}`);
