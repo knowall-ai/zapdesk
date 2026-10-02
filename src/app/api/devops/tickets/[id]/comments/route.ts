@@ -98,7 +98,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             try {
               const existing = await devopsService.getWorkItemComments(project.name, ticketId);
               priorHistory = existing
-                .filter((c) => !c.content.includes('[Internal Note]'))
+                // On the structured field, not the marker text. The marker is
+                // stripped when comments are read, so a text match silently
+                // stops excluding anything -- and this history is emailed to
+                // the customer.
+                .filter((c) => !c.isInternal)
                 .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
                 .map((c) => ({
                   authorName: c.author.displayName || 'Unknown',

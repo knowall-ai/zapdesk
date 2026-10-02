@@ -20,6 +20,7 @@ import {
   Plus,
   Tag,
   Trash2,
+  Lock,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMentionableUsers } from '@/hooks/useMentionableUsers';
@@ -70,7 +71,7 @@ interface TicketDetailProps {
   comments: TicketComment[];
   history?: WorkItemUpdate[];
   historyLoading?: boolean;
-  onAddComment?: (comment: string) => Promise<void>;
+  onAddComment?: (comment: string, isInternal?: boolean) => Promise<void>;
   onStateChange?: (state: string) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
@@ -131,6 +132,15 @@ export default function TicketDetail({
   const isTicket = hasTicketTag(ticket.tags);
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
   const [newComment, setNewComment] = useState('');
+
+  // Public is the default because it is the common action and matches what
+  // agents expect from Zendesk. The cost is real and worth naming rather than
+  // dressing up: an agent who means to leave an internal note and forgets to
+  // switch sends it to the customer. Defaulting to internal would trade that
+  // for a reply the customer never receives, which is quieter and arguably
+  // worse. The mitigation is making the internal state unmistakable, not
+  // pretending the trade does not exist.
+  const [isInternalNote, setIsInternalNote] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
   const [isDetailsSidebarOpen, setIsDetailsSidebarOpen] = useState(false);
@@ -688,8 +698,9 @@ export default function TicketDetail({
 
       // Then add comment if there is one
       if (newComment.trim() && onAddComment) {
-        await onAddComment(newComment);
+        await onAddComment(newComment, isInternalNote);
         setNewComment('');
+        setIsInternalNote(false);
       }
 
       // Refresh ticket once after all uploads and comment
@@ -1287,21 +1298,61 @@ export default function TicketDetail({
             className="hidden"
           />
 
-          <div className="mb-3 flex items-center gap-2">
-            <label className="flex cursor-not-allowed items-center gap-2">
-              <input
-                type="checkbox"
-                checked
-                disabled
-                className="h-4 w-4 rounded accent-[var(--primary)]"
-              />
-              <span className="text-xs" style={{ color: 'var(--primary)' }}>
-                {isTicket
-                  ? 'Public reply – all comments are visible to customers in DevOps'
-                  : 'Comments are visible in DevOps'}
+          {/* Public reply vs internal note. Only a ticket can email anyone, so
+              a plain work item has nothing to choose between. */}
+          {isTicket ? (
+            <div className="mb-3">
+              <div
+                role="radiogroup"
+                aria-label="Comment visibility"
+                className="inline-flex rounded-md border p-0.5"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                {[
+                  { internal: false, label: 'Public reply', Icon: Send },
+                  { internal: true, label: 'Internal note', Icon: Lock },
+                ].map(({ internal, label, Icon }) => {
+                  const active = isInternalNote === internal;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setIsInternalNote(internal)}
+                      className="flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors"
+                      style={{
+                        backgroundColor: active
+                          ? internal
+                            ? 'var(--warning-bg-hover)'
+                            : 'var(--surface-hover)'
+                          : 'transparent',
+                        color: active
+                          ? internal
+                            ? 'var(--text-primary)'
+                            : 'var(--primary)'
+                          : 'var(--text-muted)',
+                      }}
+                    >
+                      <Icon size={13} />
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                {isInternalNote
+                  ? 'Stays on the ticket. The requester is not emailed.'
+                  : 'Visible to the requester in DevOps, and emailed if the ticket arrived by email.'}
+              </p>
+            </div>
+          ) : (
+            <div className="mb-3">
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Comments are visible in DevOps
               </span>
-            </label>
-          </div>
+            </div>
+          )}
 
           {/* Upload error */}
           {uploadError && (

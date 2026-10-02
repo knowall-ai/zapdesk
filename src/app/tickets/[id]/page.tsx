@@ -159,12 +159,12 @@ export default function TicketDetailPage() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [ticket, selectedOrganization, ticketId, orgHeaders, router]);
 
-  const handleAddComment = async (comment: string) => {
+  const handleAddComment = async (comment: string, isInternal = false) => {
     try {
       const response = await fetch(`/api/devops/tickets/${ticketId}/comments`, {
         method: 'POST',
         headers: orgHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ comment }),
+        body: JSON.stringify({ comment, isInternal }),
       });
       if (!response.ok) throw new Error('Failed to add comment');
       await fetchTicket();

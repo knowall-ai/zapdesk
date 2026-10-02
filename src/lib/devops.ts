@@ -363,6 +363,26 @@ export function isRemovedItem(
   return perType === 'Removed';
 }
 
+/**
+ * DevOps has no notion of a private comment, so an internal note is marked in
+ * the text itself. The prefix is the only record that a note was meant to stay
+ * off the customer's email -- the comments endpoint filters on it when building
+ * reply history, and reading it back is how the badge appears in the timeline.
+ *
+ * Matched at the start only, and tolerant of the leading markup DevOps wraps
+ * text in. A note quoting the phrase mid-body is not a note.
+ */
+const INTERNAL_NOTE_MARKER = /^(\s*(?:<[^>]+>\s*)*)\[Internal Note\]\s*/i;
+
+export function isInternalNote(text: string): boolean {
+  return INTERNAL_NOTE_MARKER.test(text ?? '');
+}
+
+/** Drop the marker for display; the badge says it better than the text does. */
+export function stripInternalNoteMarker(text: string): string {
+  return (text ?? '').replace(INTERNAL_NOTE_MARKER, '$1');
+}
+
 export class AzureDevOpsService {
   private accessToken: string;
   private organization: string;
@@ -697,7 +717,7 @@ export class AzureDevOpsService {
           createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string };
         }) => ({
           id: c.id,
-          content: c.text,
+          content: stripInternalNoteMarker(c.text),
           createdAt: new Date(c.createdDate),
           author: {
             id: c.createdBy.id,
@@ -705,7 +725,7 @@ export class AzureDevOpsService {
             email: c.createdBy.uniqueName,
             avatarUrl: c.createdBy.imageUrl,
           },
-          isInternal: false,
+          isInternal: isInternalNote(c.text),
         })
       ) || []
     );
