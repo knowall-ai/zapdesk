@@ -815,7 +815,7 @@ export class AzureDevOpsService {
           content: stripInternalNoteMarker(c.text),
           createdAt: new Date(c.createdDate),
           author: commentAuthor(c.text, c.createdBy),
-          isInternal: false,
+          isInternal: isInternalNote(c.text),
         })
       ) || []
     );
