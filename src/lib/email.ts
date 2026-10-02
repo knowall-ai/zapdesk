@@ -10,6 +10,7 @@
 import { inlineProxyImages, type OutboundAttachment } from './email-attachments';
 import { escapeHtml } from './email-clean';
 import {
+  assignmentNotificationTemplate,
   ticketConfirmationTemplate,
   agentReplyTemplate,
   statusChangeTemplate,
@@ -135,6 +136,21 @@ export function isEmailTicket(tags: string | string[]): boolean {
   return tagList.some((t) => t.trim().toLowerCase() === 'email');
 }
 
+/**
+ * Is this the mailbox ZapDesk polls?
+ *
+ * Mail sent there is read straight back in, and every ZapDesk subject carries
+ * `[ZapDesk #id]`, so it lands as a comment on the ticket that produced it --
+ * which sends another. Unbounded, and it fills the ticket with its own noise.
+ *
+ * Lives here rather than beside one caller because both the ingest path and
+ * the outbound copy need it, and two copies of a loop guard is one too many.
+ */
+export function isPolledMailbox(address: string): boolean {
+  const polled = (process.env.MAIL_POLL_MAILBOX || '').trim().toLowerCase();
+  return polled !== '' && address.trim().toLowerCase() === polled;
+}
+
 export function extractRequesterEmail(tags: string | string[]): string | null {
   const tagList = Array.isArray(tags) ? tags : tags.split(';').map((t) => t.trim());
   for (const tag of tagList) {
@@ -174,6 +190,8 @@ function threadedSubject(ticketId: number, subject: string): string {
 
 interface GraphSendMailOptions {
   to: string;
+  /** Blind copies. Blind so an internal address is never shown to a customer. */
+  bcc?: string[];
   subject: string;
   html: string;
   messageId?: string;
@@ -213,6 +231,10 @@ async function sendViaGraph(options: GraphSendMailOptions): Promise<void> {
     from: { emailAddress: { address: from, name: MAIL_FROM_NAME() } },
     toRecipients: [{ emailAddress: { address: options.to } }],
   };
+
+  if (options.bcc?.length) {
+    message.bccRecipients = options.bcc.map((address) => ({ emailAddress: { address } }));
+  }
 
   if (options.attachments?.length) {
     message.attachments = options.attachments.map((a) => ({
@@ -283,6 +305,84 @@ export async function sendTicketConfirmation(
     console.error(`[Email] Failed to send confirmation for ticket #${ticketId}:`, error);
     return null;
   }
+}
+
+/**
+ * Tell an engineer a ticket has been assigned to them.
+ *
+ * Returns quietly rather than throwing: an assignment that succeeded must not
+ * be reported as failed because a mail server was slow.
+ *
+ * Skipped when someone assigns a ticket to themselves -- they were looking at
+ * it when they clicked, and a mail saying so is noise that teaches people to
+ * filter these out.
+ */
+export async function sendAssignmentNotification(opts: {
+  ticketId: number;
+  subject: string;
+  assigneeEmail: string;
+  assignedByName: string;
+  assignedByEmail?: string;
+  requesterEmail?: string;
+}): Promise<void> {
+  if (!isEmailConfigured()) return;
+
+  const assignee = opts.assigneeEmail.trim();
+  if (!assignee || !assignee.includes('@')) return;
+
+  if (
+    opts.assignedByEmail &&
+    assignee.toLowerCase() === opts.assignedByEmail.trim().toLowerCase()
+  ) {
+    return;
+  }
+
+  // The subject carries [ZapDesk #id], so a notification sent to the polled
+  // mailbox is read straight back in and filed as a comment on the very ticket
+  // it announces. The reply copy had this guard; this path did not.
+  if (isPolledMailbox(assignee)) {
+    console.error(
+      `[Email] Assignee ${assignee} is the polled mailbox - not notifying, it would be ingested.`
+    );
+    return;
+  }
+
+  try {
+    await sendViaGraph({
+      to: assignee,
+      subject: threadedSubject(opts.ticketId, opts.subject),
+      html: assignmentNotificationTemplate({
+        ticketId: opts.ticketId,
+        ticketSubject: opts.subject,
+        assignedByName: opts.assignedByName,
+        requesterEmail: opts.requesterEmail,
+      }),
+      messageId: generateMessageId(opts.ticketId, 'assigned'),
+    });
+    console.log(`[Email] Assignment of #${opts.ticketId} notified to ${assignee}`);
+  } catch (error) {
+    console.error(`[Email] Failed to notify assignment of #${opts.ticketId}:`, error);
+  }
+}
+
+/**
+ * Who, if anyone, is blind-copied on a reply to the customer.
+ *
+ * Refuses three cases: no assignee; an assignee who is the customer, which
+ * would send them the same mail twice; and the mailbox ZapDesk polls, which
+ * would ingest its own reply and loop.
+ */
+function copyRecipients(assigneeEmail: string | undefined, requesterEmail: string): string[] {
+  const assignee = (assigneeEmail || '').trim();
+  if (!assignee || !assignee.includes('@')) return [];
+  if (assignee.toLowerCase() === requesterEmail.trim().toLowerCase()) return [];
+  if (isPolledMailbox(assignee)) {
+    console.error(
+      `[Email] Assignee ${assignee} is the polled mailbox - not copying, it would loop.`
+    );
+    return [];
+  }
+  return [assignee];
 }
 
 /**
@@ -367,7 +467,16 @@ export async function sendAgentReply(
   agentName: string,
   replyHtml: string,
   originalMessageId?: string,
-  history?: HistoryEntry[]
+  history?: HistoryEntry[],
+  /**
+   * Assigned engineer, blind-copied so the thread reaches them too.
+   *
+   * Until now only the customer received anything, so the person who owns a
+   * ticket could not follow it from their own inbox (#7384). Blind rather
+   * than Cc: a customer has no reason to be shown an internal address, and a
+   * reply-all would otherwise land somewhere that is not the support mailbox.
+   */
+  assigneeEmail?: string
 ): Promise<void> {
   if (!isEmailConfigured()) return;
   try {
@@ -388,6 +497,7 @@ export async function sendAgentReply(
       subject: threadedSubject(ticketId, `Re: ${subject}`),
       html,
       messageId,
+      bcc: copyRecipients(assigneeEmail, requesterEmail),
       attachments,
       inReplyTo: originalMessageId,
     });
