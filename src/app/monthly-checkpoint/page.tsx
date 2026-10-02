@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { format, subDays, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { Calendar, Download, Plus, Loader2, RefreshCw } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
+import { AccessDenied } from '@/components/common';
+import { usePermissions } from '@/components/providers/PermissionProvider';
 import { KPICards, TrendCharts, CheckpointTicketTable } from '@/components/monthly-checkpoint';
 import { NewTicketModal } from '@/components/tickets';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
@@ -16,6 +18,11 @@ type DatePreset = 'last30' | 'thisMonth' | 'lastMonth' | 'custom';
 function MonthlyCheckpointContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { hasPermission } = usePermissions();
+  // Hoisted so the data effects below can check it too. Rendering AccessDenied
+  // while still firing the requests behind it wastes a DevOps round trip per
+  // page load and fills the console with 403s that describe nothing wrong.
+  const canViewCheckpoint = hasPermission('reporting:monthly_checkpoint');
   const searchParams = useSearchParams();
   const { get: devOpsGet, hasOrganization } = useDevOpsApi();
   const printRef = useRef<HTMLDivElement>(null);
@@ -121,17 +128,17 @@ function MonthlyCheckpointContent() {
 
   // Fetch projects
   useEffect(() => {
-    if (session?.accessToken) {
+    if (canViewCheckpoint && session?.accessToken) {
       fetchProjects();
     }
-  }, [session, fetchProjects]);
+  }, [canViewCheckpoint, session, fetchProjects]);
 
   // Fetch stats when project or dates change
   useEffect(() => {
-    if (selectedProject && startDate && endDate && session?.accessToken) {
+    if (canViewCheckpoint && selectedProject && startDate && endDate && session?.accessToken) {
       fetchStats();
     }
-  }, [selectedProject, startDate, endDate, session, fetchStats]);
+  }, [canViewCheckpoint, selectedProject, startDate, endDate, session, fetchStats]);
 
   const handleExportPDF = () => {
     // Use browser's print functionality with print-specific styles
@@ -158,6 +165,14 @@ function MonthlyCheckpointContent() {
   if (status === 'unauthenticated') {
     router.push('/login');
     return null;
+  }
+
+  if (!canViewCheckpoint) {
+    return (
+      <MainLayout>
+        <AccessDenied message="You do not have permission to view the Monthly Checkpoint." />
+      </MainLayout>
+    );
   }
 
   return (

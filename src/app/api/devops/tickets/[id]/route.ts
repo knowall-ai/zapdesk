@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
+import { requireAnyPermission, requirePermission, isAuthed } from '@/lib/api-auth';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAnyPermission(['tickets:view_all', 'tickets:view_own']);
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const { id } = await params;
     const ticketId = parseInt(id, 10);
@@ -21,7 +18,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const organization = request.headers.get('x-devops-org') || undefined;
-    const devopsService = new AzureDevOpsService(session.accessToken, organization);
+    const devopsService = new AzureDevOpsService(session.accessToken!, organization);
     const found = await devopsService.findProjectForWorkItem(ticketId);
 
     if (!found) {
@@ -52,16 +49,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE moves the work item to the DevOps Recycle Bin (reversible).
-// Pass ?destroy=true to permanently destroy it. Authorization is enforced
-// by DevOps based on the user's role/PAT scope — there is no ZapDesk-side
-// admin gate yet (a follow-up to issue #374).
+// Pass ?destroy=true to permanently destroy it. DevOps enforces its own
+// authorization on top of this, based on the user's role and PAT scope.
+//
+// This is the ZapDesk-side gate main's comment said was still owed. It is a
+// separate permission from tickets:edit and admin-only: an agent editing and
+// closing tickets is routine, removing one from the org is not — and this
+// route can destroy a work item permanently.
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requirePermission('tickets:delete');
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const { id } = await params;
     const ticketId = parseInt(id, 10);
@@ -72,7 +71,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     const destroy = request.nextUrl.searchParams.get('destroy') === 'true';
     const organization = request.headers.get('x-devops-org') || undefined;
-    const devopsService = new AzureDevOpsService(session.accessToken, organization);
+    const devopsService = new AzureDevOpsService(session.accessToken!, organization);
 
     try {
       await devopsService.deleteWorkItem(ticketId, destroy);
@@ -109,11 +108,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requirePermission('tickets:edit');
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     const { id } = await params;
     const ticketId = parseInt(id, 10);
@@ -137,7 +134,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     } = body;
 
     const organization = request.headers.get('x-devops-org') || undefined;
-    const devopsService = new AzureDevOpsService(session.accessToken, organization);
+    const devopsService = new AzureDevOpsService(session.accessToken!, organization);
 
     // If no project provided, find it by searching all projects
     let projectName = project;
@@ -149,6 +146,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       projectName = found.project.name;
     }
 
+    // main hoisted this declaration above the project lookup; a second one
+    // here would shadow it.
     // Build updates object
     const updates: {
       assignee?: string | null;

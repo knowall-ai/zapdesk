@@ -1,6 +1,4 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import type { TeamMember, TeamStats, TicketStatus } from '@/types';
 import {
@@ -10,20 +8,19 @@ import {
   calculateNeedsAttention,
   isInternalUser,
 } from '@/lib/team-metrics';
+import { requirePermission, isAuthed } from '@/lib/api-auth';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requirePermission('team:view');
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     // Get the current user's email domain to filter internal users
     const userEmail = session.user?.email || '';
     const internalDomain = userEmail.includes('@') ? userEmail.split('@')[1].toLowerCase() : '';
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken!);
 
     // Get all users from the organization
     const orgUsers = await devopsService.getOrganizationUsers();

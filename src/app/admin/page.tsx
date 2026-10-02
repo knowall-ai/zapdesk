@@ -2,14 +2,15 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { MainLayout } from '@/components/layout';
-import { LoadingSpinner, AzureDevOpsIcon } from '@/components/common';
+import { LoadingSpinner, AzureDevOpsIcon, AccessDenied } from '@/components/common';
 import {
   Settings,
   Code2,
   CheckCircle,
   XCircle,
+  Shield,
   Mail,
   Send,
   ArrowDownToLine,
@@ -21,6 +22,27 @@ import { getSupportedTemplates, getTemplateConfig } from '@/config/process-templ
 // Type-only, so the server module never reaches the client bundle. Declaring
 // a second copy here would let the two drift the moment a field is added.
 import type { MailCredentialCheck } from '@/lib/mail-credentials';
+import type { Permission } from '@/types';
+import { usePermissions } from '@/components/providers/PermissionProvider';
+import PermissionsManager from '@/components/admin/PermissionsManager';
+
+type AdminTab = 'templates' | 'email' | 'permissions';
+
+/**
+ * Declared rather than written out three times, so a tab cannot pick up ARIA
+ * wiring the others lack -- which is how the first version ended up conveying
+ * its selected state in colour alone.
+ */
+const ADMIN_TABS: ReadonlyArray<{
+  id: AdminTab;
+  label: string;
+  Icon: typeof Code2;
+  permission?: Permission;
+}> = [
+  { id: 'templates', label: 'Process Templates', Icon: Code2 },
+  { id: 'email', label: 'Email Channel', Icon: Mail },
+  { id: 'permissions', label: 'Permissions', Icon: Shield, permission: 'admin:manage_roles' },
+];
 
 interface EmailConfig {
   /** Present only when the config was fetched with `?verify=1`. */
@@ -44,6 +66,40 @@ interface EmailConfig {
 export default function AdminPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { hasPermission } = usePermissions();
+  const [activeTab, setActiveTab] = useState<AdminTab>('templates');
+  const tabRefs = useRef<Partial<Record<AdminTab, HTMLButtonElement | null>>>({});
+  const visibleTabs = ADMIN_TABS.filter((tab) => !tab.permission || hasPermission(tab.permission));
+
+  /**
+   * Arrow, Home and End move between tabs, as the ARIA tabs pattern requires.
+   * Declaring role="tab" without this is worse than leaving them plain buttons:
+   * a screen reader announces a tablist and then the expected keys do nothing.
+   */
+  const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const last = visibleTabs.length - 1;
+    let target: number;
+    switch (event.key) {
+      case 'ArrowRight':
+        target = index === last ? 0 : index + 1;
+        break;
+      case 'ArrowLeft':
+        target = index === 0 ? last : index - 1;
+        break;
+      case 'Home':
+        target = 0;
+        break;
+      case 'End':
+        target = last;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    const next = visibleTabs[target];
+    setActiveTab(next.id);
+    tabRefs.current[next.id]?.focus();
+  };
 
   const [emailConfig, setEmailConfig] = useState<EmailConfig | null>(null);
   const [emailConfigLoading, setEmailConfigLoading] = useState(true);
@@ -111,6 +167,14 @@ export default function AdminPage() {
     return null;
   }
 
+  if (!hasPermission('admin:access')) {
+    return (
+      <MainLayout>
+        <AccessDenied message="You need admin access to view this page." />
+      </MainLayout>
+    );
+  }
+
   const supportedTemplates = getSupportedTemplates();
 
   return (
@@ -125,449 +189,506 @@ export default function AdminPage() {
             </h1>
           </div>
           <p className="mt-2" style={{ color: 'var(--text-secondary)' }}>
-            System configuration and process template management.
+            System configuration, permissions, and process template management.
           </p>
         </div>
 
-        {/* Process Templates Section */}
-        <section className="mb-8">
-          <div className="mb-4 flex items-center gap-2">
-            <Code2 size={20} style={{ color: 'var(--text-muted)' }} />
-            <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Process Template Configurations
-            </h2>
-          </div>
-          <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-            ZapDesk supports the following Azure DevOps process templates. Projects using
-            unsupported templates will display a warning.
-          </p>
+        {/* Tabs */}
+        <div
+          role="tablist"
+          aria-label="Admin sections"
+          className="mb-6 flex gap-0 border-b"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          {visibleTabs.map(({ id, label, Icon }, index) => (
+            <button
+              key={id}
+              id={`admin-tab-${id}`}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === id}
+              aria-controls={`admin-panel-${id}`}
+              // Roving focus: one stop for the whole tablist, arrows move
+              // between tabs. Without it every tab is a separate tab stop.
+              tabIndex={activeTab === id ? 0 : -1}
+              ref={(el) => {
+                tabRefs.current[id] = el;
+              }}
+              onClick={() => setActiveTab(id)}
+              onKeyDown={(event) => onTabKeyDown(event, index)}
+              className="relative px-4 py-2.5 text-sm font-medium transition-colors"
+              style={{ color: activeTab === id ? 'var(--primary)' : 'var(--text-muted)' }}
+            >
+              <span className="flex items-center gap-2">
+                <Icon size={16} />
+                {label}
+              </span>
+              {activeTab === id && (
+                <span
+                  className="absolute right-0 bottom-0 left-0 h-0.5"
+                  style={{ backgroundColor: 'var(--primary)' }}
+                />
+              )}
+            </button>
+          ))}
+        </div>
+        {/* Tab Content */}
+        {activeTab === 'templates' && (
+          <section id="admin-panel-templates" role="tabpanel" aria-labelledby="admin-tab-templates">
+            <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+              ZapDesk supports the following Azure DevOps process templates. Projects using
+              unsupported templates will display a warning.
+            </p>
 
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {supportedTemplates.map((templateName) => {
-              const config = getTemplateConfig(templateName);
-              return (
-                <div key={config.id} className="card p-4" style={{ borderColor: 'var(--border)' }}>
-                  <div className="mb-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <AzureDevOpsIcon size={20} />
-                      <h3 className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                        {config.name}
-                      </h3>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {supportedTemplates.map((templateName) => {
+                const config = getTemplateConfig(templateName);
+                return (
+                  <div
+                    key={config.id}
+                    className="card p-4"
+                    style={{ borderColor: 'var(--border)' }}
+                  >
+                    <div className="mb-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AzureDevOpsIcon size={20} />
+                        <h3 className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                          {config.name}
+                        </h3>
+                      </div>
+                      <CheckCircle size={18} className="text-green-500" />
                     </div>
-                    <CheckCircle size={18} className="text-green-500" />
-                  </div>
 
-                  {/* Ticket Types */}
-                  <div className="mb-3">
-                    <p
-                      className="mb-1 text-xs font-medium uppercase"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      Ticket Work Item Types
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {config.workItemTypes.ticketTypes.map((type) => (
-                        <span
-                          key={type}
-                          className={`rounded px-1.5 py-0.5 text-xs ${
-                            type === config.workItemTypes.defaultTicketType
-                              ? 'bg-[rgba(34,197,94,0.15)] font-medium'
-                              : 'bg-[var(--surface-hover)]'
-                          }`}
-                          style={{
-                            color:
+                    {/* Ticket Types */}
+                    <div className="mb-3">
+                      <p
+                        className="mb-1 text-xs font-medium uppercase"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        Ticket Work Item Types
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {config.workItemTypes.ticketTypes.map((type) => (
+                          <span
+                            key={type}
+                            className={`rounded px-1.5 py-0.5 text-xs ${
                               type === config.workItemTypes.defaultTicketType
-                                ? 'var(--primary)'
-                                : 'var(--text-muted)',
-                          }}
-                        >
-                          {type}
-                          {type === config.workItemTypes.defaultTicketType && ' (default)'}
-                        </span>
-                      ))}
+                                ? 'bg-[rgba(34,197,94,0.15)] font-medium'
+                                : 'bg-[var(--surface-hover)]'
+                            }`}
+                            style={{
+                              color:
+                                type === config.workItemTypes.defaultTicketType
+                                  ? 'var(--primary)'
+                                  : 'var(--text-muted)',
+                            }}
+                          >
+                            {type}
+                            {type === config.workItemTypes.defaultTicketType && ' (default)'}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="mt-1 text-xs italic" style={{ color: 'var(--text-muted)' }}>
+                        Must be tagged with &quot;ticket&quot; tag
+                      </p>
                     </div>
-                    <p className="mt-1 text-xs italic" style={{ color: 'var(--text-muted)' }}>
-                      Must be tagged with &quot;ticket&quot; tag
-                    </p>
-                  </div>
 
-                  {/* Feature Type */}
-                  <div className="mb-3">
-                    <p
-                      className="mb-1 text-xs font-medium uppercase"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      Feature Work Item Type
-                    </p>
-                    {config.workItemTypes.featureType ? (
+                    {/* Feature Type */}
+                    <div className="mb-3">
+                      <p
+                        className="mb-1 text-xs font-medium uppercase"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        Feature Work Item Type
+                      </p>
+                      {config.workItemTypes.featureType ? (
+                        <span
+                          className="rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-xs"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          {config.workItemTypes.featureType}
+                        </span>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <XCircle size={14} className="text-red-400" />
+                          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Not available
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Epic Type */}
+                    <div className="mb-3">
+                      <p
+                        className="mb-1 text-xs font-medium uppercase"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        Epic Work Item Type
+                      </p>
                       <span
                         className="rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-xs"
                         style={{ color: 'var(--text-secondary)' }}
                       >
-                        {config.workItemTypes.featureType}
+                        {config.workItemTypes.epicType}
                       </span>
-                    ) : (
-                      <div className="flex items-center gap-1.5">
-                        <XCircle size={14} className="text-red-400" />
-                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                          Not available
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                    </div>
 
-                  {/* Epic Type */}
-                  <div className="mb-3">
-                    <p
-                      className="mb-1 text-xs font-medium uppercase"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      Epic Work Item Type
-                    </p>
-                    <span
-                      className="rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-xs"
-                      style={{ color: 'var(--text-secondary)' }}
-                    >
-                      {config.workItemTypes.epicType}
-                    </span>
-                  </div>
-
-                  {/* Priority Field */}
-                  <div className="mb-3">
-                    <p
-                      className="mb-1 text-xs font-medium uppercase"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      Priority Field
-                    </p>
-                    {config.fields.priority ? (
-                      <div className="flex items-center gap-1.5">
-                        <CheckCircle size={14} className="text-green-500" />
-                        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                          Supported
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5">
-                        <XCircle size={14} className="text-red-400" />
-                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                          Not available
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* States */}
-                  <div>
-                    <p
-                      className="mb-1 text-xs font-medium uppercase"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      State Mappings
-                    </p>
-                    <div className="space-y-1 text-xs">
-                      {config.states.new.length > 0 && (
-                        <div className="flex gap-2">
-                          <span style={{ color: 'var(--text-muted)' }}>New:</span>
-                          <span style={{ color: 'var(--text-secondary)' }}>
-                            {config.states.new.join(', ')}
+                    {/* Priority Field */}
+                    <div className="mb-3">
+                      <p
+                        className="mb-1 text-xs font-medium uppercase"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        Priority Field
+                      </p>
+                      {config.fields.priority ? (
+                        <div className="flex items-center gap-1.5">
+                          <CheckCircle size={14} className="text-green-500" />
+                          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                            Supported
                           </span>
                         </div>
-                      )}
-                      {config.states.active.length > 0 && (
-                        <div className="flex gap-2">
-                          <span style={{ color: 'var(--text-muted)' }}>Active:</span>
-                          <span style={{ color: 'var(--text-secondary)' }}>
-                            {config.states.active.join(', ')}
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex gap-2">
-                        <span style={{ color: 'var(--text-muted)' }}>Resolved:</span>
-                        <span style={{ color: 'var(--text-secondary)' }}>
-                          {config.states.resolved.length > 0
-                            ? config.states.resolved.join(', ')
-                            : 'N/A'}
-                        </span>
-                      </div>
-                      {config.states.closed.length > 0 && (
-                        <div className="flex gap-2">
-                          <span style={{ color: 'var(--text-muted)' }}>Closed:</span>
-                          <span style={{ color: 'var(--text-secondary)' }}>
-                            {config.states.closed.join(', ')}
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <XCircle size={14} className="text-red-400" />
+                          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Not available
                           </span>
                         </div>
                       )}
                     </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
 
-          {/* Request new template link */}
-          <div className="mt-4">
-            <a
-              href="https://github.com/knowall-ai/zapdesk/issues/new?title=Support%20for%20new%20process%20template&labels=enhancement"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm hover:underline"
-              style={{ color: 'var(--primary)' }}
-            >
-              Request support for a new process template &rarr;
-            </a>
+                    {/* States */}
+                    <div>
+                      <p
+                        className="mb-1 text-xs font-medium uppercase"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        State Mappings
+                      </p>
+                      <div className="space-y-1 text-xs">
+                        {config.states.new.length > 0 && (
+                          <div className="flex gap-2">
+                            <span style={{ color: 'var(--text-muted)' }}>New:</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>
+                              {config.states.new.join(', ')}
+                            </span>
+                          </div>
+                        )}
+                        {config.states.active.length > 0 && (
+                          <div className="flex gap-2">
+                            <span style={{ color: 'var(--text-muted)' }}>Active:</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>
+                              {config.states.active.join(', ')}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex gap-2">
+                          <span style={{ color: 'var(--text-muted)' }}>Resolved:</span>
+                          <span style={{ color: 'var(--text-secondary)' }}>
+                            {config.states.resolved.length > 0
+                              ? config.states.resolved.join(', ')
+                              : 'N/A'}
+                          </span>
+                        </div>
+                        {config.states.closed.length > 0 && (
+                          <div className="flex gap-2">
+                            <span style={{ color: 'var(--text-muted)' }}>Closed:</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>
+                              {config.states.closed.join(', ')}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Request new template link */}
+            <div className="mt-4">
+              <a
+                href="https://github.com/knowall-ai/zapdesk/issues/new?title=Support%20for%20new%20process%20template&labels=enhancement"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm hover:underline"
+                style={{ color: 'var(--primary)' }}
+              >
+                Request support for a new process template &rarr;
+              </a>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'permissions' && (
+          <div id="admin-panel-permissions" role="tabpanel" aria-labelledby="admin-tab-permissions">
+            <PermissionsManager />
           </div>
-        </section>
+        )}
 
         {/* Email Channel Section */}
-        <section className="mb-8">
-          <div className="mb-4 flex items-center gap-2">
-            <Mail size={20} style={{ color: 'var(--text-muted)' }} />
-            <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Email Channel
-            </h2>
-          </div>
-          <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-            Customers raise tickets by emailing the support mailbox. Replies on existing tickets are
-            added as comments. The inbound poller checks for new mail every minute.
-          </p>
-
-          {emailConfigLoading ? (
-            <div className="flex items-center gap-2 py-8">
-              <LoadingSpinner size="sm" />
-              <span style={{ color: 'var(--text-muted)' }}>Loading email configuration...</span>
+        {activeTab === 'email' && (
+          <section
+            id="admin-panel-email"
+            role="tabpanel"
+            aria-labelledby="admin-tab-email"
+            className="mb-8"
+          >
+            <div className="mb-4 flex items-center gap-2">
+              <Mail size={20} style={{ color: 'var(--text-muted)' }} />
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                Email Channel
+              </h2>
             </div>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {/* Outbound Card */}
-              <div className="card p-4" style={{ borderColor: 'var(--border)' }}>
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ArrowUpFromLine size={18} style={{ color: 'var(--text-muted)' }} />
-                    <h3 className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                      Outbound (Graph API)
-                    </h3>
+            <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+              Customers raise tickets by emailing the support mailbox. Replies on existing tickets
+              are added as comments. The inbound poller checks for new mail every minute.
+            </p>
+
+            {emailConfigLoading ? (
+              <div className="flex items-center gap-2 py-8">
+                <LoadingSpinner size="sm" />
+                <span style={{ color: 'var(--text-muted)' }}>Loading email configuration...</span>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {/* Outbound Card */}
+                <div className="card p-4" style={{ borderColor: 'var(--border)' }}>
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ArrowUpFromLine size={18} style={{ color: 'var(--text-muted)' }} />
+                      <h3 className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                        Outbound (Graph API)
+                      </h3>
+                    </div>
+                    {emailConfig?.outbound.configured && emailConfig?.credentials?.ok !== false ? (
+                      <CheckCircle size={18} className="text-green-500" />
+                    ) : (
+                      <XCircle size={18} className="text-red-400" />
+                    )}
                   </div>
-                  {emailConfig?.outbound.configured && emailConfig?.credentials?.ok !== false ? (
-                    <CheckCircle size={18} className="text-green-500" />
+
+                  {emailConfig?.outbound.configured ? (
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span style={{ color: 'var(--text-muted)' }}>Method</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>Microsoft Graph API</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span style={{ color: 'var(--text-muted)' }}>From</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>
+                          {emailConfig.outbound.fromName} &lt;{emailConfig.outbound.from}&gt;
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span style={{ color: 'var(--text-muted)' }}>Azure AD App</span>
+                        {emailConfig.credentials?.ok === false ? (
+                          <XCircle size={14} className="text-red-400" />
+                        ) : (
+                          <CheckCircle size={14} className="text-green-500" />
+                        )}
+                      </div>
+                      {emailConfig.credentials?.ok === false && (
+                        <div
+                          className="rounded-md p-3 text-xs"
+                          style={{
+                            backgroundColor: 'var(--warning-bg-hover)',
+                            color: 'var(--text-secondary)',
+                          }}
+                        >
+                          <p className="font-medium">
+                            {emailConfig.credentials.code
+                              ? `${emailConfig.credentials.code}: `
+                              : ''}
+                            {emailConfig.credentials.message}
+                          </p>
+                          {emailConfig.credentials.hint && (
+                            <p className="mt-1" style={{ color: 'var(--text-muted)' }}>
+                              {emailConfig.credentials.hint}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   ) : (
-                    <XCircle size={18} className="text-red-400" />
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      Set <code className="text-xs">MAIL_FROM</code> (shared mailbox address) and
+                      ensure the Azure AD app has <code className="text-xs">Mail.Send</code>{' '}
+                      permission with admin consent.
+                    </p>
                   )}
                 </div>
 
-                {emailConfig?.outbound.configured ? (
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span style={{ color: 'var(--text-muted)' }}>Method</span>
-                      <span style={{ color: 'var(--text-secondary)' }}>Microsoft Graph API</span>
+                {/* Inbound (Polling) Card */}
+                <div className="card p-4" style={{ borderColor: 'var(--border)' }}>
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ArrowDownToLine size={18} style={{ color: 'var(--text-muted)' }} />
+                      <h3 className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                        Inbound (Mailbox Poll)
+                      </h3>
                     </div>
-                    <div className="flex justify-between">
-                      <span style={{ color: 'var(--text-muted)' }}>From</span>
+                    {emailConfig?.inbound.pollConfigured ? (
+                      <CheckCircle size={18} className="text-green-500" />
+                    ) : (
+                      <XCircle size={18} className="text-red-400" />
+                    )}
+                  </div>
+
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span style={{ color: 'var(--text-muted)' }}>Mailbox</span>
                       <span style={{ color: 'var(--text-secondary)' }}>
-                        {emailConfig.outbound.fromName} &lt;{emailConfig.outbound.from}&gt;
+                        {emailConfig?.inbound.pollMailbox || (
+                          <span style={{ color: 'var(--text-muted)' }}>not set</span>
+                        )}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span style={{ color: 'var(--text-muted)' }}>Azure AD App</span>
-                      {emailConfig.credentials?.ok === false ? (
-                        <XCircle size={14} className="text-red-400" />
-                      ) : (
+                      <span style={{ color: 'var(--text-muted)' }}>Webhook Secret</span>
+                      {emailConfig?.inbound.webhookConfigured ? (
                         <CheckCircle size={14} className="text-green-500" />
+                      ) : (
+                        <XCircle size={14} className="text-red-400" />
                       )}
                     </div>
-                    {emailConfig.credentials?.ok === false && (
-                      <div
-                        className="rounded-md p-3 text-xs"
-                        style={{
-                          backgroundColor: 'var(--warning-bg-hover)',
-                          color: 'var(--text-secondary)',
-                        }}
-                      >
-                        <p className="font-medium">
-                          {emailConfig.credentials.code ? `${emailConfig.credentials.code}: ` : ''}
-                          {emailConfig.credentials.message}
-                        </p>
-                        {emailConfig.credentials.hint && (
-                          <p className="mt-1" style={{ color: 'var(--text-muted)' }}>
-                            {emailConfig.credentials.hint}
-                          </p>
-                        )}
-                      </div>
+                    <div className="flex items-center justify-between">
+                      <span style={{ color: 'var(--text-muted)' }}>Service Account (PAT)</span>
+                      {emailConfig?.inbound.patConfigured ? (
+                        <CheckCircle size={14} className="text-green-500" />
+                      ) : (
+                        <XCircle size={14} className="text-red-400" />
+                      )}
+                    </div>
+                    {emailConfig?.inbound.pollConfigured ? (
+                      <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                        Poll endpoint: <code className="text-xs">/api/email/poll</code> — drive from
+                        a 1-minute cron.
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                        Set <code className="text-xs">MAIL_POLL_MAILBOX</code>,{' '}
+                        <code className="text-xs">EMAIL_WEBHOOK_SECRET</code>, and{' '}
+                        <code className="text-xs">AZURE_DEVOPS_PAT</code> to enable inbound email.
+                      </p>
                     )}
                   </div>
-                ) : (
-                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                    Set <code className="text-xs">MAIL_FROM</code> (shared mailbox address) and
-                    ensure the Azure AD app has <code className="text-xs">Mail.Send</code>{' '}
-                    permission with admin consent.
-                  </p>
-                )}
-              </div>
+                </div>
 
-              {/* Inbound (Polling) Card */}
-              <div className="card p-4" style={{ borderColor: 'var(--border)' }}>
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ArrowDownToLine size={18} style={{ color: 'var(--text-muted)' }} />
+                {/* Send Test Email Card */}
+                <div className="card p-4" style={{ borderColor: 'var(--border)' }}>
+                  <div className="mb-3 flex items-center gap-2">
+                    <Send size={18} style={{ color: 'var(--text-muted)' }} />
                     <h3 className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                      Inbound (Mailbox Poll)
+                      Send Test Email
                     </h3>
                   </div>
-                  {emailConfig?.inbound.pollConfigured ? (
-                    <CheckCircle size={18} className="text-green-500" />
-                  ) : (
-                    <XCircle size={18} className="text-red-400" />
-                  )}
-                </div>
 
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span style={{ color: 'var(--text-muted)' }}>Mailbox</span>
-                    <span style={{ color: 'var(--text-secondary)' }}>
-                      {emailConfig?.inbound.pollMailbox || (
-                        <span style={{ color: 'var(--text-muted)' }}>not set</span>
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span style={{ color: 'var(--text-muted)' }}>Webhook Secret</span>
-                    {emailConfig?.inbound.webhookConfigured ? (
-                      <CheckCircle size={14} className="text-green-500" />
-                    ) : (
-                      <XCircle size={14} className="text-red-400" />
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span style={{ color: 'var(--text-muted)' }}>Service Account (PAT)</span>
-                    {emailConfig?.inbound.patConfigured ? (
-                      <CheckCircle size={14} className="text-green-500" />
-                    ) : (
-                      <XCircle size={14} className="text-red-400" />
-                    )}
-                  </div>
-                  {emailConfig?.inbound.pollConfigured ? (
-                    <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-                      Poll endpoint: <code className="text-xs">/api/email/poll</code> — drive from a
-                      1-minute cron.
-                    </p>
-                  ) : (
-                    <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-                      Set <code className="text-xs">MAIL_POLL_MAILBOX</code>,{' '}
-                      <code className="text-xs">EMAIL_WEBHOOK_SECRET</code>, and{' '}
-                      <code className="text-xs">AZURE_DEVOPS_PAT</code> to enable inbound email.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Send Test Email Card */}
-              <div className="card p-4" style={{ borderColor: 'var(--border)' }}>
-                <div className="mb-3 flex items-center gap-2">
-                  <Send size={18} style={{ color: 'var(--text-muted)' }} />
-                  <h3 className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                    Send Test Email
-                  </h3>
-                </div>
-
-                {emailConfig?.outbound.configured ? (
-                  <div className="space-y-3">
-                    <input
-                      type="email"
-                      placeholder="recipient@example.com"
-                      value={testEmail}
-                      onChange={(e) => setTestEmail(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSendTestEmail()}
-                      className="w-full rounded-md border px-3 py-2 text-sm"
-                      style={{
-                        backgroundColor: 'var(--surface)',
-                        borderColor: 'var(--border)',
-                        color: 'var(--text-primary)',
-                      }}
-                    />
-                    <button
-                      onClick={handleSendTestEmail}
-                      disabled={!testEmail || testSending}
-                      className="flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50"
-                      style={{ backgroundColor: 'var(--primary)' }}
-                    >
-                      {testSending ? (
-                        <>
-                          <Loader2 size={14} className="animate-spin" />
-                          Sending...
-                        </>
-                      ) : (
-                        <>
-                          <Send size={14} />
-                          Send Test
-                        </>
-                      )}
-                    </button>
-                    {testResult && (
-                      <div
-                        className="flex items-center gap-2 rounded-md px-3 py-2 text-xs"
+                  {emailConfig?.outbound.configured ? (
+                    <div className="space-y-3">
+                      <input
+                        type="email"
+                        placeholder="recipient@example.com"
+                        value={testEmail}
+                        onChange={(e) => setTestEmail(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSendTestEmail()}
+                        className="w-full rounded-md border px-3 py-2 text-sm"
                         style={{
-                          backgroundColor: testResult.success
-                            ? 'rgba(34,197,94,0.1)'
-                            : 'rgba(239,68,68,0.1)',
-                          color: testResult.success ? '#22c55e' : '#ef4444',
+                          backgroundColor: 'var(--surface)',
+                          borderColor: 'var(--border)',
+                          color: 'var(--text-primary)',
                         }}
+                      />
+                      <button
+                        onClick={handleSendTestEmail}
+                        disabled={!testEmail || testSending}
+                        className="flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50"
+                        style={{ backgroundColor: 'var(--primary)' }}
                       >
-                        {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
-                        {testResult.message}
-                      </div>
+                        {testSending ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            Sending...
+                          </>
+                        ) : (
+                          <>
+                            <Send size={14} />
+                            Send Test
+                          </>
+                        )}
+                      </button>
+                      {testResult && (
+                        <div
+                          className="flex items-center gap-2 rounded-md px-3 py-2 text-xs"
+                          style={{
+                            backgroundColor: testResult.success
+                              ? 'rgba(34,197,94,0.1)'
+                              : 'rgba(239,68,68,0.1)',
+                            color: testResult.success ? '#22c55e' : '#ef4444',
+                          }}
+                        >
+                          {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                          {testResult.message}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      Configure outbound email to send a test message.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Email features summary */}
+            <div
+              className="mt-4 rounded-lg p-4"
+              style={{ backgroundColor: 'var(--surface-hover)' }}
+            >
+              <p
+                className="mb-2 text-xs font-medium uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Email Features
+              </p>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-3">
+                {[
+                  { label: 'Email-to-ticket', ready: emailConfig?.inbound.pollConfigured },
+                  { label: 'Thread detection', ready: emailConfig?.inbound.pollConfigured },
+                  {
+                    label: 'Mailbox polling (1 min)',
+                    ready: emailConfig?.inbound.pollConfigured,
+                    icon: Inbox,
+                  },
+                  {
+                    label: 'Confirmation emails',
+                    ready: emailConfig?.outbound.configured,
+                  },
+                  {
+                    label: 'Agent reply notifications',
+                    ready: emailConfig?.outbound.configured,
+                  },
+                  {
+                    label: 'Status change notifications',
+                    ready: emailConfig?.outbound.configured,
+                  },
+                ].map((feature) => (
+                  <div key={feature.label} className="flex items-center gap-1.5">
+                    {feature.ready ? (
+                      <CheckCircle size={12} className="shrink-0 text-green-500" />
+                    ) : (
+                      <XCircle size={12} className="shrink-0 text-red-400" />
                     )}
+                    <span style={{ color: 'var(--text-secondary)' }}>{feature.label}</span>
                   </div>
-                ) : (
-                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                    Configure outbound email to send a test message.
-                  </p>
-                )}
+                ))}
               </div>
             </div>
-          )}
-
-          {/* Email features summary */}
-          <div className="mt-4 rounded-lg p-4" style={{ backgroundColor: 'var(--surface-hover)' }}>
-            <p
-              className="mb-2 text-xs font-medium uppercase"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              Email Features
-            </p>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-3">
-              {[
-                { label: 'Email-to-ticket', ready: emailConfig?.inbound.pollConfigured },
-                { label: 'Thread detection', ready: emailConfig?.inbound.pollConfigured },
-                {
-                  label: 'Mailbox polling (1 min)',
-                  ready: emailConfig?.inbound.pollConfigured,
-                  icon: Inbox,
-                },
-                {
-                  label: 'Confirmation emails',
-                  ready: emailConfig?.outbound.configured,
-                },
-                {
-                  label: 'Agent reply notifications',
-                  ready: emailConfig?.outbound.configured,
-                },
-                {
-                  label: 'Status change notifications',
-                  ready: emailConfig?.outbound.configured,
-                },
-              ].map((feature) => (
-                <div key={feature.label} className="flex items-center gap-1.5">
-                  {feature.ready ? (
-                    <CheckCircle size={12} className="shrink-0 text-green-500" />
-                  ) : (
-                    <XCircle size={12} className="shrink-0 text-red-400" />
-                  )}
-                  <span style={{ color: 'var(--text-secondary)' }}>{feature.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
+          </section>
+        )}
       </div>
     </MainLayout>
   );

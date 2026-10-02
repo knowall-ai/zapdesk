@@ -1,23 +1,20 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { requireAuth, isAuthed } from '@/lib/api-auth';
 import type { DevOpsOrganization } from '@/types';
 
 // Fetch Azure DevOps organizations (accounts) the user has access to
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAuth();
+    if (!isAuthed(auth)) return auth;
+    const { session } = auth;
 
     // First, get the user's profile to get their member ID
     const profileResponse = await fetch(
       'https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.0',
       {
         headers: {
-          Authorization: `Bearer ${session.accessToken}`,
+          Authorization: `Bearer ${session.accessToken!}`,
           'Content-Type': 'application/json',
         },
       }
@@ -36,7 +33,7 @@ export async function GET() {
       `https://app.vssps.visualstudio.com/_apis/accounts?memberId=${memberId}&api-version=7.0`,
       {
         headers: {
-          Authorization: `Bearer ${session.accessToken}`,
+          Authorization: `Bearer ${session.accessToken!}`,
           'Content-Type': 'application/json',
         },
       }

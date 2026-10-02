@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Toaster } from 'sonner';
 import SessionProvider from '@/components/providers/SessionProvider';
 import OrganizationProvider from '@/components/providers/OrganizationProvider';
+import PermissionProvider from '@/components/providers/PermissionProvider';
 import TicketCountsProvider from '@/components/providers/TicketCountsProvider';
 import './globals.css';
 
@@ -75,9 +76,11 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className="antialiased">
         <SessionProvider>
-          <OrganizationProvider>
-            <TicketCountsProvider>{children}</TicketCountsProvider>
-          </OrganizationProvider>
+          <PermissionProvider>
+            <OrganizationProvider>
+              <TicketCountsProvider>{children}</TicketCountsProvider>
+            </OrganizationProvider>
+          </PermissionProvider>
         </SessionProvider>
         <Toaster theme="dark" position="bottom-right" richColors closeButton />
       </body>

@@ -8,6 +8,13 @@ name: Deploy to Azure App Service
 #   MAIL_FROM_NAME     display name on outbound mail, e.g. "KnowAll AI Support"
 #   AZURE_WEBAPP_NAME  App Service to deploy to, e.g. zapdesk-knowallai
 #   AZURE_DEVOPS_ORG   Azure DevOps organisation, e.g. KnowAll
+#   ZAPDESK_ADMIN_EMAILS
+#                      Comma-separated emails that always resolve to the admin
+#                      role. Required, and required for a reason: the seeded
+#                      permissions config has defaultRole=agent and no user
+#                      overrides, so a deployment without this has nobody who
+#                      can reach the admin screens -- including to appoint the
+#                      first administrator.
 #
 # None has a default. The deploy checks all four are set and stops if any
 # is missing, because a default that silently disagrees with reality is a
@@ -43,12 +50,19 @@ jobs:
           MAIL_FROM_NAME: ${{ vars.MAIL_FROM_NAME }}
           AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
           AZURE_DEVOPS_ORG: ${{ vars.AZURE_DEVOPS_ORG }}
+          ZAPDESK_ADMIN_EMAILS: ${{ vars.ZAPDESK_ADMIN_EMAILS }}
         run: |
           missing=""
           [ -n "$APP_URL" ] || missing="$missing APP_URL"
           [ -n "$MAIL_FROM_NAME" ] || missing="$missing MAIL_FROM_NAME"
           [ -n "$AZURE_WEBAPP_NAME" ] || missing="$missing AZURE_WEBAPP_NAME"
           [ -n "$AZURE_DEVOPS_ORG" ] || missing="$missing AZURE_DEVOPS_ORG"
+          # Checked the way bootstrapAdminEmails() reads it: split on commas,
+          # trim, drop empties. A value of ", ," is a non-empty string and an
+          # empty list of administrators, so testing the string would pass the
+          # deploy straight into the lockout this check exists to prevent.
+          admins=$(printf %s "$ZAPDESK_ADMIN_EMAILS" | tr -d " 	,")
+          [ -n "$admins" ] || missing="$missing ZAPDESK_ADMIN_EMAILS"
           if [ -n "$missing" ]; then
             echo "::error::Missing repository variables:$missing"
             echo "Set them at Settings > Secrets and variables > Actions > Variables"
@@ -128,6 +142,7 @@ jobs:
               {"name": "AZURE_AD_CLIENT_SECRET", "value": "${{ secrets.AZURE_AD_CLIENT_SECRET }}"},
               {"name": "AZURE_AD_TENANT_ID", "value": "${{ secrets.AZURE_AD_TENANT_ID }}"},
               {"name": "AZURE_DEVOPS_ORG", "value": "${{ vars.AZURE_DEVOPS_ORG }}"},
+              {"name": "ZAPDESK_ADMIN_EMAILS", "value": "${{ vars.ZAPDESK_ADMIN_EMAILS }}"},
               {"name": "AZURE_DEVOPS_PAT", "value": "${{ secrets.AZURE_DEVOPS_PAT }}"},
               {"name": "EMAIL_WEBHOOK_SECRET", "value": "${{ secrets.EMAIL_WEBHOOK_SECRET }}"},
               {"name": "APP_URL", "value": "${{ vars.APP_URL }}"},
