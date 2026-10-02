@@ -34,6 +34,9 @@ interface WorkItemDetailDialogProps {
   ) => Promise<void>;
 }
 
+/** Stable reference, so deriving an empty list does not re-render on every pass. */
+const EMPTY_ATTACHMENTS: Attachment[] = [];
+
 export default function WorkItemDetailDialog({
   workItem,
   isOpen,
@@ -51,6 +54,20 @@ export default function WorkItemDetailDialog({
 
   // Comments state (dialog fetches its own comments)
   const [comments, setComments] = useState<TicketComment[]>([]);
+  /**
+   * Attachments together with the work item they were fetched for.
+   *
+   * Kept as one value, and the visible list derived from it, so a result can
+   * never outlive the item it belongs to: switching work items changes what is
+   * rendered immediately, with no reset to remember and no window where the
+   * previous item's files show under the new one.
+   */
+  const [fetchedAttachments, setFetchedAttachments] = useState<{
+    forId?: number;
+    items: Attachment[];
+  }>({ items: [] });
+  const attachments =
+    fetchedAttachments.forId === workItem?.id ? fetchedAttachments.items : EMPTY_ATTACHMENTS;
   const [isLoadingComments, setIsLoadingComments] = useState(false);
 
   // Delete (Recycle Bin) state — issue #374
@@ -159,6 +176,27 @@ export default function WorkItemDetailDialog({
     }
   }, [workItem?.id, workItem?.project, fetchDevOps, hasOrganization]);
 
+  /**
+   * The full ticket page reads attachments off the ticket payload; this dialog
+   * builds from a WorkItem, which carries none. Without this the dialog showed
+   * nothing at all, and an attachment could only be found by opening the work
+   * item in DevOps and knowing to look (#7373).
+   */
+  const fetchAttachments = useCallback(async () => {
+    if (!workItem?.project || !hasOrganization) return;
+    const requestedFor = workItem.id;
+    try {
+      const response = await fetchDevOps(`/api/devops/tickets/${requestedFor}/attachments`);
+      if (response.ok) {
+        const data = await response.json();
+        setFetchedAttachments({ forId: requestedFor, items: data.attachments || [] });
+      }
+    } catch (err) {
+      // Non-fatal: the rest of the dialog is still worth showing.
+      console.error('Failed to fetch attachments:', err);
+    }
+  }, [workItem?.id, workItem?.project, fetchDevOps, hasOrganization]);
+
   const handleAddComment = useCallback(
     async (comment: string, isInternal = false) => {
       if (!workItem || !hasOrganization) return;
@@ -245,8 +283,9 @@ export default function WorkItemDetailDialog({
   useEffect(() => {
     if (isOpen && workItem) {
       fetchComments();
+      fetchAttachments();
     }
-  }, [isOpen, workItem, fetchComments]);
+  }, [isOpen, workItem, fetchComments, fetchAttachments]);
 
   // Re-verify ticket exists when user tabs back (e.g., after deleting in DevOps)
   useEffect(() => {
@@ -431,6 +470,7 @@ export default function WorkItemDetailDialog({
         <WorkItemDetailContent
           workItem={workItem}
           comments={comments}
+          attachments={attachments}
           isLoadingComments={isLoadingComments}
           onAddComment={handleAddComment}
           onUploadAttachment={handleUploadAttachment}
