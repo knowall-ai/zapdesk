@@ -476,7 +476,6 @@ export default function WorkItemDetailDialog({
           onUploadAttachment={handleUploadAttachment}
           onUpdate={onUpdate ? handleUpdate : undefined}
           onZapSent={handleZapSent}
-          showEffortTracking
           compact
         />
       </TicketDialogShell>

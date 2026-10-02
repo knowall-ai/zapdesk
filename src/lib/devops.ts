@@ -217,6 +217,53 @@ function looksLikeEmail(value: string): boolean {
   return parts.length === 2 && parts.every((part) => part.length > 0 && !/\s/.test(part));
 }
 
+/**
+ * Who wrote a comment.
+ *
+ * A comment that arrived by email is added through the service PAT, so DevOps
+ * records the token owner. A customer's own reply therefore appeared under an
+ * engineer's name and face, directly above a line reading "Email reply from:"
+ * somebody else (#7396). The sender is named in that line, so it is used.
+ *
+ * No DevOps identity exists behind a bare address, so there is no avatar to
+ * look up -- which is the point. Showing none beats showing the wrong face.
+ */
+// Anchored at the start of the comment, where ingest writes the header. An
+// unanchored match would take the marker out of a quoted reply further down
+// the body and attribute the whole comment to whoever was quoted.
+const EMAIL_COMMENT_SENDER =
+  /^\s*(?:<[^>]+>\s*)*(?:Email reply from:|Ticket created from email by)\s*(?:<\/strong>)?\s*([^\s<]+@[^\s<]+)/i;
+
+/**
+ * Does this text claim, in the form `commentAuthor` trusts, to have arrived by
+ * email?
+ *
+ * Exported so the comment endpoint can refuse a caller who writes it. The
+ * marker decides the displayed author, so anything able to forge it can put
+ * another person's address and name on a comment. Email ingest writes it
+ * through its own path and never through that endpoint.
+ */
+export function claimsEmailOrigin(text: string): boolean {
+  return EMAIL_COMMENT_SENDER.test(text ?? '');
+}
+
+export function commentAuthor(
+  text: string,
+  createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string }
+): { id: string; displayName: string; email: string; avatarUrl?: string } {
+  const match = EMAIL_COMMENT_SENDER.exec(text ?? '');
+  if (!match) {
+    return {
+      id: createdBy.id,
+      displayName: createdBy.displayName,
+      email: createdBy.uniqueName,
+      avatarUrl: createdBy.imageUrl,
+    };
+  }
+  const email = match[1].trim();
+  return { id: email, displayName: displayNameFromEmail(email), email };
+}
+
 /** `first.last@example` -> `First Last`, for a sender we know only by address. */
 function displayNameFromEmail(email: string): string {
   const local = email.split('@')[0];
@@ -780,12 +827,7 @@ export class AzureDevOpsService {
           id: c.id,
           content: stripInternalNoteMarker(c.text),
           createdAt: new Date(c.createdDate),
-          author: {
-            id: c.createdBy.id,
-            displayName: c.createdBy.displayName,
-            email: c.createdBy.uniqueName,
-            avatarUrl: c.createdBy.imageUrl,
-          },
+          author: commentAuthor(c.text, c.createdBy),
           isInternal: isInternalNote(c.text),
         })
       ) || []

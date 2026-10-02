@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { AzureDevOpsService } from '@/lib/devops';
+import { AzureDevOpsService, claimsEmailOrigin } from '@/lib/devops';
 import { isEmailTicket, extractRequesterEmail, sendAgentReply } from '@/lib/email';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -65,8 +65,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const { comment, isInternal } = body;
 
-    if (!comment) {
+    if (typeof comment !== 'string' || comment.trim() === '') {
       return NextResponse.json({ error: 'Comment is required' }, { status: 400 });
+    }
+
+    // The author shown against a comment is read from an email-origin marker in
+    // its own text, so a caller able to write that marker could post under
+    // somebody else's address. Only email ingest legitimately produces it, and
+    // it does not come through here.
+    if (claimsEmailOrigin(comment)) {
+      return NextResponse.json(
+        { error: 'A comment cannot begin with an email-origin marker.' },
+        { status: 400 }
+      );
     }
 
     const organization = request.headers.get('x-devops-org') || undefined;
