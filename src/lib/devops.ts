@@ -234,6 +234,19 @@ function looksLikeEmail(value: string): boolean {
 const EMAIL_COMMENT_SENDER =
   /^\s*(?:<[^>]+>\s*)*(?:Email reply from:|Ticket created from email by)\s*(?:<\/strong>)?\s*([^\s<]+@[^\s<]+)/i;
 
+/**
+ * Does this text claim, in the form `commentAuthor` trusts, to have arrived by
+ * email?
+ *
+ * Exported so the comment endpoint can refuse a caller who writes it. The
+ * marker decides the displayed author, so anything able to forge it can put
+ * another person's address and name on a comment. Email ingest writes it
+ * through its own path and never through that endpoint.
+ */
+export function claimsEmailOrigin(text: string): boolean {
+  return EMAIL_COMMENT_SENDER.test(text ?? '');
+}
+
 export function commentAuthor(
   text: string,
   createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { AzureDevOpsService, commentAuthor } from './devops';
+import { AzureDevOpsService, claimsEmailOrigin, commentAuthor } from './devops';
 
 const PAT_OWNER = {
   id: 'pat-owner',
@@ -93,5 +93,41 @@ describe('getWorkItemComments uses it', () => {
     const comments = await new AzureDevOpsService('token').getWorkItemComments('Proj', 1);
     expect(comments[0].author.displayName).toBe('Ada Lovelace');
     expect(comments[1].author.displayName).toBe('Ticket Creator');
+  });
+});
+
+// The author is read from the comment's own text, so a caller who can write
+// that marker can post under somebody else's address. The comment endpoint
+// refuses it; these tests pin the guard to what commentAuthor actually trusts.
+describe('claimsEmailOrigin guards the author mapping', () => {
+  const SPOOFS = [
+    'Email reply from: ceo@example.test',
+    'email REPLY from: ceo@example.test',
+    '<p><strong>Email reply from:</strong> ceo@example.test</p>',
+    '   Email reply from: ceo@example.test',
+    'Ticket created from email by ceo@example.test',
+  ];
+
+  it.each(SPOOFS)('refuses text that would change the author: %s', (text) => {
+    expect(claimsEmailOrigin(text)).toBe(true);
+  });
+
+  const INNOCENT = [
+    'Looking into it now.',
+    'They said "Email reply from: someone@example.test" in the call.',
+    '[Internal Note] Email reply from: ceo@example.test',
+    'Email reply from: not-an-address',
+    '',
+  ];
+
+  it.each(INNOCENT)('allows a comment that cannot change the author: %s', (text) => {
+    expect(claimsEmailOrigin(text)).toBe(false);
+  });
+
+  // The property that matters: nothing may pass the guard and still move the
+  // author. Loosening either regex alone breaks this.
+  it.each([...SPOOFS, ...INNOCENT])('guard and mapping agree on: %s', (text) => {
+    const movesAuthor = commentAuthor(text, PAT_OWNER).email !== PAT_OWNER.uniqueName;
+    expect(claimsEmailOrigin(text)).toBe(movesAuthor);
   });
 });
