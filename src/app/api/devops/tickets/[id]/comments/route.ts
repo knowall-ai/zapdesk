@@ -65,7 +65,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const { comment, isInternal } = body;
 
-    if (!comment) {
+    if (typeof comment !== 'string' || comment.trim() === '') {
       return NextResponse.json({ error: 'Comment is required' }, { status: 400 });
     }
 

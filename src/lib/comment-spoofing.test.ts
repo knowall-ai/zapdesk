@@ -29,7 +29,7 @@ vi.mock('@/lib/email', () => ({
   sendAgentReply: vi.fn(),
 }));
 
-const post = async (comment: string, isInternal = false) => {
+const post = async (comment: unknown, isInternal = false) => {
   const { POST } = await import('@/app/api/devops/tickets/[id]/comments/route');
   const request = new Request('https://zapdesk.test/api/devops/tickets/1/comments', {
     method: 'POST',
@@ -72,4 +72,16 @@ describe('the comments endpoint refuses a forged email-origin marker', () => {
     expect(response.status).toBe(200);
     expect(addComment).toHaveBeenCalledWith('Internal', 1, '[Internal Note] Checked the logs.');
   });
+
+  // JSON carries whatever the caller sent. A truthy array passed the old
+  // emptiness check and reached DevOps as {"text":["hello"]}.
+  it.each([[['hello']], [{ text: 'hello' }], [42], [true], ['   '], [null]])(
+    'rejects a comment that is not a string: %s',
+    async (comment) => {
+      const response = await post(comment);
+
+      expect(response.status).toBe(400);
+      expect(addComment).not.toHaveBeenCalled();
+    }
+  );
 });
