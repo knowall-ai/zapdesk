@@ -46,7 +46,7 @@ const KNOWALL_URL = 'https://knowall.ai';
  */
 const KNOWALL_LOGO_URL = process.env.KNOWALL_LOGO_URL || '';
 
-export function layoutWrapper(content: string): string {
+export function layoutWrapper(content: string, audience: MailAudience = 'customer'): string {
   return `
 <!DOCTYPE html>
 <html>
@@ -79,9 +79,13 @@ export function layoutWrapper(content: string): string {
   <div class="container">
     <div class="card">
       <div class="header">
-        <a href="${APP_URL}" style="text-decoration: none;">
+        ${
+          audience === 'staff'
+            ? `<a href="${APP_URL}" style="text-decoration: none;">
           <img src="${ZAPDESK_LOGO_URL}" width="240" height="60" alt="${APP_NAME}" style="border: 0;" />
-        </a>
+        </a>`
+            : `<img src="${ZAPDESK_LOGO_URL}" width="240" height="60" alt="${APP_NAME}" style="border: 0;" />`
+        }
       </div>
       ${content}
     </div>
@@ -101,6 +105,19 @@ export function layoutWrapper(content: string): string {
 </html>`.trim();
 }
 
+/**
+ * Who is reading this mail, and therefore whether a link into ZapDesk is of any
+ * use to them.
+ *
+ * Customers have no account: they reached support by email, so every link into
+ * the app is a dead end that invites them to try and fail (#7371). Staff mail
+ * keeps its links, because staff can follow them.
+ *
+ * `customer` is the default on purpose. A new template that forgets to say will
+ * omit the link rather than mail a dead one to someone outside the company.
+ */
+export type MailAudience = 'customer' | 'staff';
+
 function statusBadge(status: string): string {
   const lower = status.toLowerCase();
   let cls = 'badge-new';
@@ -115,16 +132,12 @@ export function ticketConfirmationTemplate(opts: {
   subject: string;
   requesterName: string;
 }): string {
-  const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
   return layoutWrapper(`
     <p>Hi ${escapeText(opts.requesterName || 'there')},</p>
     <div class="content">
       <p>We've received your request and created ticket <strong>#${opts.ticketId}</strong>.</p>
       <p class="meta"><strong>Subject:</strong> ${escapeText(opts.subject)}</p>
       <p>Our team will review your request and get back to you as soon as possible.</p>
-      <p style="text-align: center; margin-top: 24px;">
-        <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
-      </p>
     </div>
   `);
 }
@@ -167,18 +180,13 @@ export function agentReplyTemplate(opts: {
   ticketId: number;
   agentName: string;
   replyContent: string;
-  ticketUrl?: string;
   history?: HistoryEntry[];
 }): string {
-  const ticketUrl = opts.ticketUrl || `${APP_URL}/tickets/${opts.ticketId}`;
   return layoutWrapper(`
     <p class="meta">${escapeText(opts.agentName)} replied to ticket <strong>#${opts.ticketId}</strong>:</p>
     <div class="content">
       ${opts.replyContent}
     </div>
-    <p style="text-align: center; margin-top: 24px;">
-      <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
-    </p>
     ${renderHistory(opts.history || [])}
   `);
 }
@@ -190,7 +198,8 @@ export function customerReplyNotificationTemplate(opts: {
   replyContentHtml: string;
 }): string {
   const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
-  return layoutWrapper(`
+  return layoutWrapper(
+    `
     <p class="meta">New customer reply on ticket <strong>#${opts.ticketId}</strong></p>
     <p class="meta"><strong>Subject:</strong> ${escapeText(opts.ticketSubject)}</p>
     <p class="meta"><strong>From:</strong> ${escapeText(opts.customerEmail)}</p>
@@ -200,7 +209,9 @@ export function customerReplyNotificationTemplate(opts: {
     <p style="text-align: center; margin-top: 24px;">
       <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
     </p>
-  `);
+  `,
+    'staff'
+  );
 }
 
 /**
@@ -217,7 +228,8 @@ export function assignmentNotificationTemplate(opts: {
   requesterEmail?: string;
 }): string {
   const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
-  return layoutWrapper(`
+  return layoutWrapper(
+    `
     <p class="meta">Ticket <strong>#${opts.ticketId}</strong> has been assigned to you</p>
     <p class="meta"><strong>Subject:</strong> ${escapeText(opts.ticketSubject)}</p>
     ${
@@ -229,7 +241,9 @@ export function assignmentNotificationTemplate(opts: {
     <p style="text-align: center; margin-top: 24px;">
       <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
     </p>
-  `);
+  `,
+    'staff'
+  );
 }
 
 export function statusChangeTemplate(opts: {
@@ -239,7 +253,6 @@ export function statusChangeTemplate(opts: {
   oldStatus: string;
   newStatus: string;
 }): string {
-  const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
   return layoutWrapper(`
     <p>Hi ${escapeText(opts.requesterName || 'there')},</p>
     <div class="content">
@@ -248,9 +261,6 @@ export function statusChangeTemplate(opts: {
         ${statusBadge(opts.oldStatus)} &rarr; ${statusBadge(opts.newStatus)}
       </p>
       <p class="meta"><strong>Subject:</strong> ${escapeText(opts.subject)}</p>
-      <p style="text-align: center; margin-top: 24px;">
-        <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
-      </p>
     </div>
   `);
 }
