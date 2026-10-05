@@ -13,6 +13,7 @@ import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import { useDevOpsApi } from '@/hooks';
 import { ticketToWorkItem } from '@/lib/devops';
 import { debugLog } from '@/lib/debug';
+import { isCacheFresh } from '@/lib/cache-freshness';
 import type { StandupData, StandupColumn, StandupWorkItem, Ticket } from '@/types';
 
 type GroupBy = 'project' | 'person';
@@ -178,7 +179,7 @@ function StandupPageContent() {
       // Serve fresh cached data instantly (back-navigation case)
       if (!forceRefresh) {
         const cached = standupCache.get(key);
-        if (cached && Date.now() - cached.timestamp < STANDUP_CACHE_TTL_MS) {
+        if (cached && isCacheFresh(cached.timestamp, STANDUP_CACHE_TTL_MS)) {
           loadedKeyRef.current = key;
           setStandupData(cached.data);
           setLoading(false);
@@ -305,7 +306,12 @@ function StandupPageContent() {
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        fetchStandupData(true, true);
+        // Not forced. The cache TTL already says whether what is on screen is
+        // worth replacing, and forcing here meant every glance at another tab
+        // -- or minimising and reopening -- reloaded the board from scratch
+        // (#7391). Away longer than the TTL and this still catches up, because
+        // the cached entry has gone stale by then.
+        fetchStandupData(true, false);
         startInterval();
       } else {
         stopInterval();
