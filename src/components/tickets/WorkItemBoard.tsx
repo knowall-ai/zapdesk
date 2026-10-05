@@ -24,6 +24,7 @@ import type { Ticket, WorkItem, WorkItemType } from '@/types';
 import { TICKET_WORK_ITEM_TYPES } from '@/types';
 import { toast } from 'sonner';
 import { useClickOutside } from '@/hooks/useClickOutside';
+import { customerDomain } from '@/lib/customer-domain';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
@@ -119,6 +120,8 @@ interface Filters {
   priority: string[];
   assignee: string[];
   requester: string[];
+  /** Customer domains, for reviewing a company rather than one of its people. */
+  customer: string[];
   type: string[];
 }
 
@@ -281,6 +284,7 @@ export default function WorkItemBoard({
     priority: [],
     assignee: [],
     requester: [],
+    customer: [],
     type: [],
   });
   const [showBulkMenu, setShowBulkMenu] = useState(false);
@@ -468,6 +472,7 @@ export default function WorkItemBoard({
   const filterOptions = useMemo(() => {
     const assignees = new Set<string>();
     const requesters = new Set<string>();
+    const customers = new Set<string>();
     const statuses = new Set<string>();
     const types = new Set<string>();
 
@@ -477,6 +482,10 @@ export default function WorkItemBoard({
       }
       if (item.requester?.displayName) {
         requesters.add(item.requester.displayName);
+      }
+      const domain = customerDomain(item.requester?.email);
+      if (domain) {
+        customers.add(domain);
       }
       if (item.state) {
         statuses.add(item.state);
@@ -494,6 +503,7 @@ export default function WorkItemBoard({
     return {
       assignees: Array.from(assignees).sort(),
       requesters: Array.from(requesters).sort(),
+      customers: Array.from(customers).sort(),
       statuses: Array.from(statuses).sort(),
       types: typeOptions,
     };
@@ -514,6 +524,7 @@ export default function WorkItemBoard({
     filters.priority.length > 0 ||
     filters.assignee.length > 0 ||
     filters.requester.length > 0 ||
+    filters.customer.length > 0 ||
     filters.type.length > 0;
 
   // Apply filters
@@ -552,6 +563,13 @@ export default function WorkItemBoard({
         (!item.requester?.displayName || !filters.requester.includes(item.requester.displayName))
       )
         return false;
+
+      // A ticket raised inside DevOps has no address, so it cannot belong to a
+      // selected customer and is filtered out rather than shown under one.
+      if (filters.customer.length > 0) {
+        const domain = customerDomain(item.requester?.email);
+        if (!domain || !filters.customer.includes(domain)) return false;
+      }
       if (
         filters.type.length > 0 &&
         (!item.workItemType || !filters.type.includes(item.workItemType))
@@ -826,6 +844,16 @@ export default function WorkItemBoard({
                     onToggle={(v) => toggleFilter('assignee', v)}
                     onClear={() => setFilters((prev) => ({ ...prev, assignee: [] }))}
                   />
+
+                  {filterOptions.customers.length > 0 && (
+                    <MultiSelectFilter
+                      label="Customers"
+                      selected={filters.customer}
+                      options={filterOptions.customers}
+                      onToggle={(v) => toggleFilter('customer', v)}
+                      onClear={() => setFilters((prev) => ({ ...prev, customer: [] }))}
+                    />
+                  )}
 
                   {filterOptions.requesters.length > 0 && (
                     <MultiSelectFilter
@@ -1249,6 +1277,7 @@ export default function WorkItemBoard({
                       priority: [],
                       assignee: [],
                       requester: [],
+                      customer: [],
                       type: [],
                     });
                   }}
