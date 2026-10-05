@@ -18,6 +18,7 @@ import type { WorkItemActions } from '@/hooks/useWorkItemActions';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
 import { useClickOutside } from '@/hooks';
+import WorkItemTypeBadge from '../common/WorkItemTypeBadge';
 import { assigneeIdentity } from '@/lib/assignee';
 import { useCallback, useState } from 'react';
 
@@ -323,9 +324,12 @@ export default function WorkItemDetailSidebar({
                     </span>
                   </div>
                 ) : (
-                  <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                    {workItem.workItemType}
-                  </span>
+                  <WorkItemTypeBadge
+                    type={workItem.workItemType}
+                    typeInfo={actions.availableTypes?.find(
+                      (t: WorkItemType) => t.name === workItem.workItemType
+                    )}
+                  />
                 )}
                 <ChevronDown size={14} style={{ color: 'var(--text-muted)' }} />
               </button>
@@ -367,9 +371,7 @@ export default function WorkItemDetailSidebar({
               )}
             </>
           ) : (
-            <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-              {workItem.workItemType}
-            </span>
+            <WorkItemTypeBadge type={workItem.workItemType} />
           )}
         </div>
       )}

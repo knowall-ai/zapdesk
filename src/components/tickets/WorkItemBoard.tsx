@@ -25,6 +25,7 @@ import { TICKET_WORK_ITEM_TYPES } from '@/types';
 import { toast } from 'sonner';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { customerDomain } from '@/lib/customer-domain';
+import WorkItemTypeBadge from '../common/WorkItemTypeBadge';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
@@ -1094,26 +1095,10 @@ export default function WorkItemBoard({
                       )}
                       {hasColumn('type') && (
                         <td className={cellPadding}>
-                          {(() => {
-                            const typeInfo = typeInfoMap.get(item.workItemType);
-                            const typeColor = typeInfo?.color ? `#${typeInfo.color}` : undefined;
-                            return (
-                              <span
-                                className="flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-medium"
-                                style={{
-                                  backgroundColor: 'var(--surface-hover)',
-                                  color: 'var(--text-secondary)',
-                                  display: 'inline-flex',
-                                  borderLeft: typeColor ? `3px solid ${typeColor}` : undefined,
-                                }}
-                              >
-                                {typeInfo?.icon && (
-                                  <img src={typeInfo.icon} alt="" className="h-3.5 w-3.5" />
-                                )}
-                                {item.workItemType}
-                              </span>
-                            );
-                          })()}
+                          <WorkItemTypeBadge
+                            type={item.workItemType}
+                            typeInfo={typeInfoMap.get(item.workItemType)}
+                          />
                         </td>
                       )}
                       {hasColumn('status') && (

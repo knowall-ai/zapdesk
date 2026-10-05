@@ -12,6 +12,7 @@ import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import { hasTicketTag } from '@/lib/tags';
 import WorkItemDetailContent from './WorkItemDetailContent';
 import WorkItemDetailSidebar from './WorkItemDetailSidebar';
+import WorkItemTypeBadge from '../common/WorkItemTypeBadge';
 import TypeChangeRequiredFields from './TypeChangeRequiredFields';
 
 interface WorkItemDetailDialogProps {
@@ -383,15 +384,7 @@ export default function WorkItemDetailDialog({
       <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
         #{workItem.id}
       </span>
-      <span
-        className="rounded px-2 py-0.5 text-xs"
-        style={{
-          backgroundColor: 'var(--surface)',
-          color: 'var(--text-secondary)',
-        }}
-      >
-        {workItem.workItemType}
-      </span>
+      <WorkItemTypeBadge type={workItem.workItemType} />
     </>
   );
 
