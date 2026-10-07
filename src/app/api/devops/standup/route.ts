@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { effectiveStates, type ProcessState } from '@/lib/process-states';
 import { normalizeStateName } from '@/lib/kanban-columns';
 import type {
   StandupData,
@@ -91,6 +92,90 @@ async function fetchStateMetadata(
   }
 }
 
+/** What either discovery path produces, so the aggregation below is shared. */
+interface DiscoveredProject {
+  project: string;
+  types: { type: string; states: { name: string; category: string }[] }[];
+  complete: boolean;
+}
+
+/**
+ * Discover states from the organisation's process definitions.
+ *
+ * The per-project path below asks for the types of every project and then the
+ * states of every type: on this organisation that is 647 requests and about 49
+ * seconds, which is the load time #7387 reports. Projects share processes --
+ * 34 of them use 3 -- and a process reports its types and their states in one
+ * call, so the same picture costs 4 requests and about 2 seconds.
+ *
+ * Returns null rather than throwing when the processes API is unavailable. It is
+ * an organisation-level API and a signed-in user's token may not carry the scope
+ * for it, so the caller falls back to the per-project scan and still answers.
+ */
+async function discoverViaProcesses(
+  accessToken: string,
+  organization: string
+): Promise<DiscoveredProject[] | null> {
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  };
+
+  try {
+    const listed = await fetch(
+      `https://dev.azure.com/${organization}/_apis/work/processes?$expand=projects&api-version=7.0`,
+      { headers }
+    );
+    if (!listed.ok) return null;
+
+    const processes: {
+      typeId: string;
+      projects?: { name: string }[];
+    }[] = (await listed.json()).value || [];
+
+    // Only processes with projects on them: the organisation carries unused
+    // templates, and asking about those is work for nothing.
+    const inUse = processes.filter((proc) => (proc.projects || []).length > 0);
+    if (inUse.length === 0) return null;
+
+    const perProcess = await Promise.all(
+      inUse.map(async (proc) => {
+        const response = await fetch(
+          `https://dev.azure.com/${organization}/_apis/work/processes/${encodeURIComponent(
+            proc.typeId
+          )}/workitemtypes?$expand=states&api-version=7.0`,
+          { headers }
+        );
+        if (!response.ok) return null;
+
+        const types: { name: string; states?: ProcessState[] }[] =
+          (await response.json()).value || [];
+        return {
+          projects: (proc.projects || []).map((pr) => pr.name),
+          types: types.map((witType) => ({
+            type: witType.name,
+            states: effectiveStates(witType.states),
+          })),
+        };
+      })
+    );
+
+    // All or nothing. A half-discovered organisation would look complete while
+    // missing whole templates, and the per-project path answers properly.
+    if (perProcess.some((entry) => entry === null)) return null;
+
+    const discovered: DiscoveredProject[] = [];
+    for (const entry of perProcess) {
+      for (const project of entry!.projects) {
+        discovered.push({ project, types: entry!.types, complete: true });
+      }
+    }
+    return discovered.length > 0 ? discovered : null;
+  } catch {
+    return null;
+  }
+}
+
 async function doFetchStateMetadata(
   devopsService: AzureDevOpsService,
   accessToken: string,
@@ -116,30 +201,19 @@ async function doFetchStateMetadata(
   const statesByProjectType: Record<string, Record<string, Set<string>>> = {};
   const categoriesByProjectType: Record<string, Record<string, Record<string, string>>> = {};
 
+  // Processes first: same picture, 4 requests instead of 647 (#7387). Falls
+  // through to the per-project scan when that API is not available to this
+  // token, so the board still loads either way.
+  const viaProcesses = await discoverViaProcesses(accessToken, organization);
+
   // Fetch states from ALL projects to cover different process templates
-  const projectResults = await Promise.allSettled(
-    projects.map(async (project) => {
-      // Discover work item types for this project
-      const typesResponse = await fetch(
-        `https://dev.azure.com/${organization}/${encodeURIComponent(project.name)}/_apis/wit/workitemtypes?api-version=7.0`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!typesResponse.ok) return { project: project.name, types: [], complete: false };
-
-      const typesData = await typesResponse.json();
-      const types: { name: string }[] = typesData.value || [];
-
-      // Fetch states for each work item type in parallel
-      const stateResults = await Promise.allSettled(
-        types.map(async (witType) => {
-          const statesResponse = await fetch(
-            `https://dev.azure.com/${organization}/${encodeURIComponent(project.name)}/_apis/wit/workitemtypes/${encodeURIComponent(witType.name)}/states?api-version=7.0`,
+  const projectResults = viaProcesses
+    ? []
+    : await Promise.allSettled(
+        projects.map(async (project) => {
+          // Discover work item types for this project
+          const typesResponse = await fetch(
+            `https://dev.azure.com/${organization}/${encodeURIComponent(project.name)}/_apis/wit/workitemtypes?api-version=7.0`,
             {
               headers: {
                 Authorization: `Bearer ${accessToken}`,
@@ -148,45 +222,80 @@ async function doFetchStateMetadata(
             }
           );
 
-          if (!statesResponse.ok) return { type: witType.name, states: [], complete: false };
-          const statesData = await statesResponse.json();
+          if (!typesResponse.ok) return { project: project.name, types: [], complete: false };
+
+          const typesData = await typesResponse.json();
+          const types: { name: string }[] = typesData.value || [];
+
+          // Fetch states for each work item type in parallel
+          const stateResults = await Promise.allSettled(
+            types.map(async (witType) => {
+              const statesResponse = await fetch(
+                `https://dev.azure.com/${organization}/${encodeURIComponent(project.name)}/_apis/wit/workitemtypes/${encodeURIComponent(witType.name)}/states?api-version=7.0`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                  },
+                }
+              );
+
+              if (!statesResponse.ok) return { type: witType.name, states: [], complete: false };
+              const statesData = await statesResponse.json();
+              return {
+                type: witType.name,
+                states: (statesData.value || []) as { name: string; category: string }[],
+                complete: true,
+              };
+            })
+          );
+
+          const settled = stateResults.filter(
+            (
+              r
+            ): r is PromiseFulfilledResult<{
+              type: string;
+              states: { name: string; category: string }[];
+              complete: boolean;
+            }> => r.status === 'fulfilled'
+          );
+
           return {
-            type: witType.name,
-            states: (statesData.value || []) as { name: string; category: string }[],
-            complete: true,
+            project: project.name,
+            types: settled.map((r) => r.value),
+            // A rejected request, or one that answered non-OK, leaves this
+            // project's picture incomplete.
+            complete:
+              settled.length === stateResults.length && settled.every((r) => r.value.complete),
           };
         })
       );
 
-      const settled = stateResults.filter(
-        (
-          r
-        ): r is PromiseFulfilledResult<{
-          type: string;
-          states: { name: string; category: string }[];
-          complete: boolean;
-        }> => r.status === 'fulfilled'
-      );
-
-      return {
-        project: project.name,
-        types: settled.map((r) => r.value),
-        // A rejected request, or one that answered non-OK, leaves this
-        // project's picture incomplete.
-        complete: settled.length === stateResults.length && settled.every((r) => r.value.complete),
-      };
-    })
-  );
-
   let discoveryComplete = true;
-  for (const result of projectResults) {
-    if (result.status !== 'fulfilled') {
-      discoveryComplete = false;
-      continue;
+
+  const discovered: DiscoveredProject[] = viaProcesses ?? [];
+  if (!viaProcesses) {
+    for (const result of projectResults) {
+      if (result.status !== 'fulfilled') {
+        discoveryComplete = false;
+        continue;
+      }
+      discovered.push(result.value);
     }
-    const { project, types, complete } = result.value;
+  }
+
+  // Sorted so the flat category map below resolves a name the same way every
+  // time. It is last-write-wins for a state defined in two types with
+  // different categories -- `Prep` is InProgress on Feature and Proposed on
+  // User Story -- and without an order that winner was whichever request
+  // happened to finish first, which could reorder columns between loads.
+  discovered.sort((a, b) => a.project.localeCompare(b.project));
+
+  for (const entry of discovered) {
+    const { project, types, complete } = entry;
     if (!complete) discoveryComplete = false;
-    for (const { type, states } of types) {
+    const ordered = [...types].sort((a, b) => a.type.localeCompare(b.type));
+    for (const { type, states } of ordered) {
       for (const state of states) {
         // Categories stay org-wide here: they only drive column *ordering*,
         // which is a union across templates by design.
