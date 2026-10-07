@@ -45,7 +45,7 @@ export interface Customer {
 }
 
 export type TicketStatus = 'New' | 'Open' | 'In Progress' | 'Pending' | 'Resolved' | 'Closed';
-export type TicketPriority = 'Low' | 'Normal' | 'High' | 'Urgent';
+export type TicketPriority = string;
 export type SLALevel = 'Gold' | 'Silver' | 'Bronze';
 export type SLAStatus = 'within_sla' | 'at_risk' | 'breached';
 
@@ -97,9 +97,10 @@ export interface SLAPriorityTargets {
 }
 
 export interface SLAConfig {
-  Urgent: SLAPriorityTargets;
+  [priority: string]: SLAPriorityTargets;
+  Critical: SLAPriorityTargets;
   High: SLAPriorityTargets;
-  Normal: SLAPriorityTargets;
+  Medium: SLAPriorityTargets;
   Low: SLAPriorityTargets;
 }
 
