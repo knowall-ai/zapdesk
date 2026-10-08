@@ -442,6 +442,54 @@ export function isRemovedForEveryType(
   return removedOnly;
 }
 
+/**
+ * Split the board's state names between its two WIQL queries.
+ *
+ * `closedStates` go to the query limited to the last 7 days; `openStates` go
+ * to the 90-day query. Only Completed states belong in the short window.
+ * Resolved means the work is done but not yet verified, so the item still needs
+ * attention and must stay on the board however long it sits there. It used to
+ * share the 7-day window with Closed, which made resolved items disappear
+ * (#436).
+ *
+ * As with the Removed filter, the flat map is lossy when two types use one
+ * state name in different categories. Putting a name in the 7-day window hides
+ * older items of every type that uses it, so a name goes there only when every
+ * type that defines it agrees it is Completed. When discovery was partial,
+ * nothing is known to be agreed, so the flat map decides, as it did before.
+ */
+export function partitionStandupStates(
+  stateCategories: Record<string, string>,
+  removedOnly: Set<string>,
+  categoriesByProjectType?: Record<string, Record<string, Record<string, string>>>
+): { closedStates: string[]; openStates: string[] } {
+  const categoriesSeen = new Map<string, Set<string>>();
+  for (const byType of Object.values(categoriesByProjectType ?? {})) {
+    for (const byState of Object.values(byType)) {
+      for (const [state, category] of Object.entries(byState)) {
+        (categoriesSeen.get(state) ?? categoriesSeen.set(state, new Set()).get(state)!).add(
+          category
+        );
+      }
+    }
+  }
+
+  const closedStates: string[] = [];
+  const openStates: string[] = [];
+  for (const [state, category] of Object.entries(stateCategories)) {
+    if (removedOnly.has(state)) continue;
+    const seen = categoriesSeen.get(state);
+    // A Removed category alongside Completed doesn't make the name open: the
+    // Removed items are filtered out per item anyway.
+    const isClosed =
+      seen && seen.size > 0
+        ? [...seen].every((c) => c === 'Completed' || c === 'Removed') && seen.has('Completed')
+        : category === 'Completed';
+    (isClosed ? closedStates : openStates).push(state);
+  }
+  return { closedStates, openStates };
+}
+
 /** Whether this item's state is Removed *for this item's own project and type*. */
 export function isRemovedItem(
   item: DevOpsWorkItem,
@@ -2804,16 +2852,13 @@ export class AzureDevOpsService {
       discoveryComplete
     );
 
-    const doneStates: string[] = [];
-    const activeStates: string[] = [];
-    for (const [state, category] of Object.entries(stateCategories)) {
-      if (removedOnly.has(state)) continue;
-      if (category === 'Resolved' || category === 'Completed') {
-        doneStates.push(state);
-      } else {
-        activeStates.push(state);
-      }
-    }
+    // Resolved states are fetched with the active ones, not in the 7-day
+    // window: a resolved item still awaits verification (#436).
+    const { closedStates: doneStates, openStates: activeStates } = partitionStandupStates(
+      stateCategories,
+      removedOnly,
+      categoriesByProjectType
+    );
 
     if (doneStates.length === 0 || activeStates.length === 0) {
       return { items: [] };
@@ -2840,7 +2885,7 @@ export class AzureDevOpsService {
       'Microsoft.VSTS.Common.Priority',
     ].join(', ');
 
-    // Query 1: Items currently in a done state, moved there in the last 7 days
+    // Query 1: Items currently in a closed state, moved there in the last 7 days
     const doneQuery = {
       query: `
         SELECT ${fields}
@@ -2853,7 +2898,7 @@ export class AzureDevOpsService {
       `,
     };
 
-    // Query 2: Active items (not completed), touched in last 90 days
+    // Query 2: Open items (including Resolved), touched in last 90 days
     const ninetyDaysAgo = new Date(targetDate);
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
     const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split('T')[0];

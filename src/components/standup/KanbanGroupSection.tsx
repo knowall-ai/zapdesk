@@ -28,9 +28,10 @@ import {
 import type { StandupColumn, StandupWorkItem } from '@/types';
 import { debugLog, debugWarn } from '@/lib/debug';
 
-// Done-category columns only show items changed in the last 7 days; this hint
-// explains the cutoff so users don't think older items have vanished.
-const DONE_WINDOW_HINT = 'Showing items resolved or closed in the last 7 days';
+// The Closed column only shows items changed in the last 7 days; this hint
+// explains the cutoff so users don't think older items have vanished. Resolved
+// items aren't windowed — they still await verification (#436).
+const DONE_WINDOW_HINT = 'Showing items closed in the last 7 days';
 
 /** Simple droppable column for the standup kanban */
 function DroppableColumn({
@@ -53,7 +54,7 @@ function DroppableColumn({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: name, disabled: isBlocked });
   const color = getColumnColor(name, category);
-  const isDoneColumn = category === 'Resolved' || category === 'Completed';
+  const isDoneColumn = category === 'Completed';
 
   return (
     <div
