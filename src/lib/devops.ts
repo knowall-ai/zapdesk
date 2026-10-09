@@ -442,6 +442,27 @@ export function isRemovedForEveryType(
   return removedOnly;
 }
 
+/**
+ * When a work item revision was made.
+ *
+ * Not the update's `revisedDate`: in the updates API that is when the revision
+ * was *superseded*, so it is the time of the next change, and for the latest
+ * revision it is the 9999-01-01 sentinel. History showed every entry one
+ * change late and the newest as "01 Jan 9999" (#233). The revision's own
+ * `System.ChangedDate` is the time it was made. `revisedDate` is only a
+ * fallback, and never the sentinel; an empty string means "unknown".
+ */
+export function revisionTimestamp(update: {
+  revisedDate?: string;
+  fields?: Record<string, { oldValue?: unknown; newValue?: unknown }>;
+}): string {
+  const changedDate = update.fields?.['System.ChangedDate']?.newValue;
+  if (typeof changedDate === 'string' && changedDate) return changedDate;
+  const revised = update.revisedDate;
+  if (revised && !revised.startsWith('9999-')) return revised;
+  return '';
+}
+
 /** Whether this item's state is Removed *for this item's own project and type*. */
 export function isRemovedItem(
   item: DevOpsWorkItem,
@@ -912,7 +933,7 @@ export class AzureDevOpsService {
               email: update.revisedBy.uniqueName,
               avatarUrl: update.revisedBy.imageUrl,
             },
-            revisedDate: update.revisedDate,
+            revisedDate: revisionTimestamp(update),
             fields,
           };
         }
