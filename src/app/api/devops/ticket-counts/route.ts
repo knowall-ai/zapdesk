@@ -36,7 +36,6 @@ export async function GET(request: NextRequest) {
         (t) =>
           activeStatuses.includes(t.status) && t.assignee?.email?.toLowerCase() === currentUserEmail
       ).length,
-      ratedLast7Days: 0, // Would need rating data from DevOps
       unassigned: tickets.filter((t) => activeStatuses.includes(t.status) && !t.assignee).length,
       allActive: tickets.filter((t) => activeStatuses.includes(t.status)).length,
       recentlyUpdated: tickets.filter((t) => t.updatedAt >= sevenDaysAgo).length,
