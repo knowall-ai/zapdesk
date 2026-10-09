@@ -16,7 +16,6 @@ import type { Ticket, WorkItem, User, WorkItemType } from '@/types';
 
 const viewTitles: Record<string, string> = {
   'your-active': 'Your active tickets',
-  rated: 'Rated tickets from the last 7 days',
   unassigned: 'Unassigned tickets',
   'all-active': 'All active tickets',
   'recently-updated': 'Recently updated tickets',

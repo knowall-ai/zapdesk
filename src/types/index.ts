@@ -231,7 +231,6 @@ export interface WorkItemFieldChange {
  * so any mutation to either invalidates all of them (issue #404). */
 export interface TicketCounts {
   yourActive: number;
-  ratedLast7Days: number;
   unassigned: number;
   allActive: number;
   recentlyUpdated: number;
