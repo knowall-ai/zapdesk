@@ -464,11 +464,40 @@ export default function WorkItemBoard({
     },
   ];
 
+  // States the project's work item types define. The Statuses filter used to
+  // list only states some loaded item happened to be in, so a state with no
+  // items yet — typically Resolved — couldn't be selected at all (#278).
+  const [definedStates, setDefinedStates] = useState<string[]>([]);
+  useEffect(() => {
+    // Without a project the route falls back to an arbitrary one, whose states
+    // may not match a cross-project list, so only fetch for a known project.
+    if (hideFilters || !project) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const headers: HeadersInit = {};
+        if (organization) headers['x-devops-org'] = organization;
+        const response = await fetch(
+          `/api/devops/workitem-states?project=${encodeURIComponent(project)}`,
+          { headers }
+        );
+        if (!response.ok) return;
+        const data = (await response.json()) as { allStates?: { name: string }[] };
+        if (!cancelled) setDefinedStates((data.allStates || []).map((s) => s.name));
+      } catch (error) {
+        console.error('Failed to fetch work item states for filter:', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hideFilters, project, organization]);
+
   // Get unique values for filter dropdowns
   const filterOptions = useMemo(() => {
     const assignees = new Set<string>();
     const requesters = new Set<string>();
-    const statuses = new Set<string>();
+    const statuses = new Set<string>(definedStates);
     const types = new Set<string>();
 
     items.forEach((item) => {
@@ -497,7 +526,7 @@ export default function WorkItemBoard({
       statuses: Array.from(statuses).sort(),
       types: typeOptions,
     };
-  }, [items, availableTypes]);
+  }, [items, availableTypes, definedStates]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
