@@ -31,7 +31,7 @@ import { debugLog, debugWarn } from '@/lib/debug';
 // The Closed column only shows items changed in the last 7 days; this hint
 // explains the cutoff so users don't think older items have vanished. Resolved
 // items aren't windowed — they still await verification (#436).
-const DONE_WINDOW_HINT = 'Showing items closed in the last 7 days';
+const DONE_WINDOW_HINT = 'Showing closed items changed in the last 7 days';
 
 /** Simple droppable column for the standup kanban */
 function DroppableColumn({

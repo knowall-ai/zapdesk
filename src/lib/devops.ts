@@ -455,14 +455,25 @@ export function isRemovedForEveryType(
  * As with the Removed filter, the flat map is lossy when two types use one
  * state name in different categories. Putting a name in the 7-day window hides
  * older items of every type that uses it, so a name goes there only when every
- * type that defines it agrees it is Completed. When discovery was partial,
- * nothing is known to be agreed, so the flat map decides, as it did before.
+ * type that defines it agrees it is Completed. When discovery was partial, an
+ * undiscovered type may use the name differently, so nothing is known to be
+ * agreed and every name goes to the 90-day query. Either way the closed items
+ * that query brings in are trimmed per item by `isOutsideClosedWindow`.
  */
 export function partitionStandupStates(
   stateCategories: Record<string, string>,
   removedOnly: Set<string>,
-  categoriesByProjectType?: Record<string, Record<string, Record<string, string>>>
+  categoriesByProjectType?: Record<string, Record<string, Record<string, string>>>,
+  discoveryComplete = true
 ): { closedStates: string[]; openStates: string[] } {
+  const hasPerType = Object.keys(categoriesByProjectType ?? {}).length > 0;
+  if (hasPerType && !discoveryComplete) {
+    return {
+      closedStates: [],
+      openStates: Object.keys(stateCategories).filter((state) => !removedOnly.has(state)),
+    };
+  }
+
   const categoriesSeen = new Map<string, Set<string>>();
   for (const byType of Object.values(categoriesByProjectType ?? {})) {
     for (const byState of Object.values(byType)) {
@@ -517,6 +528,35 @@ export function isRemovedItem(
   if (perType === undefined) return false;
 
   return perType === 'Removed';
+}
+
+/**
+ * Whether an item the 90-day query fetched is closed for its own type and was
+ * last changed outside the 7-day closed window `[windowStart, windowEnd)`.
+ *
+ * A state name that is Completed for one type and open for another, or whose
+ * types were not all discovered, is queried over 90 days so open items keep
+ * showing (#436). This trims the closed items of such a name back to the window
+ * the closed query would have used. An item whose type has no per-type data
+ * is kept, as `isRemovedItem` keeps one.
+ */
+export function isOutsideClosedWindow(
+  item: DevOpsWorkItem,
+  windowStart: string,
+  windowEnd: string,
+  categoriesByProjectType?: Record<string, Record<string, Record<string, string>>>
+): boolean {
+  const fields = item.fields || {};
+  const state = fields['System.State'] as string | undefined;
+  const project = fields['System.TeamProject'] as string | undefined;
+  const type = fields['System.WorkItemType'] as string | undefined;
+  const changed = fields['System.ChangedDate'] as string | undefined;
+  if (!state || !project || !type || !changed) return false;
+
+  if (categoriesByProjectType?.[project]?.[type]?.[state] !== 'Completed') return false;
+
+  const changedAt = new Date(changed).getTime();
+  return changedAt < new Date(windowStart).getTime() || changedAt >= new Date(windowEnd).getTime();
 }
 
 /**
@@ -2857,10 +2897,13 @@ export class AzureDevOpsService {
     const { closedStates: doneStates, openStates: activeStates } = partitionStandupStates(
       stateCategories,
       removedOnly,
-      categoriesByProjectType
+      categoriesByProjectType,
+      discoveryComplete
     );
 
-    if (doneStates.length === 0 || activeStates.length === 0) {
+    // Either list can be empty, for example when no state name is Completed
+    // for every type. Each query runs only when it has states to match.
+    if (doneStates.length === 0 && activeStates.length === 0) {
       return { items: [] };
     }
 
@@ -2885,7 +2928,7 @@ export class AzureDevOpsService {
       'Microsoft.VSTS.Common.Priority',
     ].join(', ');
 
-    // Query 1: Items currently in a closed state, moved there in the last 7 days
+    // Query 1: Items currently in a closed state and changed in the last 7 days
     const doneQuery = {
       query: `
         SELECT ${fields}
@@ -2914,41 +2957,43 @@ export class AzureDevOpsService {
       `,
     };
 
-    // Execute both WIQL queries in parallel at org level
-    const [doneResponse, activeResponse] = await Promise.all([
-      fetch(`${this.baseUrl}/_apis/wit/wiql?api-version=7.0`, {
+    // Execute the WIQL queries in parallel at org level
+    const runQuery = async (query: { query: string }, label: string): Promise<number[]> => {
+      const response = await fetch(`${this.baseUrl}/_apis/wit/wiql?api-version=7.0`, {
         method: 'POST',
         headers: this.headers,
-        body: JSON.stringify(doneQuery),
-      }),
-      fetch(`${this.baseUrl}/_apis/wit/wiql?api-version=7.0`, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify(activeQuery),
-      }),
+        body: JSON.stringify(query),
+      });
+      if (!response.ok) {
+        throw new Error(`Standup ${label} query failed: ${response.statusText}`);
+      }
+      const data = await response.json();
+      return data.workItems?.map((wi: { id: number }) => wi.id) || [];
+    };
+
+    const [doneIds, activeIds] = await Promise.all([
+      doneStates.length > 0 ? runQuery(doneQuery, 'done') : Promise.resolve([]),
+      activeStates.length > 0 ? runQuery(activeQuery, 'active') : Promise.resolve([]),
     ]);
-
-    if (!doneResponse.ok) {
-      throw new Error(`Standup done query failed: ${doneResponse.statusText}`);
-    }
-    if (!activeResponse.ok) {
-      throw new Error(`Standup active query failed: ${activeResponse.statusText}`);
-    }
-
-    const doneData = await doneResponse.json();
-    const activeData = await activeResponse.json();
 
     // Combine IDs and batch-fetch in one pass — saves a round-trip when the
     // total fits in a single 200-item batch (the common case).
-    const doneIds: number[] = doneData.workItems?.map((wi: { id: number }) => wi.id) || [];
-    const activeIds: number[] = activeData.workItems?.map((wi: { id: number }) => wi.id) || [];
     const items = await this.fetchWorkItemBatch([...doneIds, ...activeIds]);
+    const activeIdSet = new Set(activeIds);
 
     // The precise half of the Removed filter. Here each item carries its own
     // project and type, so the ambiguous state names the query let through can
-    // finally be judged correctly (#277).
+    // finally be judged correctly (#277). The same goes for closed items the
+    // 90-day query let through: they keep only the 7-day window (#436).
     return {
-      items: items.filter((item) => !isRemovedItem(item, stateCategories, categoriesByProjectType)),
+      items: items.filter(
+        (item) =>
+          !isRemovedItem(item, stateCategories, categoriesByProjectType) &&
+          !(
+            activeIdSet.has(item.id) &&
+            isOutsideClosedWindow(item, sevenDaysAgoStr, nextDayStr, categoriesByProjectType)
+          )
+      ),
     };
   }
 
