@@ -21,6 +21,8 @@ import {
   ClipboardList,
   PlusCircle,
   X,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import ZapDeskIcon from '@/components/common/ZapDeskIcon';
 
@@ -77,6 +79,9 @@ interface SidebarProps {
   onNewTicket?: () => void;
   isOpen?: boolean;
   onClose?: () => void;
+  /** Desktop only: shrink to an icon rail. The mobile drawer always opens full width. */
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }
 
 export default function Sidebar({
@@ -84,9 +89,15 @@ export default function Sidebar({
   onNewTicket,
   isOpen = false,
   onClose,
+  collapsed = false,
+  onToggleCollapsed,
 }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+
+  // Collapsing is a desktop affordance (#410), so every collapsed-only class is
+  // md-prefixed: below md the drawer keeps its full layout whatever is stored.
+  const hideWhenCollapsed = collapsed ? 'md:hidden' : '';
 
   const counts = ticketCounts || {
     yourActive: 0,
@@ -152,18 +163,36 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`fixed inset-y-0 left-0 z-50 flex h-screen w-64 transform flex-col transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}
+      className={`fixed inset-y-0 left-0 z-50 flex h-screen w-64 shrink-0 transform flex-col transition-[transform,width] duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 ${collapsed ? 'md:w-16' : ''}`}
       style={{ backgroundColor: 'var(--sidebar-bg)' }}
     >
       {/* Logo with mobile close button */}
       <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
-        <div className="flex items-center justify-between">
+        <div
+          className={`flex items-center justify-between ${collapsed ? 'md:flex-col md:gap-3' : ''}`}
+        >
           <Link href="/" className="flex items-center gap-2" onClick={() => onClose?.()}>
             <ZapDeskIcon size={32} />
-            <span className="text-xl font-semibold" style={{ color: 'var(--primary)' }}>
+            <span
+              className={`text-xl font-semibold ${hideWhenCollapsed}`}
+              style={{ color: 'var(--primary)' }}
+            >
               ZapDesk
             </span>
           </Link>
+          {onToggleCollapsed && (
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              className="hidden rounded-md p-1 transition-colors hover:bg-[var(--surface-hover)] md:block"
+              style={{ color: 'var(--text-muted)' }}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-expanded={!collapsed}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
+            </button>
+          )}
           <button
             onClick={() => onClose?.()}
             className="rounded-md p-1 transition-colors hover:bg-[var(--surface-hover)] md:hidden"
@@ -182,11 +211,13 @@ export default function Sidebar({
             onNewTicket?.();
             onClose?.();
           }}
-          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
+          className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)] ${collapsed ? 'md:justify-center md:px-0' : ''}`}
           style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}
+          title={collapsed ? 'Add' : undefined}
+          aria-label="Add"
         >
           <Plus size={16} />
-          Add
+          <span className={hideWhenCollapsed}>Add</span>
         </button>
       </div>
 
@@ -199,11 +230,13 @@ export default function Sidebar({
             <Link
               key={item.id}
               href={item.href}
-              className={`nav-item mx-2 ${isActive ? 'active' : ''}`}
+              className={`nav-item mx-2 ${isActive ? 'active' : ''} ${collapsed ? 'md:justify-center md:px-0' : ''}`}
               onClick={() => onClose?.()}
+              title={collapsed ? item.name : undefined}
+              aria-label={collapsed ? item.name : undefined}
             >
               {item.icon}
-              <span className="text-sm">{item.name}</span>
+              <span className={`text-sm ${hideWhenCollapsed}`}>{item.name}</span>
             </Link>
           );
         })}
@@ -211,7 +244,7 @@ export default function Sidebar({
 
       {/* Views section */}
       <div className="flex-1 overflow-y-auto border-t" style={{ borderColor: 'var(--border)' }}>
-        <div className="p-3">
+        <div className={`p-3 ${hideWhenCollapsed}`}>
           <div className="mb-2 flex items-center justify-between">
             <span
               className="text-xs font-semibold uppercase"
@@ -266,7 +299,10 @@ export default function Sidebar({
         </div>
 
         {/* Bottom section */}
-        <div className="border-t p-3" style={{ borderColor: 'var(--border)' }}>
+        <div
+          className={`border-t p-3 ${hideWhenCollapsed}`}
+          style={{ borderColor: 'var(--border)' }}
+        >
           <Link
             href="/tickets?view=removed"
             className="flex items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]"
@@ -279,7 +315,10 @@ export default function Sidebar({
       </div>
 
       {/* Branding footer */}
-      <div className="border-t p-3 text-center" style={{ borderColor: 'var(--border)' }}>
+      <div
+        className={`border-t p-3 text-center ${hideWhenCollapsed}`}
+        style={{ borderColor: 'var(--border)' }}
+      >
         <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
           <div>v{process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0'}</div>
           <div className="mt-1">
