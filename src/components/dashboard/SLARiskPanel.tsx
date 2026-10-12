@@ -154,7 +154,9 @@ function SLATicketRow({ status }: { status: TicketSLAStatus }) {
 
   return (
     <Link
-      href={`/tickets/${ticket.project}/${ticket.id}`}
+      // One segment. The detail route is /tickets/[id] and resolves the project
+      // itself, so including it here produced a path matching no route at all.
+      href={`/tickets/${ticket.id}`}
       className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
       style={{
         backgroundColor: isBreached ? 'rgba(239, 68, 68, 0.1)' : 'rgba(249, 115, 22, 0.08)',

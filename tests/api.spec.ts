@@ -27,6 +27,24 @@ test.describe('API Routes', () => {
     expect(response.status()).toBe(401);
   });
 
+  // The team endpoint returns colleagues' names, emails and workloads, so an
+  // unauthenticated caller must get nothing at all (#177).
+  test('team endpoint requires authentication', async ({ request }) => {
+    const response = await request.get('/api/devops/team');
+    expect(response.status()).toBe(401);
+
+    const data = await response.json();
+    expect(data).toHaveProperty('error');
+    // Nothing about the team should leak alongside the error.
+    expect(data).not.toHaveProperty('members');
+    expect(data).not.toHaveProperty('stats');
+  });
+
+  test('team endpoint requires authentication whatever the filters', async ({ request }) => {
+    const response = await request.get('/api/devops/team?period=week&ticketsOnly=false');
+    expect(response.status()).toBe(401);
+  });
+
   test('email webhook requires secret header', async ({ request }) => {
     const response = await request.post('/api/email/webhook', {
       data: {

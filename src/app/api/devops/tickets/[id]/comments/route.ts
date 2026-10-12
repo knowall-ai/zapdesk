@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { AzureDevOpsService } from '@/lib/devops';
+import { AzureDevOpsService, claimsEmailOrigin } from '@/lib/devops';
 import { isEmailTicket, extractRequesterEmail, sendAgentReply } from '@/lib/email';
 import {
   MAX_WORK_ITEM_ID,
@@ -108,6 +108,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
     const isInternal = isInternalResult.data;
 
+    // The author shown against a comment is read from an email-origin marker in
+    // its own text, so a caller able to write that marker could post under
+    // somebody else's address. Only email ingest legitimately produces it, and
+    // it does not come through here.
+    if (claimsEmailOrigin(comment)) {
+      return NextResponse.json(
+        { error: 'A comment cannot begin with an email-origin marker.' },
+        { status: 400 }
+      );
+    }
+
     const organization = request.headers.get('x-devops-org') || undefined;
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
 
@@ -137,7 +148,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             try {
               const existing = await devopsService.getWorkItemComments(project.name, ticketId);
               priorHistory = existing
-                .filter((c) => !c.content.includes('[Internal Note]'))
+                // On the structured field, not the marker text. The marker is
+                // stripped when comments are read, so a text match silently
+                // stops excluding anything -- and this history is emailed to
+                // the customer.
+                .filter((c) => !c.isInternal)
                 .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
                 .map((c) => ({
                   authorName: c.author.displayName || 'Unknown',
@@ -173,6 +188,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               const subject = workItem.fields?.['System.Title'] || 'Your ticket';
               const agentName = session.user?.name || 'Support Agent';
               // Fire-and-forget — never block the response on outbound mail.
+              // Blind-copy the assigned engineer so the thread reaches the
+              // person who owns the ticket, not only the customer (#7384).
+              // DevOps stores the identity as "Display Name <email>" or a bare
+              // address depending on how it was set, so take whichever is there.
+              const assignedTo = workItem.fields?.['System.AssignedTo'];
+              const assigneeEmail =
+                typeof assignedTo === 'string'
+                  ? assignedTo
+                  : (assignedTo as { uniqueName?: string } | undefined)?.uniqueName;
+
               sendAgentReply(
                 ticketId,
                 subject,
@@ -180,7 +205,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                 agentName,
                 comment,
                 undefined,
-                priorHistory
+                priorHistory,
+                assigneeEmail
               ).catch(() => {});
             }
           }

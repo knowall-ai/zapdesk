@@ -1,57 +1,21 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
-import { useSession } from 'next-auth/react';
+import { useState, Suspense } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import NewTicketDialog from '@/components/tickets/NewTicketDialog';
-import { useOrganization } from '@/components/providers/OrganizationProvider';
-
-interface TicketCounts {
-  yourActive: number;
-  ratedLast7Days: number;
-  unassigned: number;
-  allActive: number;
-  recentlyUpdated: number;
-  createdToday: number;
-  pending: number;
-  recentlySolved: number;
-}
+import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 
 interface MainLayoutProps {
   children: React.ReactNode;
 }
 
 export default function MainLayout({ children }: MainLayoutProps) {
-  const { data: session } = useSession();
-  const { selectedOrganization } = useOrganization();
   const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
-  const [ticketCounts, setTicketCounts] = useState<TicketCounts | undefined>();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  useEffect(() => {
-    // Don't fetch until we have both session and organization
-    if (!session?.accessToken || !selectedOrganization?.accountName) return;
-
-    const fetchTicketCounts = async () => {
-      try {
-        const response = await fetch('/api/devops/ticket-counts', {
-          headers: {
-            'x-devops-org': selectedOrganization.accountName,
-          },
-        });
-        if (response.ok) {
-          const counts = await response.json();
-          setTicketCounts(counts);
-        }
-      } catch (error) {
-        console.error('Failed to fetch ticket counts:', error);
-      }
-    };
-
-    fetchTicketCounts();
-    // Use session?.accessToken instead of session to avoid refetch on tab focus
-  }, [session?.accessToken, selectedOrganization]);
+  // Fetching and invalidation live in the provider so any mutation, anywhere
+  // in the tree, can keep these numbers honest (issue #404).
+  const { counts: ticketCounts } = useTicketCounts();
 
   return (
     <div className="flex h-screen overflow-hidden">

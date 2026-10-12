@@ -12,6 +12,7 @@ import {
   validateRequiredString,
   validateOptionalString,
 } from '@/lib/devops-request-validation';
+import { debugLog } from '@/lib/debug';
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -22,6 +23,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     const { id } = await params;
+    // parseInt would have accepted "123abc" and forwarded 123 to DevOps.
+    // Work item ids are positive int32s upstream, so cap accordingly.
     if (!/^[0-9]+$/.test(id)) {
       return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
     }
@@ -55,7 +58,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     const state = stateResult.data;
 
-    const projectResult = validateOptionalString(rawProject, 'project', MAX_PROJECT_LENGTH);
+    // `project` is an optional hint that skips the cross-project scan. A blank
+    // value is treated as absent rather than rejected: callers read it off a
+    // work item whose project can legitimately be empty, and the scan below is
+    // a correct fallback for exactly that case.
+    const projectHint =
+      typeof rawProject === 'string' && rawProject.trim() === '' ? undefined : rawProject;
+    const projectResult = validateOptionalString(projectHint, 'project', MAX_PROJECT_LENGTH);
     if (!projectResult.ok) {
       return NextResponse.json({ error: projectResult.error }, { status: projectResult.status });
     }
@@ -63,6 +72,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const organization = request.headers.get('x-devops-org') || undefined;
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
+
+    debugLog('[state PATCH] incoming', {
+      ticketId,
+      state,
+      project,
+      organization,
+    });
 
     // If project is provided in the body, use it directly
     if (project) {

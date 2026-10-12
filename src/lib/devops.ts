@@ -25,6 +25,10 @@ import type {
   ClassificationNode,
 } from '@/types';
 import { parseSLAFromDescription, calculateTicketSLA, DEFAULT_SLA_LEVEL } from './sla';
+import { debugLog } from './debug';
+// Server-only module, and devops.ts is too -- no client component imports it,
+// so pulling in the Graph helpers alongside the parser costs nothing here.
+import { extractRequesterEmail } from './email';
 import {
   getMitigationFieldRef,
   getResolutionFieldRef,
@@ -164,6 +168,111 @@ function identityToUser(identity?: {
   };
 }
 
+/**
+ * Who raised this ticket.
+ *
+ * `System.CreatedBy` is the account that made the API call, which for an email
+ * ticket is whoever owns the PAT -- accurate from DevOps' point of view and
+ * useless as a requester, since every ticket the mailbox produces would name
+ * the same person.
+ *
+ * Ingest records the real sender on the work item as an `email-from:` tag, so
+ * that is preferred where it exists. A ticket raised in the UI has no such tag
+ * and falls back, where the creator genuinely is the requester.
+ *
+ * There is no DevOps identity behind a bare address, so there is no id and no
+ * avatar to fetch: the id is the address itself, which at least stays stable
+ * per person.
+ */
+function resolveRequester(
+  tags: string | undefined,
+  createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string }
+): Customer {
+  const email = extractRequesterEmail(tags ?? '');
+  // Tags are editable by anyone with work item access, so the value after
+  // `email-from:` is not trustworthy. Anything that is not an address is
+  // treated as absent rather than displayed as one -- it would otherwise
+  // become the display name and the Customer id too.
+  if (!email || !looksLikeEmail(email)) return identityToCustomer(createdBy);
+
+  return {
+    id: email,
+    displayName: displayNameFromEmail(email),
+    email,
+    timezone: 'Europe/Dublin',
+    tags: [],
+    lastUpdated: new Date(),
+  };
+}
+
+/**
+ * Deliberately permissive: exactly one `@`, something either side, no spaces.
+ *
+ * The job is rejecting a tag that plainly is not an address, not adjudicating
+ * RFC 5322. A stricter pattern would discard real addresses and send the
+ * requester back to being the PAT owner, which is the bug this exists to fix.
+ */
+function looksLikeEmail(value: string): boolean {
+  const parts = value.split('@');
+  return parts.length === 2 && parts.every((part) => part.length > 0 && !/\s/.test(part));
+}
+
+/**
+ * Who wrote a comment.
+ *
+ * A comment that arrived by email is added through the service PAT, so DevOps
+ * records the token owner. A customer's own reply therefore appeared under an
+ * engineer's name and face, directly above a line reading "Email reply from:"
+ * somebody else (#7396). The sender is named in that line, so it is used.
+ *
+ * No DevOps identity exists behind a bare address, so there is no avatar to
+ * look up -- which is the point. Showing none beats showing the wrong face.
+ */
+// Anchored at the start of the comment, where ingest writes the header. An
+// unanchored match would take the marker out of a quoted reply further down
+// the body and attribute the whole comment to whoever was quoted.
+const EMAIL_COMMENT_SENDER =
+  /^\s*(?:<[^>]+>\s*)*(?:Email reply from:|Ticket created from email by)\s*(?:<\/strong>)?\s*([^\s<]+@[^\s<]+)/i;
+
+/**
+ * Does this text claim, in the form `commentAuthor` trusts, to have arrived by
+ * email?
+ *
+ * Exported so the comment endpoint can refuse a caller who writes it. The
+ * marker decides the displayed author, so anything able to forge it can put
+ * another person's address and name on a comment. Email ingest writes it
+ * through its own path and never through that endpoint.
+ */
+export function claimsEmailOrigin(text: string): boolean {
+  return EMAIL_COMMENT_SENDER.test(text ?? '');
+}
+
+export function commentAuthor(
+  text: string,
+  createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string }
+): { id: string; displayName: string; email: string; avatarUrl?: string } {
+  const match = EMAIL_COMMENT_SENDER.exec(text ?? '');
+  if (!match) {
+    return {
+      id: createdBy.id,
+      displayName: createdBy.displayName,
+      email: createdBy.uniqueName,
+      avatarUrl: createdBy.imageUrl,
+    };
+  }
+  const email = match[1].trim();
+  return { id: email, displayName: displayNameFromEmail(email), email };
+}
+
+/** `first.last@example` -> `First Last`, for a sender we know only by address. */
+function displayNameFromEmail(email: string): string {
+  const local = email.split('@')[0];
+  return local
+    .replace(/[._-]+/g, ' ')
+    .replace(/(^|\s)\w/g, (c) => c.toUpperCase())
+    .trim();
+}
+
 // Convert DevOps identity to Customer
 // Uses avatar API as fallback when imageUrl is not provided
 function identityToCustomer(identity: {
@@ -233,7 +342,7 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     devOpsState: fields['System.State'], // Preserve original DevOps state
     workItemType: fields['System.WorkItemType'], // Azure DevOps work item type
     priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
-    requester: identityToCustomer(fields['System.CreatedBy']),
+    requester: resolveRequester(fields['System.Tags'], fields['System.CreatedBy']),
     assignee: identityToUser(fields['System.AssignedTo']),
     organization,
     tags:
@@ -284,6 +393,9 @@ export class DevOpsApiError extends Error {
   }
 }
 
+/** Ceiling on the org-level work item lookup, which callers await inline. */
+const ORG_LOOKUP_TIMEOUT_MS = 15_000;
+
 /**
  * State names that every work item type defining them treats as Removed.
  *
@@ -330,6 +442,65 @@ export function isRemovedForEveryType(
   return removedOnly;
 }
 
+/**
+ * Split the board's state names between its two WIQL queries.
+ *
+ * `closedStates` go to the query limited to the last 7 days; `openStates` go
+ * to the 90-day query. Only Completed states belong in the short window.
+ * Resolved means the work is done but not yet verified, so the item still needs
+ * attention and must stay on the board however long it sits there. It used to
+ * share the 7-day window with Closed, which made resolved items disappear
+ * (#436).
+ *
+ * As with the Removed filter, the flat map is lossy when two types use one
+ * state name in different categories. Putting a name in the 7-day window hides
+ * older items of every type that uses it, so a name goes there only when every
+ * type that defines it agrees it is Completed. When discovery was partial, an
+ * undiscovered type may use the name differently, so nothing is known to be
+ * agreed and every name goes to the 90-day query. Either way the closed items
+ * that query brings in are trimmed per item by `isOutsideClosedWindow`.
+ */
+export function partitionStandupStates(
+  stateCategories: Record<string, string>,
+  removedOnly: Set<string>,
+  categoriesByProjectType?: Record<string, Record<string, Record<string, string>>>,
+  discoveryComplete = true
+): { closedStates: string[]; openStates: string[] } {
+  const hasPerType = Object.keys(categoriesByProjectType ?? {}).length > 0;
+  if (hasPerType && !discoveryComplete) {
+    return {
+      closedStates: [],
+      openStates: Object.keys(stateCategories).filter((state) => !removedOnly.has(state)),
+    };
+  }
+
+  const categoriesSeen = new Map<string, Set<string>>();
+  for (const byType of Object.values(categoriesByProjectType ?? {})) {
+    for (const byState of Object.values(byType)) {
+      for (const [state, category] of Object.entries(byState)) {
+        (categoriesSeen.get(state) ?? categoriesSeen.set(state, new Set()).get(state)!).add(
+          category
+        );
+      }
+    }
+  }
+
+  const closedStates: string[] = [];
+  const openStates: string[] = [];
+  for (const [state, category] of Object.entries(stateCategories)) {
+    if (removedOnly.has(state)) continue;
+    const seen = categoriesSeen.get(state);
+    // A Removed category alongside Completed doesn't make the name open: the
+    // Removed items are filtered out per item anyway.
+    const isClosed =
+      seen && seen.size > 0
+        ? [...seen].every((c) => c === 'Completed' || c === 'Removed') && seen.has('Completed')
+        : category === 'Completed';
+    (isClosed ? closedStates : openStates).push(state);
+  }
+  return { closedStates, openStates };
+}
+
 /** Whether this item's state is Removed *for this item's own project and type*. */
 export function isRemovedItem(
   item: DevOpsWorkItem,
@@ -357,6 +528,55 @@ export function isRemovedItem(
   if (perType === undefined) return false;
 
   return perType === 'Removed';
+}
+
+/**
+ * Whether an item the 90-day query fetched is closed for its own type and was
+ * last changed outside the 7-day closed window `[windowStart, windowEnd)`.
+ *
+ * A state name that is Completed for one type and open for another, or whose
+ * types were not all discovered, is queried over 90 days so open items keep
+ * showing (#436). This trims the closed items of such a name back to the window
+ * the closed query would have used. An item whose type has no per-type data
+ * is kept, as `isRemovedItem` keeps one.
+ */
+export function isOutsideClosedWindow(
+  item: DevOpsWorkItem,
+  windowStart: string,
+  windowEnd: string,
+  categoriesByProjectType?: Record<string, Record<string, Record<string, string>>>
+): boolean {
+  const fields = item.fields || {};
+  const state = fields['System.State'] as string | undefined;
+  const project = fields['System.TeamProject'] as string | undefined;
+  const type = fields['System.WorkItemType'] as string | undefined;
+  const changed = fields['System.ChangedDate'] as string | undefined;
+  if (!state || !project || !type || !changed) return false;
+
+  if (categoriesByProjectType?.[project]?.[type]?.[state] !== 'Completed') return false;
+
+  const changedAt = new Date(changed).getTime();
+  return changedAt < new Date(windowStart).getTime() || changedAt >= new Date(windowEnd).getTime();
+}
+
+/**
+ * DevOps has no notion of a private comment, so an internal note is marked in
+ * the text itself. The prefix is the only record that a note was meant to stay
+ * off the customer's email -- the comments endpoint filters on it when building
+ * reply history, and reading it back is how the badge appears in the timeline.
+ *
+ * Matched at the start only, and tolerant of the leading markup DevOps wraps
+ * text in. A note quoting the phrase mid-body is not a note.
+ */
+const INTERNAL_NOTE_MARKER = /^(\s*(?:<[^>]+>\s*)*)\[Internal Note\]\s*/i;
+
+export function isInternalNote(text: string): boolean {
+  return INTERNAL_NOTE_MARKER.test(text ?? '');
+}
+
+/** Drop the marker for display; the badge says it better than the text does. */
+export function stripInternalNoteMarker(text: string): string {
+  return (text ?? '').replace(INTERNAL_NOTE_MARKER, '$1');
 }
 
 export class AzureDevOpsService {
@@ -601,6 +821,49 @@ export class AzureDevOpsService {
     return response.json();
   }
 
+  // Org-level work item fetch — works without knowing the project up front.
+  // Used by routes that mutate a single work item: cheaper and more reliable
+  // than iterating every accessible project to find which one owns it.
+  // Pass `fields` to request a minimal payload (e.g. ['System.TeamProject'])
+  // when the caller only needs a specific field; omit it for the full expansion.
+  async getWorkItemByIdOrgLevel(
+    workItemId: number,
+    fields?: string[]
+  ): Promise<DevOpsWorkItem | null> {
+    const selector =
+      fields && fields.length > 0
+        ? `fields=${fields.map(encodeURIComponent).join(',')}`
+        : `$expand=all`;
+    // The PATCH handler awaits this before it can do anything, so a request
+    // that never settles leaves the whole type change hanging. AbortSignal
+    // .timeout needs no manual clear-up, unlike a setTimeout'd controller.
+    const response = await fetch(
+      `${this.baseUrl}/_apis/wit/workitems/${workItemId}?${selector}&api-version=7.1`,
+      { headers: this.headers, signal: AbortSignal.timeout(ORG_LOOKUP_TIMEOUT_MS) }
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      // Azure DevOps usually puts the actionable reason (permission scope,
+      // invalid request, etc.) in the response body — include it so the 500s
+      // surfaced by callers aren't just bare status codes.
+      let detail = '';
+      try {
+        const body = await response.text();
+        // DevOps can answer with an HTML error page, and this message is
+        // returned to the client by the type route — take the body only when
+        // it reads like a plain message, and keep it short.
+        const text = body.replace(/\s+/g, ' ').trim();
+        if (text && !/[<>]/.test(text)) detail = `: ${text.slice(0, 200)}`;
+      } catch {
+        // ignore — body read shouldn't mask the underlying HTTP failure
+      }
+      throw new Error(
+        `Failed to fetch work item ${workItemId}: ${response.status} ${response.statusText}${detail}`
+      );
+    }
+    return response.json();
+  }
+
   // Lightweight check if a work item exists (org-level, no project needed, minimal fields)
   // Returns: 'exists' | 'not_found' | 'error'
   async workItemExists(workItemId: number): Promise<'exists' | 'not_found' | 'error'> {
@@ -617,22 +880,16 @@ export class AzureDevOpsService {
   // Unlike getWorkItem, no project name is required and tag filters do not apply,
   // so this finds any work item the user can access (Bug, Checkpoint, Feature, etc.).
   async findWorkItemById(workItemId: number): Promise<DevOpsWorkItem | null> {
-    const fields = [
+    // Same org-level lookup as getWorkItemByIdOrgLevel, so it delegates rather
+    // than keeping a second copy that drifts — this one used to throw with
+    // only statusText, losing the reason DevOps gave.
+    return this.getWorkItemByIdOrgLevel(workItemId, [
       'System.Id',
       'System.Title',
       'System.State',
       'System.WorkItemType',
       'System.TeamProject',
-    ].join(',');
-    const response = await fetch(
-      `${this.baseUrl}/_apis/wit/workitems/${workItemId}?fields=${fields}&api-version=7.0`,
-      { headers: this.headers }
-    );
-    if (response.status === 404) return null;
-    if (!response.ok) {
-      throw new Error(`Failed to fetch work item ${workItemId}: ${response.statusText}`);
-    }
-    return response.json();
+    ]);
   }
 
   // Get comments for a work item
@@ -656,15 +913,10 @@ export class AzureDevOpsService {
           createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string };
         }) => ({
           id: c.id,
-          content: c.text,
+          content: stripInternalNoteMarker(c.text),
           createdAt: new Date(c.createdDate),
-          author: {
-            id: c.createdBy.id,
-            displayName: c.createdBy.displayName,
-            email: c.createdBy.uniqueName,
-            avatarUrl: c.createdBy.imageUrl,
-          },
-          isInternal: false,
+          author: commentAuthor(c.text, c.createdBy),
+          isInternal: isInternalNote(c.text),
         })
       ) || []
     );
@@ -1353,6 +1605,8 @@ export class AzureDevOpsService {
   ): Promise<DevOpsWorkItem> {
     const patchDocument = [{ op: 'add', path: '/fields/System.State', value: state }];
 
+    debugLog('[devops.updateTicketState] PATCH', { projectName, workItemId, state });
+
     const response = await fetch(
       `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?api-version=7.0`,
       {
@@ -1378,7 +1632,22 @@ export class AzureDevOpsService {
             const parsed = JSON.parse(body) as { message?: string };
             if (parsed.message) detail = parsed.message;
           } catch {
-            detail = body.slice(0, 500);
+            // Not JSON — most likely an HTML error page from a proxy in
+            // front of DevOps. Keep the whole thing in the server log, but
+            // only hand the client a short plain-text snippet: markup
+            // carries no usable reason and can echo infrastructure detail
+            // back to every authenticated caller.
+            const excerpt = body.slice(0, 2000);
+            console.error('[devops.updateTicketState] non-JSON error body', {
+              projectName,
+              workItemId,
+              state,
+              status: response.status,
+              bodyLength: body.length,
+              body: excerpt + (body.length > excerpt.length ? '… [truncated]' : ''),
+            });
+            const text = body.replace(/\s+/g, ' ').trim();
+            if (text && !/[<>]/.test(text)) detail = text.slice(0, 200);
           }
         }
       } catch {
@@ -2623,18 +2892,18 @@ export class AzureDevOpsService {
       discoveryComplete
     );
 
-    const doneStates: string[] = [];
-    const activeStates: string[] = [];
-    for (const [state, category] of Object.entries(stateCategories)) {
-      if (removedOnly.has(state)) continue;
-      if (category === 'Resolved' || category === 'Completed') {
-        doneStates.push(state);
-      } else {
-        activeStates.push(state);
-      }
-    }
+    // Resolved states are fetched with the active ones, not in the 7-day
+    // window: a resolved item still awaits verification (#436).
+    const { closedStates: doneStates, openStates: activeStates } = partitionStandupStates(
+      stateCategories,
+      removedOnly,
+      categoriesByProjectType,
+      discoveryComplete
+    );
 
-    if (doneStates.length === 0 || activeStates.length === 0) {
+    // Either list can be empty, for example when no state name is Completed
+    // for every type. Each query runs only when it has states to match.
+    if (doneStates.length === 0 && activeStates.length === 0) {
       return { items: [] };
     }
 
@@ -2659,7 +2928,7 @@ export class AzureDevOpsService {
       'Microsoft.VSTS.Common.Priority',
     ].join(', ');
 
-    // Query 1: Items currently in a done state, moved there in the last 7 days
+    // Query 1: Items currently in a closed state and changed in the last 7 days
     const doneQuery = {
       query: `
         SELECT ${fields}
@@ -2672,7 +2941,7 @@ export class AzureDevOpsService {
       `,
     };
 
-    // Query 2: Active items (not completed), touched in last 90 days
+    // Query 2: Open items (including Resolved), touched in last 90 days
     const ninetyDaysAgo = new Date(targetDate);
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
     const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split('T')[0];
@@ -2688,41 +2957,43 @@ export class AzureDevOpsService {
       `,
     };
 
-    // Execute both WIQL queries in parallel at org level
-    const [doneResponse, activeResponse] = await Promise.all([
-      fetch(`${this.baseUrl}/_apis/wit/wiql?api-version=7.0`, {
+    // Execute the WIQL queries in parallel at org level
+    const runQuery = async (query: { query: string }, label: string): Promise<number[]> => {
+      const response = await fetch(`${this.baseUrl}/_apis/wit/wiql?api-version=7.0`, {
         method: 'POST',
         headers: this.headers,
-        body: JSON.stringify(doneQuery),
-      }),
-      fetch(`${this.baseUrl}/_apis/wit/wiql?api-version=7.0`, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify(activeQuery),
-      }),
+        body: JSON.stringify(query),
+      });
+      if (!response.ok) {
+        throw new Error(`Standup ${label} query failed: ${response.statusText}`);
+      }
+      const data = await response.json();
+      return data.workItems?.map((wi: { id: number }) => wi.id) || [];
+    };
+
+    const [doneIds, activeIds] = await Promise.all([
+      doneStates.length > 0 ? runQuery(doneQuery, 'done') : Promise.resolve([]),
+      activeStates.length > 0 ? runQuery(activeQuery, 'active') : Promise.resolve([]),
     ]);
-
-    if (!doneResponse.ok) {
-      throw new Error(`Standup done query failed: ${doneResponse.statusText}`);
-    }
-    if (!activeResponse.ok) {
-      throw new Error(`Standup active query failed: ${activeResponse.statusText}`);
-    }
-
-    const doneData = await doneResponse.json();
-    const activeData = await activeResponse.json();
 
     // Combine IDs and batch-fetch in one pass — saves a round-trip when the
     // total fits in a single 200-item batch (the common case).
-    const doneIds: number[] = doneData.workItems?.map((wi: { id: number }) => wi.id) || [];
-    const activeIds: number[] = activeData.workItems?.map((wi: { id: number }) => wi.id) || [];
     const items = await this.fetchWorkItemBatch([...doneIds, ...activeIds]);
+    const activeIdSet = new Set(activeIds);
 
     // The precise half of the Removed filter. Here each item carries its own
     // project and type, so the ambiguous state names the query let through can
-    // finally be judged correctly (#277).
+    // finally be judged correctly (#277). The same goes for closed items the
+    // 90-day query let through: they keep only the 7-day window (#436).
     return {
-      items: items.filter((item) => !isRemovedItem(item, stateCategories, categoriesByProjectType)),
+      items: items.filter(
+        (item) =>
+          !isRemovedItem(item, stateCategories, categoriesByProjectType) &&
+          !(
+            activeIdSet.has(item.id) &&
+            isOutsideClosedWindow(item, sevenDaysAgoStr, nextDayStr, categoriesByProjectType)
+          )
+      ),
     };
   }
 

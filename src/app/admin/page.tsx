@@ -18,8 +18,13 @@ import {
   Inbox,
 } from 'lucide-react';
 import { getSupportedTemplates, getTemplateConfig } from '@/config/process-templates';
+// Type-only, so the server module never reaches the client bundle. Declaring
+// a second copy here would let the two drift the moment a field is added.
+import type { MailCredentialCheck } from '@/lib/mail-credentials';
 
 interface EmailConfig {
+  /** Present only when the config was fetched with `?verify=1`. */
+  credentials?: MailCredentialCheck;
   outbound: {
     configured: boolean;
     method: string;
@@ -48,7 +53,7 @@ export default function AdminPage() {
 
   const fetchEmailConfig = useCallback(async () => {
     try {
-      const res = await fetch('/api/email/config');
+      const res = await fetch('/api/email/config?verify=1');
       if (res.ok) {
         setEmailConfig(await res.json());
       }
@@ -343,7 +348,7 @@ export default function AdminPage() {
                       Outbound (Graph API)
                     </h3>
                   </div>
-                  {emailConfig?.outbound.configured ? (
+                  {emailConfig?.outbound.configured && emailConfig?.credentials?.ok !== false ? (
                     <CheckCircle size={18} className="text-green-500" />
                   ) : (
                     <XCircle size={18} className="text-red-400" />
@@ -364,8 +369,31 @@ export default function AdminPage() {
                     </div>
                     <div className="flex items-center justify-between">
                       <span style={{ color: 'var(--text-muted)' }}>Azure AD App</span>
-                      <CheckCircle size={14} className="text-green-500" />
+                      {emailConfig.credentials?.ok === false ? (
+                        <XCircle size={14} className="text-red-400" />
+                      ) : (
+                        <CheckCircle size={14} className="text-green-500" />
+                      )}
                     </div>
+                    {emailConfig.credentials?.ok === false && (
+                      <div
+                        className="rounded-md p-3 text-xs"
+                        style={{
+                          backgroundColor: 'var(--warning-bg-hover)',
+                          color: 'var(--text-secondary)',
+                        }}
+                      >
+                        <p className="font-medium">
+                          {emailConfig.credentials.code ? `${emailConfig.credentials.code}: ` : ''}
+                          {emailConfig.credentials.message}
+                        </p>
+                        {emailConfig.credentials.hint && (
+                          <p className="mt-1" style={{ color: 'var(--text-muted)' }}>
+                            {emailConfig.credentials.hint}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <p className="text-sm" style={{ color: 'var(--text-muted)' }}>

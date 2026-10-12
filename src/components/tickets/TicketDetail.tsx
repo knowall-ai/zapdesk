@@ -20,8 +20,10 @@ import {
   Plus,
   Tag,
   Trash2,
+  Lock,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useMentionableUsers } from '@/hooks/useMentionableUsers';
 import type {
   Ticket,
   TicketComment,
@@ -34,12 +36,14 @@ import type {
 } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { ensureActiveState } from '@/types';
-import { highlightMentions } from '@/lib/mentions';
+import { sanitizeUserHtml, htmlToPlainText } from '@/lib/sanitize-html';
+import UserHtml from '@/components/common/UserHtml';
 import {
   formatFileSize,
   validateFile,
   rewriteAttachmentUrls,
   buildAttachmentProxyUrl,
+  attachmentDownloadUrl,
 } from '@/lib/attachment-utils';
 import { hasTicketTag } from '@/lib/tags';
 import StatusBadge from '../common/StatusBadge';
@@ -68,7 +72,7 @@ interface TicketDetailProps {
   comments: TicketComment[];
   history?: WorkItemUpdate[];
   historyLoading?: boolean;
-  onAddComment?: (comment: string) => Promise<void>;
+  onAddComment?: (comment: string, isInternal?: boolean) => Promise<void>;
   onStateChange?: (state: string) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
@@ -92,6 +96,14 @@ const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
   { value: 4, label: 'Low' },
 ];
 
+/**
+ * The full-page ticket view: description, fields, attachments and comments.
+ *
+ * Every field that holds Azure DevOps HTML renders through `UserHtml`. The one
+ * exception is the description editor, which is `contentEditable` and carries a
+ * `ref`, so it cannot be a component — it sets sanitised markup directly, and
+ * sanitises again on save (issue #413).
+ */
 export default function TicketDetail({
   ticket,
   comments,
@@ -121,6 +133,15 @@ export default function TicketDetail({
   const isTicket = hasTicketTag(ticket.tags);
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
   const [newComment, setNewComment] = useState('');
+
+  // Public is the default because it is the common action and matches what
+  // agents expect from Zendesk. The cost is real and worth naming rather than
+  // dressing up: an agent who means to leave an internal note and forgets to
+  // switch sends it to the customer. Defaulting to internal would trade that
+  // for a reply the customer never receives, which is quieter and arguably
+  // worse. The mitigation is making the internal state unmistakable, not
+  // pretending the trade does not exist.
+  const [isInternalNote, setIsInternalNote] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
   const [isDetailsSidebarOpen, setIsDetailsSidebarOpen] = useState(false);
@@ -209,6 +230,7 @@ export default function TicketDetail({
   // Description editing state
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [isSavingDescription, setIsSavingDescription] = useState(false);
+  const mentionNames = useMentionableUsers();
   const descriptionRef = useRef<HTMLDivElement>(null);
 
   // Tag editing state
@@ -493,7 +515,9 @@ export default function TicketDetail({
     // the read-only view, and React skips the innerHTML update when the rewrite is
     // a no-op (a description with no DevOps attachments).
     if (descriptionRef.current) {
-      descriptionRef.current.innerHTML = rewriteAttachmentUrls(ticket.description);
+      descriptionRef.current.innerHTML = sanitizeUserHtml(
+        rewriteAttachmentUrls(ticket.description)
+      );
     }
   };
 
@@ -501,7 +525,11 @@ export default function TicketDetail({
     if (!onDescriptionChange || !descriptionRef.current) return;
     setIsSavingDescription(true);
     try {
-      await onDescriptionChange(descriptionRef.current.innerHTML);
+      // Sanitise on the way out as well as on the way in. A paste into a
+      // contentEditable carries whatever markup was on the clipboard, and
+      // writing that to DevOps would make ZapDesk the injection vector for
+      // every other client reading the work item.
+      await onDescriptionChange(sanitizeUserHtml(descriptionRef.current.innerHTML));
       setIsEditingDescription(false);
     } catch (error) {
       console.error('Failed to save description:', error);
@@ -575,9 +603,7 @@ export default function TicketDetail({
   };
 
   const handleStartEditResolution = () => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = ticket.resolution || '';
-    setEditResolution(tempDiv.textContent || tempDiv.innerText || '');
+    setEditResolution(htmlToPlainText(ticket.resolution));
     setIsEditingResolution(true);
   };
 
@@ -600,9 +626,7 @@ export default function TicketDetail({
   };
 
   const handleStartEditMitigation = () => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = ticket.mitigation || '';
-    setEditMitigation(tempDiv.textContent || tempDiv.innerText || '');
+    setEditMitigation(htmlToPlainText(ticket.mitigation));
     setIsEditingMitigation(true);
   };
 
@@ -675,8 +699,9 @@ export default function TicketDetail({
 
       // Then add comment if there is one
       if (newComment.trim() && onAddComment) {
-        await onAddComment(newComment);
+        await onAddComment(newComment, isInternalNote);
         setNewComment('');
+        setIsInternalNote(false);
       }
 
       // Refresh ticket once after all uploads and comment
@@ -922,15 +947,20 @@ export default function TicketDetail({
                         }
                       : {}),
                   }}
+                  // The one place a raw sink survives: this element is
+                  // contentEditable and carries a ref, so it cannot be a
+                  // <UserHtml>. The value is sanitised the same way.
                   dangerouslySetInnerHTML={{
                     // While editing, the DOM is the source of truth for the save
                     // (handleSaveDescription reads innerHTML back), so it must hold the
                     // original DevOps URLs — otherwise an unrelated edit would persist
                     // our relative /api/devops/attachments/... proxy URLs to DevOps,
                     // where they are meaningless. Rewrite only for read-only display.
-                    __html: isEditingDescription
-                      ? ticket.description || ''
-                      : rewriteAttachmentUrls(ticket.description),
+                    __html: sanitizeUserHtml(
+                      isEditingDescription
+                        ? ticket.description || ''
+                        : rewriteAttachmentUrls(ticket.description)
+                    ),
                   }}
                 />
               ) : (
@@ -947,10 +977,10 @@ export default function TicketDetail({
                   >
                     System Info
                   </h4>
-                  <div
+                  <UserHtml
                     className="prose prose-sm prose-invert user-content max-w-none"
                     style={{ color: 'var(--text-secondary)' }}
-                    dangerouslySetInnerHTML={{ __html: rewriteAttachmentUrls(ticket.systemInfo) }}
+                    html={ticket.systemInfo}
                   />
                 </div>
               )}
@@ -965,10 +995,10 @@ export default function TicketDetail({
                 >
                   Reproduction Steps
                 </h3>
-                <div
+                <UserHtml
                   className="prose prose-sm prose-invert user-content max-w-none"
                   style={{ color: 'var(--text-secondary)' }}
-                  dangerouslySetInnerHTML={{ __html: rewriteAttachmentUrls(ticket.reproSteps) }}
+                  html={ticket.reproSteps}
                 />
               </div>
             )}
@@ -1029,10 +1059,10 @@ export default function TicketDetail({
                     autoFocus
                   />
                 ) : ticket.resolution ? (
-                  <div
+                  <UserHtml
                     className="prose prose-sm prose-invert user-content max-w-none"
                     style={{ color: 'var(--text-secondary)' }}
-                    dangerouslySetInnerHTML={{ __html: rewriteAttachmentUrls(ticket.resolution) }}
+                    html={ticket.resolution}
                   />
                 ) : (
                   <button
@@ -1160,7 +1190,7 @@ export default function TicketDetail({
                   {ticket.attachments.map((attachment) => (
                     <a
                       key={attachment.id}
-                      href={attachment.url}
+                      href={attachmentDownloadUrl(attachment)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
@@ -1229,12 +1259,12 @@ export default function TicketDetail({
                               {format(comment.createdAt, 'dd MMM yyyy, HH:mm')}
                             </span>
                           </div>
-                          <div
+                          <UserHtml
                             className="user-content text-sm"
                             style={{ color: 'var(--text-secondary)' }}
-                            dangerouslySetInnerHTML={{
-                              __html: highlightMentions(rewriteAttachmentUrls(comment.content)),
-                            }}
+                            html={comment.content}
+                            mentions
+                            mentionNames={mentionNames}
                           />
                         </div>
                       </div>
@@ -1269,21 +1299,61 @@ export default function TicketDetail({
             className="hidden"
           />
 
-          <div className="mb-3 flex items-center gap-2">
-            <label className="flex cursor-not-allowed items-center gap-2">
-              <input
-                type="checkbox"
-                checked
-                disabled
-                className="h-4 w-4 rounded accent-[var(--primary)]"
-              />
-              <span className="text-xs" style={{ color: 'var(--primary)' }}>
-                {isTicket
-                  ? 'Public reply – all comments are visible to customers in DevOps'
-                  : 'Comments are visible in DevOps'}
+          {/* Public reply vs internal note. Only a ticket can email anyone, so
+              a plain work item has nothing to choose between. */}
+          {isTicket ? (
+            <div className="mb-3">
+              <div
+                role="radiogroup"
+                aria-label="Comment visibility"
+                className="inline-flex rounded-md border p-0.5"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                {[
+                  { internal: false, label: 'Public reply', Icon: Send },
+                  { internal: true, label: 'Internal note', Icon: Lock },
+                ].map(({ internal, label, Icon }) => {
+                  const active = isInternalNote === internal;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setIsInternalNote(internal)}
+                      className="flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors"
+                      style={{
+                        backgroundColor: active
+                          ? internal
+                            ? 'var(--warning-bg-hover)'
+                            : 'var(--surface-hover)'
+                          : 'transparent',
+                        color: active
+                          ? internal
+                            ? 'var(--text-primary)'
+                            : 'var(--primary)'
+                          : 'var(--text-muted)',
+                      }}
+                    >
+                      <Icon size={13} />
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                {isInternalNote
+                  ? 'Stays on the ticket. The requester is not emailed.'
+                  : 'Visible to the requester in DevOps, and emailed if the ticket arrived by email.'}
+              </p>
+            </div>
+          ) : (
+            <div className="mb-3">
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Comments are visible in DevOps
               </span>
-            </label>
-          </div>
+            </div>
+          )}
 
           {/* Upload error */}
           {uploadError && (
@@ -1801,7 +1871,7 @@ export default function TicketDetail({
                   {ticket.attachments.map((attachment) => (
                     <a
                       key={attachment.id}
-                      href={attachment.url}
+                      href={attachmentDownloadUrl(attachment)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"

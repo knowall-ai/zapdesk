@@ -493,8 +493,11 @@ export default function WorkItemDetailSidebar({
           so "0h remaining" is stated rather than the row vanishing. */}
       {showEffortHours && (
         <div>
+          {/* The unit is named here, not left to the `h` suffix alone. The label
+              this replaced said "Hours", which stated it; renaming to Effort
+              Tracking took that away without putting it anywhere else. */}
           <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-            Hours
+            Effort Tracking (hours)
           </label>
           <div className="flex items-center gap-2">
             <Timer size={14} style={{ color: 'var(--text-muted)' }} />

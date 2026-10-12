@@ -3,22 +3,64 @@
  * All templates share a common card layout with branding.
  */
 
+/**
+ * Escape a plain-text value for interpolation into an HTML email.
+ *
+ * Everything these templates render is attacker-reachable: a ticket subject,
+ * a requester name and a customer address all arrive on an inbound email that
+ * anyone can send. Interpolated raw they inject markup into mail delivered to
+ * an agent — and back to the customer. Fields already carrying HTML (the
+ * `*Html` ones, produced by renderEmailBody) are deliberately not escaped.
+ */
+function escapeText(value: string): string {
+  const entities: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  };
+  return String(value ?? '').replace(/[&<>"']/g, (char) => entities[char]);
+}
+
 const APP_NAME = process.env.APP_NAME || 'ZapDesk';
 const APP_URL = process.env.APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000';
+// Logo URLs: env-overridable for deployments where outbound mail can't reach
+// the app server (e.g. internal-only APP_URL). Default to assets shipped under
+// public/email/ so local dev works out of the box.
+const ZAPDESK_LOGO_URL = process.env.ZAPDESK_LOGO_URL || `${APP_URL}/email/zapdesk-logo.png`;
+const KNOWALL_URL = 'https://knowall.ai';
 
-function layoutWrapper(content: string): string {
+/**
+ * The KnowAll AI logo is opt-in, and the footer falls back to a wordmark
+ * without it.
+ *
+ * There is no KnowAll logo asset in this repository — only the ZapDesk one —
+ * and a brand mark is not something to approximate. Defaulting the URL to a
+ * file that does not exist put an `<img>` into every outbound customer email
+ * pointing at nothing: a blank 120x30 gap where the asset is a transparent
+ * placeholder, and a broken-image icon if it 404s. A text wordmark is a better
+ * outcome than either.
+ *
+ * Set KNOWALL_LOGO_URL to a hosted copy of the real logo to turn the image on.
+ */
+const KNOWALL_LOGO_URL = process.env.KNOWALL_LOGO_URL || '';
+
+export function layoutWrapper(content: string): string {
   return `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
   <style>
     body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f4f5; color: #18181b; }
     .container { max-width: 600px; margin: 0 auto; padding: 24px; }
-    .card { background: #ffffff; border-radius: 8px; padding: 24px; border: 1px solid #e4e4e7; }
+    .card { background: #ffffff; border-radius: 12px; padding: 32px 24px; border: 1px solid #e4e4e7; }
     .header { text-align: center; margin-bottom: 24px; }
-    .header h1 { font-size: 20px; color: #22c55e; margin: 0; }
+    .header img { display: block; margin: 0 auto; max-width: 100%; height: auto; }
     .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
     .badge-new { background: #3b82f6; color: #fff; }
     .badge-active { background: #22c55e; color: #fff; }
@@ -28,7 +70,8 @@ function layoutWrapper(content: string): string {
     .quoted { border-left: 3px solid #d4d4d8; padding-left: 12px; margin: 16px 0; color: #71717a; }
     .footer { text-align: center; margin-top: 24px; font-size: 12px; color: #a1a1aa; }
     .footer a { color: #22c55e; text-decoration: none; }
-    .btn { display: inline-block; padding: 10px 20px; background: #22c55e; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; }
+    .footer img { display: block; margin: 8px auto 4px; max-width: 100%; height: auto; }
+    .btn { display: inline-block; padding: 12px 24px; background: #22c55e; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; line-height: 1; }
     .meta { font-size: 13px; color: #71717a; margin-bottom: 16px; }
   </style>
 </head>
@@ -36,13 +79,22 @@ function layoutWrapper(content: string): string {
   <div class="container">
     <div class="card">
       <div class="header">
-        <h1>⚡ ${APP_NAME}</h1>
+        <a href="${APP_URL}" style="text-decoration: none;">
+          <img src="${ZAPDESK_LOGO_URL}" width="240" height="60" alt="${APP_NAME}" style="border: 0;" />
+        </a>
       </div>
       ${content}
     </div>
     <div class="footer">
-      <p>Powered by <a href="${APP_URL}">${APP_NAME}</a></p>
-      <p>Please reply to this email to update your ticket.</p>
+      ${
+        KNOWALL_LOGO_URL
+          ? `<a href="${KNOWALL_URL}" style="text-decoration: none;">
+        <img src="${KNOWALL_LOGO_URL}" width="120" height="30" alt="KnowAll AI" style="border: 0;" />
+      </a>`
+          : ''
+      }
+      <p style="margin: 4px 0;">Powered by <a href="${KNOWALL_URL}">KnowAll AI</a></p>
+      <p style="margin: 4px 0;">Please reply to this email to update your ticket.</p>
     </div>
   </div>
 </body>
@@ -55,7 +107,7 @@ function statusBadge(status: string): string {
   if (lower.includes('active') || lower.includes('progress')) cls = 'badge-active';
   else if (lower.includes('resolved') || lower.includes('done')) cls = 'badge-resolved';
   else if (lower.includes('closed') || lower.includes('removed')) cls = 'badge-closed';
-  return `<span class="badge ${cls}">${status}</span>`;
+  return `<span class="badge ${cls}">${escapeText(status)}</span>`;
 }
 
 export function ticketConfirmationTemplate(opts: {
@@ -65,10 +117,10 @@ export function ticketConfirmationTemplate(opts: {
 }): string {
   const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
   return layoutWrapper(`
-    <p>Hi ${opts.requesterName || 'there'},</p>
+    <p>Hi ${escapeText(opts.requesterName || 'there')},</p>
     <div class="content">
       <p>We've received your request and created ticket <strong>#${opts.ticketId}</strong>.</p>
-      <p class="meta"><strong>Subject:</strong> ${opts.subject}</p>
+      <p class="meta"><strong>Subject:</strong> ${escapeText(opts.subject)}</p>
       <p>Our team will review your request and get back to you as soon as possible.</p>
       <p style="text-align: center; margin-top: 24px;">
         <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
@@ -97,7 +149,7 @@ function renderHistory(history: HistoryEntry[]): string {
       return `
     <div style="border-left: 3px solid #d4d4d8; padding: 8px 12px; margin: 12px 0; color: #52525b; font-size: 13px;">
       <p style="margin: 0 0 6px; color: #71717a; font-size: 12px;">
-        <strong>${h.authorName}</strong> · ${when}
+        <strong>${escapeText(h.authorName)}</strong> · ${when}
       </p>
       <div>${h.contentHtml}</div>
     </div>`;
@@ -120,7 +172,7 @@ export function agentReplyTemplate(opts: {
 }): string {
   const ticketUrl = opts.ticketUrl || `${APP_URL}/tickets/${opts.ticketId}`;
   return layoutWrapper(`
-    <p class="meta">${opts.agentName} replied to ticket <strong>#${opts.ticketId}</strong>:</p>
+    <p class="meta">${escapeText(opts.agentName)} replied to ticket <strong>#${opts.ticketId}</strong>:</p>
     <div class="content">
       ${opts.replyContent}
     </div>
@@ -128,6 +180,55 @@ export function agentReplyTemplate(opts: {
       <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
     </p>
     ${renderHistory(opts.history || [])}
+  `);
+}
+
+export function customerReplyNotificationTemplate(opts: {
+  ticketId: number;
+  ticketSubject: string;
+  customerEmail: string;
+  replyContentHtml: string;
+}): string {
+  const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
+  return layoutWrapper(`
+    <p class="meta">New customer reply on ticket <strong>#${opts.ticketId}</strong></p>
+    <p class="meta"><strong>Subject:</strong> ${escapeText(opts.ticketSubject)}</p>
+    <p class="meta"><strong>From:</strong> ${escapeText(opts.customerEmail)}</p>
+    <div class="content">
+      ${opts.replyContentHtml}
+    </div>
+    <p style="text-align: center; margin-top: 24px;">
+      <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
+    </p>
+  `);
+}
+
+/**
+ * Told an engineer a ticket is now theirs.
+ *
+ * Deliberately short. It exists to get someone's attention and give them a way
+ * in; the ticket itself is the place to read the detail, and duplicating it
+ * here only means two copies that disagree once anyone replies.
+ */
+export function assignmentNotificationTemplate(opts: {
+  ticketId: number;
+  ticketSubject: string;
+  assignedByName: string;
+  requesterEmail?: string;
+}): string {
+  const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
+  return layoutWrapper(`
+    <p class="meta">Ticket <strong>#${opts.ticketId}</strong> has been assigned to you</p>
+    <p class="meta"><strong>Subject:</strong> ${escapeText(opts.ticketSubject)}</p>
+    ${
+      opts.requesterEmail
+        ? `<p class="meta"><strong>Raised by:</strong> ${escapeText(opts.requesterEmail)}</p>`
+        : ''
+    }
+    <p class="meta"><strong>Assigned by:</strong> ${escapeText(opts.assignedByName)}</p>
+    <p style="text-align: center; margin-top: 24px;">
+      <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
+    </p>
   `);
 }
 
@@ -140,13 +241,13 @@ export function statusChangeTemplate(opts: {
 }): string {
   const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
   return layoutWrapper(`
-    <p>Hi ${opts.requesterName || 'there'},</p>
+    <p>Hi ${escapeText(opts.requesterName || 'there')},</p>
     <div class="content">
       <p>The status of your ticket <strong>#${opts.ticketId}</strong> has been updated:</p>
       <p style="text-align: center; font-size: 16px;">
         ${statusBadge(opts.oldStatus)} &rarr; ${statusBadge(opts.newStatus)}
       </p>
-      <p class="meta"><strong>Subject:</strong> ${opts.subject}</p>
+      <p class="meta"><strong>Subject:</strong> ${escapeText(opts.subject)}</p>
       <p style="text-align: center; margin-top: 24px;">
         <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
       </p>

@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     'out/**',
     'build/**',
     'next-env.d.ts',
+    // Build output of the Azure Functions project, which has its own toolchain.
+    'azure/**/dist/**',
   ]),
 ]);
 

@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { ExternalLink } from 'lucide-react';
 import type { Feature, WorkItem, WorkItemType, TicketPriority } from '@/types';
 import { WorkItemBoard, WORKITEM_COLUMNS, WorkItemDetailDialog } from '@/components/tickets';
+import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 
 // Format hours to avoid floating-point precision issues (e.g., 3.199999999 -> "3.2")
 function formatHours(value: number): string {
@@ -327,6 +328,7 @@ export default function FeatureTimechain({
     );
     return firstInProgress || features[0] || null;
   });
+  const { refresh: refreshCounts } = useTicketCounts();
   const [selectedWorkItem, setSelectedWorkItem] = useState<WorkItem | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -377,6 +379,7 @@ export default function FeatureTimechain({
       });
       if (!response.ok) throw new Error('Failed to update state');
       // Update local state so dialog and feature work items reflect the change
+      refreshCounts();
       setSelectedWorkItem((prev) => (prev ? { ...prev, state: newState } : null));
       setSelectedFeature((prev) => {
         if (!prev) return null;
@@ -388,7 +391,7 @@ export default function FeatureTimechain({
         };
       });
     },
-    [organization, epic?.project]
+    [organization, epic?.project, refreshCounts]
   );
 
   const handleBlockClick = (feature: Feature) => {

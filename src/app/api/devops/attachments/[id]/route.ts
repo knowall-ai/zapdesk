@@ -63,7 +63,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         headers: {
           'Content-Type': contentType,
           'Content-Disposition': `inline; filename="${fileName}"`,
-          'Cache-Control': 'private, max-age=3600',
+          // Not cached at all. `private` keeps bytes out of shared proxies but not
+          // out of a browser profile, so a second account signing in on the same
+          // machine could be served another's attachment without this route's
+          // session check ever running.
+          'Cache-Control': 'no-store',
           ...(contentLength > 0 && { 'Content-Length': String(contentLength) }),
         },
       });
@@ -75,7 +79,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       headers: {
         'Content-Type': contentType,
         'Content-Disposition': `inline; filename="${fileName}"`,
-        'Cache-Control': 'private, max-age=3600',
+        // Not cached at all. `private` keeps bytes out of shared proxies but not
+        // out of a browser profile, so a second account signing in on the same
+        // machine could be served another's attachment without this route's
+        // session check ever running.
+        'Cache-Control': 'no-store',
       },
     });
   } catch (error) {

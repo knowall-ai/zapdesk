@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Toaster } from 'sonner';
 import SessionProvider from '@/components/providers/SessionProvider';
 import OrganizationProvider from '@/components/providers/OrganizationProvider';
+import TicketCountsProvider from '@/components/providers/TicketCountsProvider';
 import './globals.css';
 
 const siteUrl = process.env.NEXTAUTH_URL || 'https://zapdesk.knowall.ai';
@@ -74,7 +75,9 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className="antialiased">
         <SessionProvider>
-          <OrganizationProvider>{children}</OrganizationProvider>
+          <OrganizationProvider>
+            <TicketCountsProvider>{children}</TicketCountsProvider>
+          </OrganizationProvider>
         </SessionProvider>
         <Toaster theme="dark" position="bottom-right" richColors closeButton />
       </body>
