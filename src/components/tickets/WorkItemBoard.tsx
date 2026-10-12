@@ -29,6 +29,9 @@ import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import KanbanBoard from './KanbanBoard';
 
+// The states only feed the Statuses filter, so give up rather than hang
+const STATES_FETCH_TIMEOUT_MS = 15_000;
+
 // Column configuration
 export type ColumnId =
   | 'checkbox'
@@ -467,31 +470,47 @@ export default function WorkItemBoard({
   // States the project's work item types define. The Statuses filter used to
   // list only states some loaded item happened to be in, so a state with no
   // items yet — typically Resolved — couldn't be selected at all (#278).
-  const [definedStates, setDefinedStates] = useState<string[]>([]);
+  // Without a project the route falls back to an arbitrary one, whose states
+  // may not match a cross-project list, so only fetch for a known project.
+  const statesKey = hideFilters || !project ? null : `${organization ?? ''}/${project}`;
+  const [fetchedStates, setFetchedStates] = useState<{ key: string; names: string[] } | null>(null);
+  // Keyed by project, so a failed fetch for the next project never leaves the
+  // previous project's states in the filter.
+  const definedStates = useMemo(
+    () => (fetchedStates && fetchedStates.key === statesKey ? fetchedStates.names : []),
+    [fetchedStates, statesKey]
+  );
   useEffect(() => {
-    // Without a project the route falls back to an arbitrary one, whose states
-    // may not match a cross-project list, so only fetch for a known project.
-    if (hideFilters || !project) return;
-    let cancelled = false;
+    if (!statesKey || !project) return;
+    const controller = new AbortController();
     (async () => {
       try {
         const headers: HeadersInit = {};
         if (organization) headers['x-devops-org'] = organization;
         const response = await fetch(
           `/api/devops/workitem-states?project=${encodeURIComponent(project)}`,
-          { headers }
+          {
+            headers,
+            signal: AbortSignal.any([
+              controller.signal,
+              AbortSignal.timeout(STATES_FETCH_TIMEOUT_MS),
+            ]),
+          }
         );
         if (!response.ok) return;
         const data = (await response.json()) as { allStates?: { name: string }[] };
-        if (!cancelled) setDefinedStates((data.allStates || []).map((s) => s.name));
+        if (controller.signal.aborted) return;
+        setFetchedStates({ key: statesKey, names: (data.allStates || []).map((s) => s.name) });
       } catch (error) {
+        // Aborted by cleanup: the project changed or the board unmounted
+        if (controller.signal.aborted) return;
         console.error('Failed to fetch work item states for filter:', error);
       }
     })();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [hideFilters, project, organization]);
+  }, [statesKey, project, organization]);
 
   // Get unique values for filter dropdowns
   const filterOptions = useMemo(() => {
