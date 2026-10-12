@@ -1,21 +1,24 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
 // Route-level coverage for PATCH /api/devops/tickets/[id]/state (#180). DevOps
 // is mocked at the service boundary; the real DevOpsApiError and
 // workItemToTicket are kept so error mapping and the response shape are real.
+// Only the outbound send is mocked in the email module, so the email tags are
+// read by the real helpers.
 
 const getServerSession = vi.fn();
 vi.mock('next-auth', () => ({ getServerSession: () => getServerSession() }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
 const sendStatusChangeNotification = vi.fn();
-vi.mock('@/lib/email', () => ({
-  isEmailTicket: (tags: string) => tags.includes('email'),
-  extractRequesterEmail: (tags: string) =>
-    tags.includes('email') ? 'requester@example.test' : undefined,
-  sendStatusChangeNotification: (...args: unknown[]) => sendStatusChangeNotification(...args),
-}));
+vi.mock('@/lib/email', async () => {
+  const actual = await vi.importActual<typeof import('./email')>('./email');
+  return {
+    ...actual,
+    sendStatusChangeNotification: (...args: unknown[]) => sendStatusChangeNotification(...args),
+  };
+});
 
 const getWorkItem = vi.fn();
 const getProjects = vi.fn();
@@ -48,6 +51,8 @@ const workItem = (id: number, state: string, tags = '') => ({
   },
 });
 
+const EMAIL_TAGS = 'ticket; email; email-from:requester@example.test';
+
 const patch = async (id: string, body: unknown) => {
   const { PATCH } = await import('@/app/api/devops/tickets/[id]/state/route');
   const request = new NextRequest(`https://zapdesk.test/api/devops/tickets/${id}/state`, {
@@ -72,6 +77,10 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
     );
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   describe('authorization and validation', () => {
     it('returns 401 without a session token', async () => {
       getServerSession.mockResolvedValue(null);
@@ -84,6 +93,17 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
       const { status } = await patch(id, { state: 'Resolved' });
       expect(status).toBe(400);
       expect(updateTicketState).not.toHaveBeenCalled();
+    });
+
+    // The limits themselves are valid; the lists around this test hold the
+    // first values past them (2147483648, 129 characters).
+    it('accepts the largest work item id and the longest state name', async () => {
+      const { status } = await patch('2147483647', {
+        state: 'x'.repeat(128),
+        project: 'Internal',
+      });
+      expect(status).toBe(200);
+      expect(updateTicketState).toHaveBeenCalledWith('Internal', 2147483647, 'x'.repeat(128));
     });
 
     it.each([
@@ -147,9 +167,9 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
     });
 
     it('emails the requester about a state change on an email ticket', async () => {
-      getWorkItem.mockResolvedValue(workItem(42, 'Active', 'ticket; email'));
+      getWorkItem.mockResolvedValue(workItem(42, 'Active', EMAIL_TAGS));
       updateTicketState.mockResolvedValue({
-        ...workItem(42, 'Resolved', 'ticket; email'),
+        ...workItem(42, 'Resolved', EMAIL_TAGS),
       });
 
       await patch('42', { state: 'Resolved', project: 'Internal' });

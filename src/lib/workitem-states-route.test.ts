@@ -64,6 +64,7 @@ describe('GET /api/devops/workitem-states', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('returns 401 without a session token', async () => {
@@ -89,6 +90,13 @@ describe('GET /api/devops/workitem-states', () => {
       'Closed',
       'Removed',
     ]);
+
+    // Enhancement and Issue answer 404 here, so only the URLs show they were asked for
+    const requestedTypes = calledUrls()
+      .map((url) => url.match(/workitemtypes\/([^/]+)\/states/)?.[1])
+      .filter((type): type is string => type !== undefined)
+      .map(decodeURIComponent);
+    expect(requestedTypes).toEqual(['Bug', 'Task', 'Enhancement', 'Issue']);
   });
 
   it('queries the given project in the given organization, with the user token', async () => {
