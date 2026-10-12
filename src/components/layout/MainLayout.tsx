@@ -15,6 +15,9 @@ const SIDEBAR_COLLAPSED_EVENT = 'zapdesk:sidebar-collapsed-change';
 // Fallback for when localStorage throws (private/sandboxed contexts), so the
 // toggle still works for the session.
 let sidebarCollapsedInMemory = false;
+// A write can fail while reads still work (storage full), and the stored value
+// is then stale, so reads use the in-memory one until a write succeeds again.
+let sidebarCollapsedWriteFailed = false;
 
 function subscribeSidebarCollapsed(onChange: () => void): () => void {
   window.addEventListener('storage', onChange);
@@ -26,6 +29,7 @@ function subscribeSidebarCollapsed(onChange: () => void): () => void {
 }
 
 function readSidebarCollapsed(): boolean {
+  if (sidebarCollapsedWriteFailed) return sidebarCollapsedInMemory;
   try {
     return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true';
   } catch {
@@ -37,7 +41,9 @@ function writeSidebarCollapsed(collapsed: boolean): void {
   sidebarCollapsedInMemory = collapsed;
   try {
     window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(collapsed));
+    sidebarCollapsedWriteFailed = false;
   } catch {
+    sidebarCollapsedWriteFailed = true;
     // Not persisted; the in-memory value carries it for this session
   }
   // `storage` only fires in *other* tabs, so tell this one directly.
