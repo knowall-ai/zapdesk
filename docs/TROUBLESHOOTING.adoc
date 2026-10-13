@@ -86,8 +86,8 @@
 |**The same person is listed twice, under their name and under a GitHub username**
 |Nothing links a GitHub account to an Azure DevOps user. Add the username to `GITHUB_USER_MAP` in the App Service configuration, as `{"github-username": "DevOps Display Name"}`, and restart. The name must be the person's display name in Azure DevOps. Check the server log for `[GitHub] GITHUB_USER_MAP` warnings.
 
-|**"Could not load GitHub issues from owner/repo"**
-|The token cannot read that repository. Check the repository name, that the token has read-only *Issues* access to it, and that it has not expired. The server log has the status GitHub returned: 404 means not found or no access, 401 an invalid token, 403 or 429 the rate limit.
+|**"Could not load GitHub issues from owner/repo"** (or **from owner/***)
+|For `owner/*`: the owner must be a GitHub organization, not a personal account, and the token must be allowed to read it. Otherwise: the token cannot read that repository. Check the repository name, that the token has read-only *Issues* access to it, and that it has not expired. The server log has the status GitHub returned: 404 means not found or no access, 401 an invalid token, 403 or 429 the rate limit.
 |===
 
 == Debugging Tips

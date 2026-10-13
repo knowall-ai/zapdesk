@@ -15,6 +15,11 @@ const GITHUB_TIMEOUT_MS = 15_000;
 const PAGE_SIZE = 100;
 /** Ceiling on open issues read per repository (5 requests). */
 const MAX_OPEN_PAGES = 5;
+/**
+ * Ceiling on pages read for a whole organization, open and closed alike. The
+ * pages include pull requests, which are dropped afterwards.
+ */
+const MAX_ORG_PAGES = 10;
 /** Closed issues are only needed for the "recently" views, which look back a week. */
 const CLOSED_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 /**
@@ -31,6 +36,13 @@ const LOGIN_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 
 /** `owner/repo`, with the characters GitHub allows in each half. */
 const REPO_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/;
+/** `owner/*`: every repository of a GitHub organization. */
+const ORG_WILDCARD_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/\*$/;
+
+/** True for an `owner/*` entry, which stands for a whole GitHub organization. */
+export function isOrgWildcard(entry: string): boolean {
+  return ORG_WILDCARD_PATTERN.test(entry);
+}
 
 interface GitHubUser {
   id: number;
@@ -54,6 +66,8 @@ export interface GitHubIssue {
   closed_at?: string | null;
   // Present only on pull requests, which the issues endpoint also returns
   pull_request?: unknown;
+  // Present when issues are listed for a whole organization
+  repository?: { full_name?: string | null } | null;
 }
 
 export class GitHubApiError extends Error {
@@ -69,8 +83,9 @@ export class GitHubApiError extends Error {
 /**
  * Read the project to repositories mapping from `GITHUB_PROJECT_REPOS`.
  *
- * The value is JSON: `{"Project name": ["owner/repo", "owner/other"]}`. A
- * single repository may be given as a plain string. Anything unusable is
+ * The value is JSON: `{"Project name": ["owner/repo", "owner/other"]}`. An
+ * entry of `owner/*` stands for every repository of that GitHub organization.
+ * A single entry may be given as a plain string. Anything unusable is
  * dropped with a warning rather than failing every request: one mistyped
  * repository should not take the valid ones down with it.
  */
@@ -96,11 +111,11 @@ export function parseProjectRepos(raw: string | undefined): Record<string, strin
     const valid: string[] = [];
     for (const repo of list) {
       const name = typeof repo === 'string' ? repo.trim() : '';
-      if (REPO_PATTERN.test(name)) {
+      if (REPO_PATTERN.test(name) || ORG_WILDCARD_PATTERN.test(name)) {
         if (!valid.includes(name)) valid.push(name);
       } else {
         console.warn(
-          `[GitHub] GITHUB_PROJECT_REPOS: ignoring ${JSON.stringify(repo)} for project "${project}"; expected "owner/repo".`
+          `[GitHub] GITHUB_PROJECT_REPOS: ignoring ${JSON.stringify(repo)} for project "${project}"; expected "owner/repo" or "owner/*".`
         );
       }
     }
@@ -285,8 +300,15 @@ export function gitHubIssueToTicket(
   };
 }
 
-async function fetchIssuePage(repo: string, token: string, query: string): Promise<GitHubIssue[]> {
-  const response = await fetch(`${GITHUB_API_URL}/repos/${repo}/issues?${query}`, {
+/**
+ * One page of issues. `scope` is `owner/repo` for a repository, or `owner/*`
+ * for every repository of an organization the token can read.
+ */
+async function fetchIssuePage(scope: string, token: string, query: string): Promise<GitHubIssue[]> {
+  const url = isOrgWildcard(scope)
+    ? `${GITHUB_API_URL}/orgs/${scope.slice(0, -2)}/issues?filter=all&${query}`
+    : `${GITHUB_API_URL}/repos/${scope}/issues?${query}`;
+  const response = await fetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',
@@ -302,8 +324,8 @@ async function fetchIssuePage(repo: string, token: string, query: string): Promi
     throw new GitHubApiError(
       response.status,
       rateLimited
-        ? `GitHub rate limit reached while reading ${repo}`
-        : `GitHub returned ${response.status} for ${repo}`
+        ? `GitHub rate limit reached while reading ${scope}`
+        : `GitHub returned ${response.status} for ${scope}`
     );
   }
 
@@ -341,6 +363,38 @@ export async function fetchRepoIssues(repo: string, token: string): Promise<GitH
   return issues.filter((issue) => !issue.pull_request);
 }
 
+/**
+ * Open issues in every repository of an organization, plus those closed in
+ * the last week. `wildcard` is the `owner/*` entry.
+ *
+ * One request stream for the whole organization, rather than two requests per
+ * repository: an organization can have more repositories than the token's
+ * rate limit would stand. Each issue carries the repository it belongs to.
+ */
+export async function fetchOrgIssues(wildcard: string, token: string): Promise<GitHubIssue[]> {
+  const issues: GitHubIssue[] = [];
+  const since = new Date(Date.now() - CLOSED_LOOKBACK_MS).toISOString();
+
+  for (const query of ['state=open', `state=closed&since=${encodeURIComponent(since)}`]) {
+    for (let page = 1; page <= MAX_ORG_PAGES; page++) {
+      const batch = await fetchIssuePage(
+        wildcard,
+        token,
+        `${query}&per_page=${PAGE_SIZE}&page=${page}`
+      );
+      issues.push(...batch);
+      if (batch.length < PAGE_SIZE) break;
+      if (page === MAX_ORG_PAGES) {
+        console.warn(
+          `[GitHub] ${wildcard} has more than ${MAX_ORG_PAGES * PAGE_SIZE} items (${query.split('&')[0]}); the rest are not shown.`
+        );
+      }
+    }
+  }
+
+  return issues.filter((issue) => !issue.pull_request && issue.repository?.full_name);
+}
+
 const issuesCache = new Map<string, { issues: GitHubIssue[]; timestamp: number }>();
 
 /** For tests: forget every cached repository. */
@@ -351,7 +405,9 @@ export function clearGitHubIssuesCache(): void {
 async function cachedRepoIssues(repo: string, token: string): Promise<GitHubIssue[]> {
   const cached = issuesCache.get(repo);
   if (cached && Date.now() - cached.timestamp < ISSUES_CACHE_TTL_MS) return cached.issues;
-  const issues = await fetchRepoIssues(repo, token);
+  const issues = isOrgWildcard(repo)
+    ? await fetchOrgIssues(repo, token)
+    : await fetchRepoIssues(repo, token);
   issuesCache.set(repo, { issues, timestamp: Date.now() });
   return issues;
 }
@@ -370,6 +426,10 @@ export interface GitHubTicketsResult {
  * cannot. Project names match case-insensitively. A repository mapped to more
  * than one project is listed under the first.
  *
+ * An `owner/*` entry brings in every repository of that organization, except
+ * the ones the mapping names for a project: those stay with their project, and
+ * so stay hidden from a caller who cannot see it.
+ *
  * `devOpsUsers` is only for `config.userMap`: the users whose identity a
  * mapped GitHub account takes.
  */
@@ -387,6 +447,15 @@ export async function getGitHubTickets(
   const byName = new Map(projects.map((p) => [p.name.toLowerCase(), p]));
   const targets: Array<{ repo: string; project: DevOpsProject }> = [];
   const seen = new Set<string>();
+
+  // Every repository the mapping names, whether or not the caller can see its
+  // project: a wildcard must not hand those out under another project.
+  const namedRepos = new Set(
+    Object.values(config.projectRepos)
+      .flat()
+      .filter((entry) => !isOrgWildcard(entry))
+      .map((entry) => entry.toLowerCase())
+  );
 
   for (const [projectName, repos] of Object.entries(config.projectRepos)) {
     const project = byName.get(projectName.toLowerCase());
@@ -421,8 +490,13 @@ export async function getGitHubTickets(
       createdAt: new Date(),
       updatedAt: new Date(),
     };
+    const wholeOrg = isOrgWildcard(repo);
     for (const issue of result.value) {
-      tickets.push(gitHubIssueToTicket(issue, repo, project.name, organization, people));
+      const issueRepo = wholeOrg ? issue.repository?.full_name : repo;
+      if (!issueRepo) continue;
+      const key = issueRepo.toLowerCase();
+      if (wholeOrg && (namedRepos.has(key) || seen.has(key))) continue;
+      tickets.push(gitHubIssueToTicket(issue, issueRepo, project.name, organization, people));
     }
   });
 

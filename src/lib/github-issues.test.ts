@@ -3,6 +3,7 @@ import {
   clearDevOpsUsersCache,
   clearGitHubIssuesCache,
   devOpsUsersForGitHub,
+  fetchOrgIssues,
   fetchRepoIssues,
   getGitHubTickets,
   gitHubIssueToTicket,
@@ -364,6 +365,94 @@ describe('fetching', () => {
       await expect(fetchRepoIssues('acme/portal', 'secret-token')).rejects.toMatchObject({
         status: 404,
       });
+    });
+  });
+
+  describe('a whole organization (owner/*)', () => {
+    const inRepo = (fullName: string, overrides: Partial<GitHubIssue> = {}): GitHubIssue =>
+      issue({ repository: { full_name: fullName }, ...overrides });
+
+    /** The organization answers pages of open issues, then closed ones. */
+    function gitHubOrg(open: GitHubIssue[][], closed: GitHubIssue[] = []) {
+      fetchMock.mockImplementation(async (input: string) => {
+        const url = new URL(input);
+        if (url.pathname !== '/orgs/acme/issues') return new Response('Not Found', { status: 404 });
+        if (url.searchParams.get('state') === 'closed') {
+          return Response.json(url.searchParams.get('page') === '1' ? closed : []);
+        }
+        return Response.json(open[Number(url.searchParams.get('page')) - 1] ?? []);
+      });
+    }
+
+    it('accepts owner/* in the mapping', () => {
+      expect(parseProjectRepos('{"Internal": ["acme/*", "acme/portal"]}')).toEqual({
+        Internal: ['acme/*', 'acme/portal'],
+      });
+    });
+
+    it('asks for every issue the token can see in the organization, not only its own', async () => {
+      gitHubOrg([[inRepo('acme/portal', { id: 1 })]]);
+
+      await fetchOrgIssues('acme/*', 'secret-token');
+
+      const first = calledUrls()[0];
+      expect(first.pathname).toBe('/orgs/acme/issues');
+      expect(first.searchParams.get('filter')).toBe('all');
+      expect(first.searchParams.get('state')).toBe('open');
+    });
+
+    it('returns open and recently closed issues, without pull requests', async () => {
+      gitHubOrg(
+        [
+          [
+            inRepo('acme/portal', { id: 1 }),
+            inRepo('acme/api', { id: 2, pull_request: { url: 'x' } }),
+          ],
+        ],
+        [inRepo('acme/api', { id: 3, state: 'closed' })]
+      );
+
+      const issues = await fetchOrgIssues('acme/*', 'secret-token');
+
+      expect(issues.map((i) => i.id)).toEqual([1, 3]);
+    });
+
+    it('lists each issue under the repository it belongs to', async () => {
+      gitHubOrg([[inRepo('acme/portal', { id: 1 }), inRepo('acme/api', { id: 2, number: 40 })]]);
+
+      const { tickets, failedRepos } = await getGitHubTickets([project('Internal')], 'KnowAll', {
+        token: 'secret-token',
+        projectRepos: { Internal: ['acme/*'] },
+      });
+
+      expect(failedRepos).toEqual([]);
+      expect(tickets.map((t) => t.sourceRef)).toEqual(['acme/portal#12', 'acme/api#40']);
+      expect(tickets.every((t) => t.project === 'Internal')).toBe(true);
+    });
+
+    // A repository named for a project belongs to that project alone, so the
+    // wildcard cannot show it to someone who may not see that project.
+    it('leaves out repositories the mapping names for a project the caller cannot see', async () => {
+      gitHubOrg([[inRepo('acme/portal', { id: 1 }), inRepo('Acme/Secret', { id: 2 })]]);
+
+      const { tickets } = await getGitHubTickets([project('Internal')], 'KnowAll', {
+        token: 'secret-token',
+        projectRepos: { Internal: ['acme/*'], Confidential: ['acme/secret'] },
+      });
+
+      expect(tickets.map((t) => t.sourceRef)).toEqual(['acme/portal#12']);
+    });
+
+    it('reports the organization when it cannot be read', async () => {
+      fetchMock.mockResolvedValue(new Response('Not Found', { status: 404 }));
+
+      const { tickets, failedRepos } = await getGitHubTickets([project('Internal')], 'KnowAll', {
+        token: 'secret-token',
+        projectRepos: { Internal: ['acme/*'] },
+      });
+
+      expect(tickets).toEqual([]);
+      expect(failedRepos).toEqual(['acme/*']);
     });
   });
 

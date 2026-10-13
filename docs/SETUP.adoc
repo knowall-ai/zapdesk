@@ -242,6 +242,18 @@ the GitHub repositories that belong to it:
 * Project names match without regard to case.
 * A repository is written as `owner/repo`. Anything else is ignored, with a
   warning in the server log.
+* `owner/*` stands for every repository of that GitHub organization that the
+  token can read, so repositories do not have to be listed one by one and new
+  ones appear by themselves:
++
+[source,json]
+----
+{ "Project One": ["your-org/*"] }
+----
++
+A repository that is also named for another project stays with that project
+only. Up to 1,000 open issues and pull requests are read for an organization;
+beyond that, the server log says so and the rest are not shown.
 * A user sees a repository's issues only if they can see the DevOps project it
   is mapped to, in the organization they have selected.
 
