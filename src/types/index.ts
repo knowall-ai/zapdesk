@@ -453,7 +453,9 @@ export interface TeamMember extends User {
   weeklyResolutions: number;
   /**
    * `weeklyResolutions` compared with the 7 days before, as a signed number
-   * in a string: `"+3"` or `"-2"`. Absent when the two weeks are equal.
+   * in a string: `"+3"` or `"-2"`. Absent when the two counts are equal.
+   * Both counts see only the tickets the `?days=` filter let through, so
+   * with a short period the earlier week can be incomplete.
    */
   weeklyTrend?: string;
   /**
@@ -463,8 +465,9 @@ export interface TeamMember extends User {
    */
   avgResponseTime: string;
   /**
-   * Mean time from creation to resolution of the member's resolved tickets,
-   * in the largest unit that fits: `"< 1h"`, `"5h"`, `"2d"` or `"3w"`.
+   * Mean time from creation to resolution of the member's resolved tickets
+   * that have a resolution date (`resolvedAt`); those without one are left
+   * out. Given in the largest unit that fits: `"< 1h"`, `"5h"`, `"2d"` or `"3w"`.
    * `"-"` when there is nothing to average.
    */
   avgResolutionTime: string;
