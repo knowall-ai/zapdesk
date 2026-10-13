@@ -22,6 +22,7 @@ import { useDevOpsApi } from '@/hooks';
 import { readScrollTop, sessionPositionStorage, writeScrollTop } from '@/lib/kanban-position';
 import { ticketToWorkItem } from '@/lib/devops';
 import { debugLog } from '@/lib/debug';
+import { groupsWithColumn } from '@/lib/kanban-summary';
 import { createBoardCache } from '@/lib/standup-board-cache';
 import type { StandupData, StandupColumn, StandupWorkItem, Ticket } from '@/types';
 
@@ -46,10 +47,11 @@ function cacheKey(organization: string, currentSprintOnly: boolean): string {
 }
 
 /** Build /kanban URL with the given params */
-function buildKanbanUrl(groupBy: GroupBy, sprint: boolean): string {
+function buildKanbanUrl(groupBy: GroupBy, sprint: boolean, column: string | null = null): string {
   const params = new URLSearchParams();
   if (groupBy !== 'project') params.set('groupBy', groupBy);
   if (sprint) params.set('sprint', 'true');
+  if (column) params.set('column', column);
   const qs = params.toString();
   return `/kanban${qs ? `?${qs}` : ''}`;
 }
@@ -123,6 +125,10 @@ function StandupPageContent() {
   // Derive from URL — single source of truth
   const groupBy: GroupBy = (searchParams.get('groupBy') as GroupBy) || 'project';
   const currentSprintOnly = searchParams.get('sprint') === 'true';
+  // The state the board is narrowed to by a pressed KPI tile (#320). In the URL
+  // with the other two, so the narrowed board can be linked to and survives a
+  // reload. Checked against the board's real columns below, before use.
+  const columnParam = searchParams.get('column');
 
   const [standupData, setStandupData] = useState<StandupData | null>(null);
   // The cache key of the board currently on screen, readable from inside
@@ -546,6 +552,22 @@ function StandupPageContent() {
     }));
   }, [standupData, groupBy]);
 
+  // A column name from the URL counts only if the board has that column.
+  const focusedColumn =
+    columnParam && standupData?.columns.some((c) => c.name === columnParam) ? columnParam : null;
+  const visibleGroups = useMemo(
+    () => groupsWithColumn(groups, focusedColumn),
+    [groups, focusedColumn]
+  );
+  const handleColumnClick = useCallback(
+    (columnName: string) => {
+      // Pressing the pressed tile again shows every group.
+      const next = columnName === focusedColumn ? null : columnName;
+      router.replace(buildKanbanUrl(groupBy, currentSprintOnly, next), { scroll: false });
+    },
+    [router, groupBy, currentSprintOnly, focusedColumn]
+  );
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login');
@@ -624,7 +646,7 @@ function StandupPageContent() {
               {/* Group By toggle */}
               <div className="flex rounded-md border" style={{ borderColor: 'var(--border)' }}>
                 <Link
-                  href={buildKanbanUrl('project', currentSprintOnly)}
+                  href={buildKanbanUrl('project', currentSprintOnly, columnParam)}
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'project'
@@ -637,7 +659,7 @@ function StandupPageContent() {
                   Project
                 </Link>
                 <Link
-                  href={buildKanbanUrl('person', currentSprintOnly)}
+                  href={buildKanbanUrl('person', currentSprintOnly, columnParam)}
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'person'
@@ -660,7 +682,9 @@ function StandupPageContent() {
                   type="checkbox"
                   checked={currentSprintOnly}
                   onChange={(e) =>
-                    router.replace(buildKanbanUrl(groupBy, e.target.checked), { scroll: false })
+                    router.replace(buildKanbanUrl(groupBy, e.target.checked, columnParam), {
+                      scroll: false,
+                    })
                   }
                   className="accent-[var(--primary)]"
                 />
@@ -731,14 +755,45 @@ function StandupPageContent() {
             </div>
           ) : standupData ? (
             <div className="space-y-6">
-              <StandupSummaryCards columns={standupData.columns} summary={standupData.summary} />
+              <StandupSummaryCards
+                columns={standupData.columns}
+                summary={standupData.summary}
+                activeColumn={focusedColumn}
+                onColumnClick={handleColumnClick}
+              />
 
-              {groups.length > 0 ? (
-                groups.map((group) => (
+              {focusedColumn && (
+                <div
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
+                  style={{ color: 'var(--text-secondary)' }}
+                  role="status"
+                >
+                  <span>
+                    Showing {visibleGroups.length} of {groups.length}{' '}
+                    {groupBy === 'person' ? 'people' : 'projects'}: those with {focusedColumn}{' '}
+                    items.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleColumnClick(focusedColumn)}
+                    className="underline"
+                    style={{ color: 'var(--primary)' }}
+                  >
+                    Show all
+                  </button>
+                </div>
+              )}
+
+              {visibleGroups.length > 0 ? (
+                visibleGroups.map((group) => (
                   <KanbanGroupSection
-                    key={`${groupScope}:${group.groupName}`}
+                    // The narrowed state is part of the key: a group opens
+                    // itself when the board is narrowed, and goes back to how
+                    // the user left it when the board is whole again.
+                    key={`${groupScope}:${focusedColumn ?? ''}:${group.groupName}`}
                     groupName={group.groupName}
                     positionScope={groupScope}
+                    focusedColumn={focusedColumn}
                     columns={group.columns}
                     allowedStatesByProjectType={standupData.allowedStatesByProjectType}
                     onStateChange={handleStateChange}
@@ -750,7 +805,7 @@ function StandupPageContent() {
                   className="card p-8 text-center text-sm"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  No work items found.
+                  {focusedColumn ? `No ${focusedColumn} items.` : 'No work items found.'}
                 </div>
               )}
             </div>
