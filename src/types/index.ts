@@ -408,7 +408,12 @@ export interface MonthlyCheckpointStats {
     totalTicketsOpen: number;
     avgResponseTimeHours: number;
     avgResolutionTimeHours: number;
+    /** Share of responded tickets answered inside the first-response target of `slaLevel`. */
     slaCompliancePercent: number;
+    /** The project's SLA level, which sets the target compliance is measured against. */
+    slaLevel: SLALevel;
+    /** First-response target of `slaLevel` for a Normal-priority ticket, in hours. */
+    slaResponseTargetHours: number;
   };
   trends: TicketTrendPoint[];
   tickets: Ticket[];
