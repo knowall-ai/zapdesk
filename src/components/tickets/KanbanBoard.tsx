@@ -73,6 +73,7 @@ export default function KanbanBoard({
   // Wrapped in useMemo to prevent reference changes on every render
   const sourceItems = useMemo<KanbanItem[]>(() => items || tickets || [], [items, tickets]);
   const [localItems, setLocalItems] = useState<KanbanItem[]>(sourceItems);
+  const [syncedItems, setSyncedItems] = useState(sourceItems);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [kanbanStates, setKanbanStates] = useState<WorkItemState[]>([]);
@@ -106,10 +107,15 @@ export default function KanbanBoard({
     fetchStates();
   }, [project, organization]);
 
-  // Update local items when props change
-  useEffect(() => {
+  // Adopt new items from the parent as they arrive, but not while a card is
+  // being dragged or its move is being saved: a refresh landing then put the
+  // card back in its old column mid-drag, and the drop that followed looked
+  // like "no change", with no request and no message (#366). Done during
+  // render so the board never paints the stale columns first.
+  if (syncedItems !== sourceItems && activeId === null && !isUpdating) {
+    setSyncedItems(sourceItems);
     setLocalItems(sourceItems);
-  }, [sourceItems]);
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -218,6 +224,8 @@ export default function KanbanBoard({
 
       if (!over) {
         debugLog('[Kanban DnD] drag ended with no drop target');
+        // handleDragOver may already have moved the card; put it back.
+        setLocalItems(sourceItems);
         return;
       }
 
@@ -228,6 +236,7 @@ export default function KanbanBoard({
       const originalItem = sourceItems.find((t) => t.id === activeItemId);
       if (!originalItem) {
         debugWarn('[Kanban DnD] active item not found in sourceItems', { activeItemId });
+        setLocalItems(sourceItems);
         return;
       }
 

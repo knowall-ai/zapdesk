@@ -73,6 +73,9 @@
 
 |**Sign-in redirect fails / lands back on the login page in local dev**
 |`NEXTAUTH_URL` must match the port the dev server actually binds. `bun run dev` binds **3102** (see `package.json`), and `.env.example` agrees — but an `.env` copied before that, or an Azure AD app registration still listing a 3000 callback, will bounce you back to the login page. The redirect URI has to match too: `http://localhost:3102/api/auth/callback/azure-ad`. A mismatch shows up as `AADSTS50011`.
+
+|**A card dragged on the Kanban board goes back to its old column**
+|If a message appears, it gives the reason Azure DevOps refused the move, usually a workflow rule on that work item type. A column that turns grey while you drag is one the card's type has no state for (hover it for the reason). With no message at all on a version before the fix for issue #366, a board refresh arrived during the drag: drop the card again, or turn *Live update* off while moving several cards.
 |===
 
 == Debugging Tips
