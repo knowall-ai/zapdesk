@@ -1,6 +1,6 @@
 'use client';
 
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 import { GitCommitHorizontal, Loader2 } from 'lucide-react';
 import type { WorkItemUpdate } from '@/types';
 import Avatar from '../common/Avatar';
@@ -105,9 +105,11 @@ export default function TicketHistory({ updates, loading }: TicketHistoryProps) 
                 <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
                   {update.revisedBy.displayName}
                 </span>
-                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  {format(new Date(update.revisedDate), 'dd MMM yyyy, HH:mm')}
-                </span>
+                {isValid(new Date(update.revisedDate)) && (
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {format(new Date(update.revisedDate), 'dd MMM yyyy, HH:mm')}
+                  </span>
+                )}
               </div>
 
               {isCreation && fieldEntries.length === 0 ? (
