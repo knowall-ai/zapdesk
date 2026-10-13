@@ -26,6 +26,7 @@ import type {
 } from '@/types';
 import { parseSLAFromDescription, calculateTicketSLA, DEFAULT_SLA_LEVEL } from './sla';
 import { debugLog } from './debug';
+import { historyFieldValue } from './history-values';
 // Server-only module, and devops.ts is too -- no client component imports it,
 // so pulling in the Graph helpers alongside the parser costs nothing here.
 import { extractRequesterEmail } from './email';
@@ -976,16 +977,9 @@ export class AzureDevOpsService {
           if (update.fields) {
             for (const [key, value] of Object.entries(update.fields)) {
               if (trackedFields.has(key)) {
-                const normalize = (v: unknown): string | undefined => {
-                  if (v == null) return undefined;
-                  if (typeof v === 'object' && v !== null && 'displayName' in v) {
-                    return (v as { displayName: string }).displayName;
-                  }
-                  return String(v);
-                };
                 fields[key] = {
-                  oldValue: normalize(value.oldValue),
-                  newValue: normalize(value.newValue),
+                  oldValue: historyFieldValue(key, value.oldValue),
+                  newValue: historyFieldValue(key, value.newValue),
                 };
               }
             }
