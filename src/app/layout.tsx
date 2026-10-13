@@ -3,6 +3,7 @@ import { Toaster } from 'sonner';
 import SessionProvider from '@/components/providers/SessionProvider';
 import OrganizationProvider from '@/components/providers/OrganizationProvider';
 import TicketCountsProvider from '@/components/providers/TicketCountsProvider';
+import SourceProvider from '@/components/providers/SourceProvider';
 import './globals.css';
 
 const siteUrl = process.env.NEXTAUTH_URL || 'https://zapdesk.knowall.ai';
@@ -76,7 +77,9 @@ export default function RootLayout({
       <body className="antialiased">
         <SessionProvider>
           <OrganizationProvider>
-            <TicketCountsProvider>{children}</TicketCountsProvider>
+            <SourceProvider>
+              <TicketCountsProvider>{children}</TicketCountsProvider>
+            </SourceProvider>
           </OrganizationProvider>
         </SessionProvider>
         <Toaster theme="dark" position="bottom-right" richColors closeButton />

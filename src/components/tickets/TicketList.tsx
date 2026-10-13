@@ -1,7 +1,7 @@
 'use client';
 
 import type { Ticket, WorkItem, WorkItemType } from '@/types';
-import WorkItemBoard, { TICKET_COLUMNS } from './WorkItemBoard';
+import WorkItemBoard, { TICKET_COLUMNS, TICKET_COLUMNS_WITH_SOURCE } from './WorkItemBoard';
 
 interface TicketListProps {
   tickets: Ticket[];
@@ -15,6 +15,7 @@ interface TicketListProps {
   availableTypes?: WorkItemType[];
   defaultViewMode?: 'list' | 'kanban';
   organization?: string;
+  showSource?: boolean; // Add the Source column (Azure DevOps / GitHub)
 }
 
 /**
@@ -35,6 +36,7 @@ export default function TicketList({
   availableTypes,
   defaultViewMode,
   organization,
+  showSource = false,
 }: TicketListProps) {
   // Convert Ticket[] to WorkItem[] format
   const workItems = tickets.map((ticket) => ({
@@ -56,6 +58,9 @@ export default function TicketList({
     priority: ticket.priority,
     requester: ticket.requester,
     organization: ticket.organization,
+    source: ticket.source,
+    sourceUrl: ticket.sourceUrl,
+    sourceRef: ticket.sourceRef,
   }));
 
   return (
@@ -64,7 +69,7 @@ export default function TicketList({
       title={title}
       hideFilters={hideFilters}
       hideTicketsOnlyToggle={hideTicketsOnlyToggle}
-      columns={TICKET_COLUMNS}
+      columns={showSource ? TICKET_COLUMNS_WITH_SOURCE : TICKET_COLUMNS}
       groupBy="assignee"
       availableGroupBy={['none', 'assignee']}
       availableTypes={availableTypes}

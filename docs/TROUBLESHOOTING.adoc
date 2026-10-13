@@ -76,6 +76,15 @@
 
 |**A card dragged on the Kanban board goes back to its old column**
 |If a message appears, it gives the reason Azure DevOps refused the move, usually a workflow rule on that work item type. A column that turns grey while you drag is one the card's type has no state for (hover it for the reason). With no message at all on a version before the fix for issue #366, a board refresh arrived during the drag: drop the card again, or turn *Live update* off while moving several cards.
+
+|**The Both / DevOps / GitHub toggle is missing from the header**
+|GitHub issues are not configured. Set both `GITHUB_TOKEN` and `GITHUB_PROJECT_REPOS` in the App Service configuration and restart. Check the server log for `[GitHub] GITHUB_PROJECT_REPOS` warnings: the value must be a JSON object such as `{"Project": ["owner/repo"]}`.
+
+|**The toggle is there but no GitHub issues are listed**
+|The project name in `GITHUB_PROJECT_REPOS` must match an Azure DevOps project in the selected organization that you can see (case does not matter). Only open issues and issues closed in the last seven days are listed.
+
+|**"Could not load GitHub issues from owner/repo"**
+|The token cannot read that repository. Check the repository name, that the token has read-only *Issues* access to it, and that it has not expired. The server log has the status GitHub returned: 404 means not found or no access, 401 an invalid token, 403 or 429 the rate limit.
 |===
 
 == Debugging Tips

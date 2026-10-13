@@ -11,8 +11,20 @@ import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import ZapDialog from '@/components/tickets/ZapDialog';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
+import { useSourceFilter } from '@/components/providers/SourceProvider';
 import { ticketToWorkItem } from '@/lib/devops';
 import type { Ticket, WorkItem, User, WorkItemType } from '@/types';
+
+type TicketJson = Ticket & { createdAt: string; updatedAt: string };
+
+/** Dates arrive as strings over JSON. */
+function reviveTicketDates(tickets: TicketJson[]): Ticket[] {
+  return tickets.map((t) => ({
+    ...t,
+    createdAt: new Date(t.createdAt),
+    updatedAt: new Date(t.updatedAt),
+  }));
+}
 
 const viewTitles: Record<string, string> = {
   'your-active': 'Your active tickets',
@@ -32,6 +44,7 @@ function TicketsPageContent() {
   const searchParams = useSearchParams();
   const { selectedOrganization } = useOrganization();
   const { refresh: refreshCounts } = useTicketCounts();
+  const { sourceFilter, gitHubConfigured, sourceReady } = useSourceFilter();
   const view = searchParams.get('view') || 'all-unsolved';
   const displayParam = searchParams.get('display');
   const isKanbanView = view === 'kanban';
@@ -55,55 +68,79 @@ function TicketsPageContent() {
       // For kanban view, fetch all active tickets
       const fetchView = isKanbanView ? 'all-active' : view;
       const params = new URLSearchParams({ view: fetchView });
-      const response = await fetch(`/api/devops/tickets?${params.toString()}`, {
-        headers: { 'x-devops-org': selectedOrganization.accountName },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        // Convert date strings to Date objects
-        const ticketsWithDates = data.tickets.map(
-          (t: Ticket & { createdAt: string; updatedAt: string }) => ({
-            ...t,
-            createdAt: new Date(t.createdAt),
-            updatedAt: new Date(t.updatedAt),
-          })
-        );
-        setTickets(ticketsWithDates);
+      const headers = { 'x-devops-org': selectedOrganization.accountName };
 
-        // Fetch work item types for type icons, filtered to only ticket types
-        const ticketTypeNames = new Set(
-          ticketsWithDates.map((t: Ticket) => t.workItemType).filter(Boolean)
-        );
-        const firstProject = ticketsWithDates.find((t: Ticket) => t.project)?.project;
-        if (firstProject) {
-          fetch(`/api/devops/projects/${encodeURIComponent(firstProject)}/workitemtypes`, {
-            headers: { 'x-devops-org': selectedOrganization.accountName },
-          })
-            .then((r) => (r.ok ? r.json() : null))
-            .then((d) => {
-              if (d) {
-                // Only include types that appear in ticket data (excludes User Story, Feature, etc.)
-                const types = (d.types || []).filter((t: { name: string }) =>
-                  ticketTypeNames.has(t.name)
-                );
-                setWorkItemTypes(types);
-              }
-            })
-            .catch(() => {});
+      // The two sources load side by side and fail separately: GitHub being
+      // down must not empty the DevOps list, or the other way round (#447).
+      const [devOpsResult, gitHubResult] = await Promise.allSettled([
+        sourceFilter === 'github'
+          ? null
+          : fetch(`/api/devops/tickets?${params.toString()}`, { headers }),
+        sourceFilter === 'devops'
+          ? null
+          : fetch(`/api/github/issues?${params.toString()}`, { headers }),
+      ]);
+
+      let devOpsTickets: Ticket[] = [];
+      if (devOpsResult.status === 'fulfilled' && devOpsResult.value?.ok) {
+        const data = await devOpsResult.value.json();
+        devOpsTickets = reviveTicketDates(data.tickets);
+      } else if (devOpsResult.status === 'rejected') {
+        console.error('Failed to fetch tickets:', devOpsResult.reason);
+      }
+
+      let gitHubTickets: Ticket[] = [];
+      if (gitHubResult.status === 'fulfilled' && gitHubResult.value) {
+        if (gitHubResult.value.ok) {
+          const data = await gitHubResult.value.json();
+          gitHubTickets = reviveTicketDates(data.tickets || []);
+          const failedRepos: string[] = data.failedRepos || [];
+          if (failedRepos.length > 0) {
+            toast.warning(`Could not load GitHub issues from ${failedRepos.join(', ')}`);
+          }
+        } else {
+          toast.error('Could not load GitHub issues');
         }
+      } else if (gitHubResult.status === 'rejected') {
+        console.error('Failed to fetch GitHub issues:', gitHubResult.reason);
+        toast.error('Could not load GitHub issues');
+      }
+
+      setTickets([...devOpsTickets, ...gitHubTickets]);
+
+      // Fetch work item types for type icons, filtered to only ticket types
+      const ticketTypeNames = new Set(devOpsTickets.map((t) => t.workItemType).filter(Boolean));
+      const firstProject = devOpsTickets.find((t) => t.project)?.project;
+      if (firstProject) {
+        fetch(`/api/devops/projects/${encodeURIComponent(firstProject)}/workitemtypes`, {
+          headers,
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            if (d) {
+              // Only include types that appear in ticket data (excludes User Story, Feature, etc.)
+              const types = (d.types || []).filter((t: { name: string }) =>
+                ticketTypeNames.has(t.name)
+              );
+              setWorkItemTypes(types);
+            }
+          })
+          .catch(() => {});
+      } else {
+        setWorkItemTypes([]);
       }
     } catch (error) {
       console.error('Failed to fetch tickets:', error);
     } finally {
       setLoading(false);
     }
-  }, [view, isKanbanView, selectedOrganization]);
+  }, [view, isKanbanView, selectedOrganization, sourceFilter]);
 
   useEffect(() => {
-    if (session?.accessToken) {
+    if (session?.accessToken && sourceReady) {
       fetchTickets();
     }
-  }, [session, fetchTickets]);
+  }, [session, sourceReady, fetchTickets]);
 
   const handleTicketStateChange = useCallback(
     async (ticketId: number, newState: string) => {
@@ -137,9 +174,13 @@ function TicketsPageContent() {
     (item: WorkItem) => {
       // Find the full ticket from our state
       const ticket = tickets.find((t) => t.id === item.id);
-      if (ticket) {
-        setSelectedTicket(ticket);
+      if (!ticket) return;
+      // A GitHub issue has no ZapDesk detail view; its page on GitHub is the detail.
+      if (ticket.source === 'github') {
+        if (ticket.sourceUrl) window.open(ticket.sourceUrl, '_blank', 'noopener,noreferrer');
+        return;
       }
+      setSelectedTicket(ticket);
     },
     [tickets]
   );
@@ -389,6 +430,7 @@ function TicketsPageContent() {
             hideTicketsOnlyToggle
             organization={selectedOrganization?.accountName}
             onRefresh={fetchTickets}
+            showSource={gitHubConfigured}
           />
         </div>
 

@@ -20,6 +20,7 @@ import {
 import { Avatar } from '@/components/common';
 import { useProfilePhoto, useDevOpsApi } from '@/hooks';
 import OrganizationSwitcher from './OrganizationSwitcher';
+import SourceSwitcher from './SourceSwitcher';
 
 interface SearchResult {
   type: 'ticket' | 'user' | 'organization';
@@ -260,6 +261,9 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
       {/* Right side actions */}
       <div className="ml-2 flex items-center gap-1 sm:ml-4 sm:gap-2">
+        {/* Source toggle: Azure DevOps, GitHub or both */}
+        <SourceSwitcher />
+
         {/* Organization Switcher */}
         <OrganizationSwitcher />
 

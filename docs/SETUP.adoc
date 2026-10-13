@@ -206,6 +206,77 @@ ZapDesk uses Microsoft 365 SMTP for sending emails:
 
 Create an app password in Microsoft 365 admin for the SMTP_PASSWORD.
 
+== GitHub Issues
+
+Optional. ZapDesk can show GitHub issues beside Azure DevOps work items in the
+tickets list, for projects that track work in GitHub as well as, or instead of,
+DevOps. The issues are read-only in ZapDesk: each row links to the issue on
+GitHub.
+
+=== Token
+
+Create a GitHub token the server uses to read issues, and set it as
+`GITHUB_TOKEN` in the App Service configuration.
+
+* A fine-grained personal access token is enough.
+* Repository access: only the repositories you will map.
+* Permissions: *Issues*, read-only.
+
+The token stays on the server. It is shared by every ZapDesk user, so it has
+one rate limit (5,000 requests an hour); ZapDesk reuses each repository's
+issues for a minute to stay well inside it.
+
+=== Project to repository mapping
+
+Set `GITHUB_PROJECT_REPOS` to a JSON object of Azure DevOps project name to
+the GitHub repositories that belong to it:
+
+[source,json]
+----
+{
+  "Project One": ["your-org/repo-one", "your-org/repo-two"],
+  "Project Two": ["your-org/another-repo"]
+}
+----
+
+* Project names match without regard to case.
+* A repository is written as `owner/repo`. Anything else is ignored, with a
+  warning in the server log.
+* A user sees a repository's issues only if they can see the DevOps project it
+  is mapped to, in the organization they have selected.
+
+Restart the app after changing either value.
+
+=== What appears
+
+With both values set, a *Both / DevOps / GitHub* toggle appears in the top
+right of the header, and the tickets list gains a *Source* column. With either
+value unset, neither appears.
+
+[cols="1,1"]
+|===
+|GitHub |ZapDesk
+
+|open / closed
+|Status `Open` / `Closed`
+
+|First assignee
+|Assignee
+
+|Labels
+|Tags
+
+|Author
+|Requester
+|===
+
+Open issues are listed, plus issues closed in the last seven days. Pull
+requests are left out.
+
+Not covered yet: the Kanban boards, the project page, the sidebar counts, and
+the "Your active tickets" view, which matches on email address and GitHub does
+not expose one.
+
 == Local Development
 
 . Copy `.env.example` to `.env` and fill in values

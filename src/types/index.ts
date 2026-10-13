@@ -140,9 +140,18 @@ export function ensureActiveState(states: WorkItemState[]): WorkItemState[] {
   return [activeState, ...states];
 }
 
+/** Where a ticket lives. Absent on a ticket or work item means Azure DevOps. */
+export type WorkSource = 'devops' | 'github';
+/** Which sources the header toggle shows. */
+export type SourceFilter = 'both' | WorkSource;
+
 export interface Ticket {
   id: number;
   workItemId: number;
+  source?: WorkSource;
+  // For a GitHub issue: its page on GitHub, and "owner/repo#123"
+  sourceUrl?: string;
+  sourceRef?: string;
   title: string;
   description: string;
   reproSteps?: string;
@@ -526,6 +535,9 @@ export interface WorkItem {
   resolvedReason?: string;
   // Customer's response on a Question work item (Custom.CustomerResponse)
   customerResponse?: string;
+  source?: WorkSource;
+  sourceUrl?: string;
+  sourceRef?: string;
   // Optional ticket-specific fields (populated when item is a ticket)
   requester?: Customer;
   organization?: Organization;
