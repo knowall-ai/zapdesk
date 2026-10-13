@@ -2,7 +2,15 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import {
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useCallback,
+  useRef,
+  useMemo,
+} from 'react';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { RefreshCw, FolderOpen, User, Radio } from 'lucide-react';
@@ -11,6 +19,7 @@ import { LoadingSpinner } from '@/components/common';
 import { StandupSummaryCards, KanbanGroupSection } from '@/components/standup';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import { useDevOpsApi } from '@/hooks';
+import { readScrollTop, sessionPositionStorage, writeScrollTop } from '@/lib/kanban-position';
 import { ticketToWorkItem } from '@/lib/devops';
 import { debugLog } from '@/lib/debug';
 import { createBoardCache } from '@/lib/standup-board-cache';
@@ -543,6 +552,45 @@ function StandupPageContent() {
     }
   }, [status, router]);
 
+  // Remember where the user was on the board, so opening a work item's full
+  // page and coming back lands on the same cards (#318). The open groups are
+  // remembered by each group; this is the scroll position of the board.
+  const organizationName = selectedOrganization?.accountName ?? '';
+  const groupScope = `${organizationName}:${groupBy}`;
+  const scrollScope = `${groupScope}:${currentSprintOnly ? 'sprint' : 'all'}`;
+  const boardRef = useRef<HTMLDivElement>(null);
+  // The scope whose position has been put back. The saved position is applied
+  // each time a board comes on screen (first load, or after the loading
+  // spinner replaced it); after that the user's own scrolling is the truth,
+  // and a background refresh must not move them.
+  const restoredScopeRef = useRef<string | null>(null);
+  const boardReady = !loading && !error && standupData !== null;
+
+  // A layout effect, so the position is back before the board is painted and
+  // the user never sees it jump from the top.
+  useLayoutEffect(() => {
+    if (!boardReady) {
+      restoredScopeRef.current = null;
+      return;
+    }
+    if (restoredScopeRef.current === scrollScope) return;
+    restoredScopeRef.current = scrollScope;
+    const top = readScrollTop(sessionPositionStorage(), scrollScope);
+    if (boardRef.current) boardRef.current.scrollTop = top;
+  }, [boardReady, scrollScope]);
+
+  const handleBoardScroll = useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      // Only the board's own scrolling counts. The spinner and the error
+      // screen are short, so the browser scrolls to the top when they replace
+      // the board, and saving that would throw the real position away. Nor
+      // may anything be saved before the saved position has been put back.
+      if (!boardReady || restoredScopeRef.current !== scrollScope) return;
+      writeScrollTop(sessionPositionStorage(), scrollScope, event.currentTarget.scrollTop);
+    },
+    [boardReady, scrollScope]
+  );
+
   if (status === 'loading') {
     return (
       <MainLayout>
@@ -660,7 +708,11 @@ function StandupPageContent() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto p-4 md:p-6">
+        <div
+          ref={boardRef}
+          onScroll={handleBoardScroll}
+          className="flex-1 overflow-auto p-4 md:p-6"
+        >
           {loading ? (
             <LoadingSpinner />
           ) : error ? (
@@ -684,8 +736,9 @@ function StandupPageContent() {
               {groups.length > 0 ? (
                 groups.map((group) => (
                   <KanbanGroupSection
-                    key={group.groupName}
+                    key={`${groupScope}:${group.groupName}`}
                     groupName={group.groupName}
+                    positionScope={groupScope}
                     columns={group.columns}
                     allowedStatesByProjectType={standupData.allowedStatesByProjectType}
                     onStateChange={handleStateChange}
