@@ -91,40 +91,44 @@ function TicketsPageContent() {
 
       if (!isCurrent()) return;
 
-      let devOpsTickets: Ticket[] = [];
-      if (devOpsResult.status === 'fulfilled' && devOpsResult.value) {
-        if (devOpsResult.value.ok) {
-          const data = await devOpsResult.value.json();
-          devOpsTickets = reviveTicketDates(data.tickets);
-        } else {
-          // Say so: with GitHub issues still listed, a missing DevOps half
-          // would otherwise pass for "there are none".
-          console.error('Failed to fetch tickets:', devOpsResult.value.status);
-          toast.error('Could not load tickets from Azure DevOps');
+      // Read one source's answer. A source that fails, at the request or while
+      // its body is read, is reported and counts as empty, so the tickets of
+      // the other one are still shown.
+      const readSource = async (
+        result: PromiseSettledResult<Response | null>,
+        failure: string
+      ): Promise<{ tickets: Ticket[]; failedRepos: string[] }> => {
+        const nothing = { tickets: [], failedRepos: [] };
+        // Not asked for: the source toggle left this one out
+        if (result.status === 'fulfilled' && !result.value) return nothing;
+        try {
+          if (result.status === 'rejected') throw result.reason;
+          if (!result.value?.ok) throw new Error(`HTTP ${result.value?.status}`);
+          const data = await result.value.json();
+          return {
+            tickets: reviveTicketDates(data.tickets || []),
+            failedRepos: data.failedRepos || [],
+          };
+        } catch (error) {
+          console.error(`${failure}:`, error);
+          // Say so: with the other source still listed, a missing half would
+          // otherwise pass for "there are none".
+          if (isCurrent()) toast.error(failure);
+          return nothing;
         }
-      } else if (devOpsResult.status === 'rejected') {
-        console.error('Failed to fetch tickets:', devOpsResult.reason);
-        toast.error('Could not load tickets from Azure DevOps');
-      }
+      };
 
-      let gitHubTickets: Ticket[] = [];
-      if (gitHubResult.status === 'fulfilled' && gitHubResult.value) {
-        if (gitHubResult.value.ok) {
-          const data = await gitHubResult.value.json();
-          gitHubTickets = reviveTicketDates(data.tickets || []);
-          const failedRepos: string[] = data.failedRepos || [];
-          if (failedRepos.length > 0) {
-            toast.warning(`Could not load GitHub issues from ${failedRepos.join(', ')}`);
-          }
-        } else {
-          toast.error('Could not load GitHub issues');
-        }
-      } else if (gitHubResult.status === 'rejected') {
-        console.error('Failed to fetch GitHub issues:', gitHubResult.reason);
-        toast.error('Could not load GitHub issues');
-      }
+      const [devOps, gitHub] = await Promise.all([
+        readSource(devOpsResult, 'Could not load tickets from Azure DevOps'),
+        readSource(gitHubResult, 'Could not load GitHub issues'),
+      ]);
+      const devOpsTickets = devOps.tickets;
+      const gitHubTickets = gitHub.tickets;
 
       if (!isCurrent()) return;
+      if (gitHub.failedRepos.length > 0) {
+        toast.warning(`Could not load GitHub issues from ${gitHub.failedRepos.join(', ')}`);
+      }
       setTickets([...devOpsTickets, ...gitHubTickets]);
 
       // Fetch work item types for type icons, filtered to only ticket types
