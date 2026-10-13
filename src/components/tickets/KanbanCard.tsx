@@ -3,9 +3,10 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import Link from 'next/link';
-import { Zap } from 'lucide-react';
+import { Github, Zap } from 'lucide-react';
 import Avatar from '@/components/common/Avatar';
 import PriorityIndicator from '@/components/common/PriorityIndicator';
+import { isGitHubItem } from '@/lib/github-kanban';
 import type { Ticket, WorkItem, WorkItemType } from '@/types';
 
 // KanbanCard can work with either Ticket or WorkItem
@@ -38,20 +39,31 @@ function CardContent({
   organization?: { name: string };
   onZapClick?: (item: KanbanItem) => void;
 }) {
+  const isGitHub = isGitHubItem(item);
   return (
     <>
       <div className="mb-2 flex items-start justify-between gap-2">
-        <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
-          {typeInfo?.icon ? (
-            <img src={typeInfo.icon} alt="" className="h-3.5 w-3.5" />
-          ) : typeInfo?.color ? (
-            <span
-              className="inline-block h-3 w-3 rounded-sm"
-              style={{ backgroundColor: `#${typeInfo.color}` }}
-            />
-          ) : null}
-          #{item.id}
-        </span>
+        {isGitHub ? (
+          <span
+            className="flex min-w-0 items-center gap-1 text-xs text-[var(--text-muted)]"
+            title="GitHub issue"
+          >
+            <Github size={12} className="shrink-0" />
+            <span className="truncate">{item.sourceRef ?? 'GitHub issue'}</span>
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+            {typeInfo?.icon ? (
+              <img src={typeInfo.icon} alt="" className="h-3.5 w-3.5" />
+            ) : typeInfo?.color ? (
+              <span
+                className="inline-block h-3 w-3 rounded-sm"
+                style={{ backgroundColor: `#${typeInfo.color}` }}
+              />
+            ) : null}
+            #{item.id}
+          </span>
+        )}
         <PriorityIndicator priority={item.priority} />
       </div>
 
@@ -71,7 +83,7 @@ function CardContent({
           ) : (
             <span className="text-xs text-[var(--text-muted)]">Unassigned</span>
           )}
-          {onZapClick && (
+          {onZapClick && !isGitHub && (
             <button
               type="button"
               onClick={(e) => {
@@ -150,7 +162,18 @@ export default function KanbanCard({
           : item.title
       }
     >
-      {onItemClick ? (
+      {isGitHubItem(item) ? (
+        // Read-only: the card opens the issue on GitHub (#447).
+        <a
+          href={item.sourceUrl ?? item.devOpsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block"
+          aria-label={`Open ${item.sourceRef ?? 'issue'} on GitHub`}
+        >
+          <CardContent item={item} organization={organization} />
+        </a>
+      ) : onItemClick ? (
         <button
           type="button"
           className="block w-full text-left"

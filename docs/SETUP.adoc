@@ -209,9 +209,9 @@ Create an app password in Microsoft 365 admin for the SMTP_PASSWORD.
 == GitHub Issues
 
 Optional. ZapDesk can show GitHub issues beside Azure DevOps work items in the
-tickets list, for projects that track work in GitHub as well as, or instead of,
-DevOps. The issues are read-only in ZapDesk: each row links to the issue on
-GitHub.
+tickets list and on the Kanban boards, for projects that track work in GitHub
+as well as, or instead of, DevOps. The issues are read-only in ZapDesk: each
+row or card links to the issue on GitHub.
 
 === Token
 
@@ -252,6 +252,14 @@ Restart the app after changing either value.
 With both values set, a *Both / DevOps / GitHub* toggle appears in the top
 right of the header, and the tickets list gains a *Source* column. With either
 value unset, neither appears.
+
+On the Kanban boards (the Kanban view of the tickets page, and the Kanban
+Board page) an issue is a card marked with the GitHub icon and its
+`owner/repo#number`. The columns are Azure DevOps states and an issue is only
+open or closed, so open issues sit in the first column and closed ones in
+*Closed*. An issue card cannot be dragged. On the Kanban Board page, issues
+appear under the project their repository is mapped to; grouped by person,
+they appear under the assignee's GitHub username.
 
 [cols="1,1"]
 |===

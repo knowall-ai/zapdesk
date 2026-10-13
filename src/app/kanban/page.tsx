@@ -19,11 +19,12 @@ import { LoadingSpinner } from '@/components/common';
 import { StandupSummaryCards, KanbanGroupSection } from '@/components/standup';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import { useDevOpsApi } from '@/hooks';
+import { useSourceFilter } from '@/components/providers/SourceProvider';
 import { readScrollTop, sessionPositionStorage, writeScrollTop } from '@/lib/kanban-position';
 import { ticketToWorkItem } from '@/lib/devops';
 import { debugLog } from '@/lib/debug';
 import { createBoardCache } from '@/lib/standup-board-cache';
-import type { StandupData, StandupColumn, StandupWorkItem, Ticket } from '@/types';
+import type { SourceFilter, StandupData, StandupColumn, StandupWorkItem, Ticket } from '@/types';
 
 type GroupBy = 'project' | 'person';
 
@@ -41,8 +42,8 @@ const standupCache = createBoardCache<StandupData>(STANDUP_CACHE_TTL_MS);
 const LIVE_UPDATE_INTERVAL_MS = STANDUP_CACHE_TTL_MS;
 const LIVE_UPDATE_STORAGE_KEY = 'zapdesk:kanban:liveUpdate';
 
-function cacheKey(organization: string, currentSprintOnly: boolean): string {
-  return `${organization}::${currentSprintOnly ? 'sprint' : 'all'}`;
+function cacheKey(organization: string, currentSprintOnly: boolean, sources: SourceFilter): string {
+  return `${organization}::${currentSprintOnly ? 'sprint' : 'all'}::${sources}`;
 }
 
 /** Build /kanban URL with the given params */
@@ -123,6 +124,8 @@ function StandupPageContent() {
   // Derive from URL — single source of truth
   const groupBy: GroupBy = (searchParams.get('groupBy') as GroupBy) || 'project';
   const currentSprintOnly = searchParams.get('sprint') === 'true';
+  // Azure DevOps, GitHub or both, from the header toggle (#447)
+  const { sourceFilter, sourceReady } = useSourceFilter();
 
   const [standupData, setStandupData] = useState<StandupData | null>(null);
   // The cache key of the board currently on screen, readable from inside
@@ -180,7 +183,7 @@ function StandupPageContent() {
       }
 
       const organization = selectedOrganization.accountName;
-      const key = cacheKey(organization, currentSprintOnly);
+      const key = cacheKey(organization, currentSprintOnly, sourceFilter);
       // A work item was just changed. Any request already in flight read the
       // board before that, so it must not answer for this refresh (#366).
       if (afterChange) standupCache.invalidate(organization);
@@ -219,6 +222,9 @@ function StandupPageContent() {
           if (currentSprintOnly) {
             params.set('currentSprintOnly', 'true');
           }
+          if (sourceFilter !== 'both') {
+            params.set('sources', sourceFilter);
+          }
           const queryString = params.toString();
           const url = `/api/devops/standup${queryString ? `?${queryString}` : ''}`;
           const response = await devOpsGet(url);
@@ -232,6 +238,13 @@ function StandupPageContent() {
         if (superseded || !isCurrent()) return;
         loadedKeyRef.current = key;
         setStandupData(data);
+        if (data.failedGitHubRepos?.length) {
+          // Fixed id, so a repository that keeps failing does not stack a
+          // message on every live-update tick.
+          toast.warning(`Could not load GitHub issues from ${data.failedGitHubRepos.join(', ')}`, {
+            id: 'kanban-github-failed',
+          });
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to load standup data';
         // `error` swaps the whole board out for the error screen, which is
@@ -266,14 +279,17 @@ function StandupPageContent() {
       selectedOrganization?.accountName,
       devOpsGet,
       currentSprintOnly,
+      sourceFilter,
     ]
   );
 
+  // Wait until the source toggle is known, so the board loads once with the
+  // right sources instead of DevOps first and then everything again.
   useEffect(() => {
-    if (session?.accessToken && hasOrganization) {
+    if (session?.accessToken && hasOrganization && sourceReady) {
       fetchStandupData();
     }
-  }, [session?.accessToken, hasOrganization, fetchStandupData]);
+  }, [session?.accessToken, hasOrganization, sourceReady, fetchStandupData]);
 
   // Live update: while the tab is visible, run a poll on the cache TTL
   // cadence. When the tab is hidden the interval is cleared so no timer

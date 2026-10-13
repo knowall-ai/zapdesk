@@ -583,6 +583,10 @@ export interface StandupWorkItem {
   tags: string[];
   iterationPath?: string;
   remainingWork?: number;
+  // Set for a GitHub issue shown as a read-only card (#447)
+  source?: WorkSource;
+  sourceUrl?: string;
+  sourceRef?: string;
 }
 
 /** A column definition pulled from DevOps state configuration */
@@ -620,6 +624,8 @@ export interface StandupData {
    * server decide — total discovery failure is a 500, not an omission here.
    */
   allowedStatesByProjectType?: Record<string, Record<string, string[]>>;
+  /** GitHub repositories whose issues could not be read; the board is shown without them. */
+  failedGitHubRepos?: string[];
   summary: {
     columnCounts: Record<string, number>;
     projectCount: number;

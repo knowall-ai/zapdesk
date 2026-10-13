@@ -21,6 +21,7 @@ import type { Ticket, WorkItem, WorkItemState, WorkItemType } from '@/types';
 import { ensureActiveState } from '@/types';
 import type { GroupByOption } from './WorkItemBoard';
 import { debugLog, debugWarn } from '@/lib/debug';
+import { gitHubColumnFor, isGitHubItem } from '@/lib/github-kanban';
 
 // KanbanBoard can work with either Ticket[] or WorkItem[]
 // WorkItem uses 'state' while Ticket uses 'devOpsState' for the state name
@@ -117,6 +118,17 @@ export default function KanbanBoard({
     setLocalItems(sourceItems);
   }
 
+  // The column a card sits in. For a DevOps item that is its state. A GitHub
+  // issue is only open or closed, so it is placed in the first or last column
+  // instead (#447).
+  const columnOf = useCallback(
+    (item: KanbanItem): string => {
+      const state = getItemState(item);
+      return isGitHubItem(item) ? (gitHubColumnFor(state, kanbanStates) ?? state) : state;
+    },
+    [kanbanStates]
+  );
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -143,7 +155,7 @@ export default function KanbanBoard({
 
     // Group items by their state
     localItems.forEach((item) => {
-      const state = getItemState(item);
+      const state = columnOf(item);
       if (grouped[state]) {
         grouped[state].push(item);
       } else {
@@ -167,7 +179,7 @@ export default function KanbanBoard({
     }
 
     return { itemsByState: grouped, itemsWithUnrecognizedState: unrecognizedItemIds };
-  }, [localItems, kanbanStates]);
+  }, [localItems, kanbanStates, columnOf]);
 
   const activeItem = useMemo(() => {
     if (!activeId) return null;
@@ -203,7 +215,7 @@ export default function KanbanBoard({
         // We're over another item - find its state
         const overItem = localItems.find((t) => t.id === Number(overId));
         if (overItem) {
-          targetState = getItemState(overItem);
+          targetState = columnOf(overItem);
         }
       }
 
@@ -214,7 +226,7 @@ export default function KanbanBoard({
         );
       }
     },
-    [localItems, stateNames]
+    [localItems, stateNames, columnOf]
   );
 
   const handleDragEnd = useCallback(
@@ -248,7 +260,7 @@ export default function KanbanBoard({
       } else {
         const overItem = localItems.find((t) => t.id === Number(overId));
         if (overItem) {
-          targetState = getItemState(overItem);
+          targetState = columnOf(overItem);
         }
       }
 
@@ -307,7 +319,7 @@ export default function KanbanBoard({
         debugWarn('[Kanban DnD] no onTicketStateChange handler wired — change will not persist');
       }
     },
-    [sourceItems, localItems, onTicketStateChange, stateNames]
+    [sourceItems, localItems, onTicketStateChange, stateNames, columnOf]
   );
 
   const handleDragCancel = useCallback(() => {
@@ -323,7 +335,7 @@ export default function KanbanBoard({
         grouped[state.name] = [];
       });
       groupItems.forEach((item) => {
-        const state = getItemState(item);
+        const state = columnOf(item);
         if (grouped[state]) {
           grouped[state].push(item);
         } else {
@@ -335,7 +347,7 @@ export default function KanbanBoard({
       });
       return grouped;
     },
-    [kanbanStates]
+    [kanbanStates, columnOf]
   );
 
   if (isLoadingStates) {

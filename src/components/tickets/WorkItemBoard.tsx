@@ -763,14 +763,6 @@ export default function WorkItemBoard({
     return map;
   }, [availableTypes]);
 
-  // The Kanban columns are DevOps states and a drop writes to DevOps, so the
-  // board shows DevOps items only for now.
-  const kanbanItems = useMemo(
-    () => filteredItems.filter((item) => !isGitHubItem(item)),
-    [filteredItems]
-  );
-  const gitHubItemsHiddenFromKanban = filteredItems.length - kanbanItems.length;
-
   const toggleFilter = useCallback((key: keyof Filters, value: string) => {
     setFilters((prev) => {
       const current = prev[key];
@@ -1032,14 +1024,8 @@ export default function WorkItemBoard({
       {/* Kanban View */}
       {viewMode === 'kanban' && (
         <div className="flex-1 overflow-auto" style={maxHeight ? { maxHeight } : {}}>
-          {gitHubItemsHiddenFromKanban > 0 && (
-            <p className="px-6 pt-3 text-sm" style={{ color: 'var(--text-muted)' }}>
-              {gitHubItemsHiddenFromKanban} GitHub issue{plural(gitHubItemsHiddenFromKanban)} not
-              shown. The Kanban board shows Azure DevOps items; switch to List to see GitHub issues.
-            </p>
-          )}
           <KanbanBoard
-            items={kanbanItems}
+            items={filteredItems}
             readOnly={readOnlyKanban}
             onTicketStateChange={onStatusChange}
             groupBy={groupBy}
