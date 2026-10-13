@@ -419,10 +419,11 @@ export default function KanbanGroupSection({
                 key={count.name}
                 className="flex items-center gap-1 text-xs font-medium"
                 style={{ color: getColumnColor(count.name, count.category) }}
-                title={`${count.name}: ${count.count}`}
               >
                 {getColumnIcon(count.name, count.category, 12)}
-                <span className="sr-only">{count.name}:</span>
+                {/* The name is written out: Resolved and Closed share an icon,
+                    and a tooltip is no help on a touch screen. */}
+                <span style={{ color: 'var(--text-muted)' }}>{count.name}</span>
                 <span style={{ color: 'var(--text-secondary)' }}>{count.count}</span>
               </span>
             ))}
