@@ -416,26 +416,80 @@ export interface MonthlyCheckpointStats {
 
 export type TicketType = 'Bug' | 'Feature';
 
-// Team member with performance metrics
+/**
+ * Where a team member sits against the workload thresholds.
+ *
+ * Worked out by `calculateMemberStatus` in `src/lib/team-metrics.ts` from
+ * `pendingTickets` and `ticketsAssigned`. A member is in the most serious
+ * band either count puts them in:
+ *
+ * - `Needs Attention`: more than 5 pending, or more than 15 assigned.
+ * - `Behind`: more than 2 pending, or more than 10 assigned.
+ * - `On Track`: anything else.
+ *
+ * "More than" is strict, so a member exactly on a threshold is in the calmer
+ * band. The numbers are defaults; each can be changed per deployment with the
+ * `TEAM_THRESHOLD_*` environment variables.
+ */
 export type TeamMemberStatus = 'On Track' | 'Behind' | 'Needs Attention';
 
+/**
+ * A team member with their ticket workload, as returned by `/api/devops/team`.
+ *
+ * Only users whose email is on the signed-in user's own domain are included.
+ * The counts cover tickets created or updated in the period the caller asked
+ * for (`?days=`), or all tickets when none is given.
+ */
 export interface TeamMember extends User {
+  /** Free-text description of what the person does, for display. Not a permission role. */
   role?: string;
+  /** Workload band. See `TeamMemberStatus` for the thresholds. */
   status: TeamMemberStatus;
+  /** Unsolved tickets assigned to the member: status New, Open, In Progress or Pending. */
   ticketsAssigned: number;
+  /** Tickets assigned to the member that are Resolved or Closed. */
   ticketsResolved: number;
+  /** Of `ticketsResolved`, those resolved in the last 7 days. */
   weeklyResolutions: number;
-  weeklyTrend?: string; // "+N" or "-N" compared to previous week
+  /**
+   * `weeklyResolutions` compared with the 7 days before, as a signed number
+   * in a string: `"+3"` or `"-2"`. Absent when the two weeks are equal.
+   */
+  weeklyTrend?: string;
+  /**
+   * An estimate from workload, not a measurement: `"< 2 hours"`,
+   * `"2-4 hours"` or `"> 4 hours"`, by how many tickets are assigned.
+   * ZapDesk does not record first-response times yet (#179).
+   */
   avgResponseTime: string;
+  /**
+   * Mean time from creation to resolution of the member's resolved tickets,
+   * in the largest unit that fits: `"< 1h"`, `"5h"`, `"2d"` or `"3w"`.
+   * `"-"` when there is nothing to average.
+   */
   avgResolutionTime: string;
+  /** Of `ticketsAssigned`, those with status Pending. */
   pendingTickets: number;
 }
 
-// Team summary statistics
+/**
+ * Totals for the whole team, as returned by `/api/devops/team`.
+ *
+ * The ticket counts are taken over every ticket, whatever period the member
+ * figures were asked for.
+ */
 export interface TeamStats {
+  /** Number of team members listed. */
   totalMembers: number;
+  /** Tickets with status New or Open. */
   openTickets: number;
+  /** Tickets with status In Progress. */
   inProgressTickets: number;
+  /**
+   * Tickets the team should look at: New or Open with no assignee, or Open,
+   * In Progress or Pending and not updated for 3 days. This counts tickets;
+   * it is not the number of members whose status is `Needs Attention`.
+   */
   needsAttention: number;
 }
 
