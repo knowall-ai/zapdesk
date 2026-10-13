@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState, Suspense, useCallback } from 'react';
+import { useEffect, useRef, useState, Suspense, useCallback } from 'react';
 import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
@@ -61,8 +61,16 @@ function TicketsPageContent() {
     }
   }, [status, router]);
 
+  // Monotonic request id. Change the view, the organization or the source
+  // toggle while a load is in flight and the old one can still answer last;
+  // without this it would put its tickets under the newer selection.
+  const fetchSeqRef = useRef(0);
+
   const fetchTickets = useCallback(async () => {
     if (!selectedOrganization) return;
+    const mySeq = ++fetchSeqRef.current;
+    /** False once a later load has started; nothing from this one may show then. */
+    const isCurrent = () => mySeq === fetchSeqRef.current;
     setLoading(true);
     try {
       // For kanban view, fetch all active tickets
@@ -81,12 +89,22 @@ function TicketsPageContent() {
           : fetch(`/api/github/issues?${params.toString()}`, { headers }),
       ]);
 
+      if (!isCurrent()) return;
+
       let devOpsTickets: Ticket[] = [];
-      if (devOpsResult.status === 'fulfilled' && devOpsResult.value?.ok) {
-        const data = await devOpsResult.value.json();
-        devOpsTickets = reviveTicketDates(data.tickets);
+      if (devOpsResult.status === 'fulfilled' && devOpsResult.value) {
+        if (devOpsResult.value.ok) {
+          const data = await devOpsResult.value.json();
+          devOpsTickets = reviveTicketDates(data.tickets);
+        } else {
+          // Say so: with GitHub issues still listed, a missing DevOps half
+          // would otherwise pass for "there are none".
+          console.error('Failed to fetch tickets:', devOpsResult.value.status);
+          toast.error('Could not load tickets from Azure DevOps');
+        }
       } else if (devOpsResult.status === 'rejected') {
         console.error('Failed to fetch tickets:', devOpsResult.reason);
+        toast.error('Could not load tickets from Azure DevOps');
       }
 
       let gitHubTickets: Ticket[] = [];
@@ -106,6 +124,7 @@ function TicketsPageContent() {
         toast.error('Could not load GitHub issues');
       }
 
+      if (!isCurrent()) return;
       setTickets([...devOpsTickets, ...gitHubTickets]);
 
       // Fetch work item types for type icons, filtered to only ticket types
@@ -117,7 +136,7 @@ function TicketsPageContent() {
         })
           .then((r) => (r.ok ? r.json() : null))
           .then((d) => {
-            if (d) {
+            if (d && isCurrent()) {
               // Only include types that appear in ticket data (excludes User Story, Feature, etc.)
               const types = (d.types || []).filter((t: { name: string }) =>
                 ticketTypeNames.has(t.name)
@@ -132,7 +151,8 @@ function TicketsPageContent() {
     } catch (error) {
       console.error('Failed to fetch tickets:', error);
     } finally {
-      setLoading(false);
+      // A superseded load must not clear the spinner the current one set.
+      if (isCurrent()) setLoading(false);
     }
   }, [view, isKanbanView, selectedOrganization, sourceFilter]);
 

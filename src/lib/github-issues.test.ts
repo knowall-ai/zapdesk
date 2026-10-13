@@ -368,6 +368,27 @@ describe('fetching', () => {
     });
   });
 
+  describe('recently closed issues of a busy repository', () => {
+    it('reads past the first page', async () => {
+      const firstPage = Array.from({ length: 100 }, (_, i) =>
+        issue({ id: i + 1, state: 'closed' })
+      );
+      fetchMock.mockImplementation(async (input: string) => {
+        const url = new URL(input);
+        if (url.searchParams.get('state') !== 'closed') return Response.json([]);
+        const page = url.searchParams.get('page');
+        if (page === '1') return Response.json(firstPage);
+        if (page === '2') return Response.json([issue({ id: 500, state: 'closed' })]);
+        return Response.json([]);
+      });
+
+      const issues = await fetchRepoIssues('acme/portal', 'secret-token');
+
+      expect(issues).toHaveLength(101);
+      expect(issues[100].id).toBe(500);
+    });
+  });
+
   describe('a whole organization (owner/*)', () => {
     const inRepo = (fullName: string, overrides: Partial<GitHubIssue> = {}): GitHubIssue =>
       issue({ repository: { full_name: fullName }, ...overrides });

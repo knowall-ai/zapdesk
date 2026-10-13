@@ -296,7 +296,9 @@ On the Kanban boards (the Kanban view of the tickets page, and the Kanban
 Board page) an issue is a card marked with the GitHub icon and its
 `owner/repo#number`. The columns are Azure DevOps states and an issue is only
 open or closed, so open issues sit in the first column and closed ones in
-*Closed*. An issue card cannot be dragged. On the Kanban Board page, issues
+*Closed*. The Kanban view of the tickets page shows active items only, so
+closed issues appear on the Kanban Board page alone. An issue card cannot be
+dragged. On the Kanban Board page, issues
 appear under the project their repository is mapped to; grouped by person,
 they appear under the assignee's DevOps name when `GITHUB_USER_MAP` has their
 username, and under the GitHub username otherwise.
@@ -318,12 +320,14 @@ username, and under the GitHub username otherwise.
 |Requester
 |===
 
-Open issues are listed, plus issues closed in the last seven days. Pull
-requests are left out.
+Open issues are listed, plus closed issues updated in the last seven days,
+the same window the Kanban Board uses for closed work items. Pull requests are
+left out.
 
-Not covered yet: the Kanban boards, the project page, the sidebar counts, and
-the "Your active tickets" view, which matches on email address and GitHub does
-not expose one.
+Not covered yet: the project page and the sidebar counts. The *Your active
+tickets* view matches on email address, which GitHub does not expose, so it
+lists a person's GitHub issues only when `GITHUB_USER_MAP` has their username
+and ZapDesk can read the organization's user list.
 
 == Local Development
 

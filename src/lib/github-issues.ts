@@ -20,7 +20,12 @@ const MAX_OPEN_PAGES = 5;
  * pages include pull requests, which are dropped afterwards.
  */
 const MAX_ORG_PAGES = 10;
-/** Closed issues are only needed for the "recently" views, which look back a week. */
+/**
+ * Closed issues are only needed for the "recently" views and the boards'
+ * Closed column, which look back a week. The week is counted from the issue's
+ * last update, not from when it was closed, as it is for DevOps items: the
+ * Kanban Board shows closed work items changed in the last seven days.
+ */
 const CLOSED_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 /**
  * How long a repository's issues are reused. The token's rate limit is shared
@@ -334,7 +339,7 @@ async function fetchIssuePage(scope: string, token: string, query: string): Prom
 }
 
 /**
- * Open issues in a repository, plus those closed in the last week.
+ * Open issues in a repository, plus closed ones updated in the last week.
  *
  * Pull requests are dropped: GitHub's issues endpoint returns them too.
  */
@@ -352,20 +357,27 @@ export async function fetchRepoIssues(repo: string, token: string): Promise<GitH
   }
 
   const since = new Date(Date.now() - CLOSED_LOOKBACK_MS).toISOString();
-  issues.push(
-    ...(await fetchIssuePage(
+  for (let page = 1; page <= MAX_OPEN_PAGES; page++) {
+    const batch = await fetchIssuePage(
       repo,
       token,
-      `state=closed&since=${encodeURIComponent(since)}&per_page=${PAGE_SIZE}`
-    ))
-  );
+      `state=closed&since=${encodeURIComponent(since)}&per_page=${PAGE_SIZE}&page=${page}`
+    );
+    issues.push(...batch);
+    if (batch.length < PAGE_SIZE) break;
+    if (page === MAX_OPEN_PAGES) {
+      console.warn(
+        `[GitHub] ${repo} has more than ${MAX_OPEN_PAGES * PAGE_SIZE} recently closed items; the rest are not shown.`
+      );
+    }
+  }
 
   return issues.filter((issue) => !issue.pull_request);
 }
 
 /**
- * Open issues in every repository of an organization, plus those closed in
- * the last week. `wildcard` is the `owner/*` entry.
+ * Open issues in every repository of an organization, plus closed ones
+ * updated in the last week. `wildcard` is the `owner/*` entry.
  *
  * One request stream for the whole organization, rather than two requests per
  * repository: an organization can have more repositories than the token's
