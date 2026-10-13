@@ -27,6 +27,11 @@ import {
 } from '@/lib/kanban-columns';
 import type { StandupColumn, StandupWorkItem } from '@/types';
 import { debugLog, debugWarn } from '@/lib/debug';
+import {
+  readExpandedGroups,
+  sessionPositionStorage,
+  writeGroupExpanded,
+} from '@/lib/kanban-position';
 
 // The Closed column only shows items changed in the last 7 days; this hint
 // explains the cutoff so users don't think older items have vanished. Resolved
@@ -110,6 +115,12 @@ function DroppableColumn({
 
 interface KanbanGroupSectionProps {
   groupName: string;
+  /**
+   * Names the view this group belongs to (organization and grouping). When
+   * given, whether the group is open is remembered for the browser session,
+   * so coming back from a work item finds it as it was left (#318).
+   */
+  positionScope?: string;
   columns: StandupColumn[];
   /** Project -> work item type -> states that type defines there. Omit to allow every drop. */
   allowedStatesByProjectType?: AllowedStates;
@@ -119,6 +130,7 @@ interface KanbanGroupSectionProps {
 
 export default function KanbanGroupSection({
   groupName,
+  positionScope,
   columns,
   allowedStatesByProjectType,
   onStateChange,
@@ -127,7 +139,18 @@ export default function KanbanGroupSection({
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
   const totalItems = useMemo(() => columns.reduce((sum, c) => sum + c.items.length, 0), [columns]);
 
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(
+    () =>
+      positionScope !== undefined &&
+      readExpandedGroups(sessionPositionStorage(), positionScope).includes(groupName)
+  );
+  const toggleExpanded = () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (positionScope !== undefined) {
+      writeGroupExpanded(sessionPositionStorage(), positionScope, groupName, next);
+    }
+  };
   const [activeId, setActiveId] = useState<number | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -353,7 +376,7 @@ export default function KanbanGroupSection({
     <div className="card overflow-hidden">
       {/* Header */}
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={toggleExpanded}
         className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-white/5"
       >
         <span style={{ color: 'var(--text-muted)' }}>
