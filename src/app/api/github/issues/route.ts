@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
-import { gitHubIssuesConfig, getGitHubTickets } from '@/lib/github-issues';
+import { devOpsUsersForGitHub, gitHubIssuesConfig, getGitHubTickets } from '@/lib/github-issues';
 import { filterTicketsByView } from '@/lib/ticket-views';
 
 /**
@@ -41,7 +41,17 @@ export async function GET(request: NextRequest) {
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
     const projects = await devopsService.getProjects();
-    const { tickets, failedRepos } = await getGitHubTickets(projects, organization, config);
+    // Only needed to show mapped GitHub accounts as their DevOps user
+    const devOpsUsers =
+      Object.keys(config.userMap).length > 0
+        ? await devOpsUsersForGitHub(organization, () => devopsService.getOrganizationUsers())
+        : [];
+    const { tickets, failedRepos } = await getGitHubTickets(
+      projects,
+      organization,
+      config,
+      devOpsUsers
+    );
 
     const view = request.nextUrl.searchParams.get('view') || 'all-unsolved';
     // GitHub has no Removed state, and the shared filter returns everything for

@@ -247,6 +247,33 @@ the GitHub repositories that belong to it:
 
 Restart the app after changing either value.
 
+=== GitHub username to DevOps user mapping
+
+Optional. Nothing links a GitHub account to an Azure DevOps user, so without
+this a person appears twice: under their DevOps name and under their GitHub
+username. Set `GITHUB_USER_MAP` to a JSON object of GitHub username to the
+person's DevOps display name:
+
+[source,json]
+----
+{
+  "github-username": "DevOps Display Name",
+  "another-username": "Another Person"
+}
+----
+
+* Usernames and names match without regard to case.
+* A mapped person's issues are listed under their DevOps name: in the
+  *Assignee* and *Requester* columns, and when the Kanban Board page is grouped
+  by person.
+* When ZapDesk can read the organization's user list, a mapped person also
+  takes their DevOps avatar and identity, so their GitHub issues count as
+  theirs in the *Your active tickets* view. Without that permission, only the
+  name changes.
+* A username that is not in the mapping is shown as it is on GitHub.
+
+Restart the app after changing the value.
+
 === What appears
 
 With both values set, a *Both / DevOps / GitHub* toggle appears in the top
@@ -259,7 +286,8 @@ Board page) an issue is a card marked with the GitHub icon and its
 open or closed, so open issues sit in the first column and closed ones in
 *Closed*. An issue card cannot be dragged. On the Kanban Board page, issues
 appear under the project their repository is mapped to; grouped by person,
-they appear under the assignee's GitHub username.
+they appear under the assignee's DevOps name when `GITHUB_USER_MAP` has their
+username, and under the GitHub username otherwise.
 
 [cols="1,1"]
 |===

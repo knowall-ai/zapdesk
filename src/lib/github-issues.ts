@@ -4,10 +4,11 @@
  * Read-only, and server-side only: issues are fetched with one token held by
  * the server (`GITHUB_TOKEN`), the same way email ingest uses the DevOps PAT.
  * Which repositories belong to which DevOps project comes from
- * `GITHUB_PROJECT_REPOS`.
+ * `GITHUB_PROJECT_REPOS`, and which GitHub account is which DevOps user from
+ * `GITHUB_USER_MAP`.
  */
 
-import type { DevOpsProject, Organization, Ticket } from '@/types';
+import type { DevOpsProject, Organization, Ticket, User } from '@/types';
 
 const GITHUB_API_URL = 'https://api.github.com';
 const GITHUB_TIMEOUT_MS = 15_000;
@@ -21,6 +22,12 @@ const CLOSED_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
  * by every ZapDesk user, so a page reload must not cost a round of requests.
  */
 const ISSUES_CACHE_TTL_MS = 60 * 1000;
+
+/** How long the DevOps user list behind `GITHUB_USER_MAP` is reused. */
+const DEVOPS_USERS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+/** A GitHub username: letters, digits and single hyphens, up to 39 characters. */
+const LOGIN_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 
 /** `owner/repo`, with the characters GitHub allows in each half. */
 const REPO_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/;
@@ -102,16 +109,130 @@ export function parseProjectRepos(raw: string | undefined): Record<string, strin
   return mapping;
 }
 
-/** The server token and mapping, or null when either is missing. */
-export function gitHubIssuesConfig(): {
+/**
+ * Read the GitHub username to DevOps user mapping from `GITHUB_USER_MAP`.
+ *
+ * The value is JSON: `{"github-username": "DevOps display name"}`. Nothing
+ * links a GitHub account to a DevOps user, so without it the same person shows
+ * up twice: once under each name. Usernames are keyed in lower case, because
+ * GitHub treats them without regard to case. Unusable entries are dropped with
+ * a warning.
+ */
+export function parseUserMap(raw: string | undefined): Record<string, string> {
+  const value = (raw || '').trim();
+  if (!value) return {};
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    console.warn('[GitHub] GITHUB_USER_MAP is not valid JSON; GitHub usernames are shown as is.');
+    return {};
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    console.warn('[GitHub] GITHUB_USER_MAP must be a JSON object of GitHub username to name.');
+    return {};
+  }
+
+  const mapping: Record<string, string> = {};
+  for (const [login, name] of Object.entries(parsed)) {
+    const username = login.trim();
+    const displayName = typeof name === 'string' ? name.trim() : '';
+    if (LOGIN_PATTERN.test(username) && displayName) {
+      mapping[username.toLowerCase()] = displayName;
+    } else {
+      console.warn(
+        `[GitHub] GITHUB_USER_MAP: ignoring ${JSON.stringify(login)}; expected a GitHub username and a name.`
+      );
+    }
+  }
+  return mapping;
+}
+
+/** What is needed to show a GitHub account as the DevOps user it belongs to. */
+export interface GitHubPeople {
+  /** GitHub username, in lower case, to DevOps display name. */
+  userMap: Record<string, string>;
+  /** DevOps users to take the id, address and avatar from, when they could be read. */
+  devOpsUsers?: User[];
+}
+
+export interface GitHubIssuesConfig {
   token: string;
   projectRepos: Record<string, string[]>;
-} | null {
+  userMap: Record<string, string>;
+}
+
+/** The server token and mappings, or null when the token or the repositories are missing. */
+export function gitHubIssuesConfig(): GitHubIssuesConfig | null {
   const token = (process.env.GITHUB_TOKEN || '').trim();
   if (!token) return null;
   const projectRepos = parseProjectRepos(process.env.GITHUB_PROJECT_REPOS);
   if (Object.keys(projectRepos).length === 0) return null;
-  return { token, projectRepos };
+  return { token, projectRepos, userMap: parseUserMap(process.env.GITHUB_USER_MAP) };
+}
+
+/**
+ * A GitHub account as the person to show.
+ *
+ * A mapped account takes the DevOps display name, so the Kanban board groups
+ * its issues with that person's DevOps work. When the DevOps user of that name
+ * is known it is used whole, which also makes "assigned to me" views match.
+ * An unmapped account is shown by its GitHub username.
+ */
+export function gitHubUserToPerson(account: GitHubUser, people?: GitHubPeople): User {
+  const gitHubPerson: User = {
+    id: `github:${account.id}`,
+    displayName: account.login,
+    email: '',
+    avatarUrl: account.avatar_url,
+  };
+
+  const mappedName = people?.userMap[account.login.toLowerCase()];
+  if (!mappedName) return gitHubPerson;
+
+  const devOpsUser = people?.devOpsUsers?.find(
+    (user) => user.displayName?.toLowerCase() === mappedName.toLowerCase()
+  );
+  if (!devOpsUser) return { ...gitHubPerson, displayName: mappedName };
+
+  return {
+    id: devOpsUser.id,
+    displayName: devOpsUser.displayName,
+    email: devOpsUser.email || '',
+    avatarUrl: devOpsUser.avatarUrl ?? account.avatar_url,
+  };
+}
+
+const devOpsUsersCache = new Map<string, { users: User[]; timestamp: number }>();
+
+/** For tests: forget every cached DevOps user list. */
+export function clearDevOpsUsersCache(): void {
+  devOpsUsersCache.clear();
+}
+
+/**
+ * The DevOps users of an organization, for matching `GITHUB_USER_MAP` names.
+ *
+ * Best effort: listing users needs a permission not every signed-in user has,
+ * and a failure here only means mapped people are shown by name without their
+ * DevOps identity. An empty answer is not cached, so the next request by
+ * someone who can list users fills it in.
+ */
+export async function devOpsUsersForGitHub(
+  devOpsOrg: string,
+  load: () => Promise<User[]>
+): Promise<User[]> {
+  const cached = devOpsUsersCache.get(devOpsOrg);
+  if (cached && Date.now() - cached.timestamp < DEVOPS_USERS_CACHE_TTL_MS) return cached.users;
+  try {
+    const users = await load();
+    if (users.length > 0) devOpsUsersCache.set(devOpsOrg, { users, timestamp: Date.now() });
+    return users;
+  } catch (error) {
+    console.error('[GitHub] Could not list DevOps users for GITHUB_USER_MAP:', error);
+    return [];
+  }
 }
 
 /** Map a GitHub issue onto the ticket shape the list already renders. */
@@ -119,12 +240,13 @@ export function gitHubIssueToTicket(
   issue: GitHubIssue,
   repo: string,
   project: string,
-  organization?: Organization
+  organization?: Organization,
+  people?: GitHubPeople
 ): Ticket {
   const closed = issue.state === 'closed';
   const state = closed ? 'Closed' : 'Open';
   const assignee = issue.assignee ?? issue.assignees?.[0] ?? undefined;
-  const author = issue.user;
+  const author = issue.user ? gitHubUserToPerson(issue.user, people) : null;
 
   return {
     // GitHub's own id, negated: unique across repositories, and it can never
@@ -142,21 +264,14 @@ export function gitHubIssueToTicket(
     devOpsState: state,
     workItemType: 'Issue',
     requester: {
-      id: author ? `github:${author.id}` : 'github:unknown',
-      displayName: author?.login || 'Unknown',
-      email: '',
+      id: author?.id ?? 'github:unknown',
+      displayName: author?.displayName || 'Unknown',
+      email: author?.email ?? '',
       timezone: '',
       tags: [],
-      avatarUrl: author?.avatar_url,
+      avatarUrl: author?.avatarUrl,
     },
-    assignee: assignee
-      ? {
-          id: `github:${assignee.id}`,
-          displayName: assignee.login,
-          email: '',
-          avatarUrl: assignee.avatar_url,
-        }
-      : undefined,
+    assignee: assignee ? gitHubUserToPerson(assignee, people) : undefined,
     organization,
     tags: (issue.labels || [])
       .map((label) => (typeof label === 'string' ? label : label.name || ''))
@@ -254,12 +369,21 @@ export interface GitHubTicketsResult {
  * a user can see in DevOps never returns issues mapped to a project they
  * cannot. Project names match case-insensitively. A repository mapped to more
  * than one project is listed under the first.
+ *
+ * `devOpsUsers` is only for `config.userMap`: the users whose identity a
+ * mapped GitHub account takes.
  */
 export async function getGitHubTickets(
   projects: DevOpsProject[],
   devOpsOrg: string,
-  config: { token: string; projectRepos: Record<string, string[]> }
+  config: {
+    token: string;
+    projectRepos: Record<string, string[]>;
+    userMap?: Record<string, string>;
+  },
+  devOpsUsers?: User[]
 ): Promise<GitHubTicketsResult> {
+  const people: GitHubPeople = { userMap: config.userMap ?? {}, devOpsUsers };
   const byName = new Map(projects.map((p) => [p.name.toLowerCase(), p]));
   const targets: Array<{ repo: string; project: DevOpsProject }> = [];
   const seen = new Set<string>();
@@ -298,7 +422,7 @@ export async function getGitHubTickets(
       updatedAt: new Date(),
     };
     for (const issue of result.value) {
-      tickets.push(gitHubIssueToTicket(issue, repo, project.name, organization));
+      tickets.push(gitHubIssueToTicket(issue, repo, project.name, organization, people));
     }
   });
 

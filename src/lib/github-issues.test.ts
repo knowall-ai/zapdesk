@@ -1,14 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
+  clearDevOpsUsersCache,
   clearGitHubIssuesCache,
+  devOpsUsersForGitHub,
   fetchRepoIssues,
   getGitHubTickets,
   gitHubIssueToTicket,
   gitHubIssuesConfig,
+  gitHubUserToPerson,
   parseProjectRepos,
+  parseUserMap,
   type GitHubIssue,
 } from './github-issues';
-import type { DevOpsProject } from '@/types';
+import type { DevOpsProject, User } from '@/types';
 
 // GitHub issues beside DevOps work items (#447). GitHub is mocked at fetch; the
 // mapping, the conversion and the per-repository failure handling are real.
@@ -89,7 +93,118 @@ describe('gitHubIssuesConfig', () => {
     expect(gitHubIssuesConfig()).toEqual({
       token: 'token',
       projectRepos: { Internal: ['acme/portal'] },
+      userMap: {},
     });
+  });
+
+  it('reads the username mapping when one is set', () => {
+    vi.stubEnv('GITHUB_TOKEN', 'token');
+    vi.stubEnv('GITHUB_PROJECT_REPOS', '{"Internal": ["acme/portal"]}');
+    vi.stubEnv('GITHUB_USER_MAP', '{"Dana-Dev": "Dana Scully"}');
+    expect(gitHubIssuesConfig()?.userMap).toEqual({ 'dana-dev': 'Dana Scully' });
+  });
+});
+
+describe('parseUserMap', () => {
+  beforeEach(() => vi.spyOn(console, 'warn').mockImplementation(() => {}));
+  afterEach(() => vi.restoreAllMocks());
+
+  it('is empty when unset', () => {
+    expect(parseUserMap(undefined)).toEqual({});
+    expect(parseUserMap('  ')).toEqual({});
+  });
+
+  it('keys usernames in lower case and trims names', () => {
+    expect(parseUserMap('{"Dana-Dev": " Dana Scully ", "sam7": "Sam Carter"}')).toEqual({
+      'dana-dev': 'Dana Scully',
+      sam7: 'Sam Carter',
+    });
+  });
+
+  it.each(['not json', '[]', '"dana"', 'null'])('ignores %s', (raw) => {
+    expect(parseUserMap(raw)).toEqual({});
+  });
+
+  it('drops entries that are not a username and a name, keeping the rest', () => {
+    const mapping = parseUserMap(
+      '{"dana": "Dana Scully", "not a login": "X", "sam": 7, "alex": "  "}'
+    );
+    expect(mapping).toEqual({ dana: 'Dana Scully' });
+    expect(console.warn).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('gitHubUserToPerson', () => {
+  const account = { id: 7, login: 'Dana-Dev', avatar_url: 'https://avatars.example.test/7' };
+  const devOpsUsers: User[] = [
+    {
+      id: 'devops-42',
+      displayName: 'Dana Scully',
+      email: 'dana@example.test',
+      avatarUrl: 'https://devops.example.test/avatar/42',
+    },
+  ];
+
+  it('shows an unmapped account by its GitHub username', () => {
+    expect(gitHubUserToPerson(account)).toEqual({
+      id: 'github:7',
+      displayName: 'Dana-Dev',
+      email: '',
+      avatarUrl: 'https://avatars.example.test/7',
+    });
+    expect(gitHubUserToPerson(account, { userMap: { sam: 'Sam Carter' } }).displayName).toBe(
+      'Dana-Dev'
+    );
+  });
+
+  it('becomes the DevOps user of the mapped name, whatever the case', () => {
+    const person = gitHubUserToPerson(account, {
+      userMap: { 'dana-dev': 'dana scully' },
+      devOpsUsers,
+    });
+    expect(person).toEqual(devOpsUsers[0]);
+  });
+
+  it('takes just the mapped name when the DevOps user is not known', () => {
+    const person = gitHubUserToPerson(account, { userMap: { 'dana-dev': 'Dana Scully' } });
+    expect(person).toEqual({
+      id: 'github:7',
+      displayName: 'Dana Scully',
+      email: '',
+      avatarUrl: 'https://avatars.example.test/7',
+    });
+  });
+});
+
+describe('devOpsUsersForGitHub', () => {
+  const users: User[] = [{ id: 'devops-42', displayName: 'Dana Scully', email: '' }];
+
+  beforeEach(() => {
+    clearDevOpsUsersCache();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('reuses the list for an organization', async () => {
+    const load = vi.fn().mockResolvedValue(users);
+    expect(await devOpsUsersForGitHub('acme', load)).toEqual(users);
+    expect(await devOpsUsersForGitHub('acme', load)).toEqual(users);
+    expect(load).toHaveBeenCalledTimes(1);
+
+    await devOpsUsersForGitHub('other', load);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('answers empty when the list cannot be read, and tries again next time', async () => {
+    const load = vi.fn().mockRejectedValueOnce(new Error('forbidden')).mockResolvedValue(users);
+    expect(await devOpsUsersForGitHub('acme', load)).toEqual([]);
+    expect(await devOpsUsersForGitHub('acme', load)).toEqual(users);
+  });
+
+  it('does not keep an empty list', async () => {
+    const load = vi.fn().mockResolvedValueOnce([]).mockResolvedValue(users);
+    expect(await devOpsUsersForGitHub('acme', load)).toEqual([]);
+    expect(await devOpsUsersForGitHub('acme', load)).toEqual(users);
   });
 });
 
@@ -142,6 +257,25 @@ describe('gitHubIssueToTicket', () => {
     const b = gitHubIssueToTicket(issue({ id: 9002, number: 12 }), 'acme/api', 'Internal');
     expect(a.id).toBeLessThan(0);
     expect(a.id).not.toBe(b.id);
+  });
+
+  it('shows mapped accounts as their DevOps user, for the assignee and the author', () => {
+    const ticket = gitHubIssueToTicket(
+      issue({ assignees: [{ id: 7, login: 'Sam7' }] }),
+      'acme/portal',
+      'Internal',
+      undefined,
+      {
+        userMap: { sam7: 'Sam Carter', dana: 'Dana Scully' },
+        devOpsUsers: [{ id: 'devops-9', displayName: 'Sam Carter', email: 'sam@example.test' }],
+      }
+    );
+    expect(ticket.assignee).toMatchObject({
+      id: 'devops-9',
+      displayName: 'Sam Carter',
+      email: 'sam@example.test',
+    });
+    expect(ticket.requester.displayName).toBe('Dana Scully');
   });
 
   it('survives an issue whose author account was deleted', () => {
