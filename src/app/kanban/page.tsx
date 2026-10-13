@@ -2,7 +2,15 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import {
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useCallback,
+  useRef,
+  useMemo,
+} from 'react';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { RefreshCw, FolderOpen, User, Radio } from 'lucide-react';
@@ -565,7 +573,9 @@ function StandupPageContent() {
   const restoredScopeRef = useRef<string | null>(null);
   const boardReady = !loading && !error && standupData !== null;
 
-  useEffect(() => {
+  // A layout effect, so the position is back before the board is painted and
+  // the user never sees it jump from the top.
+  useLayoutEffect(() => {
     if (!boardReady) {
       restoredScopeRef.current = null;
       return;

@@ -16,6 +16,8 @@ const EXPANDED_KEY = 'zapdesk:kanban:expanded';
 const SCROLL_KEY = 'zapdesk:kanban:scroll';
 /** Ceiling on remembered groups per scope, so the entry cannot grow without limit. */
 const MAX_GROUPS = 200;
+/** Ceiling on views with a remembered scroll position, for the same reason. */
+const MAX_SCROLL_SCOPES = 50;
 
 export type PositionStorage = Pick<Storage, 'getItem' | 'setItem'>;
 
@@ -77,14 +79,25 @@ export function writeGroupExpanded(
   writeJson(storage, EXPANDED_KEY, next);
 }
 
-/** How far down the board was scrolled in `scope`, or 0 when nothing is remembered for it. */
+/**
+ * How far down the board was scrolled in `scope`, or 0 when nothing is
+ * remembered for it. Each scope keeps its own position, so looking at another
+ * grouping or sprint filter and coming back does not lose the first one.
+ */
 export function readScrollTop(storage: PositionStorage | null, scope: string): number {
-  const saved = readJson(storage, SCROLL_KEY);
-  if (!isRecord(saved) || saved.scope !== scope) return 0;
-  const top = saved.top;
+  const all = readJson(storage, SCROLL_KEY);
+  const top = isRecord(all) ? all[scope] : null;
   return typeof top === 'number' && Number.isFinite(top) && top > 0 ? top : 0;
 }
 
 export function writeScrollTop(storage: PositionStorage | null, scope: string, top: number): void {
-  writeJson(storage, SCROLL_KEY, { scope, top: Math.max(0, Math.round(top)) });
+  const all = readJson(storage, SCROLL_KEY);
+  const next: Record<string, unknown> = {};
+  // Re-insert this scope last, so the oldest views are the ones dropped at the ceiling.
+  for (const [key, value] of Object.entries(isRecord(all) ? all : {})) {
+    if (key !== scope) next[key] = value;
+  }
+  next[scope] = Math.max(0, Math.round(top));
+  const kept = Object.entries(next).slice(-MAX_SCROLL_SCOPES);
+  writeJson(storage, SCROLL_KEY, Object.fromEntries(kept));
 }

@@ -100,12 +100,40 @@ describe('scroll position', () => {
     expect(readScrollTop(storage, 'org:person:all')).toBe(0);
   });
 
+  it('keeps a position for each scope, so visiting another view does not lose the first', () => {
+    const storage = memoryStorage();
+    writeScrollTop(storage, 'org:project:all', 800);
+    writeScrollTop(storage, 'org:person:all', 120);
+    writeScrollTop(storage, 'org:project:sprint', 40);
+
+    expect(readScrollTop(storage, 'org:project:all')).toBe(800);
+    expect(readScrollTop(storage, 'org:person:all')).toBe(120);
+    expect(readScrollTop(storage, 'org:project:sprint')).toBe(40);
+
+    writeScrollTop(storage, 'org:project:all', 0);
+    expect(readScrollTop(storage, 'org:project:all')).toBe(0);
+    expect(readScrollTop(storage, 'org:person:all')).toBe(120);
+  });
+
+  it('drops the views scrolled longest ago past the ceiling', () => {
+    const storage = memoryStorage();
+    for (let i = 0; i < 52; i++) writeScrollTop(storage, `s${i}`, i + 1);
+    // Scrolling an old view again makes it the newest.
+    writeScrollTop(storage, 's2', 999);
+
+    expect(readScrollTop(storage, 's0')).toBe(0);
+    expect(readScrollTop(storage, 's1')).toBe(0);
+    expect(readScrollTop(storage, 's2')).toBe(999);
+    expect(readScrollTop(storage, 's51')).toBe(52);
+    expect(Object.keys(JSON.parse(storage.data['zapdesk:kanban:scroll']))).toHaveLength(50);
+  });
+
   it('never saves or returns a negative or meaningless position', () => {
     const storage = memoryStorage();
     writeScrollTop(storage, 's', -40);
     expect(readScrollTop(storage, 's')).toBe(0);
 
-    for (const raw of ['not json', '{"scope":"s","top":"12"}', '{"scope":"s","top":-5}', '[]']) {
+    for (const raw of ['not json', '{"s":"12"}', '{"s":-5}', '{"s":null}', '[]']) {
       expect(readScrollTop(memoryStorage({ 'zapdesk:kanban:scroll': raw }), 's')).toBe(0);
     }
   });
