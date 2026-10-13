@@ -113,7 +113,8 @@ interface KanbanGroupSectionProps {
   columns: StandupColumn[];
   /** Project -> work item type -> states that type defines there. Omit to allow every drop. */
   allowedStatesByProjectType?: AllowedStates;
-  onStateChange?: (itemId: number, targetState: string) => Promise<void>;
+  /** `project` is the card's own project; passing it on saves the server a search. */
+  onStateChange?: (itemId: number, targetState: string, project?: string) => Promise<void>;
   onItemClick?: (item: StandupWorkItem) => void;
 }
 
@@ -147,7 +148,13 @@ export default function KanbanGroupSection({
   // Adopt new server data as it arrives. Done during render rather than in an
   // effect: React restarts the render with the new state before painting, so
   // the board never flashes the stale columns first.
-  if (syncedItems !== propItems) {
+  //
+  // Not while a card is being dragged or its move is being saved, though. A
+  // refresh landing then (a live-update tick, or the refresh from the previous
+  // drop) put the card back in its old column mid-drag, and the drop that
+  // followed looked like "no change": no request, no message, the card just
+  // snapped back (#366). The data is adopted on the first render afterwards.
+  if (syncedItems !== propItems && activeId === null && !isUpdating) {
     setSyncedItems(propItems);
     setLocalItems(propItems);
   }
@@ -312,7 +319,7 @@ export default function KanbanGroupSection({
 
       setIsUpdating(true);
       try {
-        await onStateChange(activeItemId, resolvedState);
+        await onStateChange(activeItemId, resolvedState, dragged?.project);
         debugLog('[Standup DnD] state change succeeded', {
           itemId: activeItemId,
           resolvedState,

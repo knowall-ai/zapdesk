@@ -13,16 +13,16 @@ import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import { useDevOpsApi } from '@/hooks';
 import { ticketToWorkItem } from '@/lib/devops';
 import { debugLog } from '@/lib/debug';
+import { createBoardCache } from '@/lib/standup-board-cache';
 import type { StandupData, StandupColumn, StandupWorkItem, Ticket } from '@/types';
 
 type GroupBy = 'project' | 'person';
 
 // Module-level cache: navigating away and back to /kanban returns instantly
-// from the previous fetch (within TTL) instead of re-hitting the API. The
-// in-flight map dedupes concurrent calls (e.g. mount + auto-refresh tick).
+// from the previous fetch (within TTL) instead of re-hitting the API. It also
+// dedupes concurrent calls (e.g. mount + auto-refresh tick).
 const STANDUP_CACHE_TTL_MS = 30 * 1000;
-const standupCache: Map<string, { data: StandupData; timestamp: number }> = new Map();
-const standupInFlight: Map<string, Promise<StandupData>> = new Map();
+const standupCache = createBoardCache<StandupData>(STANDUP_CACHE_TTL_MS);
 
 // How often the "Live update" toggle polls for changes. Tied to the cache
 // TTL so the two stay in sync — every tick will bypass the cache (force
@@ -164,23 +164,27 @@ function StandupPageContent() {
   const ticketFetchSeqRef = useRef(0);
 
   const fetchStandupData = useCallback(
-    async (isAutoRefresh = false, forceRefresh = false) => {
+    async (isAutoRefresh = false, forceRefresh = false, afterChange = false) => {
       if (!session?.accessToken || !hasOrganization || !selectedOrganization?.accountName) {
         setLoading(false);
         return;
       }
 
-      const key = cacheKey(selectedOrganization.accountName, currentSprintOnly);
+      const organization = selectedOrganization.accountName;
+      const key = cacheKey(organization, currentSprintOnly);
+      // A work item was just changed. Any request already in flight read the
+      // board before that, so it must not answer for this refresh (#366).
+      if (afterChange) standupCache.invalidate(organization);
       const mySeq = ++boardFetchSeqRef.current;
       /** False once a later call has started; nothing stale may commit then. */
       const isCurrent = () => mySeq === boardFetchSeqRef.current;
 
       // Serve fresh cached data instantly (back-navigation case)
       if (!forceRefresh) {
-        const cached = standupCache.get(key);
-        if (cached && Date.now() - cached.timestamp < STANDUP_CACHE_TTL_MS) {
+        const cached = standupCache.getFresh(key);
+        if (cached) {
           loadedKeyRef.current = key;
-          setStandupData(cached.data);
+          setStandupData(cached);
           setLoading(false);
           setRefreshing(false);
           setError(null);
@@ -198,36 +202,25 @@ function StandupPageContent() {
       try {
         // Dedupe concurrent requests for the same cache key. forceRefresh
         // bypasses the cache TTL above but still coalesces with any
-        // in-flight request so a tick + visibilitychange + mutation patch
-        // don't all double-hit the API simultaneously.
-        let promise = standupInFlight.get(key);
-        if (!promise) {
-          promise = (async () => {
-            const params = new URLSearchParams();
-            if (currentSprintOnly) {
-              params.set('currentSprintOnly', 'true');
-            }
-            const queryString = params.toString();
-            const url = `/api/devops/standup${queryString ? `?${queryString}` : ''}`;
-            const response = await devOpsGet(url);
-            if (!response.ok) {
-              throw new Error('Failed to fetch standup data');
-            }
-            return (await response.json()) as StandupData;
-          })();
-          standupInFlight.set(key, promise);
-        }
-
-        let data: StandupData;
-        try {
-          data = await promise;
-        } finally {
-          standupInFlight.delete(key);
-        }
-        // Cache regardless — the data is valid for its key even if we've since
-        // moved on, and a later switch back should get the benefit of it.
-        standupCache.set(key, { data, timestamp: Date.now() });
-        if (!isCurrent()) return;
+        // in-flight request so a tick + visibilitychange don't double-hit
+        // the API simultaneously. The cache keeps the answer for its key even
+        // if we've since moved on, so a later switch back gets the benefit.
+        const { data, superseded } = await standupCache.load(key, organization, async () => {
+          const params = new URLSearchParams();
+          if (currentSprintOnly) {
+            params.set('currentSprintOnly', 'true');
+          }
+          const queryString = params.toString();
+          const url = `/api/devops/standup${queryString ? `?${queryString}` : ''}`;
+          const response = await devOpsGet(url);
+          if (!response.ok) {
+            throw new Error('Failed to fetch standup data');
+          }
+          return (await response.json()) as StandupData;
+        });
+        // Superseded: a work item changed while this was in flight, and the
+        // refresh that change started will bring the board that includes it.
+        if (superseded || !isCurrent()) return;
         loadedKeyRef.current = key;
         setStandupData(data);
       } catch (err) {
@@ -362,7 +355,7 @@ function StandupPageContent() {
         throw new Error(data.error || 'Failed to update state');
       }
 
-      fetchStandupData(true, true);
+      fetchStandupData(true, true, true);
     },
     [fetchStandupData, devOpsPatch]
   );
@@ -436,7 +429,7 @@ function StandupPageContent() {
             : prev
         );
       }
-      fetchStandupData(true, true);
+      fetchStandupData(true, true, true);
       return updated;
     },
     [devOpsPatch, fetchStandupData]
@@ -526,7 +519,7 @@ function StandupPageContent() {
             : { ...prev, workItemType: newType }
           : prev
       );
-      fetchStandupData(true, true);
+      fetchStandupData(true, true, true);
     },
     [devOpsPatch, selectedTicket, fetchStandupData]
   );
