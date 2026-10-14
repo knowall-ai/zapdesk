@@ -78,7 +78,7 @@
 |If a message appears, it gives the reason Azure DevOps refused the move, usually a workflow rule on that work item type. A column that turns grey while you drag is one the card's type has no state for (hover it for the reason). With no message at all on a version before the fix for issue #366, a board refresh arrived during the drag: drop the card again, or turn *Live update* off while moving several cards.
 
 |**SLA Compliance on the Monthly Checkpoint is measured against the wrong target**
-|The target is the first-response time of the project's SLA level: Gold 4 hours, Silver 8, Bronze 16. Set the level in the Azure DevOps project's description, for example `SLA: Gold`. A project with no level in its description is treated as Bronze. Reading descriptions needs `AZURE_DEVOPS_PAT`; without it every project is Bronze. A changed description is picked up within 5 minutes.
+|The target is the first-response time of the project's SLA level: Gold 4 hours, Silver 8, Bronze 16. Each ticket is looked up by its priority (no priority counts as Normal), but the SLA policies in `src/lib/sla.ts` currently give every priority the same first-response time, so these are the targets for every ticket. Set the level in the Azure DevOps project's description, for example `SLA: Gold`. A project with no level in its description is treated as Bronze. Reading descriptions needs `AZURE_DEVOPS_PAT`; without it every project is Bronze. A changed description is picked up within 5 minutes.
 |===
 
 == Debugging Tips
