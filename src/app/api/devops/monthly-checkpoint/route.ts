@@ -1,14 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { AzureDevOpsService, workItemToTicket } from '@/lib/devops';
-import type {
-  Ticket,
-  TicketStatus,
-  MonthlyCheckpointStats,
-  TicketTrendPoint,
-  Organization,
-} from '@/types';
+import { AzureDevOpsService, getSLALevelForProject, workItemToTicket } from '@/lib/devops';
+import { calculateKPIs } from '@/lib/checkpoint-kpis';
+import type { Ticket, MonthlyCheckpointStats, TicketTrendPoint, Organization } from '@/types';
 
 export async function GET(request: Request) {
   try {
@@ -76,8 +71,10 @@ export async function GET(request: Request) {
     ]);
     const relevantTickets = allTickets.filter((t) => relevantTicketIds.has(t.id));
 
-    // Calculate KPIs
-    const kpis = calculateKPIs(ticketsInRange, ticketsResolvedInRange, allTickets);
+    // Calculate KPIs. SLA compliance is judged against the project's own SLA
+    // level, read from its Azure DevOps description (#130).
+    const slaLevel = await getSLALevelForProject(projectName);
+    const kpis = calculateKPIs(ticketsInRange, ticketsResolvedInRange, allTickets, slaLevel);
 
     // Calculate trends (daily data points)
     const trends = calculateTrends(allTickets, startDate, endDate);
@@ -99,55 +96,6 @@ export async function GET(request: Request) {
     console.error('Error fetching monthly checkpoint data:', error);
     return NextResponse.json({ error: 'Failed to fetch monthly checkpoint data' }, { status: 500 });
   }
-}
-
-function calculateKPIs(
-  ticketsCreated: Ticket[],
-  ticketsResolved: Ticket[],
-  allTickets: Ticket[]
-): MonthlyCheckpointStats['kpis'] {
-  const unsolvedStatuses: TicketStatus[] = ['New', 'Open', 'In Progress'];
-  const pendingStatuses: TicketStatus[] = ['Pending'];
-
-  // Unique resolved tickets count
-  const uniqueResolvedIds = new Set(ticketsResolved.map((t) => t.id));
-
-  // Calculate average response time (time from creation to first update)
-  // This is an approximation - ideally we'd track first response separately
-  const responseTimesHours = ticketsCreated
-    .filter((t) => t.updatedAt.getTime() !== t.createdAt.getTime())
-    .map((t) => (t.updatedAt.getTime() - t.createdAt.getTime()) / (1000 * 60 * 60));
-
-  const avgResponseTimeHours =
-    responseTimesHours.length > 0
-      ? responseTimesHours.reduce((a, b) => a + b, 0) / responseTimesHours.length
-      : 0;
-
-  // Calculate average resolution time
-  const resolutionTimesHours = ticketsResolved.map(
-    (t) => (t.updatedAt.getTime() - t.createdAt.getTime()) / (1000 * 60 * 60)
-  );
-
-  const avgResolutionTimeHours =
-    resolutionTimesHours.length > 0
-      ? resolutionTimesHours.reduce((a, b) => a + b, 0) / resolutionTimesHours.length
-      : 0;
-
-  // Calculate SLA compliance (assuming 24-hour response SLA)
-  const SLA_RESPONSE_HOURS = 24;
-  const ticketsWithinSLA = responseTimesHours.filter((h) => h <= SLA_RESPONSE_HOURS).length;
-  const slaCompliancePercent =
-    responseTimesHours.length > 0 ? (ticketsWithinSLA / responseTimesHours.length) * 100 : 0;
-
-  return {
-    totalTicketsCreated: ticketsCreated.length,
-    totalTicketsResolved: uniqueResolvedIds.size,
-    totalTicketsPending: allTickets.filter((t) => pendingStatuses.includes(t.status)).length,
-    totalTicketsOpen: allTickets.filter((t) => unsolvedStatuses.includes(t.status)).length,
-    avgResponseTimeHours: Math.round(avgResponseTimeHours * 10) / 10,
-    avgResolutionTimeHours: Math.round(avgResolutionTimeHours * 10) / 10,
-    slaCompliancePercent: Math.round(slaCompliancePercent),
-  };
 }
 
 function calculateTrends(tickets: Ticket[], startDate: Date, endDate: Date): TicketTrendPoint[] {

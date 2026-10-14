@@ -120,6 +120,8 @@ export function KPICards({ kpis }: KPICardsProps) {
       ),
       color: kpis.slaCompliancePercent >= 90 ? 'var(--status-resolved)' : 'var(--priority-urgent)',
       isText: true,
+      // The percentage means little without the target it is measured against.
+      hint: `${kpis.slaLevel}: first response within ${kpis.slaResponseTargetHours} hrs`,
     },
   ];
 
@@ -143,6 +145,11 @@ export function KPICards({ kpis }: KPICardsProps) {
           <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {card.label}
           </div>
+          {'hint' in card && card.hint && (
+            <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              {card.hint}
+            </div>
+          )}
         </div>
       ))}
     </div>
