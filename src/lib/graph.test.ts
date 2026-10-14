@@ -1,0 +1,168 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  deleteLightningAddress,
+  getGitHubUsername,
+  listLinkedGitHubAccounts,
+  saveGitHubUsername,
+} from './graph';
+
+// The ZapDesk profile extension holds both the Lightning Address and the
+// GitHub username (#455). Graph is mocked at fetch.
+
+const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>();
+
+const calls = () =>
+  fetchMock.mock.calls.map(([url, init]) => ({
+    url,
+    method: init?.method ?? 'GET',
+    body: init?.body ? JSON.parse(String(init.body)) : undefined,
+  }));
+
+describe('profile extension', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('saves the GitHub username without touching the Lightning Address', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+    expect(await saveGitHubUsername('token', 'dana@example.test', 'dana-dev')).toBe(true);
+
+    expect(calls()).toEqual([
+      {
+        url: expect.stringContaining('/users/dana%40example.test/extensions/zapdesk.knowall.ai'),
+        method: 'PATCH',
+        body: { githubUsername: 'dana-dev' },
+      },
+    ]);
+  });
+
+  it('creates the extension the first time', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response('{}', { status: 404 }))
+      .mockResolvedValueOnce(new Response('{}', { status: 201 }));
+
+    expect(await saveGitHubUsername('token', 'dana@example.test', 'dana-dev')).toBe(true);
+
+    expect(calls()[1]).toEqual({
+      url: expect.stringMatching(/\/users\/dana%40example\.test\/extensions$/),
+      method: 'POST',
+      body: {
+        '@odata.type': 'microsoft.graph.openTypeExtension',
+        extensionName: 'zapdesk.knowall.ai',
+        githubUsername: 'dana-dev',
+      },
+    });
+  });
+
+  it('clears the Lightning Address rather than deleting the extension', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+    expect(await deleteLightningAddress('token', 'dana@example.test')).toBe(true);
+
+    expect(calls()).toEqual([
+      expect.objectContaining({ method: 'PATCH', body: { lightningAddress: null } }),
+    ]);
+  });
+
+  it('has nothing to clear when the extension does not exist', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 404 }));
+
+    expect(await saveGitHubUsername('token', 'dana@example.test', null)).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the saved GitHub username', async () => {
+    fetchMock.mockResolvedValueOnce(
+      Response.json({ extensionName: 'zapdesk.knowall.ai', githubUsername: 'dana-dev' })
+    );
+    expect(await getGitHubUsername('token', 'dana@example.test')).toBe('dana-dev');
+
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 404 }));
+    expect(await getGitHubUsername('token', 'dana@example.test')).toBeNull();
+  });
+});
+
+describe('listLinkedGitHubAccounts', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('keeps the users who saved a username, across pages', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        Response.json({
+          value: [
+            {
+              id: 'u1',
+              displayName: 'Dana Scully',
+              mail: 'dana@example.test',
+              userPrincipalName: 'dana@example.test',
+              extensions: [
+                { id: 'zapdesk.knowall.ai', githubUsername: 'dana-dev', lightningAddress: 'x' },
+              ],
+            },
+            {
+              id: 'u2',
+              displayName: 'Lightning Only',
+              userPrincipalName: 'lo@example.test',
+              extensions: [{ extensionName: 'zapdesk.knowall.ai', lightningAddress: 'y' }],
+            },
+            { id: 'u3', displayName: 'No Extensions', userPrincipalName: 'ne@example.test' },
+          ],
+          '@odata.nextLink': 'https://graph.microsoft.com/v1.0/users?$skiptoken=abc',
+        })
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          value: [
+            {
+              id: 'u4',
+              displayName: 'Sam Carter',
+              mail: null,
+              userPrincipalName: 'sam@example.test',
+              extensions: [
+                { id: 'other.extension', githubUsername: 'not-ours' },
+                { extensionName: 'zapdesk.knowall.ai', githubUsername: 'sam7' },
+              ],
+            },
+          ],
+        })
+      );
+
+    const accounts = await listLinkedGitHubAccounts('token');
+
+    expect(accounts).toEqual([
+      {
+        login: 'dana-dev',
+        userId: 'u1',
+        displayName: 'Dana Scully',
+        email: 'dana@example.test',
+        userPrincipalName: 'dana@example.test',
+      },
+      {
+        login: 'sam7',
+        userId: 'u4',
+        displayName: 'Sam Carter',
+        email: 'sam@example.test',
+        userPrincipalName: 'sam@example.test',
+      },
+    ]);
+    expect(fetchMock.mock.calls[0][0]).toContain('$expand=extensions');
+    expect(fetchMock.mock.calls[1][0]).toContain('$skiptoken=abc');
+  });
+
+  it('throws when Graph refuses, so a failure is not read as nobody', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 403 }));
+    await expect(listLinkedGitHubAccounts('token')).rejects.toThrow('403');
+  });
+});

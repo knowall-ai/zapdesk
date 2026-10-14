@@ -8,7 +8,7 @@ import { clearGitHubIssuesCache } from './github-issues';
 
 const getServerSession = vi.fn();
 vi.mock('next-auth', () => ({ getServerSession: () => getServerSession() }));
-vi.mock('@/lib/auth', () => ({ authOptions: {} }));
+vi.mock('@/lib/auth', () => ({ authOptions: {}, getGraphToken: async () => null }));
 
 const validateOrganizationAccess = vi.fn();
 vi.mock('@/lib/devops-auth', () => ({

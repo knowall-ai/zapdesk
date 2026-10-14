@@ -4,8 +4,9 @@
  * Read-only, and server-side only: issues are fetched with one token held by
  * the server (`GITHUB_TOKEN`), the same way email ingest uses the DevOps PAT.
  * Which repositories belong to which DevOps project comes from
- * `GITHUB_PROJECT_REPOS`, and which GitHub account is which DevOps user from
- * `GITHUB_USER_MAP`.
+ * `GITHUB_PROJECT_REPOS`. Which GitHub account is which DevOps user comes from
+ * the username each person saves on their Microsoft profile (#455), and from
+ * `GITHUB_USER_MAP`, which wins.
  */
 
 import type { DevOpsProject, Organization, Ticket, User } from '@/types';
@@ -35,6 +36,13 @@ const ISSUES_CACHE_TTL_MS = 60 * 1000;
 
 /** How long the DevOps user list behind `GITHUB_USER_MAP` is reused. */
 const DEVOPS_USERS_CACHE_TTL_MS = 10 * 60 * 1000;
+/**
+ * How long the GitHub usernames saved on profiles are reused. Reading them
+ * walks the whole tenant's user list. Saving a username clears this cache.
+ */
+const LINKED_ACCOUNTS_CACHE_TTL_MS = 10 * 60 * 1000;
+/** After a failed read, how long to wait before asking Graph again. */
+const LINKED_ACCOUNTS_RETRY_MS = 60 * 1000;
 
 /** A GitHub username: letters, digits and single hyphens, up to 39 characters. */
 const LOGIN_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
@@ -43,6 +51,24 @@ const LOGIN_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const REPO_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/;
 /** `owner/*`: every repository of a GitHub organization. */
 const ORG_WILDCARD_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/\*$/;
+
+/** True for a valid GitHub username. */
+export function isGitHubLogin(value: string): boolean {
+  return LOGIN_PATTERN.test(value);
+}
+
+/**
+ * A GitHub username as typed, or null when it is not one. Accepts a leading
+ * `@` and a pasted profile link such as `https://github.com/username`.
+ */
+export function normalizeGitHubLogin(input: string): string | null {
+  const login = input
+    .trim()
+    .replace(/^(?:https?:\/\/)?(?:www\.)?github\.com\//i, '')
+    .replace(/^@/, '')
+    .replace(/\/+$/, '');
+  return isGitHubLogin(login) ? login : null;
+}
 
 /** True for an `owner/*` entry, which stands for a whole GitHub organization. */
 export function isOrgWildcard(entry: string): boolean {
@@ -169,12 +195,41 @@ export function parseUserMap(raw: string | undefined): Record<string, string> {
   return mapping;
 }
 
+/** A person who saved a GitHub username on their Microsoft profile. */
+export interface LinkedGitHubPerson {
+  /** The username as saved. */
+  login: string;
+  displayName: string;
+  email: string;
+}
+
 /** What is needed to show a GitHub account as the DevOps user it belongs to. */
 export interface GitHubPeople {
   /** GitHub username, in lower case, to DevOps display name. */
   userMap: Record<string, string>;
   /** DevOps users to take the id, address and avatar from, when they could be read. */
   devOpsUsers?: User[];
+  /** GitHub username, in lower case, to the person who saved it on their profile. */
+  linkedAccounts?: Record<string, LinkedGitHubPerson>;
+}
+
+/** Key people by username in lower case. The first to claim a username keeps it. */
+export function indexLinkedAccounts(
+  accounts: LinkedGitHubPerson[]
+): Record<string, LinkedGitHubPerson> {
+  const index: Record<string, LinkedGitHubPerson> = {};
+  for (const account of accounts) {
+    const key = account.login.trim().toLowerCase();
+    if (!isGitHubLogin(key)) continue;
+    if (index[key]) {
+      console.warn(
+        `[GitHub] GitHub username ${account.login} is saved on more than one profile; using the first.`
+      );
+      continue;
+    }
+    index[key] = account;
+  }
+  return index;
 }
 
 export interface GitHubIssuesConfig {
@@ -195,10 +250,15 @@ export function gitHubIssuesConfig(): GitHubIssuesConfig | null {
 /**
  * A GitHub account as the person to show.
  *
- * A mapped account takes the DevOps display name, so the Kanban board groups
- * its issues with that person's DevOps work. When the DevOps user of that name
- * is known it is used whole, which also makes "assigned to me" views match.
- * An unmapped account is shown by its GitHub username.
+ * An account in `GITHUB_USER_MAP` takes the DevOps display name, so the Kanban
+ * board groups its issues with that person's DevOps work. When the DevOps user
+ * of that name is known it is used whole, which also makes "assigned to me"
+ * views match.
+ *
+ * Otherwise an account someone saved on their profile becomes that person: the
+ * DevOps user with their email address (or, failing that, their name) when
+ * known, else their profile name and address. Any other account is shown by
+ * its GitHub username.
  */
 export function gitHubUserToPerson(account: GitHubUser, people?: GitHubPeople): User {
   const gitHubPerson: User = {
@@ -209,7 +269,7 @@ export function gitHubUserToPerson(account: GitHubUser, people?: GitHubPeople): 
   };
 
   const mappedName = people?.userMap[account.login.toLowerCase()];
-  if (!mappedName) return gitHubPerson;
+  if (!mappedName) return linkedPerson(account, gitHubPerson, people);
 
   const devOpsUser = people?.devOpsUsers?.find(
     (user) => user.displayName?.toLowerCase() === mappedName.toLowerCase()
@@ -222,6 +282,28 @@ export function gitHubUserToPerson(account: GitHubUser, people?: GitHubPeople): 
     email: devOpsUser.email || '',
     avatarUrl: devOpsUser.avatarUrl ?? account.avatar_url,
   };
+}
+
+/** The person who saved this GitHub username on their profile, if anyone did. */
+function linkedPerson(account: GitHubUser, gitHubPerson: User, people?: GitHubPeople): User {
+  const linked = people?.linkedAccounts?.[account.login.toLowerCase()];
+  if (!linked) return gitHubPerson;
+
+  const email = linked.email.toLowerCase();
+  const name = linked.displayName.toLowerCase();
+  const devOpsUser =
+    (email && people?.devOpsUsers?.find((user) => user.email?.toLowerCase() === email)) ||
+    people?.devOpsUsers?.find((user) => user.displayName?.toLowerCase() === name);
+  if (devOpsUser) {
+    return {
+      id: devOpsUser.id,
+      displayName: devOpsUser.displayName,
+      email: devOpsUser.email || linked.email,
+      avatarUrl: devOpsUser.avatarUrl ?? account.avatar_url,
+    };
+  }
+
+  return { ...gitHubPerson, displayName: linked.displayName, email: linked.email };
 }
 
 const devOpsUsersCache = new Map<string, { users: User[]; timestamp: number }>();
@@ -252,6 +334,40 @@ export async function devOpsUsersForGitHub(
   } catch (error) {
     console.error('[GitHub] Could not list DevOps users for GITHUB_USER_MAP:', error);
     return [];
+  }
+}
+
+let linkedAccountsCache: {
+  accounts: Record<string, LinkedGitHubPerson>;
+  expires: number;
+} | null = null;
+
+/** Forget the saved GitHub usernames, so a username just saved is used at once. */
+export function clearLinkedAccountsCache(): void {
+  linkedAccountsCache = null;
+}
+
+/**
+ * The GitHub usernames people saved on their profiles, keyed in lower case.
+ *
+ * Best effort: reading them needs the app's Graph permission, and a failure
+ * only means those people are shown by their GitHub username. A failure is
+ * remembered briefly so every request does not walk the tenant again.
+ */
+export async function linkedGitHubAccounts(
+  load: () => Promise<LinkedGitHubPerson[]>
+): Promise<Record<string, LinkedGitHubPerson>> {
+  if (linkedAccountsCache && Date.now() < linkedAccountsCache.expires) {
+    return linkedAccountsCache.accounts;
+  }
+  try {
+    const accounts = indexLinkedAccounts(await load());
+    linkedAccountsCache = { accounts, expires: Date.now() + LINKED_ACCOUNTS_CACHE_TTL_MS };
+    return accounts;
+  } catch (error) {
+    console.error('[GitHub] Could not read the GitHub usernames saved on profiles:', error);
+    linkedAccountsCache = { accounts: {}, expires: Date.now() + LINKED_ACCOUNTS_RETRY_MS };
+    return {};
   }
 }
 
@@ -442,8 +558,8 @@ export interface GitHubTicketsResult {
  * the ones the mapping names for a project: those stay with their project, and
  * so stay hidden from a caller who cannot see it.
  *
- * `devOpsUsers` is only for `config.userMap`: the users whose identity a
- * mapped GitHub account takes.
+ * `devOpsUsers` are the users whose identity a mapped or linked GitHub account
+ * takes, and `linkedAccounts` the usernames people saved on their profiles.
  */
 export async function getGitHubTickets(
   projects: DevOpsProject[],
@@ -453,9 +569,10 @@ export async function getGitHubTickets(
     projectRepos: Record<string, string[]>;
     userMap?: Record<string, string>;
   },
-  devOpsUsers?: User[]
+  devOpsUsers?: User[],
+  linkedAccounts?: Record<string, LinkedGitHubPerson>
 ): Promise<GitHubTicketsResult> {
-  const people: GitHubPeople = { userMap: config.userMap ?? {}, devOpsUsers };
+  const people: GitHubPeople = { userMap: config.userMap ?? {}, devOpsUsers, linkedAccounts };
   const byName = new Map(projects.map((p) => [p.name.toLowerCase(), p]));
   const targets: Array<{ repo: string; project: DevOpsProject }> = [];
   const seen = new Set<string>();

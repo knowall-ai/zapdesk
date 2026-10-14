@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   clearDevOpsUsersCache,
   clearGitHubIssuesCache,
+  clearLinkedAccountsCache,
+  indexLinkedAccounts,
+  linkedGitHubAccounts,
+  normalizeGitHubLogin,
   devOpsUsersForGitHub,
   fetchOrgIssues,
   fetchRepoIssues,
@@ -174,6 +178,130 @@ describe('gitHubUserToPerson', () => {
       email: '',
       avatarUrl: 'https://avatars.example.test/7',
     });
+  });
+});
+
+describe('normalizeGitHubLogin', () => {
+  it('takes a username as typed, an @handle or a profile link', () => {
+    expect(normalizeGitHubLogin('  Dana-Dev ')).toBe('Dana-Dev');
+    expect(normalizeGitHubLogin('@dana-dev')).toBe('dana-dev');
+    expect(normalizeGitHubLogin('https://github.com/dana-dev/')).toBe('dana-dev');
+    expect(normalizeGitHubLogin('github.com/dana-dev')).toBe('dana-dev');
+  });
+
+  it('refuses anything that is not a username', () => {
+    expect(normalizeGitHubLogin('')).toBeNull();
+    expect(normalizeGitHubLogin('dana dev')).toBeNull();
+    expect(normalizeGitHubLogin('https://github.com/acme/portal')).toBeNull();
+    expect(normalizeGitHubLogin('a'.repeat(40))).toBeNull();
+  });
+});
+
+describe('people linked on their profiles (#455)', () => {
+  const account = { id: 7, login: 'Dana-Dev', avatar_url: 'https://avatars.example.test/7' };
+  const dana = { login: 'dana-dev', displayName: 'Dana Scully', email: 'dana@example.test' };
+  const devOpsUser: User = {
+    id: 'devops-42',
+    displayName: 'Dana K. Scully',
+    email: 'Dana@Example.test',
+    avatarUrl: 'https://devops.example.test/avatar/42',
+  };
+
+  beforeEach(() => vi.spyOn(console, 'warn').mockImplementation(() => {}));
+  afterEach(() => vi.restoreAllMocks());
+
+  it('keys usernames in lower case and keeps the first claim', () => {
+    const index = indexLinkedAccounts([
+      { login: 'Dana-Dev', displayName: 'Dana Scully', email: 'dana@example.test' },
+      { login: 'dana-dev', displayName: 'Someone Else', email: 'else@example.test' },
+      { login: 'not a login', displayName: 'X', email: '' },
+    ]);
+    expect(Object.keys(index)).toEqual(['dana-dev']);
+    expect(index['dana-dev'].displayName).toBe('Dana Scully');
+    expect(console.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('becomes the DevOps user with the same email address', () => {
+    const person = gitHubUserToPerson(account, {
+      userMap: {},
+      linkedAccounts: { 'dana-dev': dana },
+      devOpsUsers: [devOpsUser],
+    });
+    expect(person).toEqual(devOpsUser);
+  });
+
+  it('falls back to the DevOps user of the same name', () => {
+    const person = gitHubUserToPerson(account, {
+      userMap: {},
+      linkedAccounts: { 'dana-dev': { ...dana, email: 'other@example.test' } },
+      devOpsUsers: [{ ...devOpsUser, displayName: 'Dana Scully', email: '' }],
+    });
+    expect(person.id).toBe('devops-42');
+    expect(person.email).toBe('other@example.test');
+  });
+
+  it('takes the profile name and address when no DevOps user matches', () => {
+    const person = gitHubUserToPerson(account, {
+      userMap: {},
+      linkedAccounts: { 'dana-dev': dana },
+    });
+    expect(person).toEqual({
+      id: 'github:7',
+      displayName: 'Dana Scully',
+      email: 'dana@example.test',
+      avatarUrl: 'https://avatars.example.test/7',
+    });
+  });
+
+  it('lets GITHUB_USER_MAP win over a saved username', () => {
+    const person = gitHubUserToPerson(account, {
+      userMap: { 'dana-dev': 'Dana From Config' },
+      linkedAccounts: { 'dana-dev': dana },
+    });
+    expect(person.displayName).toBe('Dana From Config');
+  });
+
+  it('leaves accounts nobody linked as their GitHub username', () => {
+    const person = gitHubUserToPerson(
+      { id: 8, login: 'sam7' },
+      { userMap: {}, linkedAccounts: { 'dana-dev': dana } }
+    );
+    expect(person.displayName).toBe('sam7');
+  });
+});
+
+describe('linkedGitHubAccounts', () => {
+  const dana = { login: 'Dana-Dev', displayName: 'Dana Scully', email: 'dana@example.test' };
+
+  beforeEach(() => {
+    clearLinkedAccountsCache();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('reads the profiles once, and again after the cache is cleared', async () => {
+    const load = vi.fn().mockResolvedValue([dana]);
+    expect(await linkedGitHubAccounts(load)).toEqual({ 'dana-dev': dana });
+    await linkedGitHubAccounts(load);
+    expect(load).toHaveBeenCalledTimes(1);
+
+    clearLinkedAccountsCache();
+    await linkedGitHubAccounts(load);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('answers empty when Graph refuses, and asks again a minute later', async () => {
+    vi.useFakeTimers();
+    const load = vi.fn().mockRejectedValueOnce(new Error('forbidden')).mockResolvedValue([dana]);
+    expect(await linkedGitHubAccounts(load)).toEqual({});
+    expect(await linkedGitHubAccounts(load)).toEqual({});
+    expect(load).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(61 * 1000);
+    expect(await linkedGitHubAccounts(load)).toEqual({ 'dana-dev': dana });
   });
 });
 

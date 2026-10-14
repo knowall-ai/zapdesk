@@ -4,7 +4,8 @@ import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import { normalizeStateName } from '@/lib/kanban-columns';
-import { devOpsUsersForGitHub, gitHubIssuesConfig, getGitHubTickets } from '@/lib/github-issues';
+import { gitHubIssuesConfig, getGitHubTickets } from '@/lib/github-issues';
+import { gitHubPeopleFor } from '@/lib/github-people';
 import { addGitHubTicketsToStandup } from '@/lib/github-kanban';
 import type {
   StandupData,
@@ -414,17 +415,19 @@ export async function GET(request: NextRequest) {
     if (gitHubConfig) {
       try {
         const visibleProjects = await devopsService.getProjects();
-        // Mapped GitHub accounts take their DevOps name, so grouping by person
-        // puts a person's issues with their DevOps work.
-        const devOpsUsers =
-          Object.keys(gitHubConfig.userMap).length > 0
-            ? await devOpsUsersForGitHub(organization, () => devopsService.getOrganizationUsers())
-            : [];
+        // Mapped and linked GitHub accounts take their DevOps name, so grouping
+        // by person puts a person's issues with their DevOps work.
+        const { devOpsUsers, linkedAccounts } = await gitHubPeopleFor(
+          organization,
+          gitHubConfig,
+          () => devopsService.getOrganizationUsers()
+        );
         const gitHub = await getGitHubTickets(
           visibleProjects,
           organization,
           gitHubConfig,
-          devOpsUsers
+          devOpsUsers,
+          linkedAccounts
         );
         projects = addGitHubTicketsToStandup(devOpsProjects, displayColumns, gitHub.tickets);
         failedGitHubRepos = gitHub.failedRepos;

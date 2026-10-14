@@ -259,12 +259,36 @@ beyond that, the server log says so and the rest are not shown.
 
 Restart the app after changing either value.
 
-=== GitHub username to DevOps user mapping
+=== Linking GitHub accounts to people
 
-Optional. Nothing links a GitHub account to an Azure DevOps user, so without
-this a person appears twice: under their DevOps name and under their GitHub
-username. Set `GITHUB_USER_MAP` to a JSON object of GitHub username to the
-person's DevOps display name:
+Nothing on GitHub says which Azure DevOps user an account belongs to, so
+without a link a person appears twice: under their DevOps name and under their
+GitHub username. There are two ways to link them.
+
+==== On each person's profile
+
+Each person opens *Profile* and saves their GitHub username in the *GitHub*
+card, which appears once GitHub issues are configured. The username is stored
+in their Microsoft profile, in the same `zapdesk.knowall.ai` extension as
+their Lightning Address, so no admin step is needed when someone joins.
+
+* ZapDesk reads the saved usernames with the app's Microsoft Graph
+  *application* permission `User.ReadWrite.All` (admin consent), the one the
+  Lightning Address already needs. It reads the users of the tenant in
+  `AZURE_AD_TENANT_ID`, and keeps the result for ten minutes; a save on the
+  same server takes effect at once.
+* A linked account becomes the Azure DevOps user with the same email address,
+  else the one with the same display name, else the profile's name and email.
+* A username can be linked to one person only: saving one someone else has
+  already linked is refused.
+* People outside the tenant (guests, clients signing in with another
+  directory, personal Microsoft accounts) cannot save a username this way. Use
+  `GITHUB_USER_MAP` for them.
+
+==== In the server configuration
+
+Set `GITHUB_USER_MAP` to a JSON object of GitHub username to the person's
+DevOps display name. An entry here wins over a username saved on a profile:
 
 [source,json]
 ----
@@ -282,7 +306,8 @@ person's DevOps display name:
   takes their DevOps avatar and identity, so their GitHub issues count as
   theirs in the *Your active tickets* view. Without that permission, only the
   name changes.
-* A username that is not in the mapping is shown as it is on GitHub.
+* A username that is neither in the mapping nor saved on a profile is shown as
+  it is on GitHub.
 
 Restart the app after changing the value.
 
@@ -300,8 +325,8 @@ open or closed, so open issues sit in the first column and closed ones in
 closed issues appear on the Kanban Board page alone. An issue card cannot be
 dragged. On the Kanban Board page, issues
 appear under the project their repository is mapped to; grouped by person,
-they appear under the assignee's DevOps name when `GITHUB_USER_MAP` has their
-username, and under the GitHub username otherwise.
+they appear under the assignee's DevOps name when the account is linked (see
+above), and under the GitHub username otherwise.
 
 [cols="1,1"]
 |===
@@ -326,8 +351,9 @@ left out.
 
 Not covered yet: the project page and the sidebar counts. The *Your active
 tickets* view matches on email address, which GitHub does not expose, so it
-lists a person's GitHub issues only when `GITHUB_USER_MAP` has their username
-and ZapDesk can read the organization's user list.
+lists a person's GitHub issues only when their account is linked: saved on
+their profile, or in `GITHUB_USER_MAP` when ZapDesk can also read the
+organization's user list.
 
 == Local Development
 

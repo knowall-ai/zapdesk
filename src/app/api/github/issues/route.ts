@@ -3,7 +3,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
-import { devOpsUsersForGitHub, gitHubIssuesConfig, getGitHubTickets } from '@/lib/github-issues';
+import { gitHubIssuesConfig, getGitHubTickets } from '@/lib/github-issues';
+import { gitHubPeopleFor } from '@/lib/github-people';
 import { filterTicketsByView } from '@/lib/ticket-views';
 
 /**
@@ -41,16 +42,16 @@ export async function GET(request: NextRequest) {
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
     const projects = await devopsService.getProjects();
-    // Only needed to show mapped GitHub accounts as their DevOps user
-    const devOpsUsers =
-      Object.keys(config.userMap).length > 0
-        ? await devOpsUsersForGitHub(organization, () => devopsService.getOrganizationUsers())
-        : [];
+    // Show mapped and linked GitHub accounts as their DevOps user
+    const { devOpsUsers, linkedAccounts } = await gitHubPeopleFor(organization, config, () =>
+      devopsService.getOrganizationUsers()
+    );
     const { tickets, failedRepos } = await getGitHubTickets(
       projects,
       organization,
       config,
-      devOpsUsers
+      devOpsUsers,
+      linkedAccounts
     );
 
     const view = request.nextUrl.searchParams.get('view') || 'all-unsolved';
