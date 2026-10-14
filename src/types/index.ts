@@ -490,8 +490,9 @@ export interface TeamStats {
   inProgressTickets: number;
   /**
    * Tickets the team should look at: New or Open with no assignee, or Open,
-   * In Progress or Pending and not updated for 3 days. This counts tickets;
-   * it is not the number of members whose status is `Needs Attention`.
+   * In Progress or Pending and last updated more than 3 days ago (strictly
+   * before the cutoff). This counts tickets; it is not the number of members
+   * whose status is `Needs Attention`.
    */
   needsAttention: number;
 }
