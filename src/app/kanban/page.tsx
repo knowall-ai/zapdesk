@@ -579,7 +579,10 @@ function StandupPageContent() {
   // remembered by each group; this is the scroll position of the board.
   const organizationName = selectedOrganization?.accountName ?? '';
   const groupScope = `${organizationName}:${groupBy}`;
-  const scrollScope = `${groupScope}:${currentSprintOnly ? 'sprint' : 'all'}`;
+  // The board narrowed to one state keeps a position of its own. Narrowing
+  // shortens the board, which clamps the scroll position; sharing one record
+  // would lose where the user was on the whole board when they went back.
+  const scrollScope = `${groupScope}:${currentSprintOnly ? 'sprint' : 'all'}:${focusedColumn ?? ''}`;
   const boardRef = useRef<HTMLDivElement>(null);
   // The scope whose position has been put back. The saved position is applied
   // each time a board comes on screen (first load, or after the loading
