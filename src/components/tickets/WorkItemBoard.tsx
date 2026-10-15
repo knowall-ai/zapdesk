@@ -19,6 +19,9 @@ import {
   Layers,
   Minus,
   Zap,
+  Github,
+  SquareKanban,
+  ExternalLink,
 } from 'lucide-react';
 import type { Ticket, WorkItem, WorkItemType } from '@/types';
 import { TICKET_WORK_ITEM_TYPES } from '@/types';
@@ -37,6 +40,7 @@ export type ColumnId =
   | 'checkbox'
   | 'id'
   | 'type'
+  | 'source'
   | 'status'
   | 'subject'
   | 'project'
@@ -66,6 +70,17 @@ export const TICKET_COLUMNS: ColumnConfig[] = [
   { id: 'updated', label: 'Updated', sortField: 'updated' },
   { id: 'assignee', label: 'Assignee', sortField: 'assignee' },
 ];
+
+// Ticket columns with a Source column, for lists that mix Azure DevOps work
+// items with GitHub issues (#447).
+export const TICKET_COLUMNS_WITH_SOURCE: ColumnConfig[] = TICKET_COLUMNS.flatMap((column) =>
+  column.id === 'type' ? [column, { id: 'source' as const, label: 'Source' }] : [column]
+);
+
+/** GitHub issues are read-only here: no selection, bulk actions, drag or tips. */
+function isGitHubItem(item: { source?: string }): boolean {
+  return item.source === 'github';
+}
 
 // Columns for work items view (Feature Explorer)
 export const WORKITEM_COLUMNS: ColumnConfig[] = [
@@ -568,8 +583,10 @@ export default function WorkItemBoard({
   const filteredItems = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return items.filter((item) => {
-      // Tickets only filter - check for "ticket" tag (case-insensitive)
-      if (ticketsOnly) {
+      // Tickets only filter - check for "ticket" tag (case-insensitive). The tag
+      // is a DevOps convention; a GitHub issue is listed because its repository
+      // is mapped to the project.
+      if (ticketsOnly && !isGitHubItem(item)) {
         const hasTicketTag = item.tags?.some((tag) => tag.toLowerCase() === 'ticket');
         if (!hasTicketTag) return false;
       }
@@ -577,7 +594,9 @@ export default function WorkItemBoard({
       if (query) {
         const matchesSearch =
           item.title.toLowerCase().includes(query) ||
-          item.id.toString().includes(query) ||
+          (isGitHubItem(item)
+            ? item.sourceRef?.toLowerCase().includes(query)
+            : item.id.toString().includes(query)) ||
           item.assignee?.displayName?.toLowerCase().includes(query) ||
           item.requester?.displayName?.toLowerCase().includes(query) ||
           item.state.toLowerCase().includes(query) ||
@@ -613,13 +632,16 @@ export default function WorkItemBoard({
   const bulkSelectableItems = useMemo(
     () =>
       filteredItems.filter(
-        (item) => !item.workItemType || TICKET_WORK_ITEM_TYPES.includes(item.workItemType)
+        (item) =>
+          !isGitHubItem(item) &&
+          (!item.workItemType || TICKET_WORK_ITEM_TYPES.includes(item.workItemType))
       ),
     [filteredItems]
   );
 
   const toggleItemSelection = (itemId: number) => {
     const item = filteredItems.find((i) => i.id === itemId);
+    if (item && isGitHubItem(item)) return;
     // Prevent selection of non-ticket types (Epic, Feature, User Story)
     if (item?.workItemType && !TICKET_WORK_ITEM_TYPES.includes(item.workItemType)) return;
 
@@ -1097,8 +1119,12 @@ export default function WorkItemBoard({
                             checked={selectedItems.has(item.id)}
                             onChange={() => toggleItemSelection(item.id)}
                             disabled={
-                              !!item.workItemType &&
-                              !TICKET_WORK_ITEM_TYPES.includes(item.workItemType)
+                              isGitHubItem(item) ||
+                              (!!item.workItemType &&
+                                !TICKET_WORK_ITEM_TYPES.includes(item.workItemType))
+                            }
+                            title={
+                              isGitHubItem(item) ? 'GitHub issues are read-only here' : undefined
                             }
                             className="rounded disabled:opacity-30"
                           />
@@ -1136,6 +1162,20 @@ export default function WorkItemBoard({
                           })()}
                         </td>
                       )}
+                      {hasColumn('source') && (
+                        <td className={cellPadding}>
+                          <span
+                            className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-medium"
+                            style={{
+                              backgroundColor: 'var(--surface-hover)',
+                              color: 'var(--text-secondary)',
+                            }}
+                          >
+                            {isGitHubItem(item) ? <Github size={12} /> : <SquareKanban size={12} />}
+                            {isGitHubItem(item) ? 'GitHub' : 'DevOps'}
+                          </span>
+                        </td>
+                      )}
                       {hasColumn('status') && (
                         <td className={cellPadding}>
                           <StatusBadge status={item.state} />
@@ -1143,7 +1183,31 @@ export default function WorkItemBoard({
                       )}
                       {hasColumn('subject') && (
                         <td className={`${cellPadding} max-w-xs`}>
-                          {onWorkItemClick ? (
+                          {isGitHubItem(item) && item.sourceUrl ? (
+                            <>
+                              <a
+                                href={item.sourceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="line-clamp-2 text-sm hover:underline"
+                                title={item.title + ' (opens on GitHub)'}
+                                style={{ color: 'var(--text-primary)' }}
+                              >
+                                {item.title}
+                                <ExternalLink
+                                  size={12}
+                                  className="ml-1 inline-block align-baseline"
+                                  style={{ color: 'var(--text-muted)' }}
+                                  aria-hidden="true"
+                                />
+                              </a>
+                              {item.sourceRef && (
+                                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                  {item.sourceRef}
+                                </span>
+                              )}
+                            </>
+                          ) : onWorkItemClick ? (
                             <button
                               onClick={() => onWorkItemClick(item)}
                               className="line-clamp-2 text-sm hover:underline"
@@ -1259,7 +1323,7 @@ export default function WorkItemBoard({
                                 Unassigned
                               </span>
                             )}
-                            {onZapClick && (
+                            {onZapClick && !isGitHubItem(item) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();

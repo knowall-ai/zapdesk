@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { Avatar } from '@/components/common';
 import { useProfilePhoto } from '@/hooks';
+import GitHubAccountCard from '@/components/profile/GitHubAccountCard';
 import {
   User,
   Mail,
@@ -307,6 +308,8 @@ export default function ProfilePage() {
             </div>
           </div>
         </div>
+
+        <GitHubAccountCard />
 
         {/* Time and Locale Card */}
         <div className="card mb-6 p-6">

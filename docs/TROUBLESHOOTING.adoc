@@ -76,6 +76,30 @@
 
 |**A card dragged on the Kanban board goes back to its old column**
 |If a message appears, it gives the reason Azure DevOps refused the move, usually a workflow rule on that work item type. A column that turns grey while you drag is one the card's type has no state for (hover it for the reason). With no message at all on a version before the fix for issue #366, a board refresh arrived during the drag: drop the card again, or turn *Live update* off while moving several cards.
+
+|**The Both / DevOps / GitHub toggle is missing from the header**
+|GitHub issues are not configured. Set both `GITHUB_TOKEN` and `GITHUB_PROJECT_REPOS` in the App Service configuration and restart. Check the server log for `[GitHub] GITHUB_PROJECT_REPOS` warnings: the value must be a JSON object such as `{"Project": ["owner/repo"]}`.
+
+|**The toggle is there but no GitHub issues are listed**
+|The project name in `GITHUB_PROJECT_REPOS` must match an Azure DevOps project in the selected organization that you can see (case does not matter). Only open issues and closed issues updated in the last seven days are listed.
+
+|**The same person is listed twice, under their name and under a GitHub username**
+|The GitHub account is not linked to the person. They can save their GitHub username in the *GitHub* card on their *Profile* page. For someone outside the tenant, add the username to `GITHUB_USER_MAP` in the App Service configuration instead, as `{"github-username": "DevOps Display Name"}`, and restart; the name must be the person's display name in Azure DevOps. Check the server log for `[GitHub] GITHUB_USER_MAP` warnings.
+
+|**A GitHub username saved on the profile has no effect**
+|Another server may still have the old list: allow up to ten minutes. If it never applies, the server log shows `[GitHub] Could not read the GitHub usernames saved on profiles`: the app registration needs the Microsoft Graph application permission `User.ReadWrite.All` with admin consent. A person is matched to an Azure DevOps user by email address, then by display name.
+
+|**"GitHub username … is already linked to another person"**
+|Someone else saved that username on their profile. If it is wrongly theirs, they can remove it from their *Profile* page; an admin can override it with a `GITHUB_USER_MAP` entry.
+
+|**"Could not check whether this GitHub username is already linked"**
+|Before saving, ZapDesk reads every user in the tenant to make sure no one else has linked the username, and refuses the save if it cannot. The server log has the reason: a Graph error means the app registration lacks the Microsoft Graph application permission `User.ReadWrite.All` (with admin consent); `IncompleteUserListError` means the tenant has more than 5,000 users, more than the check reads. Use `GITHUB_USER_MAP` for that person instead.
+
+|**The GitHub card is missing from the Profile page**
+|It appears only when GitHub issues are configured (`GITHUB_TOKEN` and `GITHUB_PROJECT_REPOS`).
+
+|**"Could not load GitHub issues from owner/repo"** (or **from owner/***)
+|For `owner/*`: the owner must be a GitHub organization, not a personal account, and the token must be allowed to read it. Otherwise: the token cannot read that repository. Check the repository name, that the token has read-only *Issues* access to it, and that it has not expired. The server log has the status GitHub returned: 404 means not found or no access, 401 an invalid token, 403 or 429 the rate limit.
 |===
 
 == Debugging Tips

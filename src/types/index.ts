@@ -140,9 +140,18 @@ export function ensureActiveState(states: WorkItemState[]): WorkItemState[] {
   return [activeState, ...states];
 }
 
+/** Where a ticket lives. Absent on a ticket or work item means Azure DevOps. */
+export type WorkSource = 'devops' | 'github';
+/** Which sources the header toggle shows. */
+export type SourceFilter = 'both' | WorkSource;
+
 export interface Ticket {
   id: number;
   workItemId: number;
+  source?: WorkSource;
+  // For a GitHub issue: its page on GitHub, and "owner/repo#123"
+  sourceUrl?: string;
+  sourceRef?: string;
   title: string;
   description: string;
   reproSteps?: string;
@@ -526,6 +535,9 @@ export interface WorkItem {
   resolvedReason?: string;
   // Customer's response on a Question work item (Custom.CustomerResponse)
   customerResponse?: string;
+  source?: WorkSource;
+  sourceUrl?: string;
+  sourceRef?: string;
   // Optional ticket-specific fields (populated when item is a ticket)
   requester?: Customer;
   organization?: Organization;
@@ -571,6 +583,10 @@ export interface StandupWorkItem {
   tags: string[];
   iterationPath?: string;
   remainingWork?: number;
+  // Set for a GitHub issue shown as a read-only card (#447)
+  source?: WorkSource;
+  sourceUrl?: string;
+  sourceRef?: string;
 }
 
 /** A column definition pulled from DevOps state configuration */
@@ -608,6 +624,8 @@ export interface StandupData {
    * server decide — total discovery failure is a 500, not an omission here.
    */
   allowedStatesByProjectType?: Record<string, Record<string, string[]>>;
+  /** GitHub repositories whose issues could not be read; the board is shown without them. */
+  failedGitHubRepos?: string[];
   summary: {
     columnCounts: Record<string, number>;
     projectCount: number;

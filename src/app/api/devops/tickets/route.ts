@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService, workItemToTicket, setStateCategoryCache } from '@/lib/devops';
 import { TICKET_WORK_ITEM_TYPES } from '@/types';
-import type { Ticket, TicketStatus } from '@/types';
+import { filterTicketsByView } from '@/lib/ticket-views';
 
 // TTL cache for state categories (avoids refetching on every request)
 let stateCategoryCacheData: {
@@ -272,49 +272,5 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error fetching tickets:', error);
     return NextResponse.json({ error: 'Failed to fetch tickets' }, { status: 500 });
-  }
-}
-
-function filterTicketsByView(tickets: Ticket[], view: string, userEmail?: string | null): Ticket[] {
-  const activeStatuses: TicketStatus[] = ['New', 'Open', 'In Progress'];
-  const currentUserEmail = userEmail?.toLowerCase();
-
-  switch (view) {
-    case 'your-active':
-    case 'your-unsolved':
-      return tickets.filter(
-        (t) =>
-          activeStatuses.includes(t.status) && t.assignee?.email?.toLowerCase() === currentUserEmail
-      );
-
-    case 'unassigned':
-      return tickets.filter((t) => !t.assignee && activeStatuses.includes(t.status));
-
-    case 'all-active':
-    case 'all-unsolved':
-      return tickets.filter((t) => activeStatuses.includes(t.status));
-
-    case 'recently-updated':
-      const weekAgo = new Date();
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      return tickets.filter((t) => t.updatedAt >= weekAgo);
-
-    case 'created-today':
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return tickets.filter((t) => t.createdAt >= today);
-
-    case 'pending':
-      return tickets.filter((t) => t.status === 'Pending');
-
-    case 'recently-solved':
-      const weekAgoSolved = new Date();
-      weekAgoSolved.setDate(weekAgoSolved.getDate() - 7);
-      return tickets.filter(
-        (t) => (t.status === 'Resolved' || t.status === 'Closed') && t.updatedAt >= weekAgoSolved
-      );
-
-    default:
-      return tickets;
   }
 }

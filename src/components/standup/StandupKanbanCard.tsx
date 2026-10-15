@@ -3,7 +3,9 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import Link from 'next/link';
+import { Github } from 'lucide-react';
 import { Avatar, PriorityIndicator } from '@/components/common';
+import { isGitHubItem } from '@/lib/github-kanban';
 import type { StandupWorkItem } from '@/types';
 
 interface StandupKanbanCardProps {
@@ -24,8 +26,12 @@ const typeColors: Record<string, string> = {
 };
 
 export default function StandupKanbanCard({ item, isDragging, onClick }: StandupKanbanCardProps) {
+  // A GitHub issue is read-only here: it cannot be dragged, because a drop
+  // writes a state to Azure DevOps, and it opens on GitHub (#447).
+  const isGitHub = isGitHubItem(item);
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
     id: item.id,
+    disabled: isGitHub,
   });
 
   const style = {
@@ -44,28 +50,41 @@ export default function StandupKanbanCard({ item, isDragging, onClick }: Standup
   const cardBody = (
     <>
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
+        {isGitHub ? (
           <span
-            className="rounded px-1 py-0.5 text-[10px] font-medium"
-            style={{
-              backgroundColor: `${typeColor}20`,
-              color: typeColor,
-            }}
+            className="flex min-w-0 items-center gap-1 text-xs text-[var(--text-muted)]"
+            title="GitHub issue"
           >
-            {item.workItemType}
+            <Github size={12} className="shrink-0" />
+            <span className="truncate">{item.sourceRef ?? 'GitHub issue'}</span>
           </span>
-          <span className="text-xs text-[var(--text-muted)]">#{item.id}</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span
-            className="rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
-            aria-label={`Remaining effort: ${remainingLabel}`}
-            title={`Remaining effort: ${remainingLabel}`}
-          >
-            {remainingLabel}
-          </span>
-          <PriorityIndicator priority={item.priority} />
-        </div>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <span
+              className="rounded px-1 py-0.5 text-[10px] font-medium"
+              style={{
+                backgroundColor: `${typeColor}20`,
+                color: typeColor,
+              }}
+            >
+              {item.workItemType}
+            </span>
+            <span className="text-xs text-[var(--text-muted)]">#{item.id}</span>
+          </div>
+        )}
+        {/* Remaining effort is a DevOps field; a GitHub issue has none to show. */}
+        {!isGitHub && (
+          <div className="flex items-center gap-1.5">
+            <span
+              className="rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
+              aria-label={`Remaining effort: ${remainingLabel}`}
+              title={`Remaining effort: ${remainingLabel}`}
+            >
+              {remainingLabel}
+            </span>
+            <PriorityIndicator priority={item.priority} />
+          </div>
+        )}
       </div>
 
       <h4 className="mb-2 line-clamp-2 text-sm font-medium text-[var(--text-primary)]">
@@ -96,6 +115,22 @@ export default function StandupKanbanCard({ item, isDragging, onClick }: Standup
       </div>
     </>
   );
+
+  if (isGitHub) {
+    return (
+      <div className="kanban-card" title={item.title}>
+        <a
+          href={item.sourceUrl ?? item.devOpsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block"
+          aria-label={`Open ${item.sourceRef ?? 'issue'} on GitHub`}
+        >
+          {cardBody}
+        </a>
+      </div>
+    );
+  }
 
   return (
     <div

@@ -206,6 +206,155 @@ ZapDesk uses Microsoft 365 SMTP for sending emails:
 
 Create an app password in Microsoft 365 admin for the SMTP_PASSWORD.
 
+== GitHub Issues
+
+Optional. ZapDesk can show GitHub issues beside Azure DevOps work items in the
+tickets list and on the Kanban boards, for projects that track work in GitHub
+as well as, or instead of, DevOps. The issues are read-only in ZapDesk: each
+row or card links to the issue on GitHub.
+
+=== Token
+
+Create a GitHub token the server uses to read issues, and set it as
+`GITHUB_TOKEN` in the App Service configuration.
+
+* A fine-grained personal access token is enough.
+* Repository access: only the repositories you will map.
+* Permissions: *Issues*, read-only.
+
+The token stays on the server. It is shared by every ZapDesk user, so it has
+one rate limit (5,000 requests an hour); ZapDesk reuses each repository's
+issues for a minute to stay well inside it.
+
+=== Project to repository mapping
+
+Set `GITHUB_PROJECT_REPOS` to a JSON object of Azure DevOps project name to
+the GitHub repositories that belong to it:
+
+[source,json]
+----
+{
+  "Project One": ["your-org/repo-one", "your-org/repo-two"],
+  "Project Two": ["your-org/another-repo"]
+}
+----
+
+* Project names match without regard to case.
+* A repository is written as `owner/repo`. Anything else is ignored, with a
+  warning in the server log.
+* `owner/*` stands for every repository of that GitHub organization that the
+  token can read, so repositories do not have to be listed one by one and new
+  ones appear by themselves:
++
+[source,json]
+----
+{ "Project One": ["your-org/*"] }
+----
++
+A repository that is also named for another project stays with that project
+only. Up to 1,000 open issues and pull requests are read for an organization;
+beyond that, the server log says so and the rest are not shown.
+* A user sees a repository's issues only if they can see the DevOps project it
+  is mapped to, in the organization they have selected.
+
+Restart the app after changing either value.
+
+=== Linking GitHub accounts to people
+
+Nothing on GitHub says which Azure DevOps user an account belongs to, so
+without a link a person appears twice: under their DevOps name and under their
+GitHub username. There are two ways to link them.
+
+==== On each person's profile
+
+Each person opens *Profile* and saves their GitHub username in the *GitHub*
+card, which appears once GitHub issues are configured. The username is stored
+in their Microsoft profile, in the same `zapdesk.knowall.ai` extension as
+their Lightning Address, so no admin step is needed when someone joins.
+
+* ZapDesk reads the saved usernames with the app's Microsoft Graph
+  *application* permission `User.ReadWrite.All` (admin consent), the one the
+  Lightning Address already needs. It reads the users of the tenant in
+  `AZURE_AD_TENANT_ID`, and keeps the result for ten minutes; a save on the
+  same server takes effect at once.
+* A linked account becomes the Azure DevOps user with the same email address,
+  else the one with the same display name, else the profile's name and email.
+* A username can be linked to one person only: saving one someone else has
+  already linked is refused.
+* People outside the tenant (guests, clients signing in with another
+  directory, personal Microsoft accounts) cannot save a username this way. Use
+  `GITHUB_USER_MAP` for them.
+
+==== In the server configuration
+
+Set `GITHUB_USER_MAP` to a JSON object of GitHub username to the person's
+DevOps display name. An entry here wins over a username saved on a profile:
+
+[source,json]
+----
+{
+  "github-username": "DevOps Display Name",
+  "another-username": "Another Person"
+}
+----
+
+* Usernames and names match without regard to case.
+* A mapped person's issues are listed under their DevOps name: in the
+  *Assignee* and *Requester* columns, and when the Kanban Board page is grouped
+  by person.
+* When ZapDesk can read the organization's user list, a mapped person also
+  takes their DevOps avatar and identity, so their GitHub issues count as
+  theirs in the *Your active tickets* view. Without that permission, only the
+  name changes.
+* A username that is neither in the mapping nor saved on a profile is shown as
+  it is on GitHub.
+
+Restart the app after changing the value.
+
+=== What appears
+
+With both values set, a *Both / DevOps / GitHub* toggle appears in the top
+right of the header, and the tickets list gains a *Source* column. With either
+value unset, neither appears.
+
+On the Kanban boards (the Kanban view of the tickets page, and the Kanban
+Board page) an issue is a card marked with the GitHub icon and its
+`owner/repo#number`. The columns are Azure DevOps states and an issue is only
+open or closed, so open issues sit in the first column and closed ones in
+*Closed*. The Kanban view of the tickets page shows active items only, so
+closed issues appear on the Kanban Board page alone. An issue card cannot be
+dragged. On the Kanban Board page, issues
+appear under the project their repository is mapped to; grouped by person,
+they appear under the assignee's DevOps name when the account is linked (see
+above), and under the GitHub username otherwise.
+
+[cols="1,1"]
+|===
+|GitHub |ZapDesk
+
+|open / closed
+|Status `Open` / `Closed`
+
+|First assignee
+|Assignee
+
+|Labels
+|Tags
+
+|Author
+|Requester
+|===
+
+Open issues are listed, plus closed issues updated in the last seven days,
+the same window the Kanban Board uses for closed work items. Pull requests are
+left out.
+
+Not covered yet: the project page and the sidebar counts. The *Your active
+tickets* view matches on email address, which GitHub does not expose, so it
+lists a person's GitHub issues only when their account is linked: saved on
+their profile, or in `GITHUB_USER_MAP` when ZapDesk can also read the
+organization's user list.
+
 == Local Development
 
 . Copy `.env.example` to `.env` and fill in values
