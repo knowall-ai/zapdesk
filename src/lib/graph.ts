@@ -265,14 +265,29 @@ interface GraphUserWithExtensions {
   extensions?: GraphExtension[];
 }
 
+/** Thrown when the tenant has more users than are read, and the caller needs them all. */
+export class IncompleteUserListError extends Error {
+  constructor() {
+    super(`More than ${MAX_USER_PAGES * 100} users in the tenant; not all were read`);
+    this.name = 'IncompleteUserListError';
+  }
+}
+
 /**
  * Every user in the tenant who has saved a GitHub username.
  *
  * Open extensions cannot be filtered on, so this reads the users with their
  * extensions and keeps the ones that have a username. Throws when Graph
  * refuses, so the caller can tell "nobody has linked" from "could not read".
+ *
+ * Past `MAX_USER_PAGES` pages the rest of the tenant is not read. That is
+ * fine for showing people, so it only warns; with `requireComplete`, for a
+ * check that must see everyone, it throws `IncompleteUserListError` instead.
  */
-export async function listLinkedGitHubAccounts(graphToken: string): Promise<LinkedGitHubAccount[]> {
+export async function listLinkedGitHubAccounts(
+  graphToken: string,
+  { requireComplete = false }: { requireComplete?: boolean } = {}
+): Promise<LinkedGitHubAccount[]> {
   const accounts: LinkedGitHubAccount[] = [];
   let url: string | null =
     `${GRAPH_BASE_URL}/users?$select=id,displayName,mail,userPrincipalName&$expand=extensions&$top=100`;
@@ -307,6 +322,7 @@ export async function listLinkedGitHubAccounts(graphToken: string): Promise<Link
 
     url = data['@odata.nextLink'] ?? null;
     if (url && page === MAX_USER_PAGES - 1) {
+      if (requireComplete) throw new IncompleteUserListError();
       console.warn(
         `[GitHub] More than ${MAX_USER_PAGES * 100} users in the tenant; GitHub usernames of the rest are not read.`
       );

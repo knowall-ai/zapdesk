@@ -92,6 +92,9 @@
 |**"GitHub username … is already linked to another person"**
 |Someone else saved that username on their profile. If it is wrongly theirs, they can remove it from their *Profile* page; an admin can override it with a `GITHUB_USER_MAP` entry.
 
+|**"Could not check whether this GitHub username is already linked"**
+|Before saving, ZapDesk reads every user in the tenant to make sure no one else has linked the username, and refuses the save if it cannot. The server log has the reason: a Graph error means the app registration lacks the Microsoft Graph application permission `User.ReadWrite.All` (with admin consent); `IncompleteUserListError` means the tenant has more than 5,000 users, more than the check reads. Use `GITHUB_USER_MAP` for that person instead.
+
 |**The GitHub card is missing from the Profile page**
 |It appears only when GitHub issues are configured (`GITHUB_TOKEN` and `GITHUB_PROJECT_REPOS`).
 

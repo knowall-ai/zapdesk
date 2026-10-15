@@ -81,6 +81,17 @@ describe('POST /api/profile/github', () => {
     expect(status).toBe(200);
   });
 
+  it('refuses to save when the check cannot read the users', async () => {
+    fetchMock.mockImplementation(async (input: string) =>
+      input.includes('/users?')
+        ? new Response('{}', { status: 403 })
+        : new Response(null, { status: 204 })
+    );
+    const { status } = await post('dana-dev');
+    expect(status).toBe(503);
+    expect(patches()).toHaveLength(0);
+  });
+
   it('needs a signed-in user', async () => {
     getServerSession.mockResolvedValue(null);
     const { status } = await post('dana-dev');

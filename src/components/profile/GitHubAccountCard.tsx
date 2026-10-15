@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Github, Loader2, Save, Trash2 } from 'lucide-react';
 import { useSourceFilter } from '@/components/providers/SourceProvider';
 
@@ -22,28 +22,37 @@ export default function GitHubAccountCard() {
   const [justSaved, setJustSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await fetch('/api/profile/github');
-      if (response.ok) {
-        const data = (await response.json()) as { githubUsername?: string | null };
-        setSavedUsername(data.githubUsername ?? null);
-        setUsername(data.githubUsername ?? '');
-      } else if (response.status !== 401) {
-        setError('Failed to load GitHub username');
-      }
-    } catch {
-      setError('Failed to connect to server');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
+  // Load the saved username. Every state update waits for the response, and
+  // one that arrives after the card is gone or reloading is dropped.
   useEffect(() => {
-    if (gitHubConfigured) load();
-  }, [gitHubConfigured, load]);
+    if (!gitHubConfigured) return;
+    let cancelled = false;
+
+    (async () => {
+      let loaded: string | null = null;
+      let loadError: string | null = null;
+      try {
+        const response = await fetch('/api/profile/github');
+        if (response.ok) {
+          const data = (await response.json()) as { githubUsername?: string | null };
+          loaded = data.githubUsername ?? null;
+        } else if (response.status !== 401) {
+          loadError = 'Failed to load GitHub username';
+        }
+      } catch {
+        loadError = 'Failed to connect to server';
+      }
+      if (cancelled) return;
+      setSavedUsername(loaded);
+      setUsername(loaded ?? '');
+      setError(loadError);
+      setIsLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gitHubConfigured]);
 
   const save = async () => {
     setIsSaving(true);

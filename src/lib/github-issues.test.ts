@@ -240,6 +240,20 @@ describe('people linked on their profiles (#455)', () => {
     expect(person.email).toBe('other@example.test');
   });
 
+  it('does not pick between two DevOps users of the same name', () => {
+    const person = gitHubUserToPerson(account, {
+      userMap: {},
+      linkedAccounts: { 'dana-dev': { ...dana, email: 'other@example.test' } },
+      devOpsUsers: [
+        { id: 'devops-1', displayName: 'Dana Scully', email: 'one@example.test' },
+        { id: 'devops-2', displayName: 'dana scully', email: 'two@example.test' },
+      ],
+    });
+    expect(person.id).toBe('github:7');
+    expect(person.displayName).toBe('Dana Scully');
+    expect(person.email).toBe('other@example.test');
+  });
+
   it('takes the profile name and address when no DevOps user matches', () => {
     const person = gitHubUserToPerson(account, {
       userMap: {},

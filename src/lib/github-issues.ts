@@ -256,8 +256,8 @@ export function gitHubIssuesConfig(): GitHubIssuesConfig | null {
  * views match.
  *
  * Otherwise an account someone saved on their profile becomes that person: the
- * DevOps user with their email address (or, failing that, their name) when
- * known, else their profile name and address. Any other account is shown by
+ * DevOps user with their email address (or, failing that, the only one with
+ * their name) when known, else their profile name and address. Any other account is shown by
  * its GitHub username.
  */
 export function gitHubUserToPerson(account: GitHubUser, people?: GitHubPeople): User {
@@ -291,9 +291,12 @@ function linkedPerson(account: GitHubUser, gitHubPerson: User, people?: GitHubPe
 
   const email = linked.email.toLowerCase();
   const name = linked.displayName.toLowerCase();
+  // A name only identifies someone when no one else has it; two people of
+  // the same name would otherwise share issues and "assigned to me" views.
+  const sameName = people?.devOpsUsers?.filter((user) => user.displayName?.toLowerCase() === name);
   const devOpsUser =
     (email && people?.devOpsUsers?.find((user) => user.email?.toLowerCase() === email)) ||
-    people?.devOpsUsers?.find((user) => user.displayName?.toLowerCase() === name);
+    (sameName?.length === 1 ? sameName[0] : undefined);
   if (devOpsUser) {
     return {
       id: devOpsUser.id,

@@ -59,10 +59,11 @@ export async function POST(request: NextRequest) {
   }
 
   // One username, one person: otherwise anyone could have someone else's
-  // issues listed under their own name.
+  // issues listed under their own name. The check must see every user, so a
+  // save is refused when it cannot.
   const me = session.user.email.toLowerCase();
   try {
-    const accounts = await listLinkedGitHubAccounts(graphToken);
+    const accounts = await listLinkedGitHubAccounts(graphToken, { requireComplete: true });
     const claimedByOther = accounts.some(
       (account) =>
         account.login.toLowerCase() === githubUsername.toLowerCase() &&
@@ -76,8 +77,11 @@ export async function POST(request: NextRequest) {
       );
     }
   } catch (error) {
-    // The save below needs the same permission and reports its own failure
     console.error('Could not check whether the GitHub username is taken:', error);
+    return NextResponse.json(
+      { error: 'Could not check whether this GitHub username is already linked; try again later' },
+      { status: 503 }
+    );
   }
 
   const success = await saveGitHubUsername(graphToken, session.user.email, githubUsername);

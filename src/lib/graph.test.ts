@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
+  IncompleteUserListError,
   deleteLightningAddress,
   getGitHubUsername,
   listLinkedGitHubAccounts,
@@ -159,6 +160,21 @@ describe('listLinkedGitHubAccounts', () => {
     ]);
     expect(fetchMock.mock.calls[0][0]).toContain('$expand=extensions');
     expect(fetchMock.mock.calls[1][0]).toContain('$skiptoken=abc');
+  });
+
+  it('reads up to 50 pages, and throws past that when everyone must be seen', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fetchMock.mockImplementation(async () =>
+      Response.json({ value: [], '@odata.nextLink': 'https://graph.microsoft.com/v1.0/users?next' })
+    );
+
+    await expect(listLinkedGitHubAccounts('token')).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(50);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+
+    await expect(listLinkedGitHubAccounts('token', { requireComplete: true })).rejects.toThrow(
+      IncompleteUserListError
+    );
   });
 
   it('throws when Graph refuses, so a failure is not read as nobody', async () => {
