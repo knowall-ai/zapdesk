@@ -12,6 +12,9 @@ import { useSourceFilter } from '@/components/providers/SourceProvider';
  * Only shown when GitHub issues are configured: otherwise the username is not
  * used anywhere.
  */
+/** How long to wait for the saved username before giving up. */
+const LOAD_TIMEOUT_MS = 15_000;
+
 export default function GitHubAccountCard() {
   const { gitHubConfigured } = useSourceFilter();
 
@@ -23,16 +26,20 @@ export default function GitHubAccountCard() {
   const [error, setError] = useState<string | null>(null);
 
   // Load the saved username. Every state update waits for the response, and
-  // one that arrives after the card is gone or reloading is dropped.
+  // one that arrives after the card is gone or reloading is dropped. The
+  // request is aborted on cleanup, and after LOAD_TIMEOUT_MS so a stalled one
+  // cannot leave the card loading for good.
   useEffect(() => {
     if (!gitHubConfigured) return;
     let cancelled = false;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
 
     (async () => {
       let loaded: string | null = null;
       let loadError: string | null = null;
       try {
-        const response = await fetch('/api/profile/github');
+        const response = await fetch('/api/profile/github', { signal: controller.signal });
         if (response.ok) {
           const data = (await response.json()) as { githubUsername?: string | null };
           loaded = data.githubUsername ?? null;
@@ -41,6 +48,8 @@ export default function GitHubAccountCard() {
         }
       } catch {
         loadError = 'Failed to connect to server';
+      } finally {
+        clearTimeout(timeout);
       }
       if (cancelled) return;
       setSavedUsername(loaded);
@@ -51,6 +60,8 @@ export default function GitHubAccountCard() {
 
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
+      controller.abort();
     };
   }, [gitHubConfigured]);
 
