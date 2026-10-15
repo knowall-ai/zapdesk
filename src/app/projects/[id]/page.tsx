@@ -12,6 +12,7 @@ import type { Organization, SLALevel, Epic } from '@/types';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { htmlToPlainText } from '@/lib/sanitize-html';
 import { templateSupportIssueUrl } from '@/lib/github';
+import GitHubConnectionCard from '@/components/projects/GitHubConnectionCard';
 
 interface ProjectWithSLA extends Organization {
   sla?: SLALevel;
@@ -441,6 +442,12 @@ export default function ProjectDetailPage() {
             </div>
           </div>
         </div>
+
+        {selectedOrganization?.accountName && (
+          <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <GitHubConnectionCard org={selectedOrganization.accountName} projectId={project.id} />
+          </div>
+        )}
       </div>
     </MainLayout>
   );

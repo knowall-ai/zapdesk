@@ -113,6 +113,21 @@
 |**Mail from a customer's domain is not routed to their project**
 |Add an `Email: example.com` line to the project's description in Azure DevOps. There are no built-in domains. The routing map refreshes every five minutes, and needs both `AZURE_DEVOPS_PAT` and `AZURE_DEVOPS_ORG`.
 
+|**No GitHub card on the project page**
+|The ZapDesk GitHub App is not set up on this server. Set `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` and `GITHUB_APP_PRIVATE_KEY`, and restart.
+
+|**The project page says "Someone who can edit this project … can connect GitHub"**
+|Only people with *Edit project-level information* on the project in Azure DevOps (Project Administrators, by default) can connect or disconnect GitHub.
+
+|**After installing the App: "GitHub was not connected: you need to be able to edit this project …"**
+|Either Azure DevOps refused the change (you cannot edit the project), or the GitHub user who authorised the App cannot see that installation. The server log says which. The App must have *Request user authorization (OAuth) during installation* ticked.
+
+|**After installing the App: "That GitHub link has expired"**
+|The link is valid for 30 minutes and only for the person who clicked *Connect GitHub*. Click it again.
+
+|**The project is connected but no GitHub issues show**
+|Check the App was given the repositories on GitHub (*Choose repositories on GitHub* on the project page). Changes to the repository list take up to five minutes to show.
+
 |**The GitHub card is missing from the Profile page**
 |It appears only when GitHub issues are configured (`GITHUB_TOKEN` and `GITHUB_PROJECT_REPOS`).
 

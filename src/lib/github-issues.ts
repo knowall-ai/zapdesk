@@ -546,6 +546,19 @@ export function clearGitHubIssuesCache(): void {
   issuesCache.clear();
 }
 
+/**
+ * Forget one repository's issues, and its organisation's `owner/*` entry, so
+ * the next load reads them again. Used when GitHub reports a change.
+ */
+export function forgetRepoIssues(fullName: string): void {
+  const repo = fullName.toLowerCase();
+  const wildcard = `${repo.split('/')[0]}/*`;
+  for (const key of issuesCache.keys()) {
+    const lower = key.toLowerCase();
+    if (lower === repo || lower === wildcard) issuesCache.delete(key);
+  }
+}
+
 async function cachedRepoIssues(repo: string, token: string): Promise<GitHubIssue[]> {
   const cached = issuesCache.get(repo);
   if (cached && Date.now() - cached.timestamp < ISSUES_CACHE_TTL_MS) return cached.issues;
@@ -584,6 +597,8 @@ export async function getGitHubTickets(
     token: string;
     projectRepos: Record<string, string[]>;
     userMap?: Record<string, string>;
+    /** The token for a repository, when it is not `token` (a GitHub App installation's). */
+    tokenFor?: (repo: string) => string | undefined;
   },
   devOpsUsers?: User[],
   linkedAccounts?: Record<string, LinkedGitHubPerson>
@@ -614,7 +629,7 @@ export async function getGitHubTickets(
   }
 
   const settled = await Promise.allSettled(
-    targets.map(({ repo }) => cachedRepoIssues(repo, config.token))
+    targets.map(({ repo }) => cachedRepoIssues(repo, config.tokenFor?.(repo) || config.token))
   );
 
   const tickets: Ticket[] = [];

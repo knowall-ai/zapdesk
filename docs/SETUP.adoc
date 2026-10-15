@@ -246,6 +246,50 @@ tickets list and on the Kanban boards, for projects that track work in GitHub
 as well as, or instead of, DevOps. The issues are read-only in ZapDesk: each
 row or card links to the issue on GitHub.
 
+There are two ways to set this up; both can be used together.
+
+* *The ZapDesk GitHub App* (below): each DevOps project admin connects their
+  own GitHub organisation from the project page. Use this when ZapDesk serves
+  more than one organisation.
+* *A server token and mapping* (`GITHUB_TOKEN`, `GITHUB_PROJECT_REPOS`): an
+  admin of the server lists the repositories. Simplest for one organisation.
+
+=== The ZapDesk GitHub App
+
+Register one GitHub App for this ZapDesk. It serves every organisation that
+connects to it.
+
+. On GitHub, under the account that will own the App: *Settings > Developer
+  settings > GitHub Apps > New GitHub App*.
+. Name it (the URL name becomes `GITHUB_APP_SLUG`), with homepage URL
+  `https://zapdesk.yourdomain.com`.
+. *Callback URL*: `https://zapdesk.yourdomain.com/api/github/setup`. Tick
+  *Request user authorization (OAuth) during installation*. ZapDesk needs the
+  code this adds to check that the person connecting can see the installation.
+. *Webhook*: active, URL `https://zapdesk.yourdomain.com/api/github/webhook`,
+  with a random secret (`GITHUB_APP_WEBHOOK_SECRET`). Optional: without it,
+  changes show once the one-minute cache expires.
+. *Permissions*: Repository > *Issues*: read-only, *Metadata*: read-only.
+  *Subscribe to events*: *Issues*.
+. *Where can this GitHub App be installed?*: *Any account*.
+. After creating it, note the *App ID* (`GITHUB_APP_ID`) and *Client ID*
+  (`GITHUB_APP_CLIENT_ID`). Generate a client secret
+  (`GITHUB_APP_CLIENT_SECRET`) and a private key (`GITHUB_APP_PRIVATE_KEY`,
+  the whole PEM file; App Service settings may write its line breaks as `\n`).
+
+Set those values in the App Service configuration and restart. A *GitHub*
+card then appears on each project page:
+
+* Someone who can edit the project in Azure DevOps clicks *Connect GitHub*,
+  installs the App on their GitHub organisation and picks repositories.
+* The link is kept on the DevOps project, as the project property
+  `ZapDesk.GitHubInstallation`. ZapDesk has no database, and only people who
+  can edit the project can change it.
+* Everyone who can see the project sees its issues. Each installation has its
+  own GitHub rate limit.
+* *Disconnect* removes the link. Uninstalling the App on GitHub stops it
+  working too.
+
 === Token
 
 Create a GitHub token the server uses to read issues, and set it as
