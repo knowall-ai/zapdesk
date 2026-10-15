@@ -340,14 +340,19 @@ export async function devOpsUsersForGitHub(
   }
 }
 
-let linkedAccountsCache: {
-  accounts: Record<string, LinkedGitHubPerson>;
-  expires: number;
-} | null = null;
+/** Saved usernames per Entra tenant: one tenant's people must never show in another's. */
+const linkedAccountsCache = new Map<
+  string,
+  { accounts: Record<string, LinkedGitHubPerson>; expires: number }
+>();
 
-/** Forget the saved GitHub usernames, so a username just saved is used at once. */
-export function clearLinkedAccountsCache(): void {
-  linkedAccountsCache = null;
+/**
+ * Forget the saved GitHub usernames of a tenant (all tenants when none is
+ * given), so a username just saved is used at once.
+ */
+export function clearLinkedAccountsCache(tenant?: string): void {
+  if (tenant === undefined) linkedAccountsCache.clear();
+  else linkedAccountsCache.delete(tenant);
 }
 
 /**
@@ -358,18 +363,26 @@ export function clearLinkedAccountsCache(): void {
  * remembered briefly so every request does not walk the tenant again.
  */
 export async function linkedGitHubAccounts(
-  load: () => Promise<LinkedGitHubPerson[]>
+  load: () => Promise<LinkedGitHubPerson[]>,
+  tenant = ''
 ): Promise<Record<string, LinkedGitHubPerson>> {
-  if (linkedAccountsCache && Date.now() < linkedAccountsCache.expires) {
-    return linkedAccountsCache.accounts;
+  const cached = linkedAccountsCache.get(tenant);
+  if (cached && Date.now() < cached.expires) {
+    return cached.accounts;
   }
   try {
     const accounts = indexLinkedAccounts(await load());
-    linkedAccountsCache = { accounts, expires: Date.now() + LINKED_ACCOUNTS_CACHE_TTL_MS };
+    linkedAccountsCache.set(tenant, {
+      accounts,
+      expires: Date.now() + LINKED_ACCOUNTS_CACHE_TTL_MS,
+    });
     return accounts;
   } catch (error) {
     console.error('[GitHub] Could not read the GitHub usernames saved on profiles:', error);
-    linkedAccountsCache = { accounts: {}, expires: Date.now() + LINKED_ACCOUNTS_RETRY_MS };
+    linkedAccountsCache.set(tenant, {
+      accounts: {},
+      expires: Date.now() + LINKED_ACCOUNTS_RETRY_MS,
+    });
     return {};
   }
 }

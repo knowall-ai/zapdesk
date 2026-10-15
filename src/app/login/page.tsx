@@ -84,6 +84,12 @@ export default function LoginPage() {
             ZapDesk connects to Azure DevOps to display work items tagged as tickets. You&apos;ll
             only see tickets from projects you have access to.
           </p>
+          <p className="mt-3 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
+            Can&apos;t sign in? Your organisation may need to install ZapDesk first.{' '}
+            <a href="/install" className="hover:underline" style={{ color: 'var(--primary)' }}>
+              Install for my organisation
+            </a>
+          </p>
         </div>
 
         {/* Footer */}

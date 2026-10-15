@@ -21,13 +21,15 @@ export interface GitHubPeopleLookup {
   linkedAccounts: Record<string, LinkedGitHubPerson>;
 }
 
-/** The saved GitHub usernames, read through the shared cache. */
-export function loadLinkedGitHubAccounts(): Promise<Record<string, LinkedGitHubPerson>> {
+/** The GitHub usernames saved in a tenant, read through the shared per-tenant cache. */
+export function loadLinkedGitHubAccounts(
+  tenantId?: string | null
+): Promise<Record<string, LinkedGitHubPerson>> {
   return linkedGitHubAccounts(async () => {
-    const graphToken = await getGraphToken();
+    const graphToken = await getGraphToken(tenantId);
     if (!graphToken) throw new Error('No Graph token');
     return listLinkedGitHubAccounts(graphToken);
-  });
+  }, tenantId || '');
 }
 
 /**
@@ -39,9 +41,10 @@ export function loadLinkedGitHubAccounts(): Promise<Record<string, LinkedGitHubP
 export async function gitHubPeopleFor(
   organization: string,
   config: GitHubIssuesConfig,
-  loadDevOpsUsers: () => Promise<User[]>
+  loadDevOpsUsers: () => Promise<User[]>,
+  tenantId?: string | null
 ): Promise<GitHubPeopleLookup> {
-  const linkedAccounts = await loadLinkedGitHubAccounts();
+  const linkedAccounts = await loadLinkedGitHubAccounts(tenantId);
   const needsDevOpsUsers =
     Object.keys(config.userMap).length > 0 || Object.keys(linkedAccounts).length > 0;
   const devOpsUsers = needsDevOpsUsers

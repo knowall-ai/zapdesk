@@ -95,6 +95,18 @@
 |**"Could not check whether this GitHub username is already linked"**
 |Before saving, ZapDesk reads every user in the tenant to make sure no one else has linked the username, and refuses the save if it cannot. The server log has the reason: a Graph error means the app registration lacks the Microsoft Graph application permission `User.ReadWrite.All` (with admin consent); `IncompleteUserListError` means the tenant has more than 5,000 users, more than the check reads. Use `GITHUB_USER_MAP` for that person instead.
 
+|**/install says "This ZapDesk serves one organisation"**
+|`AZURE_AD_MULTI_TENANT` is not `true`, or `AZURE_AD_CLIENT_ID` is not set. Set both in the App Service configuration and restart; the app registration must also be multi-tenant.
+
+|**/install says "ZapDesk could not be installed" with `AADSTS50011`**
+|The callback is not a redirect URI of the app registration. Add `https://<your ZapDesk URL>/api/install/callback` as a *Web* redirect URI.
+
+|**/install says "That install link has expired"**
+|The admin took more than ten minutes on Microsoft's page, or finished in another browser. Start again from `/install` in the same browser.
+
+|**Someone from another organisation gets `AADSTS50020` or `AADSTS700016` at sign-in**
+|The app registration is still single-tenant. Set *Supported account types* to multitenant. Their admin must also have installed ZapDesk from `/install`.
+
 |**"No Azure DevOps organization selected. Choose one, or set AZURE_DEVOPS_ORG."**
 |ZapDesk has no built-in organization. Pick one in the organization selector in the header. For server-side work that has no user (email ingest, routing and SLA lookups), set `AZURE_DEVOPS_ORG` in the App Service configuration and restart.
 

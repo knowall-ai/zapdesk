@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     };
 
     try {
-      const graphToken = await getGraphToken();
+      const graphToken = await getGraphToken(session.tenantId);
       // Use email as the user identifier for Graph API (Azure AD Object ID isn't available in session)
       const userIdentifier = profile.emailAddress || session.user?.email;
 

@@ -420,7 +420,8 @@ export async function GET(request: NextRequest) {
         const { devOpsUsers, linkedAccounts } = await gitHubPeopleFor(
           organization,
           gitHubConfig,
-          () => devopsService.getOrganizationUsers()
+          () => devopsService.getOrganizationUsers(),
+          session.tenantId
         );
         const gitHub = await getGitHubTickets(
           visibleProjects,

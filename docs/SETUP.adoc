@@ -32,6 +32,38 @@ ZapDesk is a Zendesk-style support ticketing portal that uses Azure DevOps as it
 ** Microsoft Graph: `User.Read`, `email`, `profile`, `openid`
 ** Azure DevOps: `user_impersonation`
 
+=== Letting other organisations install ZapDesk
+
+One ZapDesk can serve many organisations. Each one's admin installs it with a
+button, and their people then sign in with their own Microsoft account and see
+their own Azure DevOps. ZapDesk stores nothing about them: the install is a
+consent in their tenant, and personal settings stay on each person's profile.
+
+. In the app registration, under *Authentication*, set *Supported account
+  types* to "Accounts in any organizational directory (Multitenant)".
+. Add a second *Web* redirect URI: `https://zapdesk.yourdomain.com/api/install/callback`.
+. Under *API permissions*, the Microsoft Graph *application* permission
+  `User.ReadWrite.All` is what the Lightning Address and GitHub username
+  features use. Every installing admin is asked to grant the permissions
+  listed here.
+. Set `AZURE_AD_MULTI_TENANT=true` in the App Service configuration and
+  restart. Keep `AZURE_AD_TENANT_ID` set to your own tenant.
+
+An admin of another organisation then opens `/install` (linked from the login
+page), clicks *Install for my organisation*, and approves the permissions on
+Microsoft's page. They need the Global Administrator, Privileged Role
+Administrator or Cloud Application Administrator role. Microsoft then lists
+ZapDesk under *Enterprise applications* in their tenant, where they can remove
+it again.
+
+* Sign-in uses the `organizations` endpoint, so work and school accounts from
+  any tenant that has installed ZapDesk can sign in. Personal Microsoft
+  accounts cannot.
+* Profile features (Lightning Address, GitHub username) read and write the
+  signed-in user's own tenant, with a Graph token from that tenant.
+* `AZURE_DEVOPS_ORG` is only a default for server-side work such as email
+  ingest. People pick their Azure DevOps organisation in the header.
+
 == Azure DevOps Configuration
 
 === Personal Access Token (PAT)

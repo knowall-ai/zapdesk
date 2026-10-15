@@ -36,6 +36,8 @@ declare module 'next-auth' {
     accessToken?: string;
     refreshToken?: string;
     error?: string;
+    /** The Entra tenant the user signed in from (the `tid` claim). */
+    tenantId?: string;
     user: {
       id: string;
       name?: string | null;
@@ -53,6 +55,7 @@ declare module 'next-auth/jwt' {
     error?: string;
     id?: string;
     picture?: string;
+    tenantId?: string;
   }
 }
 
@@ -68,13 +71,30 @@ const AZURE_DEVOPS_SCOPES = [
 // Note: Graph API uses client credentials flow (application permissions)
 // because .default scope can't be combined with resource-specific scopes
 
+/**
+ * Where users sign in (#457).
+ *
+ * With `AZURE_AD_MULTI_TENANT=true` anyone from a work or school tenant whose
+ * admin has installed ZapDesk can sign in (`organizations`); the app
+ * registration must then be multi-tenant. Otherwise sign-in is limited to
+ * `AZURE_AD_TENANT_ID`, as before.
+ */
+export function signInAuthority(): string {
+  if (process.env.AZURE_AD_MULTI_TENANT === 'true') return 'organizations';
+  return process.env.AZURE_AD_TENANT_ID || 'common';
+}
+
+export function isMultiTenant(): boolean {
+  return process.env.AZURE_AD_MULTI_TENANT === 'true';
+}
+
 export const authOptions: NextAuthOptions = {
   debug: process.env.NODE_ENV === 'development',
   providers: [
     AzureADProvider({
       clientId: process.env.AZURE_AD_CLIENT_ID!,
       clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
-      tenantId: process.env.AZURE_AD_TENANT_ID || 'common',
+      tenantId: signInAuthority(),
       authorization: {
         params: {
           scope: AZURE_DEVOPS_SCOPES.join(' '),
@@ -83,7 +103,7 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, account, user }) {
+    async jwt({ token, account, user, profile }) {
       try {
         // Initial sign in
         if (account && user) {
@@ -94,6 +114,7 @@ export const authOptions: NextAuthOptions = {
             accessTokenExpires: account.expires_at ? account.expires_at * 1000 : undefined,
             id: user.id,
             picture: user.image ?? undefined,
+            tenantId: (profile as { tid?: string } | undefined)?.tid,
           } as JWT;
         }
 
@@ -118,6 +139,9 @@ export const authOptions: NextAuthOptions = {
       }
       if (token.picture) {
         session.user.image = token.picture;
+      }
+      if (token.tenantId) {
+        session.tenantId = token.tenantId;
       }
       return session;
     },
@@ -171,7 +195,9 @@ export const authOptions: NextAuthOptions = {
 
 async function refreshAccessToken(token: JWT): Promise<JWT> {
   try {
-    const url = `https://login.microsoftonline.com/${process.env.AZURE_AD_TENANT_ID || 'common'}/oauth2/v2.0/token`;
+    // Refresh against the user's own tenant: with multi-tenant sign-in the
+    // authority is `organizations`, which a refresh does not need.
+    const url = `https://login.microsoftonline.com/${token.tenantId || signInAuthority()}/oauth2/v2.0/token`;
 
     const response = await fetch(url, {
       method: 'POST',
@@ -208,13 +234,35 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
   }
 }
 
+const graphTokenCache = new Map<string, { token: string; expires: number }>();
+
+/** For tests: forget cached Graph tokens. */
+export function clearGraphTokenCache(): void {
+  graphTokenCache.clear();
+}
+
 /**
  * Get a Microsoft Graph access token using client credentials flow
  * Uses application permissions (not delegated) to read/write user extensions
+ *
+ * `tenantId` is the signed-in user's tenant (`session.tenantId`). The token
+ * must come from that tenant: profile extensions live there, and with
+ * multi-tenant sign-in a home-tenant token cannot read another tenant's users
+ * (#457). It works once that tenant's admin has installed ZapDesk. Without a
+ * tenant, `AZURE_AD_TENANT_ID` is used, as before.
  */
-export async function getGraphToken(): Promise<string | null> {
+export async function getGraphToken(tenantId?: string | null): Promise<string | null> {
+  const tenant = tenantId || process.env.AZURE_AD_TENANT_ID;
+  if (!tenant || tenant === 'common' || tenant === 'organizations') {
+    console.error('No tenant to get a Graph token for; set AZURE_AD_TENANT_ID');
+    return null;
+  }
+
+  const cached = graphTokenCache.get(tenant);
+  if (cached && Date.now() < cached.expires) return cached.token;
+
   try {
-    const url = `https://login.microsoftonline.com/${process.env.AZURE_AD_TENANT_ID}/oauth2/v2.0/token`;
+    const url = `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`;
 
     const response = await fetch(url, {
       method: 'POST',
@@ -234,6 +282,15 @@ export async function getGraphToken(): Promise<string | null> {
     if (!response.ok) {
       console.error('Failed to get Graph token:', data);
       return null;
+    }
+
+    // Reuse until a minute before it expires
+    const lifetimeMs = (Number(data.expires_in) || 0) * 1000;
+    if (lifetimeMs > 60_000) {
+      graphTokenCache.set(tenant, {
+        token: data.access_token,
+        expires: Date.now() + lifetimeMs - 60_000,
+      });
     }
 
     return data.access_token;

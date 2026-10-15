@@ -43,8 +43,11 @@ export async function GET(request: NextRequest) {
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
     const projects = await devopsService.getProjects();
     // Show mapped and linked GitHub accounts as their DevOps user
-    const { devOpsUsers, linkedAccounts } = await gitHubPeopleFor(organization, config, () =>
-      devopsService.getOrganizationUsers()
+    const { devOpsUsers, linkedAccounts } = await gitHubPeopleFor(
+      organization,
+      config,
+      () => devopsService.getOrganizationUsers(),
+      session.tenantId
     );
     const { tickets, failedRepos } = await getGitHubTickets(
       projects,
