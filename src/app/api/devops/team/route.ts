@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requestDevOpsOrg } from '@/lib/devops-org';
 import type { TeamMember, TeamStats, TicketStatus } from '@/types';
 import {
   calculateAvgResolutionTime,
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
     const userEmail = session.user?.email || '';
     const internalDomain = userEmail.includes('@') ? userEmail.split('@')[1].toLowerCase() : '';
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken, requestDevOpsOrg(request));
 
     // Get all users from the organization
     const orgUsers = await devopsService.getOrganizationUsers();

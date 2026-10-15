@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService, workItemToTicket } from '@/lib/devops';
+import { requestDevOpsOrg } from '@/lib/devops-org';
 import type {
   Ticket,
   TicketStatus,
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
     const endDate = new Date(endDateRaw);
     endDate.setHours(23, 59, 59, 999);
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken, requestDevOpsOrg(request));
 
     // Fetch all tickets for the project
     const workItems = await devopsService.getTickets(projectName);
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
       id: projectName,
       name: projectName,
       devOpsProject: projectName,
-      devOpsOrg: process.env.AZURE_DEVOPS_ORG || 'KnowAll',
+      devOpsOrg: devopsService.organizationName,
       tags: [],
       createdAt: new Date(),
       updatedAt: new Date(),

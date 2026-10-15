@@ -50,19 +50,20 @@ Email routing is configured via Azure DevOps project descriptions. Add an `Email
 
 .Example project description
 ----
-Customer support project for Cairn Homes.
+Customer support project for Example Ltd.
 
-Email: cairnhomes.com
+Email: example.com
+SLA: Gold
 ----
 
 .Multiple domains
 ----
-Medite customer support portal.
+Example Group customer support portal.
 
-Email: medite.com, medite.ie
+Email: example.com, example.ie
 ----
 
-The system queries DevOps every 5 minutes to refresh the routing map. If no domains are found in project descriptions, it falls back to hardcoded defaults.
+The system queries DevOps every 5 minutes to refresh the routing map. There are no built-in domains: a domain that no project lists is not routed. The first domain also shows as the organization's domain in ZapDesk, and the `SLA:` line sets its SLA level (Gold, Silver or Bronze).
 
 == Azure App Service
 

@@ -63,7 +63,7 @@ describe('getWorkItemComments maps the marker', () => {
 
   it('flags a note and hides its marker, leaving public comments alone', async () => {
     withComments(['[Internal Note] Checked the logs.', 'Thanks, that worked.']);
-    const comments = await new AzureDevOpsService('token').getWorkItemComments('Proj', 1);
+    const comments = await new AzureDevOpsService('token', 'acme').getWorkItemComments('Proj', 1);
 
     expect(comments[0].isInternal).toBe(true);
     expect(comments[0].content).toBe('Checked the logs.');
@@ -102,7 +102,7 @@ describe('reply history excludes internal notes', () => {
       )
     );
 
-    const comments = await new AzureDevOpsService('token').getWorkItemComments('Proj', 1);
+    const comments = await new AzureDevOpsService('token', 'acme').getWorkItemComments('Proj', 1);
 
     // What the route does now.
     const history = comments.filter((c) => !c.isInternal);

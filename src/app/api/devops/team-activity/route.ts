@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requestDevOpsOrg } from '@/lib/devops-org';
 import type { User } from '@/types';
 
 interface ActivityData {
@@ -50,7 +51,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const memberFilter = searchParams.get('member');
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken, requestDevOpsOrg(request));
     // Get ALL work items (not just those tagged as "ticket") for accurate team activity
     const tickets = await devopsService.getAllTickets(false);
 

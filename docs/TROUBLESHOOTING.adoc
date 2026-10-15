@@ -95,6 +95,12 @@
 |**"Could not check whether this GitHub username is already linked"**
 |Before saving, ZapDesk reads every user in the tenant to make sure no one else has linked the username, and refuses the save if it cannot. The server log has the reason: a Graph error means the app registration lacks the Microsoft Graph application permission `User.ReadWrite.All` (with admin consent); `IncompleteUserListError` means the tenant has more than 5,000 users, more than the check reads. Use `GITHUB_USER_MAP` for that person instead.
 
+|**"No Azure DevOps organization selected. Choose one, or set AZURE_DEVOPS_ORG."**
+|ZapDesk has no built-in organization. Pick one in the organization selector in the header. For server-side work that has no user (email ingest, routing and SLA lookups), set `AZURE_DEVOPS_ORG` in the App Service configuration and restart.
+
+|**Mail from a customer's domain is not routed to their project**
+|Add an `Email: example.com` line to the project's description in Azure DevOps. There are no built-in domains. The routing map refreshes every five minutes, and needs both `AZURE_DEVOPS_PAT` and `AZURE_DEVOPS_ORG`.
+
 |**The GitHub card is missing from the Profile page**
 |It appears only when GitHub issues are configured (`GITHUB_TOKEN` and `GITHUB_PROJECT_REPOS`).
 

@@ -150,15 +150,17 @@ export default function UsersPage() {
             <p style={{ color: 'var(--text-secondary)' }}>
               Search and manage your users all in one place.
             </p>
-            <a
-              href="https://dev.azure.com/KnowAll/_settings/users"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1 flex items-center gap-1 text-sm"
-              style={{ color: 'var(--primary)' }}
-            >
-              See users in Azure DevOps <ExternalLink size={12} />
-            </a>
+            {orgUsersUrl && (
+              <a
+                href={orgUsersUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 flex items-center gap-1 text-sm"
+                style={{ color: 'var(--primary)' }}
+              >
+                See users in Azure DevOps <ExternalLink size={12} />
+              </a>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button

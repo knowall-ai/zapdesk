@@ -8,6 +8,7 @@
  */
 
 import { getProjectFromEmail } from '@/lib/devops';
+import { devOpsOrgOrDefault } from './devops-org';
 import {
   isPolledMailbox,
   sendCustomerReplyNotification,
@@ -347,7 +348,7 @@ class AzureDevOpsServiceWithPAT {
 
   constructor(encodedPat: string, organization?: string) {
     this.encodedPat = encodedPat;
-    this.organization = organization || process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+    this.organization = devOpsOrgOrDefault(organization);
   }
 
   private get baseUrl(): string {
