@@ -589,6 +589,37 @@ export interface StandupWorkItem {
   sourceRef?: string;
 }
 
+/** What happened to a pull request inside the activity window. */
+export type PullRequestActivityKind = 'created' | 'updated' | 'merged';
+
+/** A pull request with activity in the Kanban board's 24-hour summary window. */
+export interface PullRequestActivity {
+  id: number;
+  title: string;
+  project: string;
+  repository: string;
+  url: string;
+  author: User;
+  createdAt: string;
+  closedAt?: string;
+  /**
+   * Everything that happened in the window. `created` and `merged` can both
+   * hold; `updated` (new commits pushed) only counts for a pull request opened
+   * before the window and still open.
+   */
+  activity: PullRequestActivityKind[];
+  /** Work items the pull request links to. */
+  workItemIds: number[];
+}
+
+export interface PullRequestActivityResponse {
+  /** Start of the window, ISO 8601. */
+  since: string;
+  pullRequests: PullRequestActivity[];
+  /** Projects whose pull requests could not be read. */
+  failedProjects?: string[];
+}
+
 /** A column definition pulled from DevOps state configuration */
 export interface StandupColumn {
   /** The DevOps state name (e.g. "New", "Active", "Resolved") */

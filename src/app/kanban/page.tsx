@@ -17,6 +17,8 @@ import { RefreshCw, FolderOpen, User, Radio } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { StandupSummaryCards, KanbanGroupSection } from '@/components/standup';
+import type { GroupActivity } from '@/components/standup/KanbanGroupSection';
+import type { PullRequestLoadState } from '@/components/standup/ActivitySummaryBar';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import { useDevOpsApi } from '@/hooks';
 import { useSourceFilter } from '@/components/providers/SourceProvider';
@@ -24,7 +26,19 @@ import { readScrollTop, sessionPositionStorage, writeScrollTop } from '@/lib/kan
 import { ticketToWorkItem } from '@/lib/devops';
 import { debugLog } from '@/lib/debug';
 import { createBoardCache } from '@/lib/standup-board-cache';
-import type { SourceFilter, StandupData, StandupColumn, StandupWorkItem, Ticket } from '@/types';
+import {
+  activityWindowStart,
+  pullRequestsForGroup,
+  summariseGroupActivity,
+} from '@/lib/activity-summary';
+import type {
+  PullRequestActivityResponse,
+  SourceFilter,
+  StandupData,
+  StandupColumn,
+  StandupWorkItem,
+  Ticket,
+} from '@/types';
 
 type GroupBy = 'project' | 'person';
 
@@ -41,6 +55,12 @@ const standupCache = createBoardCache<StandupData>(STANDUP_CACHE_TTL_MS);
 // and an extra fetch fires on tab-return so the board catches up.
 const LIVE_UPDATE_INTERVAL_MS = STANDUP_CACHE_TTL_MS;
 const LIVE_UPDATE_STORAGE_KEY = 'zapdesk:kanban:liveUpdate';
+
+// Pull request activity for the 24-hour summary. It fans out across every
+// project and repository, so it's held longer than the board: live-update
+// ticks reuse it and only refetch once it's this old.
+const PR_ACTIVITY_CACHE_TTL_MS = 2 * 60 * 1000;
+const prActivityCache = createBoardCache<PullRequestActivityResponse>(PR_ACTIVITY_CACHE_TTL_MS);
 
 function cacheKey(organization: string, currentSprintOnly: boolean, sources: SourceFilter): string {
   return `${organization}::${currentSprintOnly ? 'sprint' : 'all'}::${sources}`;
@@ -128,6 +148,11 @@ function StandupPageContent() {
   const { sourceFilter, sourceReady } = useSourceFilter();
 
   const [standupData, setStandupData] = useState<StandupData | null>(null);
+  // When the board on screen was loaded; the 24-hour window ends here.
+  const [boardLoadedAt, setBoardLoadedAt] = useState(0);
+  const [prActivity, setPrActivity] = useState<PullRequestActivityResponse | null>(null);
+  const [prState, setPrState] = useState<PullRequestLoadState>('loading');
+  const prFetchSeqRef = useRef(0);
   // The cache key of the board currently on screen, readable from inside
   // `fetchStandupData` without putting `standupData` in its dependency list —
   // which would rebuild the callback on every poll and re-subscribe the
@@ -197,6 +222,7 @@ function StandupPageContent() {
         if (cached) {
           loadedKeyRef.current = key;
           setStandupData(cached);
+          setBoardLoadedAt(Date.now());
           setLoading(false);
           setRefreshing(false);
           setError(null);
@@ -238,6 +264,7 @@ function StandupPageContent() {
         if (superseded || !isCurrent()) return;
         loadedKeyRef.current = key;
         setStandupData(data);
+        setBoardLoadedAt(Date.now());
         if (data.failedGitHubRepos?.length) {
           // Fixed id, so a repository that keeps failing does not stack a
           // message on every live-update tick.
@@ -283,13 +310,66 @@ function StandupPageContent() {
     ]
   );
 
+  // Pull requests come from Azure DevOps only, so there are none to count
+  // when the header toggle shows GitHub alone. A failure leaves the board
+  // alone and just marks the PR counts unavailable.
+  const fetchPrActivity = useCallback(
+    async (forceRefresh = false) => {
+      if (!session?.accessToken || !hasOrganization || !selectedOrganization?.accountName) return;
+      const mySeq = ++prFetchSeqRef.current;
+      const isCurrent = () => mySeq === prFetchSeqRef.current;
+
+      if (sourceFilter === 'github') {
+        setPrActivity(null);
+        setPrState('ready');
+        return;
+      }
+
+      const organization = selectedOrganization.accountName;
+      if (!forceRefresh) {
+        const cached = prActivityCache.getFresh(organization);
+        if (cached) {
+          setPrActivity(cached);
+          setPrState('ready');
+          return;
+        }
+      }
+
+      try {
+        const { data } = await prActivityCache.load(organization, organization, async () => {
+          const since = activityWindowStart(new Date()).toISOString();
+          const response = await devOpsGet(
+            `/api/devops/pr-activity?since=${encodeURIComponent(since)}`
+          );
+          if (!response.ok) throw new Error('Failed to fetch pull request activity');
+          return (await response.json()) as PullRequestActivityResponse;
+        });
+        if (!isCurrent()) return;
+        setPrActivity(data);
+        setPrState('ready');
+      } catch (err) {
+        if (!isCurrent()) return;
+        console.error('Failed to load pull request activity:', err);
+        setPrState('error');
+      }
+    },
+    [
+      session?.accessToken,
+      hasOrganization,
+      selectedOrganization?.accountName,
+      devOpsGet,
+      sourceFilter,
+    ]
+  );
+
   // Wait until the source toggle is known, so the board loads once with the
   // right sources instead of DevOps first and then everything again.
   useEffect(() => {
     if (session?.accessToken && hasOrganization && sourceReady) {
       fetchStandupData();
+      fetchPrActivity();
     }
-  }, [session?.accessToken, hasOrganization, sourceReady, fetchStandupData]);
+  }, [session?.accessToken, hasOrganization, sourceReady, fetchStandupData, fetchPrActivity]);
 
   // Live update: while the tab is visible, run a poll on the cache TTL
   // cadence. When the tab is hidden the interval is cleared so no timer
@@ -304,8 +384,10 @@ function StandupPageContent() {
     // No need to re-check the toggle in here: this effect only runs while
     // `liveUpdate` is true and its cleanup tears the timer down the moment
     // it flips, so reaching this point already means live update is on.
+    // Pull requests are left to their own, longer cache.
     const tick = () => {
       fetchStandupData(true, true);
+      fetchPrActivity();
     };
 
     const startInterval = () => {
@@ -323,7 +405,7 @@ function StandupPageContent() {
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        fetchStandupData(true, true);
+        tick();
         startInterval();
       } else {
         stopInterval();
@@ -339,7 +421,7 @@ function StandupPageContent() {
       stopInterval();
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [liveUpdate, fetchStandupData]);
+  }, [liveUpdate, fetchStandupData, fetchPrActivity]);
 
   // Persist the toggle so it carries across page reloads. Skipped until
   // after the restore effect has hydrated the value, so we don't briefly
@@ -562,6 +644,29 @@ function StandupPageContent() {
     }));
   }, [standupData, groupBy]);
 
+  // Each group's last-24-working-hours summary, keyed by group name.
+  const groupActivity = useMemo(() => {
+    const map = new Map<string, GroupActivity>();
+    if (!boardLoadedAt) return map;
+    const since = activityWindowStart(new Date(boardLoadedAt)).getTime();
+    const allPullRequests = prActivity?.pullRequests ?? [];
+    // A project whose pull requests couldn't be read makes its own group's
+    // count unknown, and every person's too: anyone may have worked there.
+    const failedProjects = new Set(prActivity?.failedProjects ?? []);
+    const incomplete = (groupName: string) =>
+      groupBy === 'project' ? failedProjects.has(groupName) : failedProjects.size > 0;
+    for (const group of groups) {
+      const pullRequests = pullRequestsForGroup(allPullRequests, groupBy, group.groupName);
+      map.set(group.groupName, {
+        summary: summariseGroupActivity(group.columns, pullRequests, since),
+        since,
+        pullRequests,
+        pullRequestState: prState === 'ready' && incomplete(group.groupName) ? 'error' : prState,
+      });
+    }
+    return map;
+  }, [groups, groupBy, prActivity, prState, boardLoadedAt]);
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login');
@@ -711,7 +816,10 @@ function StandupPageContent() {
 
               {/* Manual refresh */}
               <button
-                onClick={() => fetchStandupData(true, true)}
+                onClick={() => {
+                  fetchStandupData(true, true);
+                  fetchPrActivity(true);
+                }}
                 disabled={refreshing}
                 className="rounded-md p-2 transition-colors hover:bg-white/10"
                 style={{ color: refreshing ? 'var(--text-muted)' : 'var(--text-secondary)' }}
@@ -759,6 +867,7 @@ function StandupPageContent() {
                     allowedStatesByProjectType={standupData.allowedStatesByProjectType}
                     onStateChange={handleStateChange}
                     onItemClick={handleItemClick}
+                    activity={groupActivity.get(group.groupName)}
                   />
                 ))
               ) : (

@@ -23,6 +23,8 @@ import type {
   EpicType,
   TreemapNode,
   ClassificationNode,
+  PullRequestActivity,
+  PullRequestActivityKind,
 } from '@/types';
 import { parseSLAFromDescription, calculateTicketSLA, DEFAULT_SLA_LEVEL } from './sla';
 import { debugLog } from './debug';
@@ -3218,6 +3220,177 @@ export class AzureDevOpsService {
     );
   }
 
+  // Pull requests with activity since `since`, across every project: opened,
+  // merged, or pushed to. Each carries the work items it links, so the Kanban
+  // board can highlight them. A project that can't be read is reported rather
+  // than failing the lot.
+  async getPullRequestActivity(
+    since: Date
+  ): Promise<{ pullRequests: PullRequestActivity[]; failedProjects: string[] }> {
+    const projects = await this.getProjects();
+    const results = await Promise.allSettled(
+      projects.map((project) => this.getProjectPullRequestActivity(project.name, since))
+    );
+
+    const pullRequests: PullRequestActivity[] = [];
+    const failedProjects: string[] = [];
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') {
+        pullRequests.push(...result.value);
+      } else {
+        console.error(
+          `Failed to fetch pull request activity for ${projects[i].name}:`,
+          result.reason
+        );
+        failedProjects.push(projects[i].name);
+      }
+    });
+
+    pullRequests.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return { pullRequests, failedProjects };
+  }
+
+  private async getProjectPullRequestActivity(
+    projectName: string,
+    since: Date
+  ): Promise<PullRequestActivity[]> {
+    const sinceIso = since.toISOString();
+    const [created, merged, active] = await Promise.all([
+      this.listPullRequests(projectName, {
+        status: 'all',
+        queryTimeRangeType: 'created',
+        minTime: sinceIso,
+      }),
+      this.listPullRequests(projectName, {
+        status: 'completed',
+        queryTimeRangeType: 'closed',
+        minTime: sinceIso,
+      }),
+      this.listPullRequests(projectName, { status: 'active' }),
+    ]);
+
+    const byId = new Map<number, { pr: RawPullRequest; activity: Set<PullRequestActivityKind> }>();
+    const record = (pr: RawPullRequest, kind: PullRequestActivityKind) => {
+      const entry = byId.get(pr.pullRequestId) ?? { pr, activity: new Set() };
+      entry.activity.add(kind);
+      byId.set(pr.pullRequestId, entry);
+    };
+
+    // The time filters are re-checked here: they're only honoured from
+    // api-version 7.1, and an older server would silently return everything.
+    for (const pr of created) {
+      if (new Date(pr.creationDate) >= since) record(pr, 'created');
+    }
+    for (const pr of merged) {
+      if (pr.closedDate && new Date(pr.closedDate) >= since) record(pr, 'merged');
+    }
+
+    // "Updated" means new commits pushed to a pull request opened before the
+    // window. The list API has no last-changed date, so read each one's
+    // iterations — a push is a new iteration. Newest first, capped, so a
+    // backlog of stale pull requests can't fan out without limit. The API
+    // doesn't promise an order, so sort before capping.
+    const openedEarlier = active
+      .filter((pr) => new Date(pr.creationDate) < since)
+      .sort((a, b) => b.creationDate.localeCompare(a.creationDate))
+      .slice(0, MAX_PULL_REQUESTS_TO_CHECK);
+    await forEachInBatches(openedEarlier, PULL_REQUEST_BATCH_SIZE, async (pr) => {
+      const lastPush = await this.getLatestIterationDate(
+        projectName,
+        pr.repository.id,
+        pr.pullRequestId
+      );
+      if (lastPush && lastPush >= since) record(pr, 'updated');
+    });
+
+    const entries = Array.from(byId.values());
+    const workItemIds = new Map<number, number[]>();
+    await forEachInBatches(entries, PULL_REQUEST_BATCH_SIZE, async ({ pr }) => {
+      workItemIds.set(
+        pr.pullRequestId,
+        await this.getPullRequestWorkItemIds(projectName, pr.repository.id, pr.pullRequestId)
+      );
+    });
+
+    return entries.map(({ pr, activity }) => ({
+      id: pr.pullRequestId,
+      title: pr.title,
+      project: pr.repository.project?.name ?? projectName,
+      repository: pr.repository.name,
+      url: `${this.baseUrl}/${encodeURIComponent(projectName)}/_git/${encodeURIComponent(pr.repository.name)}/pullrequest/${pr.pullRequestId}`,
+      author: {
+        id: pr.createdBy.id,
+        displayName: pr.createdBy.displayName,
+        email: pr.createdBy.uniqueName ?? '',
+        avatarUrl: pr.createdBy.imageUrl,
+      },
+      createdAt: pr.creationDate,
+      closedAt: pr.closedDate,
+      activity: (['created', 'updated', 'merged'] as const).filter((kind) => activity.has(kind)),
+      workItemIds: workItemIds.get(pr.pullRequestId) ?? [],
+    }));
+  }
+
+  private async listPullRequests(
+    projectName: string,
+    criteria: Record<string, string>
+  ): Promise<RawPullRequest[]> {
+    const url = new URL(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/git/pullrequests`
+    );
+    url.searchParams.set('api-version', '7.1');
+    url.searchParams.set('$top', '500');
+    for (const [key, value] of Object.entries(criteria)) {
+      url.searchParams.set(`searchCriteria.${key}`, value);
+    }
+
+    const response = await fetch(url.toString(), { headers: this.headers });
+    if (!response.ok) {
+      throw new Error(`Failed to list pull requests: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    return (data.value || []) as RawPullRequest[];
+  }
+
+  // When the pull request last had commits pushed, or null if unknown.
+  private async getLatestIterationDate(
+    projectName: string,
+    repositoryId: string,
+    pullRequestId: number
+  ): Promise<Date | null> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/git/repositories/${repositoryId}/pullRequests/${pullRequestId}/iterations?api-version=7.1`,
+      { headers: this.headers }
+    );
+    if (!response.ok) return null;
+    const data = await response.json();
+    const iterations = (data.value || []) as { createdDate?: string; updatedDate?: string }[];
+    let latest: Date | null = null;
+    for (const iteration of iterations) {
+      const stamp = iteration.updatedDate ?? iteration.createdDate;
+      if (!stamp) continue;
+      const date = new Date(stamp);
+      if (!latest || date > latest) latest = date;
+    }
+    return latest;
+  }
+
+  private async getPullRequestWorkItemIds(
+    projectName: string,
+    repositoryId: string,
+    pullRequestId: number
+  ): Promise<number[]> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/git/repositories/${repositoryId}/pullRequests/${pullRequestId}/workitems?api-version=7.1`,
+      { headers: this.headers }
+    );
+    if (!response.ok) return [];
+    const data = await response.json();
+    return ((data.value || []) as { id: string }[])
+      .map((ref) => Number(ref.id))
+      .filter((id) => Number.isInteger(id));
+  }
+
   // Get all Git activity (commits + PRs) across all projects
   // Uses sequential project processing to avoid overwhelming the Azure DevOps API
   async getGitActivity(
@@ -3275,6 +3448,31 @@ export class AzureDevOpsService {
       commits: Array.from(commitsByDate.entries()).map(([date, count]) => ({ date, count })),
       pullRequests: Array.from(prsByDate.entries()).map(([date, count]) => ({ date, count })),
     };
+  }
+}
+
+// Pull request activity for the Kanban board's 24-hour summary.
+const MAX_PULL_REQUESTS_TO_CHECK = 100;
+const PULL_REQUEST_BATCH_SIZE = 10;
+
+interface RawPullRequest {
+  pullRequestId: number;
+  title: string;
+  status: string;
+  creationDate: string;
+  closedDate?: string;
+  createdBy: { id: string; displayName: string; uniqueName?: string; imageUrl?: string };
+  repository: { id: string; name: string; project?: { name: string } };
+}
+
+/** Run `fn` over `items`, at most `size` at a time. */
+async function forEachInBatches<T>(
+  items: T[],
+  size: number,
+  fn: (item: T) => Promise<void>
+): Promise<void> {
+  for (let i = 0; i < items.length; i += size) {
+    await Promise.all(items.slice(i, i + size).map(fn));
   }
 }
 

@@ -1,11 +1,13 @@
 'use client';
 
+import type { CSSProperties } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import Link from 'next/link';
 import { Github } from 'lucide-react';
 import { Avatar, PriorityIndicator } from '@/components/common';
 import { isGitHubItem } from '@/lib/github-kanban';
+import type { HighlightReason } from '@/lib/activity-summary';
 import type { StandupWorkItem } from '@/types';
 
 interface StandupKanbanCardProps {
@@ -14,7 +16,18 @@ interface StandupKanbanCardProps {
   // When provided, clicks open the work item in a dialog instead of
   // navigating to the full page (issue #368).
   onClick?: (item: StandupWorkItem) => void;
+  /** Lit up by the 24-hour summary, labelled with why. */
+  highlight?: HighlightReason[];
+  /** Highlighting is on and this card isn't part of it. */
+  dimmed?: boolean;
 }
+
+const highlightLabels: Record<HighlightReason, string> = {
+  created: 'Created',
+  updated: 'Updated',
+  closed: 'Closed',
+  pr: 'PR',
+};
 
 const typeColors: Record<string, string> = {
   Bug: '#cc293d',
@@ -25,7 +38,13 @@ const typeColors: Record<string, string> = {
   Risk: '#ff7b00',
 };
 
-export default function StandupKanbanCard({ item, isDragging, onClick }: StandupKanbanCardProps) {
+export default function StandupKanbanCard({
+  item,
+  isDragging,
+  onClick,
+  highlight,
+  dimmed,
+}: StandupKanbanCardProps) {
   // A GitHub issue is read-only here: it cannot be dragged, because a drop
   // writes a state to Azure DevOps, and it opens on GitHub (#447).
   const isGitHub = isGitHubItem(item);
@@ -34,9 +53,16 @@ export default function StandupKanbanCard({ item, isDragging, onClick }: Standup
     disabled: isGitHub,
   });
 
+  const highlightStyle: CSSProperties = highlight
+    ? { boxShadow: '0 0 0 2px var(--primary)' }
+    : dimmed
+      ? { opacity: 0.35 }
+      : {};
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+    ...highlightStyle,
   };
 
   const typeColor = typeColors[item.workItemType] || 'var(--text-muted)';
@@ -87,6 +113,20 @@ export default function StandupKanbanCard({ item, isDragging, onClick }: Standup
         )}
       </div>
 
+      {highlight && (
+        <div className="mb-1.5 flex flex-wrap gap-1">
+          {highlight.map((reason) => (
+            <span
+              key={reason}
+              className="rounded px-1 py-0.5 text-[10px] font-semibold"
+              style={{ backgroundColor: 'var(--primary)', color: 'white' }}
+            >
+              {highlightLabels[reason]}
+            </span>
+          ))}
+        </div>
+      )}
+
       <h4 className="mb-2 line-clamp-2 text-sm font-medium text-[var(--text-primary)]">
         {item.title}
       </h4>
@@ -118,7 +158,7 @@ export default function StandupKanbanCard({ item, isDragging, onClick }: Standup
 
   if (isGitHub) {
     return (
-      <div className="kanban-card" title={item.title}>
+      <div className="kanban-card" style={highlightStyle} title={item.title}>
         <a
           href={item.sourceUrl ?? item.devOpsUrl}
           target="_blank"
