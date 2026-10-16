@@ -153,7 +153,11 @@ ZapDesk is a customer support ticketing portal that provides a Zendesk-like expe
 
 |`/api/devops/tickets/[id]/comments`
 |POST
-|Add comment to ticket
+|Add comment to ticket (validated payload)
+
+|`/api/devops/tickets/[id]/state`
+|PATCH
+|Update ticket state (validated payload)
 
 |`/api/devops/tickets/[id]/status`
 |PATCH
@@ -182,6 +186,38 @@ ZapDesk is a customer support ticketing portal that provides a Zendesk-like expe
 |`/api/github/status`
 |GET
 |Whether GitHub issues are configured
+|===
+
+=== Request Body Validation
+
+DevOps mutation routes use shared validation helpers (`src/lib/devops-request-validation.ts`) to validate payloads before calling upstream Azure DevOps services.
+
+==== Validation Rules and Constraints
+
+* **Plain JSON Object**: Request bodies must be valid JSON objects. Non-object bodies (arrays, primitives, null, or malformed JSON) are rejected with `400 Bad Request`.
+* **Strict Key Whitelisting**: Payloads containing unknown or unexpected fields are rejected with `400 Bad Request` listing the unexpected fields.
+* **Ticket ID**: URL parameter `id` must be a positive integer within Azure DevOps int32 limits (`1` to `2,147,483,647`).
+* **Field Limits**:
+** `state`: Required non-empty string, trimmed, maximum length `128` characters.
+** `comment`: Required non-empty string, trimmed, maximum length `100,000` characters.
+** `project`: Optional string, trimmed, maximum length `64` characters. Only `undefined` (omitted) is treated as absent; explicit `null` is rejected as an invalid string (`400 Bad Request`).
+** `isInternal`: Optional boolean (`true` or `false`). Only `undefined` (omitted) is treated as absent; explicit `null` or non-boolean values are rejected (`400 Bad Request`).
+
+==== Mutation Endpoint Schemas
+
+[cols="1,1,1,2"]
+|===
+|Endpoint |Allowed Keys |Field Types |Validation Limits
+
+|`POST /api/devops/tickets/[id]/comments`
+|`comment`, `isInternal`
+|`comment`: string (required), `isInternal`: boolean (optional)
+|`comment`: max 100,000 chars; `isInternal`: boolean
+
+|`PATCH /api/devops/tickets/[id]/state`
+|`state`, `project`
+|`state`: string (required), `project`: string (optional)
+|`state`: max 128 chars; `project`: max 64 chars
 |===
 
 == Security Considerations

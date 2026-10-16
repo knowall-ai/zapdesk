@@ -73,6 +73,17 @@ When changing the allowlist, add a test to both of the first two groups: one
 proving the new vector is blocked, one proving the content you meant to keep
 still renders.
 
+==== DevOps Request Validation Test Suite (`src/lib/devops-request-validation.test.ts`)
+
+The shared request-body validation suite provides comprehensive coverage for mutation payload validation:
+
+* **JSON Object Validation (`validateJsonObject`)**: Accepts plain objects; rejects `null`, arrays, numbers, strings, and non-object types with `400 Bad Request`.
+* **Unknown Key Rejection (`rejectUnknownKeys`)**: Accepts allowed fields; rejects unexpected or disallowed properties, listing all unknown keys in the error message.
+* **Required String Validation (`validateRequiredString`)**: Validates non-empty strings, trims leading/trailing whitespace, enforces max length constraints, and rejects undefined, null, non-strings, or whitespace-only strings.
+* **Optional String Validation (`validateOptionalString`)**: Treats `undefined` (omitted) as valid; explicitly rejects `null` and non-string types with `400 Bad Request`; trims valid strings and enforces length limits.
+* **Optional Boolean Validation (`validateOptionalBoolean`)**: Treats `undefined` (omitted) as valid; accepts boolean `true`/`false`; explicitly rejects `null` and non-boolean types with `400 Bad Request`.
+* **Validation Constants**: Verifies boundary values for `MAX_WORK_ITEM_ID` (`2_147_483_647`), `MAX_PROJECT_LENGTH` (`64`), `MAX_STATE_LENGTH` (`128`), and `MAX_COMMENT_LENGTH` (`100_000`).
+
 === Integration Tests
 
 Integration tests for API routes.
