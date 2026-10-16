@@ -29,20 +29,26 @@ export default function UsersPage() {
     }
   }, [status, router]);
 
-  useEffect(() => {
-    if (session?.accessToken && selectedOrganization) {
-      fetchUsers();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, selectedOrganization]);
+  const org = selectedOrganization?.accountName;
 
-  const fetchUsers = async () => {
+  useEffect(() => {
+    if (!session?.accessToken || !org) return;
+    // A slower response for an organization no longer selected is ignored
+    let current = true;
+    fetchUsers(org, () => current);
+    return () => {
+      current = false;
+    };
+  }, [session, org]);
+
+  const fetchUsers = async (organization: string, isCurrent: () => boolean) => {
     try {
       const response = await fetch('/api/devops/users', {
-        headers: selectedOrganization ? { 'x-devops-org': selectedOrganization.accountName } : {},
+        headers: { 'x-devops-org': organization },
       });
       if (response.ok) {
         const data = await response.json();
+        if (!isCurrent()) return;
         setUsers(
           data.users.map((c: Customer & { lastUpdated?: string }) => ({
             ...c,
@@ -53,7 +59,7 @@ export default function UsersPage() {
     } catch (error) {
       console.error('Failed to fetch users:', error);
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   };
 

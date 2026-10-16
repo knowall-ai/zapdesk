@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { forgetInstallation, gitHubAppConfig, verifyWebhookSignature } from '@/lib/github-app';
-import { forgetRepoIssues } from '@/lib/github-issues';
+import {
+  forgetInstallation,
+  gitHubAppConfig,
+  installationCredential,
+  verifyWebhookSignature,
+} from '@/lib/github-app';
+import { forgetCredentialIssues, forgetRepoIssues } from '@/lib/github-issues';
 
 /**
  * POST /api/github/webhook - Events from the ZapDesk GitHub App (#457).
@@ -39,6 +44,7 @@ export async function POST(request: NextRequest) {
     payload.installation?.id
   ) {
     forgetInstallation(payload.installation.id);
+    forgetCredentialIssues(installationCredential(payload.installation.id));
   }
 
   return NextResponse.json({ received: true }, { status: 202 });

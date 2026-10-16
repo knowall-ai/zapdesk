@@ -351,16 +351,20 @@ their Lightning Address, so no admin step is needed when someone joins.
 
 * ZapDesk reads the saved usernames with the app's Microsoft Graph
   *application* permission `User.ReadWrite.All` (admin consent), the one the
-  Lightning Address already needs. It reads the users of the tenant in
-  `AZURE_AD_TENANT_ID`, and keeps the result for ten minutes; a save on the
-  same server takes effect at once.
+  Lightning Address already needs. It reads the users of the signed-in
+  person's own tenant: `AZURE_AD_TENANT_ID` for a single-organisation
+  ZapDesk, or each installing organisation's tenant when other organisations
+  can install it (`AZURE_AD_MULTI_TENANT`). The result is kept for ten
+  minutes per tenant; a save on the same server takes effect at once.
 * A linked account becomes the Azure DevOps user with the same email address,
   else the one with the same display name, else the profile's name and email.
 * A username can be linked to one person only: saving one someone else has
   already linked is refused.
-* People outside the tenant (guests, clients signing in with another
-  directory, personal Microsoft accounts) cannot save a username this way. Use
-  `GITHUB_USER_MAP` for them.
+* A username saved in one tenant is only matched to issues for people
+  signed in to that tenant. Guests (whose profile lives in another
+  directory) and personal Microsoft accounts cannot save a username this way;
+  use `GITHUB_USER_MAP` for them. On a multi-tenant ZapDesk, people of an
+  organisation that has installed it save theirs in their own tenant.
 
 ==== In the server configuration
 
@@ -390,9 +394,12 @@ Restart the app after changing the value.
 
 === What appears
 
-With both values set, a *Both / DevOps / GitHub* toggle appears in the top
-right of the header, and the tickets list gains a *Source* column. With either
-value unset, neither appears.
+When GitHub issues are set up, a *Both / DevOps / GitHub* toggle appears in
+the top right of the header, and the tickets list gains a *Source* column.
+That is either the ZapDesk GitHub App (all five `GITHUB_APP_*` values) or the
+server token and mapping (both `GITHUB_TOKEN` and `GITHUB_PROJECT_REPOS`).
+With neither, the toggle and column do not appear. With the App, a project's
+issues show once someone has connected it on its project page.
 
 On the Kanban boards (the Kanban view of the tickets page, and the Kanban
 Board page) an issue is a card marked with the GitHub icon and its

@@ -9,6 +9,7 @@ import {
   devOpsUsersForGitHub,
   fetchOrgIssues,
   fetchRepoIssues,
+  forgetCredentialIssues,
   getGitHubTickets,
   gitHubIssueToTicket,
   gitHubIssuesConfig,
@@ -620,6 +621,33 @@ describe('fetching', () => {
   });
 
   describe('getGitHubTickets', () => {
+    // Cached issues belong to the credential that read them (#457 review): an
+    // answer GitHub gave one installation is never handed to another.
+    it('keeps cached issues apart per credential', async () => {
+      gitHub({ 'acme/portal': { open: [[issue({ id: 1 })]] } });
+      const asInstallation = (id: string) => ({
+        ...config,
+        credentialFor: () => ({ token: `token-${id}`, id }),
+      });
+      const tokensUsed = () =>
+        fetchMock.mock.calls.map(
+          ([, init]) => (init?.headers as Record<string, string>).Authorization
+        );
+
+      await getGitHubTickets([project('Internal')], 'KnowAll', asInstallation('app:1'));
+      await getGitHubTickets([project('Internal')], 'KnowAll', asInstallation('app:1'));
+      const afterFirst = fetchMock.mock.calls.length;
+      await getGitHubTickets([project('Internal')], 'KnowAll', asInstallation('app:2'));
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(afterFirst);
+      expect(tokensUsed().some((auth) => auth?.includes('token-app:2'))).toBe(true);
+
+      // Forgetting one installation leaves the other's cached answer alone
+      forgetCredentialIssues('app:2');
+      const beforeRefetch = fetchMock.mock.calls.length;
+      await getGitHubTickets([project('Internal')], 'KnowAll', asInstallation('app:1'));
+      expect(fetchMock.mock.calls.length).toBe(beforeRefetch);
+    });
+
     it('returns the issues of repositories mapped to the given projects', async () => {
       gitHub({ 'acme/portal': { open: [[issue({ id: 1 })]] } });
 

@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner, Avatar } from '@/components/common';
 import {
@@ -69,7 +69,14 @@ export default function TeamPage() {
     }
   }, [status, router]);
 
+  // Only the latest request of each kind may update the page: a slower one
+  // for an organization or filter no longer selected is ignored
+  const teamRequest = useRef(0);
+  const activityRequest = useRef(0);
+
   const fetchTeamData = useCallback(async () => {
+    const request = ++teamRequest.current;
+    const isCurrent = () => request === teamRequest.current;
     setLoading(true);
     setError(null);
     try {
@@ -85,20 +92,22 @@ export default function TeamPage() {
       });
       if (response.ok) {
         const data = await response.json();
-        setTeamData(data);
+        if (isCurrent()) setTeamData(data);
       } else {
         const errorData = await response.json().catch(() => ({}));
-        setError(errorData.error || 'Failed to load team data');
+        if (isCurrent()) setError(errorData.error || 'Failed to load team data');
       }
     } catch (err) {
       console.error('Failed to fetch team data:', err);
-      setError('Unable to connect to the server. Please try again.');
+      if (isCurrent()) setError('Unable to connect to the server. Please try again.');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [ticketsOnly, timePeriod, org]);
 
   const fetchActivityData = useCallback(async () => {
+    const request = ++activityRequest.current;
+    const isCurrent = () => request === activityRequest.current;
     setActivityLoading(true);
     try {
       const params = new URLSearchParams();
@@ -110,12 +119,12 @@ export default function TeamPage() {
       });
       if (response.ok) {
         const data = await response.json();
-        setActivityData(data);
+        if (isCurrent()) setActivityData(data);
       }
     } catch (err) {
       console.error('Failed to fetch activity data:', err);
     } finally {
-      setActivityLoading(false);
+      if (isCurrent()) setActivityLoading(false);
     }
   }, [ticketsOnly, org]);
 

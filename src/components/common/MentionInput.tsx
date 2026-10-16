@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, type KeyboardEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type KeyboardEvent } from 'react';
 import type { User } from '@/types';
 import Avatar from './Avatar';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
@@ -141,9 +141,12 @@ export default function MentionInput({
   const [mentionStartIndex, setMentionStartIndex] = useState(-1);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
-  const [hasLoadedUsers, setHasLoadedUsers] = useState(false);
   const { selectedOrganization } = useOrganization();
   const org = selectedOrganization?.accountName;
+  // The organization `allUsers` was loaded for; another one loads its own people
+  const [usersOrg, setUsersOrg] = useState<string | null>(null);
+  const hasLoadedUsers = usersOrg === org;
+  const users = useMemo(() => (hasLoadedUsers ? allUsers : []), [hasLoadedUsers, allUsers]);
   const [isEmpty, setIsEmpty] = useState(true);
 
   const editorRef = useRef<HTMLDivElement>(null);
@@ -175,7 +178,7 @@ export default function MentionInput({
       if (response.ok) {
         const data = await response.json();
         setAllUsers(data.users || []);
-        setHasLoadedUsers(true);
+        setUsersOrg(org);
       }
     } catch (error) {
       console.error('Failed to fetch users for mentions:', error);
@@ -187,9 +190,9 @@ export default function MentionInput({
   // Filter users
   const filterUsers = useCallback(
     (query: string): MentionUser[] => {
-      if (!query) return allUsers.slice(0, 8);
+      if (!query) return users.slice(0, 8);
       const lowerQuery = query.toLowerCase();
-      return allUsers
+      return users
         .map((user) => {
           const dn = user.displayName.toLowerCase();
           const em = (user.email || '').toLowerCase();
@@ -204,7 +207,7 @@ export default function MentionInput({
         .sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0))
         .slice(0, 8);
     },
-    [allUsers]
+    [users]
   );
 
   // Debounced filter

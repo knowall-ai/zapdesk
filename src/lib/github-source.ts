@@ -6,8 +6,13 @@
  * Server-only.
  */
 
-import { appProjectRepos, gitHubAppConfig } from '@/lib/github-app';
-import { gitHubIssuesConfig, parseUserMap, type GitHubIssuesConfig } from '@/lib/github-issues';
+import { appProjectRepos, gitHubAppConfig, installationCredential } from '@/lib/github-app';
+import {
+  gitHubIssuesConfig,
+  parseUserMap,
+  type GitHubCredential,
+  type GitHubIssuesConfig,
+} from '@/lib/github-issues';
 import type { DevOpsProject } from '@/types';
 
 /** True when GitHub issues can be shown at all, so the UI offers the source toggle. */
@@ -21,8 +26,8 @@ export function gitHubAppAvailable(): boolean {
 }
 
 export interface GitHubSource extends GitHubIssuesConfig {
-  /** The token for a repository, when it is not the server's own. */
-  tokenFor?: (repo: string) => string | undefined;
+  /** The credential for a repository, when it is not the server's own token. */
+  credentialFor?: (repo: string) => GitHubCredential | undefined;
   /** Installations that could not be read; shown like unreadable repositories. */
   failed: string[];
 }
@@ -51,7 +56,11 @@ export async function gitHubSourceFor(
     token: env?.token ?? '',
     projectRepos,
     userMap: env?.userMap ?? parseUserMap(process.env.GITHUB_USER_MAP),
-    tokenFor: (repo) => mapping.tokens[repo.toLowerCase()],
+    credentialFor: (repo) => {
+      const key = repo.toLowerCase();
+      const token = mapping.tokens[key];
+      return token ? { token, id: installationCredential(mapping.installations[key]) } : undefined;
+    },
     failed: mapping.failed,
   };
 }

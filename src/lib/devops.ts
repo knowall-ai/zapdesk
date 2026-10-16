@@ -87,6 +87,18 @@ let stateCategoryCache: Record<string, string> = {};
 
 // Cache for project list per organization (avoids redundant fetches)
 const projectListCache: Map<string, { data: DevOpsProject[]; timestamp: number }> = new Map();
+
+/**
+ * A short, stable name for whoever holds a token, so per-user caches never
+ * hand one person's results to another. Web Crypto, as this module also
+ * reaches the browser.
+ */
+async function tokenIdentity(accessToken: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(accessToken));
+  return Array.from(new Uint8Array(digest).slice(0, 8), (b) =>
+    b.toString(16).padStart(2, '0')
+  ).join('');
+}
 const PROJECT_CACHE_TTL_MS = 30 * 1000; // 30 seconds
 
 // Cache for current iterations per organization
@@ -624,6 +636,23 @@ export class AzureDevOpsService {
     this.organization = devOpsOrgOrDefault(organization);
   }
 
+  /**
+   * SLA level per project, from the descriptions of this organization's
+   * projects ("SLA: Gold"), so any organization's settings apply, not only
+   * the server default's.
+   */
+  private async projectSLAMap(projects: DevOpsProject[]): Promise<Record<string, SLALevel>> {
+    const map: Record<string, SLALevel> =
+      this.organization.toLowerCase() === (configuredDevOpsOrg() || '').toLowerCase()
+        ? { ...(await getProjectSLAMap()) }
+        : {};
+    for (const project of projects) {
+      const level = parseSLAFromDescription(project.description || '');
+      if (level) map[project.name] = level;
+    }
+    return map;
+  }
+
   /** The Azure DevOps organization this service talks to. */
   get organizationName(): string {
     return this.organization;
@@ -640,10 +669,12 @@ export class AzureDevOpsService {
     };
   }
 
-  // Get all projects the user has access to (cached for 30s per org)
+  // Get all projects the user has access to (cached for 30s per org and user)
   async getProjects(): Promise<DevOpsProject[]> {
-    const cached = projectListCache.get(this.organization);
-    if (cached && Date.now() - cached.timestamp < PROJECT_CACHE_TTL_MS) {
+    const key = `${this.organization.toLowerCase()}/${await tokenIdentity(this.accessToken)}`;
+    const now = Date.now();
+    const cached = projectListCache.get(key);
+    if (cached && now - cached.timestamp < PROJECT_CACHE_TTL_MS) {
       return cached.data;
     }
 
@@ -657,7 +688,11 @@ export class AzureDevOpsService {
 
     const data = await response.json();
     const projects: DevOpsProject[] = data.value;
-    projectListCache.set(this.organization, { data: projects, timestamp: Date.now() });
+    // Tokens are refreshed hourly, so drop entries nobody can hit again
+    for (const [entry, value] of projectListCache) {
+      if (now - value.timestamp >= PROJECT_CACHE_TTL_MS) projectListCache.delete(entry);
+    }
+    projectListCache.set(key, { data: projects, timestamp: now });
     return projects;
   }
 
@@ -2009,7 +2044,7 @@ export class AzureDevOpsService {
   // Set ticketsOnly=false to get all work items (not just those tagged as "ticket")
   async getAllTickets(ticketsOnly: boolean = true, allowedTypes?: string[]): Promise<Ticket[]> {
     const projects = await this.getProjects();
-    const slaMap = await getProjectSLAMap();
+    const slaMap = await this.projectSLAMap(projects);
 
     const results = await Promise.allSettled(
       projects.map(async (project) => {

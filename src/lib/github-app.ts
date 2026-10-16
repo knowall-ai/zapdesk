@@ -12,7 +12,7 @@
  * Server-only: it holds the App's private key and client secret.
  */
 
-import { createHmac, createSign, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, createSign, timingSafeEqual } from 'crypto';
 import type { DevOpsProject } from '@/types';
 
 const GITHUB_API_URL = 'https://api.github.com';
@@ -132,6 +132,21 @@ export function clearGitHubAppCaches(): void {
   tokenCache.clear();
   reposCache.clear();
   propertyCache.clear();
+}
+
+/** How cached GitHub issues name an installation's credential. */
+export function installationCredential(installationId: number): string {
+  return `app:${installationId}`;
+}
+
+/**
+ * Project links are cached per user as well as per project: the read is the
+ * user's own, so Azure DevOps has checked they can see the project, and a
+ * cached link must not reach someone it would refuse.
+ */
+function propertyCacheKey(org: string, projectId: string, accessToken: string): string {
+  const user = createHash('sha256').update(accessToken).digest('hex').slice(0, 16);
+  return `${org.toLowerCase()}/${projectId}/${user}`;
 }
 
 /** Forget an installation's token and repositories, after GitHub reports a change to it. */
@@ -329,7 +344,7 @@ export async function readProjectInstallation(
   projectId: string,
   accessToken: string
 ): Promise<ProjectInstallation | null> {
-  const key = `${org.toLowerCase()}/${projectId}`;
+  const key = propertyCacheKey(org, projectId, accessToken);
   const cached = propertyCache.get(key);
   if (cached && Date.now() < cached.expires) return cached.value;
 
@@ -373,7 +388,11 @@ export async function writeProjectInstallation(
     body: JSON.stringify(operation),
     signal: AbortSignal.timeout(DEVOPS_TIMEOUT_MS),
   });
-  propertyCache.delete(`${org.toLowerCase()}/${projectId}`);
+  // Every user's cached copy of this project's link is now out of date
+  const prefix = `${org.toLowerCase()}/${projectId}/`;
+  for (const key of propertyCache.keys()) {
+    if (key.startsWith(prefix)) propertyCache.delete(key);
+  }
   // Removing a property that is not there is not an error worth showing
   if (!response.ok && !(value === null && response.status === 404)) {
     const error = new Error(`Azure DevOps returned ${response.status} saving project properties`);
@@ -422,6 +441,8 @@ export interface AppRepoMapping {
   projectRepos: Record<string, string[]>;
   /** Installation token per repository, keyed in lower case. */
   tokens: Record<string, string>;
+  /** The installation each repository in `tokens` is read through. */
+  installations: Record<string, number>;
   /** Repositories (or installations) that could not be read. */
   failed: string[];
 }
@@ -437,7 +458,7 @@ export async function appProjectRepos(
   projects: DevOpsProject[],
   accessToken: string
 ): Promise<AppRepoMapping> {
-  const mapping: AppRepoMapping = { projectRepos: {}, tokens: {}, failed: [] };
+  const mapping: AppRepoMapping = { projectRepos: {}, tokens: {}, installations: {}, failed: [] };
 
   const links = await Promise.allSettled(
     projects.map((project) => readProjectInstallation(org, project.id, accessToken))
@@ -453,7 +474,12 @@ export async function appProjectRepos(
           installationToken(config, link.value.installationId),
         ]);
         mapping.projectRepos[project.name] = repos;
-        for (const repo of repos) mapping.tokens[repo.toLowerCase()] ??= token;
+        for (const repo of repos) {
+          const key = repo.toLowerCase();
+          if (key in mapping.tokens) continue;
+          mapping.tokens[key] = token;
+          mapping.installations[key] = link.value.installationId;
+        }
       } catch (error) {
         console.error(
           `[GitHub App] Could not read installation ${link.value.installationId} for ${project.name}:`,

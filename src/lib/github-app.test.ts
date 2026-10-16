@@ -5,6 +5,7 @@ import {
   appProjectRepos,
   clearGitHubAppCaches,
   signConnectState,
+  readProjectInstallation,
   userCanAccessInstallation,
   verifyConnectState,
   verifyWebhookSignature,
@@ -130,6 +131,38 @@ describe('with GitHub and Azure DevOps', () => {
         value: JSON.stringify({ installationId: 12, account: 'acme-gh' }),
       },
     ]);
+  });
+
+  // A project's link is read with the user's token, so Azure DevOps checks they
+  // may see the project; a cached copy must not reach anyone else (#457 review).
+  it('caches a project link per user, and forgets every copy when it changes', async () => {
+    fetchMock.mockImplementation(async (_url, init) =>
+      init?.method === 'PATCH'
+        ? Response.json({})
+        : Response.json({
+            value: [
+              {
+                name: 'ZapDesk.GitHubInstallation',
+                value: JSON.stringify({ installationId: 12, account: 'acme-gh' }),
+              },
+            ],
+          })
+    );
+    const reads = () => fetchMock.mock.calls.filter(([, init]) => init?.method !== 'PATCH');
+
+    await readProjectInstallation('acme', 'p1', 'alice-token');
+    await readProjectInstallation('acme', 'p1', 'alice-token');
+    expect(reads()).toHaveLength(1);
+
+    await readProjectInstallation('acme', 'p1', 'bob-token');
+    expect(reads()).toHaveLength(2);
+    expect((reads()[1][1]?.headers as Record<string, string>).Authorization).toBe(
+      'Bearer bob-token'
+    );
+
+    await writeProjectInstallation('acme', 'p1', 'alice-token', null);
+    await readProjectInstallation('acme', 'p1', 'bob-token');
+    expect(reads()).toHaveLength(3);
   });
 
   it('passes on a refusal from Azure DevOps', async () => {

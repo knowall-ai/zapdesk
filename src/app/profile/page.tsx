@@ -110,27 +110,35 @@ export default function ProfilePage() {
   }, [status, router]);
 
   useEffect(() => {
+    // A slower response for an organization no longer selected is ignored
+    let current = true;
+
     async function fetchProfile(organization: string) {
       try {
         const response = await fetch('/api/devops/profile', {
           headers: { 'x-devops-org': organization },
         });
-        if (response.ok) {
-          const data = await response.json();
+        const data = response.ok ? await response.json() : null;
+        if (!current) return;
+        if (data) {
           setProfile(data);
+          setError(null);
         } else {
           setError('Failed to load profile from Azure DevOps');
         }
       } catch {
-        setError('Failed to connect to Azure DevOps');
+        if (current) setError('Failed to connect to Azure DevOps');
       } finally {
-        setLoading(false);
+        if (current) setLoading(false);
       }
     }
 
     if (session?.accessToken && org) {
       fetchProfile(org);
     }
+    return () => {
+      current = false;
+    };
   }, [session, org]);
 
   if (status === 'loading' || loading) {

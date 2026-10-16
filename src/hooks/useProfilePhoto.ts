@@ -22,6 +22,7 @@ export function useProfilePhoto(isAuthenticated: boolean) {
     if (!org) return;
 
     let isMounted = true;
+    let createdUrl: string | null = null;
 
     async function fetchPhoto(organization: string) {
       setIsLoading(true);
@@ -34,7 +35,11 @@ export function useProfilePhoto(isAuthenticated: boolean) {
           const blob = await response.blob();
           const url = URL.createObjectURL(blob);
           if (isMounted) {
+            createdUrl = url;
             setPhotoUrl(url);
+          } else {
+            // The organization changed or the page closed while this loaded
+            URL.revokeObjectURL(url);
           }
         }
       } catch {
@@ -50,12 +55,11 @@ export function useProfilePhoto(isAuthenticated: boolean) {
 
     return () => {
       isMounted = false;
-      // Revoke the object URL to prevent memory leaks
-      if (photoUrl) {
-        URL.revokeObjectURL(photoUrl);
+      // Revoke the object URL this effect created, to prevent memory leaks
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, org]);
 
   return { photoUrl, isLoading };
