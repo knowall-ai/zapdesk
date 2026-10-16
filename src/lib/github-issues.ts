@@ -75,6 +75,24 @@ export function isOrgWildcard(entry: string): boolean {
   return ORG_WILDCARD_PATTERN.test(entry);
 }
 
+/**
+ * The `GITHUB_PROJECT_REPOS` key whose repositories go to the DevOps project
+ * of the same name, so every project of the organization is covered without
+ * listing each one.
+ */
+export const ANY_PROJECT = '*';
+
+/**
+ * A name as GitHub would spell it for a repository: lower case, with each run
+ * of other characters as one hyphen. "Cairn Homes" and `cairn-homes` match.
+ */
+export function repoSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 interface GitHubUser {
   id: number;
   login: string;
@@ -616,6 +634,10 @@ export interface GitHubTicketsResult {
  * the ones the mapping names for a project: those stay with their project, and
  * so stay hidden from a caller who cannot see it.
  *
+ * Repositories under the `*` key (`ANY_PROJECT`) go to the project whose
+ * name matches the repository's (`repoSlug`); one that matches no project the
+ * caller can see is left out. A project the mapping names wins over `*`.
+ *
  * `devOpsUsers` are the users whose identity a mapped or linked GitHub account
  * takes, and `linkedAccounts` the usernames people saved on their profiles.
  */
@@ -637,19 +659,29 @@ export async function getGitHubTickets(
 ): Promise<GitHubTicketsResult> {
   const people: GitHubPeople = { userMap: config.userMap ?? {}, devOpsUsers, linkedAccounts };
   const byName = new Map(projects.map((p) => [p.name.toLowerCase(), p]));
-  const targets: Array<{ repo: string; project: DevOpsProject }> = [];
+  const bySlug = new Map<string, DevOpsProject>();
+  for (const p of projects) {
+    const slug = repoSlug(p.name);
+    if (slug && !bySlug.has(slug)) bySlug.set(slug, p);
+  }
+  const projectOfRepo = (repo: string) => bySlug.get(repoSlug(repo.split('/')[1] ?? ''));
+  // `project` is left out for an organization under `*`: each of its issues
+  // goes to the project its repository is named after
+  const targets: Array<{ repo: string; project?: DevOpsProject }> = [];
   const seen = new Set<string>();
 
   // Every repository the mapping names, whether or not the caller can see its
   // project: a wildcard must not hand those out under another project.
   const namedRepos = new Set(
-    Object.values(config.projectRepos)
-      .flat()
+    Object.entries(config.projectRepos)
+      .filter(([projectName]) => projectName !== ANY_PROJECT)
+      .flatMap(([, repos]) => repos)
       .filter((entry) => !isOrgWildcard(entry))
       .map((entry) => entry.toLowerCase())
   );
 
   for (const [projectName, repos] of Object.entries(config.projectRepos)) {
+    if (projectName === ANY_PROJECT) continue;
     const project = byName.get(projectName.toLowerCase());
     if (!project) continue;
     for (const repo of repos) {
@@ -658,6 +690,21 @@ export async function getGitHubTickets(
       seen.add(key);
       targets.push({ repo, project });
     }
+  }
+
+  // After the named projects, so a repository a project names stays with it
+  for (const repo of config.projectRepos[ANY_PROJECT] ?? []) {
+    const key = repo.toLowerCase();
+    if (seen.has(key) || namedRepos.has(key)) continue;
+    if (isOrgWildcard(repo)) {
+      seen.add(key);
+      targets.push({ repo });
+      continue;
+    }
+    const project = projectOfRepo(repo);
+    if (!project) continue;
+    seen.add(key);
+    targets.push({ repo, project });
   }
 
   const settled = await Promise.allSettled(
@@ -671,31 +718,40 @@ export async function getGitHubTickets(
 
   const tickets: Ticket[] = [];
   const failedRepos: string[] = [];
+  const organizationOf = (project: DevOpsProject) => organizationOfProject(project, devOpsOrg);
   settled.forEach((result, index) => {
-    const { repo, project } = targets[index];
+    const { repo, project: target } = targets[index];
     if (result.status === 'rejected') {
       console.error(`[GitHub] Failed to read issues from ${repo}:`, result.reason);
       failedRepos.push(repo);
       return;
     }
-    const organization: Organization = {
-      id: project.id,
-      name: project.name,
-      devOpsProject: project.name,
-      devOpsOrg,
-      tags: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
     const wholeOrg = isOrgWildcard(repo);
     for (const issue of result.value) {
       const issueRepo = wholeOrg ? issue.repository?.full_name : repo;
       if (!issueRepo) continue;
       const key = issueRepo.toLowerCase();
       if (wholeOrg && (namedRepos.has(key) || seen.has(key))) continue;
-      tickets.push(gitHubIssueToTicket(issue, issueRepo, project.name, organization, people));
+      const project = target ?? projectOfRepo(issueRepo);
+      if (!project) continue;
+      tickets.push(
+        gitHubIssueToTicket(issue, issueRepo, project.name, organizationOf(project), people)
+      );
     }
   });
 
   return { tickets, failedRepos };
+}
+
+/** The ZapDesk organization a GitHub issue of `project` belongs to. */
+function organizationOfProject(project: DevOpsProject, devOpsOrg: string): Organization {
+  return {
+    id: project.id,
+    name: project.name,
+    devOpsProject: project.name,
+    devOpsOrg,
+    tags: [],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
 }
