@@ -5,29 +5,34 @@ import Link from 'next/link';
 import { AlertTriangle, Clock, CheckCircle, ExternalLink } from 'lucide-react';
 import type { SLAStatusResponse, TicketSLAStatus } from '@/types';
 import { formatTimeRemaining } from '@/lib/sla';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 
 interface SLARiskPanelProps {
   accessToken?: string;
 }
 
 export function SLARiskPanel({ accessToken }: SLARiskPanelProps) {
+  const { selectedOrganization } = useOrganization();
+  const org = selectedOrganization?.accountName;
   const [data, setData] = useState<SLAStatusResponse | null>(null);
   const [loading, setLoading] = useState(!!accessToken);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (accessToken) {
-      fetchSLAStatus();
-    } else {
+    if (accessToken && org) {
+      fetchSLAStatus(org);
+    } else if (!accessToken) {
       setLoading(false);
     }
-  }, [accessToken]);
+  }, [accessToken, org]);
 
-  const fetchSLAStatus = async () => {
+  const fetchSLAStatus = async (organization: string) => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('/api/devops/sla-status');
+      const response = await fetch('/api/devops/sla-status', {
+        headers: { 'x-devops-org': organization },
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch SLA status');
       }

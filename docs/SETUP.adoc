@@ -32,6 +32,38 @@ ZapDesk is a Zendesk-style support ticketing portal that uses Azure DevOps as it
 ** Microsoft Graph: `User.Read`, `email`, `profile`, `openid`
 ** Azure DevOps: `user_impersonation`
 
+=== Letting other organisations install ZapDesk
+
+One ZapDesk can serve many organisations. Each one's admin installs it with a
+button, and their people then sign in with their own Microsoft account and see
+their own Azure DevOps. ZapDesk stores nothing about them: the install is a
+consent in their tenant, and personal settings stay on each person's profile.
+
+. In the app registration, under *Authentication*, set *Supported account
+  types* to "Accounts in any organizational directory (Multitenant)".
+. Add a second *Web* redirect URI: `https://zapdesk.yourdomain.com/api/install/callback`.
+. Under *API permissions*, the Microsoft Graph *application* permission
+  `User.ReadWrite.All` is what the Lightning Address and GitHub username
+  features use. Every installing admin is asked to grant the permissions
+  listed here.
+. Set `AZURE_AD_MULTI_TENANT=true` in the App Service configuration and
+  restart. Keep `AZURE_AD_TENANT_ID` set to your own tenant.
+
+An admin of another organisation then opens `/install` (linked from the login
+page), clicks *Install for my organisation*, and approves the permissions on
+Microsoft's page. They need the Global Administrator, Privileged Role
+Administrator or Cloud Application Administrator role. Microsoft then lists
+ZapDesk under *Enterprise applications* in their tenant, where they can remove
+it again.
+
+* Sign-in uses the `organizations` endpoint, so work and school accounts from
+  any tenant that has installed ZapDesk can sign in. Personal Microsoft
+  accounts cannot.
+* Profile features (Lightning Address, GitHub username) read and write the
+  signed-in user's own tenant, with a Graph token from that tenant.
+* `AZURE_DEVOPS_ORG` is only a default for server-side work such as email
+  ingest. People pick their Azure DevOps organisation in the header.
+
 == Azure DevOps Configuration
 
 === Personal Access Token (PAT)
@@ -50,19 +82,20 @@ Email routing is configured via Azure DevOps project descriptions. Add an `Email
 
 .Example project description
 ----
-Customer support project for Cairn Homes.
+Customer support project for Example Ltd.
 
-Email: cairnhomes.com
+Email: example.com
+SLA: Gold
 ----
 
 .Multiple domains
 ----
-Medite customer support portal.
+Example Group customer support portal.
 
-Email: medite.com, medite.ie
+Email: example.com, example.ie
 ----
 
-The system queries DevOps every 5 minutes to refresh the routing map. If no domains are found in project descriptions, it falls back to hardcoded defaults.
+The system queries DevOps every 5 minutes to refresh the routing map. There are no built-in domains: a domain that no project lists is not routed. The first domain also shows as the organization's domain in ZapDesk, and the `SLA:` line sets its SLA level (Gold, Silver or Bronze).
 
 == Azure App Service
 
@@ -213,6 +246,50 @@ tickets list and on the Kanban boards, for projects that track work in GitHub
 as well as, or instead of, DevOps. The issues are read-only in ZapDesk: each
 row or card links to the issue on GitHub.
 
+There are two ways to set this up; both can be used together.
+
+* *The ZapDesk GitHub App* (below): each DevOps project admin connects their
+  own GitHub organisation from the project page. Use this when ZapDesk serves
+  more than one organisation.
+* *A server token and mapping* (`GITHUB_TOKEN`, `GITHUB_PROJECT_REPOS`): an
+  admin of the server lists the repositories. Simplest for one organisation.
+
+=== The ZapDesk GitHub App
+
+Register one GitHub App for this ZapDesk. It serves every organisation that
+connects to it.
+
+. On GitHub, under the account that will own the App: *Settings > Developer
+  settings > GitHub Apps > New GitHub App*.
+. Name it (the URL name becomes `GITHUB_APP_SLUG`), with homepage URL
+  `https://zapdesk.yourdomain.com`.
+. *Callback URL*: `https://zapdesk.yourdomain.com/api/github/setup`. Tick
+  *Request user authorization (OAuth) during installation*. ZapDesk needs the
+  code this adds to check that the person connecting can see the installation.
+. *Webhook*: active, URL `https://zapdesk.yourdomain.com/api/github/webhook`,
+  with a random secret (`GITHUB_APP_WEBHOOK_SECRET`). Optional: without it,
+  changes show once the one-minute cache expires.
+. *Permissions*: Repository > *Issues*: read-only, *Metadata*: read-only.
+  *Subscribe to events*: *Issues*.
+. *Where can this GitHub App be installed?*: *Any account*.
+. After creating it, note the *App ID* (`GITHUB_APP_ID`) and *Client ID*
+  (`GITHUB_APP_CLIENT_ID`). Generate a client secret
+  (`GITHUB_APP_CLIENT_SECRET`) and a private key (`GITHUB_APP_PRIVATE_KEY`,
+  the whole PEM file; App Service settings may write its line breaks as `\n`).
+
+Set those values in the App Service configuration and restart. A *GitHub*
+card then appears on each project page:
+
+* Someone who can edit the project in Azure DevOps clicks *Connect GitHub*,
+  installs the App on their GitHub organisation and picks repositories.
+* The link is kept on the DevOps project, as the project property
+  `ZapDesk.GitHubInstallation`. ZapDesk has no database, and only people who
+  can edit the project can change it.
+* Everyone who can see the project sees its issues. Each installation has its
+  own GitHub rate limit.
+* *Disconnect* removes the link. Uninstalling the App on GitHub stops it
+  working too.
+
 === Token
 
 Create a GitHub token the server uses to read issues, and set it as
@@ -274,16 +351,20 @@ their Lightning Address, so no admin step is needed when someone joins.
 
 * ZapDesk reads the saved usernames with the app's Microsoft Graph
   *application* permission `User.ReadWrite.All` (admin consent), the one the
-  Lightning Address already needs. It reads the users of the tenant in
-  `AZURE_AD_TENANT_ID`, and keeps the result for ten minutes; a save on the
-  same server takes effect at once.
+  Lightning Address already needs. It reads the users of the signed-in
+  person's own tenant: `AZURE_AD_TENANT_ID` for a single-organisation
+  ZapDesk, or each installing organisation's tenant when other organisations
+  can install it (`AZURE_AD_MULTI_TENANT`). The result is kept for ten
+  minutes per tenant; a save on the same server takes effect at once.
 * A linked account becomes the Azure DevOps user with the same email address,
   else the one with the same display name, else the profile's name and email.
 * A username can be linked to one person only: saving one someone else has
   already linked is refused.
-* People outside the tenant (guests, clients signing in with another
-  directory, personal Microsoft accounts) cannot save a username this way. Use
-  `GITHUB_USER_MAP` for them.
+* A username saved in one tenant is only matched to issues for people
+  signed in to that tenant. Guests (whose profile lives in another
+  directory) and personal Microsoft accounts cannot save a username this way;
+  use `GITHUB_USER_MAP` for them. On a multi-tenant ZapDesk, people of an
+  organisation that has installed it save theirs in their own tenant.
 
 ==== In the server configuration
 
@@ -313,9 +394,12 @@ Restart the app after changing the value.
 
 === What appears
 
-With both values set, a *Both / DevOps / GitHub* toggle appears in the top
-right of the header, and the tickets list gains a *Source* column. With either
-value unset, neither appears.
+When GitHub issues are set up, a *Both / DevOps / GitHub* toggle appears in
+the top right of the header, and the tickets list gains a *Source* column.
+That is either the ZapDesk GitHub App (all five `GITHUB_APP_*` values) or the
+server token and mapping (both `GITHUB_TOKEN` and `GITHUB_PROJECT_REPOS`).
+With neither, the toggle and column do not appear. With the App, a project's
+issues show once someone has connected it on its project page.
 
 On the Kanban boards (the Kanban view of the tickets page, and the Kanban
 Board page) an issue is a card marked with the GitHub icon and its

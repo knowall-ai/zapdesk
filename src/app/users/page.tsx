@@ -11,10 +11,13 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import type { Customer } from '@/types';
 
+/** How long to wait for the users list before giving up. */
+const USERS_TIMEOUT_MS = 15_000;
+
 export default function UsersPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const { selectedOrganization } = useOrganization();
+  const { selectedOrganization, isLoading: organizationsLoading } = useOrganization();
   const [users, setUsers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -29,30 +32,54 @@ export default function UsersPage() {
     }
   }, [status, router]);
 
-  useEffect(() => {
-    if (session?.accessToken) {
-      fetchUsers();
-    }
-  }, [session]);
+  const org = selectedOrganization?.accountName;
 
-  const fetchUsers = async () => {
-    try {
-      const response = await fetch('/api/devops/users');
-      if (response.ok) {
-        const data = await response.json();
-        setUsers(
-          data.users.map((c: Customer & { lastUpdated?: string }) => ({
-            ...c,
-            lastUpdated: c.lastUpdated ? new Date(c.lastUpdated) : undefined,
-          }))
-        );
-      }
-    } catch (error) {
-      console.error('Failed to fetch users:', error);
-    } finally {
+  useEffect(() => {
+    if (!session?.accessToken || organizationsLoading) return;
+    if (!org) {
+      // Discovery finished without an organization: show the empty list
+      setUsers([]);
       setLoading(false);
+      return;
     }
-  };
+    // A new organization starts empty, so its people are never mixed with the
+    // last one's; a superseded request is cancelled and its answer ignored
+    let current = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), USERS_TIMEOUT_MS);
+    setUsers([]);
+    setLoading(true);
+
+    (async () => {
+      try {
+        const response = await fetch('/api/devops/users', {
+          headers: { 'x-devops-org': org },
+          signal: controller.signal,
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (!current) return;
+          setUsers(
+            data.users.map((c: Customer & { lastUpdated?: string }) => ({
+              ...c,
+              lastUpdated: c.lastUpdated ? new Date(c.lastUpdated) : undefined,
+            }))
+          );
+        }
+      } catch (error) {
+        if (current) console.error('Failed to fetch users:', error);
+      } finally {
+        clearTimeout(timeout);
+        if (current) setLoading(false);
+      }
+    })();
+
+    return () => {
+      current = false;
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [session, org, organizationsLoading]);
 
   // Get unique email domains for filter dropdown
   const emailDomains = Array.from(
@@ -150,15 +177,17 @@ export default function UsersPage() {
             <p style={{ color: 'var(--text-secondary)' }}>
               Search and manage your users all in one place.
             </p>
-            <a
-              href="https://dev.azure.com/KnowAll/_settings/users"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1 flex items-center gap-1 text-sm"
-              style={{ color: 'var(--primary)' }}
-            >
-              See users in Azure DevOps <ExternalLink size={12} />
-            </a>
+            {orgUsersUrl && (
+              <a
+                href={orgUsersUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 flex items-center gap-1 text-sm"
+                style={{ color: 'var(--primary)' }}
+              >
+                See users in Azure DevOps <ExternalLink size={12} />
+              </a>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button

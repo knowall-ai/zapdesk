@@ -340,14 +340,19 @@ export async function devOpsUsersForGitHub(
   }
 }
 
-let linkedAccountsCache: {
-  accounts: Record<string, LinkedGitHubPerson>;
-  expires: number;
-} | null = null;
+/** Saved usernames per Entra tenant: one tenant's people must never show in another's. */
+const linkedAccountsCache = new Map<
+  string,
+  { accounts: Record<string, LinkedGitHubPerson>; expires: number }
+>();
 
-/** Forget the saved GitHub usernames, so a username just saved is used at once. */
-export function clearLinkedAccountsCache(): void {
-  linkedAccountsCache = null;
+/**
+ * Forget the saved GitHub usernames of a tenant (all tenants when none is
+ * given), so a username just saved is used at once.
+ */
+export function clearLinkedAccountsCache(tenant?: string): void {
+  if (tenant === undefined) linkedAccountsCache.clear();
+  else linkedAccountsCache.delete(tenant);
 }
 
 /**
@@ -358,18 +363,26 @@ export function clearLinkedAccountsCache(): void {
  * remembered briefly so every request does not walk the tenant again.
  */
 export async function linkedGitHubAccounts(
-  load: () => Promise<LinkedGitHubPerson[]>
+  load: () => Promise<LinkedGitHubPerson[]>,
+  tenant = ''
 ): Promise<Record<string, LinkedGitHubPerson>> {
-  if (linkedAccountsCache && Date.now() < linkedAccountsCache.expires) {
-    return linkedAccountsCache.accounts;
+  const cached = linkedAccountsCache.get(tenant);
+  if (cached && Date.now() < cached.expires) {
+    return cached.accounts;
   }
   try {
     const accounts = indexLinkedAccounts(await load());
-    linkedAccountsCache = { accounts, expires: Date.now() + LINKED_ACCOUNTS_CACHE_TTL_MS };
+    linkedAccountsCache.set(tenant, {
+      accounts,
+      expires: Date.now() + LINKED_ACCOUNTS_CACHE_TTL_MS,
+    });
     return accounts;
   } catch (error) {
     console.error('[GitHub] Could not read the GitHub usernames saved on profiles:', error);
-    linkedAccountsCache = { accounts: {}, expires: Date.now() + LINKED_ACCOUNTS_RETRY_MS };
+    linkedAccountsCache.set(tenant, {
+      accounts: {},
+      expires: Date.now() + LINKED_ACCOUNTS_RETRY_MS,
+    });
     return {};
   }
 }
@@ -526,20 +539,62 @@ export async function fetchOrgIssues(wildcard: string, token: string): Promise<G
   return issues.filter((issue) => !issue.pull_request && issue.repository?.full_name);
 }
 
+/**
+ * Cached issues, keyed by the credential that read them and the repository
+ * (`credential|owner/repo`). Two GitHub App installations, or an installation
+ * and the server token, never share an entry: each read is checked by GitHub
+ * with its own credential.
+ */
 const issuesCache = new Map<string, { issues: GitHubIssue[]; timestamp: number }>();
+
+/** A token for reading a repository, and a stable name for it (e.g. `app:12`). */
+export interface GitHubCredential {
+  token: string;
+  id: string;
+}
+
+/** The credential of repositories read with the server's own `GITHUB_TOKEN`. */
+const SERVER_CREDENTIAL = 'server';
+
+const repoOfKey = (key: string) => key.slice(key.indexOf('|') + 1).toLowerCase();
 
 /** For tests: forget every cached repository. */
 export function clearGitHubIssuesCache(): void {
   issuesCache.clear();
 }
 
-async function cachedRepoIssues(repo: string, token: string): Promise<GitHubIssue[]> {
-  const cached = issuesCache.get(repo);
+/**
+ * Forget one repository's issues, and its organisation's `owner/*` entry, so
+ * the next load reads them again. Used when GitHub reports a change.
+ */
+export function forgetRepoIssues(fullName: string): void {
+  const repo = fullName.toLowerCase();
+  const wildcard = `${repo.split('/')[0]}/*`;
+  for (const key of issuesCache.keys()) {
+    const lower = repoOfKey(key);
+    if (lower === repo || lower === wildcard) issuesCache.delete(key);
+  }
+}
+
+/** Forget everything read with one credential, e.g. a GitHub App installation that changed. */
+export function forgetCredentialIssues(credential: string): void {
+  for (const key of issuesCache.keys()) {
+    if (key.startsWith(`${credential}|`)) issuesCache.delete(key);
+  }
+}
+
+async function cachedRepoIssues(
+  repo: string,
+  token: string,
+  credential: string
+): Promise<GitHubIssue[]> {
+  const key = `${credential}|${repo.toLowerCase()}`;
+  const cached = issuesCache.get(key);
   if (cached && Date.now() - cached.timestamp < ISSUES_CACHE_TTL_MS) return cached.issues;
   const issues = isOrgWildcard(repo)
     ? await fetchOrgIssues(repo, token)
     : await fetchRepoIssues(repo, token);
-  issuesCache.set(repo, { issues, timestamp: Date.now() });
+  issuesCache.set(key, { issues, timestamp: Date.now() });
   return issues;
 }
 
@@ -571,6 +626,11 @@ export async function getGitHubTickets(
     token: string;
     projectRepos: Record<string, string[]>;
     userMap?: Record<string, string>;
+    /**
+     * The credential for a repository, when it is not `token` (a GitHub App
+     * installation's). `id` names it, so cached issues are kept apart per credential.
+     */
+    credentialFor?: (repo: string) => GitHubCredential | undefined;
   },
   devOpsUsers?: User[],
   linkedAccounts?: Record<string, LinkedGitHubPerson>
@@ -601,7 +661,12 @@ export async function getGitHubTickets(
   }
 
   const settled = await Promise.allSettled(
-    targets.map(({ repo }) => cachedRepoIssues(repo, config.token))
+    targets.map(({ repo }) => {
+      const credential = config.credentialFor?.(repo);
+      return credential
+        ? cachedRepoIssues(repo, credential.token, credential.id)
+        : cachedRepoIssues(repo, config.token, SERVER_CREDENTIAL);
+    })
   );
 
   const tickets: Ticket[] = [];

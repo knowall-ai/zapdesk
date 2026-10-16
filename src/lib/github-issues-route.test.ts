@@ -179,9 +179,9 @@ describe('GitHub issue routes', () => {
     });
 
     it('reports whether GitHub issues are set up', async () => {
-      expect((await getStatus()).body).toEqual({ configured: true });
+      expect((await getStatus()).body).toEqual({ configured: true, app: false });
       vi.stubEnv('GITHUB_PROJECT_REPOS', '');
-      expect((await getStatus()).body).toEqual({ configured: false });
+      expect((await getStatus()).body).toEqual({ configured: false, app: false });
     });
   });
 });

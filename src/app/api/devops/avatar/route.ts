@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requestDevOpsOrg } from '@/lib/devops-org';
 
 // Convert UUID string to base64 for Azure DevOps descriptor
 // The descriptor is the GUID string (with dashes) encoded as base64
@@ -12,7 +13,7 @@ function uuidToBase64(uuid: string): string {
   return base64.replace(/=+$/, '');
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -20,7 +21,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken, requestDevOpsOrg(request));
     const profile = await devopsService.getUserProfile();
 
     // The descriptor format for AAD users is: aad.{base64-encoded-uuid}
@@ -28,8 +29,7 @@ export async function GET() {
     const descriptor = `aad.${base64Id}`;
 
     // Fetch avatar from Azure DevOps
-    const org = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
-    const avatarUrl = `https://dev.azure.com/${org}/_apis/GraphProfile/MemberAvatars/${descriptor}?size=2`;
+    const avatarUrl = `https://dev.azure.com/${encodeURIComponent(devopsService.organizationName)}/_apis/GraphProfile/MemberAvatars/${descriptor}?size=2`;
 
     const avatarResponse = await fetch(avatarUrl, {
       headers: {

@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner, Avatar } from '@/components/common';
 import {
@@ -18,6 +18,7 @@ import {
 import { ActivityCalendar, type Activity as CalendarActivity } from 'react-activity-calendar';
 import { Tooltip } from 'react-tooltip';
 import type { TeamMember, TeamStats } from '@/types';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 
 interface TeamData {
   members: TeamMember[];
@@ -40,6 +41,8 @@ type SortDirection = 'asc' | 'desc';
 
 export default function TeamPage() {
   const { data: session, status } = useSession();
+  const { selectedOrganization } = useOrganization();
+  const org = selectedOrganization?.accountName;
   const router = useRouter();
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [activityData, setActivityData] = useState<ActivityData | null>(null);
@@ -66,7 +69,14 @@ export default function TeamPage() {
     }
   }, [status, router]);
 
+  // Only the latest request of each kind may update the page: a slower one
+  // for an organization or filter no longer selected is ignored
+  const teamRequest = useRef(0);
+  const activityRequest = useRef(0);
+
   const fetchTeamData = useCallback(async () => {
+    const request = ++teamRequest.current;
+    const isCurrent = () => request === teamRequest.current;
     setLoading(true);
     setError(null);
     try {
@@ -77,47 +87,53 @@ export default function TeamPage() {
       if (timePeriod) {
         params.set('days', String(timePeriod));
       }
-      const response = await fetch(`/api/devops/team?${params.toString()}`);
+      const response = await fetch(`/api/devops/team?${params.toString()}`, {
+        headers: { 'x-devops-org': org || '' },
+      });
       if (response.ok) {
         const data = await response.json();
-        setTeamData(data);
+        if (isCurrent()) setTeamData(data);
       } else {
         const errorData = await response.json().catch(() => ({}));
-        setError(errorData.error || 'Failed to load team data');
+        if (isCurrent()) setError(errorData.error || 'Failed to load team data');
       }
     } catch (err) {
       console.error('Failed to fetch team data:', err);
-      setError('Unable to connect to the server. Please try again.');
+      if (isCurrent()) setError('Unable to connect to the server. Please try again.');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [ticketsOnly, timePeriod]);
+  }, [ticketsOnly, timePeriod, org]);
 
   const fetchActivityData = useCallback(async () => {
+    const request = ++activityRequest.current;
+    const isCurrent = () => request === activityRequest.current;
     setActivityLoading(true);
     try {
       const params = new URLSearchParams();
       if (!ticketsOnly) {
         params.set('ticketsOnly', 'false');
       }
-      const response = await fetch(`/api/devops/team-activity?${params.toString()}`);
+      const response = await fetch(`/api/devops/team-activity?${params.toString()}`, {
+        headers: { 'x-devops-org': org || '' },
+      });
       if (response.ok) {
         const data = await response.json();
-        setActivityData(data);
+        if (isCurrent()) setActivityData(data);
       }
     } catch (err) {
       console.error('Failed to fetch activity data:', err);
     } finally {
-      setActivityLoading(false);
+      if (isCurrent()) setActivityLoading(false);
     }
-  }, [ticketsOnly]);
+  }, [ticketsOnly, org]);
 
   useEffect(() => {
-    if (session?.accessToken) {
+    if (session?.accessToken && org) {
       fetchTeamData();
       fetchActivityData();
     }
-  }, [session?.accessToken, fetchTeamData, fetchActivityData]);
+  }, [session?.accessToken, org, fetchTeamData, fetchActivityData]);
 
   // Pre-calculate max values once for workload distribution (must be before conditional returns)
   const maxAssigned = React.useMemo(() => {

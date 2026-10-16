@@ -1,12 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requestDevOpsOrg } from '@/lib/devops-org';
 import { calculateSLAStatusForTickets, sortByUrgency, getSLASummary } from '@/lib/sla';
 import { TICKET_WORK_ITEM_TYPES } from '@/types';
 import type { SLAStatusResponse } from '@/types';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -14,7 +15,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken, requestDevOpsOrg(request));
     // Restrict to the same work item types the Tickets view shows
     // (Task, Enhancement, Issue, Bug, Risk, Question) so Epics/Features/
     // User Stories tagged "ticket" don't inflate the SLA-breached count

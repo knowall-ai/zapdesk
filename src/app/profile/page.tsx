@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { Avatar } from '@/components/common';
 import { useProfilePhoto } from '@/hooks';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 import GitHubAccountCard from '@/components/profile/GitHubAccountCard';
 import {
   User,
@@ -33,9 +34,14 @@ interface DevOpsProfile {
   timePattern: string;
 }
 
+/** How long to wait for the Azure DevOps profile before giving up. */
+const PROFILE_TIMEOUT_MS = 15_000;
+
 export default function ProfilePage() {
   const { data: session, status } = useSession();
   const { photoUrl } = useProfilePhoto(status === 'authenticated');
+  const { selectedOrganization, isLoading: organizationsLoading } = useOrganization();
+  const org = selectedOrganization?.accountName;
   const router = useRouter();
   const [profile, setProfile] = useState<DevOpsProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -107,26 +113,50 @@ export default function ProfilePage() {
   }, [status, router]);
 
   useEffect(() => {
-    async function fetchProfile() {
+    if (!session?.accessToken || organizationsLoading) return;
+    if (!org) {
+      // Discovery finished without an organization: say so rather than spin
+      setError('No Azure DevOps organization is available to your account');
+      setLoading(false);
+      return;
+    }
+
+    // A superseded request is cancelled, and none may spin for ever; a
+    // response for an organization no longer selected is ignored
+    let current = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), PROFILE_TIMEOUT_MS);
+
+    async function fetchProfile(organization: string) {
+      setLoading(true);
       try {
-        const response = await fetch('/api/devops/profile');
-        if (response.ok) {
-          const data = await response.json();
+        const response = await fetch('/api/devops/profile', {
+          headers: { 'x-devops-org': organization },
+          signal: controller.signal,
+        });
+        const data = response.ok ? await response.json() : null;
+        if (!current) return;
+        if (data) {
           setProfile(data);
+          setError(null);
         } else {
           setError('Failed to load profile from Azure DevOps');
         }
       } catch {
-        setError('Failed to connect to Azure DevOps');
+        if (current) setError('Failed to connect to Azure DevOps');
       } finally {
-        setLoading(false);
+        clearTimeout(timeout);
+        if (current) setLoading(false);
       }
     }
 
-    if (session?.accessToken) {
-      fetchProfile();
-    }
-  }, [session]);
+    fetchProfile(org);
+    return () => {
+      current = false;
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [session, org, organizationsLoading]);
 
   if (status === 'loading' || loading) {
     return (

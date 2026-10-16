@@ -76,7 +76,7 @@ describe('getWorkItemUpdates', () => {
       )
     );
 
-    const updates = await new AzureDevOpsService('token').getWorkItemUpdates('Proj', 1);
+    const updates = await new AzureDevOpsService('token', 'acme').getWorkItemUpdates('Proj', 1);
 
     expect(updates.map((u) => u.revisedDate)).toEqual([
       '2026-02-20T08:41:00Z',

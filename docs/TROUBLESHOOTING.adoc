@@ -78,10 +78,10 @@
 |If a message appears, it gives the reason Azure DevOps refused the move, usually a workflow rule on that work item type. A column that turns grey while you drag is one the card's type has no state for (hover it for the reason). With no message at all on a version before the fix for issue #366, a board refresh arrived during the drag: drop the card again, or turn *Live update* off while moving several cards.
 
 |**The Both / DevOps / GitHub toggle is missing from the header**
-|GitHub issues are not configured. Set both `GITHUB_TOKEN` and `GITHUB_PROJECT_REPOS` in the App Service configuration and restart. Check the server log for `[GitHub] GITHUB_PROJECT_REPOS` warnings: the value must be a JSON object such as `{"Project": ["owner/repo"]}`.
+|GitHub issues are not configured. Either set up the ZapDesk GitHub App (`GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` and `GITHUB_APP_PRIVATE_KEY`), or set both `GITHUB_TOKEN` and `GITHUB_PROJECT_REPOS`, in the App Service configuration and restart. Check the server log for `[GitHub] GITHUB_PROJECT_REPOS` warnings: the value must be a JSON object such as `{"Project": ["owner/repo"]}`.
 
 |**The toggle is there but no GitHub issues are listed**
-|The project name in `GITHUB_PROJECT_REPOS` must match an Azure DevOps project in the selected organization that you can see (case does not matter). Only open issues and closed issues updated in the last seven days are listed.
+|With the ZapDesk GitHub App, the project must be connected: its project page shows the GitHub organisation, and *Choose repositories on GitHub* lists the repositories the App may read. With `GITHUB_PROJECT_REPOS`, the project name must match an Azure DevOps project in the selected organization that you can see (case does not matter). Only open issues and closed issues updated in the last seven days are listed.
 
 |**The same person is listed twice, under their name and under a GitHub username**
 |The GitHub account is not linked to the person. They can save their GitHub username in the *GitHub* card on their *Profile* page. For someone outside the tenant, add the username to `GITHUB_USER_MAP` in the App Service configuration instead, as `{"github-username": "DevOps Display Name"}`, and restart; the name must be the person's display name in Azure DevOps. Check the server log for `[GitHub] GITHUB_USER_MAP` warnings.
@@ -94,6 +94,39 @@
 
 |**"Could not check whether this GitHub username is already linked"**
 |Before saving, ZapDesk reads every user in the tenant to make sure no one else has linked the username, and refuses the save if it cannot. The server log has the reason: a Graph error means the app registration lacks the Microsoft Graph application permission `User.ReadWrite.All` (with admin consent); `IncompleteUserListError` means the tenant has more than 5,000 users, more than the check reads. Use `GITHUB_USER_MAP` for that person instead.
+
+|**/install says "This ZapDesk serves one organisation"**
+|`AZURE_AD_MULTI_TENANT` is not `true`, or `AZURE_AD_CLIENT_ID` is not set. Set both in the App Service configuration and restart; the app registration must also be multi-tenant.
+
+|**/install says "ZapDesk could not be installed" with `AADSTS50011`**
+|The callback is not a redirect URI of the app registration. Add `https://<your ZapDesk URL>/api/install/callback` as a *Web* redirect URI.
+
+|**/install says "That install link has expired"**
+|The admin took more than ten minutes on Microsoft's page, or finished in another browser. Start again from `/install` in the same browser.
+
+|**Someone from another organisation gets `AADSTS50020` or `AADSTS700016` at sign-in**
+|The app registration is still single-tenant. Set *Supported account types* to multitenant. Their admin must also have installed ZapDesk from `/install`.
+
+|**"No Azure DevOps organization selected. Choose one, or set AZURE_DEVOPS_ORG."**
+|ZapDesk has no built-in organization. Pick one in the organization selector in the header. For server-side work that has no user (email ingest, routing and SLA lookups), set `AZURE_DEVOPS_ORG` in the App Service configuration and restart.
+
+|**Mail from a customer's domain is not routed to their project**
+|Add an `Email: example.com` line to the project's description in Azure DevOps. There are no built-in domains. The routing map refreshes every five minutes, and needs both `AZURE_DEVOPS_PAT` and `AZURE_DEVOPS_ORG`.
+
+|**No GitHub card on the project page**
+|The ZapDesk GitHub App is not set up on this server. Set `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` and `GITHUB_APP_PRIVATE_KEY`, and restart.
+
+|**The project page says "Someone who can edit this project … can connect GitHub"**
+|Only people with *Edit project-level information* on the project in Azure DevOps (Project Administrators, by default) can connect or disconnect GitHub.
+
+|**After installing the App: "GitHub was not connected: you need to be able to edit this project …"**
+|Either Azure DevOps refused the change (you cannot edit the project), or the GitHub user who authorised the App cannot see that installation. The server log says which. The App must have *Request user authorization (OAuth) during installation* ticked.
+
+|**After installing the App: "That GitHub link has expired"**
+|The link is valid for 30 minutes and only for the person who clicked *Connect GitHub*. Click it again.
+
+|**The project is connected but no GitHub issues show**
+|Check the App was given the repositories on GitHub (*Choose repositories on GitHub* on the project page). Changes to the repository list take up to five minutes to show.
 
 |**The GitHub card is missing from the Profile page**
 |It appears only when GitHub issues are configured (`GITHUB_TOKEN` and `GITHUB_PROJECT_REPOS`).

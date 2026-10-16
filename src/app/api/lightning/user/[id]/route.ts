@@ -24,7 +24,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
   }
 
-  const graphToken = await getGraphToken();
+  const graphToken = await getGraphToken(session.tenantId);
   if (!graphToken) {
     return NextResponse.json({ error: 'Failed to get Graph token' }, { status: 500 });
   }

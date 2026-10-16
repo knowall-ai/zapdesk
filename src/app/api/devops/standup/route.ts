@@ -4,7 +4,8 @@ import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import { normalizeStateName } from '@/lib/kanban-columns';
-import { gitHubIssuesConfig, getGitHubTickets } from '@/lib/github-issues';
+import { getGitHubTickets } from '@/lib/github-issues';
+import { gitHubAvailable, gitHubSourceFor, type GitHubSource } from '@/lib/github-source';
 import { gitHubPeopleFor } from '@/lib/github-people';
 import { addGitHubTicketsToStandup } from '@/lib/github-kanban';
 import type {
@@ -411,16 +412,19 @@ export async function GET(request: NextRequest) {
     // board down with it.
     let projects = devOpsProjects;
     let failedGitHubRepos: string[] = [];
-    const gitHubConfig = includeGitHub ? gitHubIssuesConfig() : null;
-    if (gitHubConfig) {
+    if (includeGitHub && gitHubAvailable()) {
+      let gitHubConfig: GitHubSource | null = null;
       try {
         const visibleProjects = await devopsService.getProjects();
+        gitHubConfig = await gitHubSourceFor(organization, visibleProjects, session.accessToken);
+        if (!gitHubConfig) throw new Error('GitHub is not configured');
         // Mapped and linked GitHub accounts take their DevOps name, so grouping
         // by person puts a person's issues with their DevOps work.
         const { devOpsUsers, linkedAccounts } = await gitHubPeopleFor(
           organization,
           gitHubConfig,
-          () => devopsService.getOrganizationUsers()
+          () => devopsService.getOrganizationUsers(),
+          session.tenantId
         );
         const gitHub = await getGitHubTickets(
           visibleProjects,
@@ -430,10 +434,12 @@ export async function GET(request: NextRequest) {
           linkedAccounts
         );
         projects = addGitHubTicketsToStandup(devOpsProjects, displayColumns, gitHub.tickets);
-        failedGitHubRepos = gitHub.failedRepos;
+        failedGitHubRepos = [...gitHubConfig.failed, ...gitHub.failedRepos];
       } catch (error) {
         console.error('Error adding GitHub issues to the standup board:', error);
-        failedGitHubRepos = Object.values(gitHubConfig.projectRepos).flat();
+        failedGitHubRepos = gitHubConfig
+          ? Object.values(gitHubConfig.projectRepos).flat()
+          : ['GitHub'];
       }
     }
 

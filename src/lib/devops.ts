@@ -36,8 +36,7 @@ import {
   getTemplateConfig,
 } from '@/config/process-templates';
 
-const DEVOPS_ORG = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
-const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
+import { configuredDevOpsOrg, devOpsOrgOrDefault } from './devops-org';
 
 /**
  * Read the resolution value from a work item, checking all possible field names
@@ -88,6 +87,18 @@ let stateCategoryCache: Record<string, string> = {};
 
 // Cache for project list per organization (avoids redundant fetches)
 const projectListCache: Map<string, { data: DevOpsProject[]; timestamp: number }> = new Map();
+
+/**
+ * A short, stable name for whoever holds a token, so per-user caches never
+ * hand one person's results to another. Web Crypto, as this module also
+ * reaches the browser.
+ */
+async function tokenIdentity(accessToken: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(accessToken));
+  return Array.from(new Uint8Array(digest).slice(0, 8), (b) =>
+    b.toString(16).padStart(2, '0')
+  ).join('');
+}
 const PROJECT_CACHE_TTL_MS = 30 * 1000; // 30 seconds
 
 // Cache for current iterations per organization
@@ -326,6 +337,12 @@ export function ticketToWorkItem(ticket: Ticket): WorkItem {
 }
 
 // Convert DevOps work item to Ticket
+/** The web page of a work item, or '' when the organization is not known. */
+function workItemWebUrl(org: string | null | undefined, project: string, id: number): string {
+  if (!org) return '';
+  return `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_workitems/edit/${id}`;
+}
+
 export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organization): Ticket {
   const fields = workItem.fields;
   return {
@@ -355,7 +372,11 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     updatedAt: new Date(fields['System.ChangedDate']),
     devOpsUrl:
       workItem._links?.html?.href ||
-      `${DEVOPS_BASE_URL}/${fields['System.TeamProject']}/_workitems/edit/${workItem.id}`,
+      workItemWebUrl(
+        organization?.devOpsOrg || configuredDevOpsOrg(),
+        fields['System.TeamProject'],
+        workItem.id
+      ),
     project: fields['System.TeamProject'],
     // Effort hours. Left undefined when the field isn't set on the work item so
     // callers can tell "not tracked" from "tracked as zero"; the UI renders
@@ -605,9 +626,36 @@ export class AzureDevOpsService {
   private accessToken: string;
   private organization: string;
 
-  constructor(accessToken: string, organization: string = DEVOPS_ORG) {
+  /**
+   * `organization` is the one the user selected (`x-devops-org`). Without it
+   * the server default `AZURE_DEVOPS_ORG` is used; with neither this throws
+   * `MissingDevOpsOrgError` rather than guessing.
+   */
+  constructor(accessToken: string, organization?: string | null) {
     this.accessToken = accessToken;
-    this.organization = organization;
+    this.organization = devOpsOrgOrDefault(organization);
+  }
+
+  /**
+   * SLA level per project, from the descriptions of this organization's
+   * projects ("SLA: Gold"), so any organization's settings apply, not only
+   * the server default's.
+   */
+  private async projectSLAMap(projects: DevOpsProject[]): Promise<Record<string, SLALevel>> {
+    const map: Record<string, SLALevel> =
+      this.organization.toLowerCase() === (configuredDevOpsOrg() || '').toLowerCase()
+        ? { ...(await getProjectSLAMap()) }
+        : {};
+    for (const project of projects) {
+      const level = parseSLAFromDescription(project.description || '');
+      if (level) map[project.name] = level;
+    }
+    return map;
+  }
+
+  /** The Azure DevOps organization this service talks to. */
+  get organizationName(): string {
+    return this.organization;
   }
 
   private get baseUrl(): string {
@@ -621,10 +669,12 @@ export class AzureDevOpsService {
     };
   }
 
-  // Get all projects the user has access to (cached for 30s per org)
+  // Get all projects the user has access to (cached for 30s per org and user)
   async getProjects(): Promise<DevOpsProject[]> {
-    const cached = projectListCache.get(this.organization);
-    if (cached && Date.now() - cached.timestamp < PROJECT_CACHE_TTL_MS) {
+    const key = `${this.organization.toLowerCase()}/${await tokenIdentity(this.accessToken)}`;
+    const now = Date.now();
+    const cached = projectListCache.get(key);
+    if (cached && now - cached.timestamp < PROJECT_CACHE_TTL_MS) {
       return cached.data;
     }
 
@@ -638,7 +688,11 @@ export class AzureDevOpsService {
 
     const data = await response.json();
     const projects: DevOpsProject[] = data.value;
-    projectListCache.set(this.organization, { data: projects, timestamp: Date.now() });
+    // Tokens are refreshed hourly, so drop entries nobody can hit again
+    for (const [entry, value] of projectListCache) {
+      if (now - value.timestamp >= PROJECT_CACHE_TTL_MS) projectListCache.delete(entry);
+    }
+    projectListCache.set(key, { data: projects, timestamp: now });
     return projects;
   }
 
@@ -1990,7 +2044,7 @@ export class AzureDevOpsService {
   // Set ticketsOnly=false to get all work items (not just those tagged as "ticket")
   async getAllTickets(ticketsOnly: boolean = true, allowedTypes?: string[]): Promise<Ticket[]> {
     const projects = await this.getProjects();
-    const slaMap = await getProjectSLAMap();
+    const slaMap = await this.projectSLAMap(projects);
 
     const results = await Promise.allSettled(
       projects.map(async (project) => {
@@ -2709,7 +2763,7 @@ export class AzureDevOpsService {
       features: [],
       devOpsUrl:
         wi._links?.html?.href ||
-        `${DEVOPS_BASE_URL}/${fields['System.TeamProject']}/_workitems/edit/${wi.id}`,
+        workItemWebUrl(this.organization, fields['System.TeamProject'], wi.id),
       tags,
     };
   }
@@ -2736,7 +2790,7 @@ export class AzureDevOpsService {
       workItems: [],
       devOpsUrl:
         wi._links?.html?.href ||
-        `${DEVOPS_BASE_URL}/${fields['System.TeamProject']}/_workitems/edit/${wi.id}`,
+        workItemWebUrl(this.organization, fields['System.TeamProject'], wi.id),
       tags:
         fields['System.Tags']
           ?.split(';')
@@ -2768,7 +2822,7 @@ export class AzureDevOpsService {
       assignee: identityToUser(fields['System.AssignedTo']),
       devOpsUrl:
         wi._links?.html?.href ||
-        `${DEVOPS_BASE_URL}/${fields['System.TeamProject']}/_workitems/edit/${wi.id}`,
+        workItemWebUrl(this.organization, fields['System.TeamProject'], wi.id),
       tags:
         fields['System.Tags']
           ?.split(';')
@@ -3236,17 +3290,9 @@ interface DomainMapCache {
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 let domainMapCache: DomainMapCache | null = null;
 
-// Fallback mapping if DevOps query fails
-const FALLBACK_DOMAIN_MAP: Record<string, string> = {
-  'cairnhomes.com': 'Cairn Homes',
-  'medite.com': 'Medite',
-  'medite.ie': 'Medite',
-  'knowall.ai': 'KnowAll',
-};
-
 // Parse project description for email domains
 // Expected format in description: "Email: domain1.com, domain2.com" or "Email domains: ..."
-function parseEmailDomainsFromDescription(description: string): string[] {
+export function parseEmailDomainsFromDescription(description: string): string[] {
   if (!description) return [];
 
   // Match patterns like "Email: domain.com" or "Email domains: domain1.com, domain2.com"
@@ -3262,16 +3308,16 @@ function parseEmailDomainsFromDescription(description: string): string[] {
 // Fetch domain map from DevOps project descriptions
 async function fetchDomainMapFromDevOps(): Promise<Record<string, string>> {
   const pat = process.env.AZURE_DEVOPS_PAT;
-  const org = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+  const org = configuredDevOpsOrg();
 
-  if (!pat) {
-    console.warn('AZURE_DEVOPS_PAT not set, using fallback domain map');
-    return FALLBACK_DOMAIN_MAP;
+  if (!pat || !org) {
+    console.warn('AZURE_DEVOPS_PAT or AZURE_DEVOPS_ORG not set; no email domains are mapped');
+    return {};
   }
 
   try {
     const response = await fetch(
-      `https://dev.azure.com/${org}/_apis/projects?api-version=7.0&$expand=description`,
+      `https://dev.azure.com/${encodeURIComponent(org)}/_apis/projects?api-version=7.0&$expand=description`,
       {
         headers: {
           Authorization: `Basic ${Buffer.from(':' + pat).toString('base64')}`,
@@ -3294,16 +3340,16 @@ async function fetchDomainMapFromDevOps(): Promise<Record<string, string>> {
       }
     }
 
-    // If no domains found in any project, use fallback
     if (Object.keys(domainMap).length === 0) {
-      console.warn('No email domains found in DevOps project descriptions, using fallback');
-      return FALLBACK_DOMAIN_MAP;
+      console.warn(
+        'No email domains found in DevOps project descriptions; add "Email: example.com" to a project to route its mail'
+      );
     }
 
     return domainMap;
   } catch (error) {
     console.error('Failed to fetch domain map from DevOps:', error);
-    return FALLBACK_DOMAIN_MAP;
+    return {};
   }
 }
 
@@ -3350,16 +3396,16 @@ let slaMapCache: SLAMapCache | null = null;
 // Projects without SLA configured will use DEFAULT_SLA_LEVEL (Bronze)
 async function fetchSLAMapFromDevOps(): Promise<Record<string, SLALevel>> {
   const pat = process.env.AZURE_DEVOPS_PAT;
-  const org = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+  const org = configuredDevOpsOrg();
 
-  if (!pat) {
-    console.warn('AZURE_DEVOPS_PAT not set, SLA levels will use defaults');
+  if (!pat || !org) {
+    console.warn('AZURE_DEVOPS_PAT or AZURE_DEVOPS_ORG not set, SLA levels will use defaults');
     return {};
   }
 
   try {
     const response = await fetch(
-      `https://dev.azure.com/${org}/_apis/projects?api-version=7.0&$expand=description`,
+      `https://dev.azure.com/${encodeURIComponent(org)}/_apis/projects?api-version=7.0&$expand=description`,
       {
         headers: {
           Authorization: `Basic ${Buffer.from(':' + pat).toString('base64')}`,

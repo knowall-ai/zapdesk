@@ -68,7 +68,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   // work item, not a customer ticket: no auto "ticket" tag, no SLA, hidden
   // from the Tickets screen (issue #372).
   const isKanbanContext = pathname?.startsWith('/kanban') ?? false;
-  const { get, post, hasOrganization } = useDevOpsApi();
+  const { get, post, fetchDevOps, hasOrganization } = useDevOpsApi();
   const [projects, setProjects] = useState<DevOpsProject[]>([]);
   const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const [workItemTypes, setWorkItemTypes] = useState<WorkItemType[]>([]);
@@ -588,7 +588,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
           const formData = new FormData();
           formData.append('file', file);
 
-          const uploadResponse = await fetch(`/api/devops/tickets/${ticketId}/attachments`, {
+          const uploadResponse = await fetchDevOps(`/api/devops/tickets/${ticketId}/attachments`, {
             method: 'POST',
             body: formData,
           });

@@ -3,7 +3,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
-import { gitHubIssuesConfig, getGitHubTickets } from '@/lib/github-issues';
+import { getGitHubTickets } from '@/lib/github-issues';
+import { gitHubAvailable, gitHubSourceFor } from '@/lib/github-source';
 import { gitHubPeopleFor } from '@/lib/github-people';
 import { filterTicketsByView } from '@/lib/ticket-views';
 
@@ -22,8 +23,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const config = gitHubIssuesConfig();
-    if (!config) {
+    if (!gitHubAvailable()) {
       return NextResponse.json({ configured: false, tickets: [], total: 0, failedRepos: [] });
     }
 
@@ -42,17 +42,27 @@ export async function GET(request: NextRequest) {
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
     const projects = await devopsService.getProjects();
+    // Server mapping and/or each project's connected GitHub App installation
+    const config = await gitHubSourceFor(organization, projects, session.accessToken);
+    if (!config) {
+      return NextResponse.json({ configured: false, tickets: [], total: 0, failedRepos: [] });
+    }
     // Show mapped and linked GitHub accounts as their DevOps user
-    const { devOpsUsers, linkedAccounts } = await gitHubPeopleFor(organization, config, () =>
-      devopsService.getOrganizationUsers()
+    const { devOpsUsers, linkedAccounts } = await gitHubPeopleFor(
+      organization,
+      config,
+      () => devopsService.getOrganizationUsers(),
+      session.tenantId
     );
-    const { tickets, failedRepos } = await getGitHubTickets(
+    const { tickets, failedRepos: failedReads } = await getGitHubTickets(
       projects,
       organization,
       config,
       devOpsUsers,
       linkedAccounts
     );
+
+    const failedRepos = [...config.failed, ...failedReads];
 
     const view = request.nextUrl.searchParams.get('view') || 'all-unsolved';
     // GitHub has no Removed state, and the shared filter returns everything for

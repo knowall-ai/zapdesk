@@ -20,7 +20,7 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const graphToken = await getGraphToken();
+  const graphToken = await getGraphToken(session.tenantId);
   if (!graphToken) {
     return NextResponse.json({ error: 'Failed to get Graph token' }, { status: 500 });
   }
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const graphToken = await getGraphToken();
+  const graphToken = await getGraphToken(session.tenantId);
   if (!graphToken) {
     return NextResponse.json({ error: 'Failed to get Graph token' }, { status: 500 });
   }
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to save GitHub username' }, { status: 500 });
   }
 
-  clearLinkedAccountsCache();
+  clearLinkedAccountsCache(session.tenantId || '');
   return NextResponse.json({ success: true, githubUsername });
 }
 
@@ -104,7 +104,7 @@ export async function DELETE() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const graphToken = await getGraphToken();
+  const graphToken = await getGraphToken(session.tenantId);
   if (!graphToken) {
     return NextResponse.json({ error: 'Failed to get Graph token' }, { status: 500 });
   }
@@ -115,6 +115,6 @@ export async function DELETE() {
     return NextResponse.json({ error: 'Failed to remove GitHub username' }, { status: 500 });
   }
 
-  clearLinkedAccountsCache();
+  clearLinkedAccountsCache(session.tenantId || '');
   return NextResponse.json({ success: true });
 }
