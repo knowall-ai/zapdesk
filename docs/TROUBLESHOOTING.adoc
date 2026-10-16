@@ -77,6 +77,12 @@
 |**A card dragged on the Kanban board goes back to its old column**
 |If a message appears, it gives the reason Azure DevOps refused the move, usually a workflow rule on that work item type. A column that turns grey while you drag is one the card's type has no state for (hover it for the reason). With no message at all on a version before the fix for issue #366, a board refresh arrived during the drag: drop the card again, or turn *Live update* off while moving several cards.
 
+|**The Kanban board's 24h summary shows "PRs: unavailable", or more than 24 hours on a Monday**
+|The summary covers the last 24 _working_ hours: weekend time doesn't count, so on a Monday it reaches back to the same time on Friday (the label then reads *Since Fri 10:23*). Bank holidays still count as working days. "Unavailable" means the pull request lookup failed. The server log shows `Failed to fetch pull request activity` with the project and the Azure DevOps response. The signed-in user needs *Code (Read)* access to the project's repositories. Pull requests come from Azure DevOps only, so with the header toggle on *GitHub* the PR counts stay at zero.
+
+|**The 24h summary counts merged pull requests but *Highlight* lights up no cards for them**
+|A card is highlighted for a pull request only when the pull request is linked to the work item (the *Work items* panel on the pull request in Azure DevOps), and the work item is on that group's board. Under *Person* grouping, a pull request is counted for its author, and its linked items may be assigned to someone else.
+
 |**The Both / DevOps / GitHub toggle is missing from the header**
 |GitHub issues are not configured. Either set up the ZapDesk GitHub App (`GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` and `GITHUB_APP_PRIVATE_KEY`), or set both `GITHUB_TOKEN` and `GITHUB_PROJECT_REPOS`, in the App Service configuration and restart. Check the server log for `[GitHub] GITHUB_PROJECT_REPOS` warnings: the value must be a JSON object such as `{"Project": ["owner/repo"]}`.
 

@@ -19,13 +19,15 @@ import { useDroppable } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { ChevronDown, ChevronRight, Info } from 'lucide-react';
 import StandupKanbanCard from './StandupKanbanCard';
+import ActivitySummaryBar, { type PullRequestLoadState } from './ActivitySummaryBar';
 import { getColumnIcon, getColumnColor } from './columnConfig';
 import {
   canTypeEnterColumn,
   resolveStateForColumn,
   type AllowedStates,
 } from '@/lib/kanban-columns';
-import type { StandupColumn, StandupWorkItem } from '@/types';
+import type { GroupActivitySummary, HighlightReason } from '@/lib/activity-summary';
+import type { PullRequestActivity, StandupColumn, StandupWorkItem } from '@/types';
 import { debugLog, debugWarn } from '@/lib/debug';
 import {
   readExpandedGroups,
@@ -46,6 +48,7 @@ function DroppableColumn({
   activeId,
   isBlocked = false,
   blockedReason,
+  highlights,
   onItemClick,
 }: {
   name: string;
@@ -55,6 +58,8 @@ function DroppableColumn({
   /** The dragged card's type has no state for this column — refuse the drop. */
   isBlocked?: boolean;
   blockedReason?: string;
+  /** While highlighting: the cards to light up, and why. Everything else is dimmed. */
+  highlights?: Map<number, HighlightReason[]>;
   onItemClick?: (item: StandupWorkItem) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: name, disabled: isBlocked });
@@ -98,6 +103,8 @@ function DroppableColumn({
               key={item.id}
               item={item}
               isDragging={activeId === item.id}
+              highlight={highlights?.get(item.id)}
+              dimmed={highlights !== undefined && !highlights.has(item.id)}
               onClick={onItemClick}
             />
           ))}
@@ -111,6 +118,15 @@ function DroppableColumn({
       </div>
     </div>
   );
+}
+
+/** The group's last-24-hours activity, shown in its header. */
+export interface GroupActivity {
+  summary: GroupActivitySummary;
+  /** Start of the window, epoch ms. */
+  since: number;
+  pullRequests: PullRequestActivity[];
+  pullRequestState: PullRequestLoadState;
 }
 
 interface KanbanGroupSectionProps {
@@ -127,6 +143,7 @@ interface KanbanGroupSectionProps {
   /** `project` is the card's own project; passing it on saves the server a search. */
   onStateChange?: (itemId: number, targetState: string, project?: string) => Promise<void>;
   onItemClick?: (item: StandupWorkItem) => void;
+  activity?: GroupActivity;
 }
 
 export default function KanbanGroupSection({
@@ -136,6 +153,7 @@ export default function KanbanGroupSection({
   allowedStatesByProjectType,
   onStateChange,
   onItemClick,
+  activity,
 }: KanbanGroupSectionProps) {
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
   const totalItems = useMemo(() => columns.reduce((sum, c) => sum + c.items.length, 0), [columns]);
@@ -152,6 +170,14 @@ export default function KanbanGroupSection({
       writeGroupExpanded(sessionPositionStorage(), positionScope, groupName, next);
     }
   };
+  const [highlighting, setHighlighting] = useState(false);
+  // Highlighting a collapsed group opens it, or the button would do nothing visible.
+  const toggleHighlight = () => {
+    const next = !highlighting;
+    setHighlighting(next);
+    if (next && !expanded) toggleExpanded();
+  };
+  const highlights = highlighting ? activity?.summary.highlights : undefined;
   const [activeId, setActiveId] = useState<number | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -381,25 +407,42 @@ export default function KanbanGroupSection({
 
   return (
     <div className="card overflow-hidden">
-      {/* Header */}
-      <button
-        onClick={toggleExpanded}
-        className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-white/5"
-      >
-        <span style={{ color: 'var(--text-muted)' }}>
-          {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-        </span>
-
-        <h3 className="flex-1 text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-          {groupName}
-        </h3>
-
-        {totalItems === 0 && (
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            No items
+      {/* Header. The summary sits beside the expand button, not inside it,
+          because it holds a button of its own. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pr-4 transition-colors hover:bg-white/5">
+        <button
+          onClick={toggleExpanded}
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 items-center gap-3 p-4 text-left"
+        >
+          <span style={{ color: 'var(--text-muted)' }}>
+            {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
           </span>
+
+          <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {groupName}
+          </h3>
+
+          {totalItems === 0 && (
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              No items
+            </span>
+          )}
+        </button>
+
+        {activity && (
+          <div className="pb-3 pl-4 md:pb-0 md:pl-0">
+            <ActivitySummaryBar
+              summary={activity.summary}
+              since={activity.since}
+              pullRequests={activity.pullRequests}
+              pullRequestState={activity.pullRequestState}
+              highlighted={highlighting}
+              onToggleHighlight={toggleHighlight}
+            />
+          </div>
         )}
-      </button>
+      </div>
 
       {/* Kanban board */}
       {expanded && totalItems > 0 && (
@@ -429,6 +472,7 @@ export default function KanbanGroupSection({
                     items={items}
                     activeId={activeId}
                     isBlocked={isBlocked}
+                    highlights={highlights}
                     blockedReason={
                       isBlocked && activeItem
                         ? `${activeItem.workItemType} work items have no "${col.name}" state`
