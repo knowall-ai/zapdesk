@@ -11,10 +11,13 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import type { Customer } from '@/types';
 
+/** How long to wait for the users list before giving up. */
+const USERS_TIMEOUT_MS = 15_000;
+
 export default function UsersPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const { selectedOrganization } = useOrganization();
+  const { selectedOrganization, isLoading: organizationsLoading } = useOrganization();
   const [users, setUsers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -32,36 +35,51 @@ export default function UsersPage() {
   const org = selectedOrganization?.accountName;
 
   useEffect(() => {
-    if (!session?.accessToken || !org) return;
-    // A slower response for an organization no longer selected is ignored
+    if (!session?.accessToken || organizationsLoading) return;
+    if (!org) {
+      // Discovery finished without an organization: show the empty list
+      setUsers([]);
+      setLoading(false);
+      return;
+    }
+    // A new organization starts empty, so its people are never mixed with the
+    // last one's; a superseded request is cancelled and its answer ignored
     let current = true;
-    fetchUsers(org, () => current);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), USERS_TIMEOUT_MS);
+    setUsers([]);
+    setLoading(true);
+
+    (async () => {
+      try {
+        const response = await fetch('/api/devops/users', {
+          headers: { 'x-devops-org': org },
+          signal: controller.signal,
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (!current) return;
+          setUsers(
+            data.users.map((c: Customer & { lastUpdated?: string }) => ({
+              ...c,
+              lastUpdated: c.lastUpdated ? new Date(c.lastUpdated) : undefined,
+            }))
+          );
+        }
+      } catch (error) {
+        if (current) console.error('Failed to fetch users:', error);
+      } finally {
+        clearTimeout(timeout);
+        if (current) setLoading(false);
+      }
+    })();
+
     return () => {
       current = false;
+      clearTimeout(timeout);
+      controller.abort();
     };
-  }, [session, org]);
-
-  const fetchUsers = async (organization: string, isCurrent: () => boolean) => {
-    try {
-      const response = await fetch('/api/devops/users', {
-        headers: { 'x-devops-org': organization },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (!isCurrent()) return;
-        setUsers(
-          data.users.map((c: Customer & { lastUpdated?: string }) => ({
-            ...c,
-            lastUpdated: c.lastUpdated ? new Date(c.lastUpdated) : undefined,
-          }))
-        );
-      }
-    } catch (error) {
-      console.error('Failed to fetch users:', error);
-    } finally {
-      if (isCurrent()) setLoading(false);
-    }
-  };
+  }, [session, org, organizationsLoading]);
 
   // Get unique email domains for filter dropdown
   const emailDomains = Array.from(
