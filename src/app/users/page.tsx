@@ -30,14 +30,17 @@ export default function UsersPage() {
   }, [status, router]);
 
   useEffect(() => {
-    if (session?.accessToken) {
+    if (session?.accessToken && selectedOrganization) {
       fetchUsers();
     }
-  }, [session]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, selectedOrganization]);
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch('/api/devops/users');
+      const response = await fetch('/api/devops/users', {
+        headers: selectedOrganization ? { 'x-devops-org': selectedOrganization.accountName } : {},
+      });
       if (response.ok) {
         const data = await response.json();
         setUsers(

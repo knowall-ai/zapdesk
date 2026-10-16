@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, type KeyboardEvent } from 'react';
 import type { User } from '@/types';
 import Avatar from './Avatar';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 
 interface MentionInputProps {
   value: string;
@@ -141,6 +142,8 @@ export default function MentionInput({
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [hasLoadedUsers, setHasLoadedUsers] = useState(false);
+  const { selectedOrganization } = useOrganization();
+  const org = selectedOrganization?.accountName;
   const [isEmpty, setIsEmpty] = useState(true);
 
   const editorRef = useRef<HTMLDivElement>(null);
@@ -165,10 +168,10 @@ export default function MentionInput({
 
   // Fetch users
   const fetchUsers = useCallback(async () => {
-    if (hasLoadedUsers || isLoadingUsers) return;
+    if (hasLoadedUsers || isLoadingUsers || !org) return;
     setIsLoadingUsers(true);
     try {
-      const response = await fetch('/api/devops/users');
+      const response = await fetch('/api/devops/users', { headers: { 'x-devops-org': org } });
       if (response.ok) {
         const data = await response.json();
         setAllUsers(data.users || []);
@@ -179,7 +182,7 @@ export default function MentionInput({
     } finally {
       setIsLoadingUsers(false);
     }
-  }, [hasLoadedUsers, isLoadingUsers]);
+  }, [hasLoadedUsers, isLoadingUsers, org]);
 
   // Filter users
   const filterUsers = useCallback(

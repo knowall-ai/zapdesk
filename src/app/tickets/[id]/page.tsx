@@ -112,7 +112,9 @@ export default function TicketDetailPage() {
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
-      const response = await fetch(`/api/devops/tickets/${ticketId}/history`);
+      const response = await fetch(`/api/devops/tickets/${ticketId}/history`, {
+        headers: orgHeaders(),
+      });
       if (response.ok) {
         const data = await response.json();
         setHistory(
@@ -127,7 +129,7 @@ export default function TicketDetailPage() {
     } finally {
       setHistoryLoading(false);
     }
-  }, [ticketId]);
+  }, [ticketId, orgHeaders]);
 
   useEffect(() => {
     if (session?.accessToken && ticketId && selectedOrganization) {
@@ -373,6 +375,7 @@ export default function TicketDetailPage() {
 
     const response = await fetch(`/api/devops/tickets/${ticketId}/attachments`, {
       method: 'POST',
+      headers: orgHeaders(),
       body: formData,
     });
 

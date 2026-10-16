@@ -126,7 +126,9 @@ export function useWorkItemActions({
           if (workItemType) params.set('type', workItemType);
           if (project) params.set('project', project);
           const query = params.toString();
-          const response = await fetch(`/api/devops/workitem-states${query ? `?${query}` : ''}`);
+          const response = await devOpsGet(
+            `/api/devops/workitem-states${query ? `?${query}` : ''}`
+          );
           if (response.ok) {
             const data = await response.json();
             setAvailableStates(ensureActiveState(data.allStates || []));

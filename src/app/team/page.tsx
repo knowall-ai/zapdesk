@@ -18,6 +18,7 @@ import {
 import { ActivityCalendar, type Activity as CalendarActivity } from 'react-activity-calendar';
 import { Tooltip } from 'react-tooltip';
 import type { TeamMember, TeamStats } from '@/types';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 
 interface TeamData {
   members: TeamMember[];
@@ -40,6 +41,8 @@ type SortDirection = 'asc' | 'desc';
 
 export default function TeamPage() {
   const { data: session, status } = useSession();
+  const { selectedOrganization } = useOrganization();
+  const org = selectedOrganization?.accountName;
   const router = useRouter();
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [activityData, setActivityData] = useState<ActivityData | null>(null);
@@ -77,7 +80,9 @@ export default function TeamPage() {
       if (timePeriod) {
         params.set('days', String(timePeriod));
       }
-      const response = await fetch(`/api/devops/team?${params.toString()}`);
+      const response = await fetch(`/api/devops/team?${params.toString()}`, {
+        headers: { 'x-devops-org': org || '' },
+      });
       if (response.ok) {
         const data = await response.json();
         setTeamData(data);
@@ -91,7 +96,7 @@ export default function TeamPage() {
     } finally {
       setLoading(false);
     }
-  }, [ticketsOnly, timePeriod]);
+  }, [ticketsOnly, timePeriod, org]);
 
   const fetchActivityData = useCallback(async () => {
     setActivityLoading(true);
@@ -100,7 +105,9 @@ export default function TeamPage() {
       if (!ticketsOnly) {
         params.set('ticketsOnly', 'false');
       }
-      const response = await fetch(`/api/devops/team-activity?${params.toString()}`);
+      const response = await fetch(`/api/devops/team-activity?${params.toString()}`, {
+        headers: { 'x-devops-org': org || '' },
+      });
       if (response.ok) {
         const data = await response.json();
         setActivityData(data);
@@ -110,14 +117,14 @@ export default function TeamPage() {
     } finally {
       setActivityLoading(false);
     }
-  }, [ticketsOnly]);
+  }, [ticketsOnly, org]);
 
   useEffect(() => {
-    if (session?.accessToken) {
+    if (session?.accessToken && org) {
       fetchTeamData();
       fetchActivityData();
     }
-  }, [session?.accessToken, fetchTeamData, fetchActivityData]);
+  }, [session?.accessToken, org, fetchTeamData, fetchActivityData]);
 
   // Pre-calculate max values once for workload distribution (must be before conditional returns)
   const maxAssigned = React.useMemo(() => {

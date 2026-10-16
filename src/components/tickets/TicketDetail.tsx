@@ -314,7 +314,7 @@ export default function TicketDetail({
   const fetchAvailableStates = async () => {
     setIsLoadingStates(true);
     try {
-      const response = await fetch('/api/devops/workitem-states');
+      const response = await devOpsGet('/api/devops/workitem-states');
       if (response.ok) {
         const data = await response.json();
         // Use shared utility to ensure "Active" state exists

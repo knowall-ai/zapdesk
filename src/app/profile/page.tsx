@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { Avatar } from '@/components/common';
 import { useProfilePhoto } from '@/hooks';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 import GitHubAccountCard from '@/components/profile/GitHubAccountCard';
 import {
   User,
@@ -36,6 +37,8 @@ interface DevOpsProfile {
 export default function ProfilePage() {
   const { data: session, status } = useSession();
   const { photoUrl } = useProfilePhoto(status === 'authenticated');
+  const { selectedOrganization } = useOrganization();
+  const org = selectedOrganization?.accountName;
   const router = useRouter();
   const [profile, setProfile] = useState<DevOpsProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -107,9 +110,11 @@ export default function ProfilePage() {
   }, [status, router]);
 
   useEffect(() => {
-    async function fetchProfile() {
+    async function fetchProfile(organization: string) {
       try {
-        const response = await fetch('/api/devops/profile');
+        const response = await fetch('/api/devops/profile', {
+          headers: { 'x-devops-org': organization },
+        });
         if (response.ok) {
           const data = await response.json();
           setProfile(data);
@@ -123,10 +128,10 @@ export default function ProfilePage() {
       }
     }
 
-    if (session?.accessToken) {
-      fetchProfile();
+    if (session?.accessToken && org) {
+      fetchProfile(org);
     }
-  }, [session]);
+  }, [session, org]);
 
   if (status === 'loading' || loading) {
     return (

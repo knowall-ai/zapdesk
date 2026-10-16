@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 
 /**
  * React hook to fetch and manage the user's profile photo from Azure DevOps.
  * Returns the photo URL (or null) and loading state.
  */
 export function useProfilePhoto(isAuthenticated: boolean) {
+  const { selectedOrganization } = useOrganization();
+  const org = selectedOrganization?.accountName;
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -15,14 +18,18 @@ export function useProfilePhoto(isAuthenticated: boolean) {
       setPhotoUrl(null);
       return;
     }
+    // The photo comes from the selected organization (#457)
+    if (!org) return;
 
     let isMounted = true;
 
-    async function fetchPhoto() {
+    async function fetchPhoto(organization: string) {
       setIsLoading(true);
       try {
         // Use the avatar API endpoint which proxies to Azure DevOps
-        const response = await fetch('/api/devops/avatar');
+        const response = await fetch('/api/devops/avatar', {
+          headers: { 'x-devops-org': organization },
+        });
         if (response.ok) {
           const blob = await response.blob();
           const url = URL.createObjectURL(blob);
@@ -39,7 +46,7 @@ export function useProfilePhoto(isAuthenticated: boolean) {
       }
     }
 
-    fetchPhoto();
+    fetchPhoto(org);
 
     return () => {
       isMounted = false;
@@ -49,7 +56,7 @@ export function useProfilePhoto(isAuthenticated: boolean) {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, [isAuthenticated, org]);
 
   return { photoUrl, isLoading };
 }
