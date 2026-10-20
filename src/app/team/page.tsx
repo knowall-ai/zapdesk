@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner, Avatar } from '@/components/common';
@@ -39,6 +40,7 @@ type SortColumn =
   | 'avgResolution';
 type SortDirection = 'asc' | 'desc';
 
+/** The team's workload and recent activity. */
 export default function TeamPage() {
   const { data: session, status } = useSession();
   const { selectedOrganization } = useOrganization();
@@ -65,7 +67,7 @@ export default function TeamPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 
