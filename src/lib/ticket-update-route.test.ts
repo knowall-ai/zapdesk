@@ -86,10 +86,27 @@ describe('PATCH /api/devops/tickets/[id]', () => {
     expect(status).toBe(200);
     expect(sendTicketUpdateNotification).toHaveBeenCalledWith(
       7,
-      'Printer offline',
+      { thread: 'Printer offline', current: 'Printer offline' },
       'customer@example.test',
       [{ label: 'Priority', from: 'Normal', to: 'High' }]
     );
+  });
+
+  it('keeps the old title for the thread and shows the new one in the body', async () => {
+    updateTicketFields.mockResolvedValue(workItem({ 'System.Title': 'Printer still offline' }));
+    await patch({ project: 'Internal', title: 'Printer still offline' });
+    expect(sendTicketUpdateNotification).toHaveBeenCalledWith(
+      7,
+      { thread: 'Printer offline', current: 'Printer still offline' },
+      'customer@example.test',
+      [{ label: 'Title', from: 'Printer offline', to: 'Printer still offline' }]
+    );
+  });
+
+  it('rejects tags that are not a list instead of skipping them', async () => {
+    const { status } = await patch({ project: 'Internal', title: 'New', tags: 'ticket' });
+    expect(status).toBe(400);
+    expect(updateTicketFields).not.toHaveBeenCalled();
   });
 
   it('sends to the original requester even when the same request rewrites the tags', async () => {
@@ -106,7 +123,7 @@ describe('PATCH /api/devops/tickets/[id]', () => {
     });
     expect(sendTicketUpdateNotification).toHaveBeenCalledWith(
       7,
-      'Printer offline',
+      { thread: 'Printer offline', current: 'New title' },
       'customer@example.test',
       expect.any(Array)
     );

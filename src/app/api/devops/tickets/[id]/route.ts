@@ -190,6 +190,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // A non-list `tags` used to be skipped silently, so a request that also
+    // changed the title reported success for an update it half did.
+    if (body.tags !== undefined && !Array.isArray(body.tags)) {
+      return NextResponse.json({ error: 'tags must be a list of strings' }, { status: 400 });
+    }
+
     const {
       assignee,
       assignToMe,
@@ -336,8 +342,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         });
       }
       if (requesterEmail && changes.length > 0) {
-        // Sent under the title the customer already knows, so it lands in
-        // their existing thread; the new title is listed in the changes.
+        // The mail subject keeps the title the customer already knows, so it
+        // lands in their existing thread; the body shows the title as it now
+        // is, with the change listed.
         //
         // Awaited, unlike the other notifications: a send left running after
         // the response can be cut off when App Service recycles the process,
@@ -345,7 +352,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         // the update -- the sender logs and swallows its own errors, and its
         // Graph calls time out -- and it only runs when an email ticket's
         // title or priority actually changed.
-        await sendTicketUpdateNotification(ticketId, before.title, requesterEmail, changes);
+        await sendTicketUpdateNotification(
+          ticketId,
+          { thread: before.title, current: ticket.title },
+          requesterEmail,
+          changes
+        );
       }
     }
 

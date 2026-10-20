@@ -550,12 +550,18 @@ export async function sendStatusChangeNotification(
  * Tell the customer their ticket's title or priority changed (#7724).
  *
  * Sent in the customer's existing thread: ZapDesk threads mail by the
- * `[ZapDesk #N]` subject. Callers pass the title the customer already knows,
- * not a just-changed one, so a title change does not start a new conversation.
+ * `[ZapDesk #N]` subject. `titles.thread` is the title the customer already
+ * knows, used for the mail subject so a title change does not start a new
+ * conversation; `titles.current` is the title now, shown in the body.
  */
 export async function sendTicketUpdateNotification(
   ticketId: number,
-  subject: string,
+  titles: {
+    /** The title the customer's thread is under, for the mail subject. */
+    thread: string;
+    /** The ticket's title now, shown in the body. */
+    current: string;
+  },
   requesterEmail: string,
   changes: TicketFieldChange[]
 ): Promise<void> {
@@ -564,10 +570,10 @@ export async function sendTicketUpdateNotification(
   try {
     await sendViaGraph({
       to: requesterEmail,
-      subject: threadedSubject(ticketId, `Re: ${subject}`),
+      subject: threadedSubject(ticketId, `Re: ${titles.thread}`),
       html: ticketUpdatedTemplate({
         ticketId,
-        subject,
+        subject: titles.current,
         requesterName: nameFromEmail(requesterEmail),
         changes,
       }),
