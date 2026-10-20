@@ -11,7 +11,7 @@ import { TicketDetail } from '@/components/tickets';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { hasTicketTag } from '@/lib/tags';
-import type { Ticket, TicketComment, Attachment, WorkItemUpdate } from '@/types';
+import type { Ticket, TicketComment, Attachment, WorkItemUpdate, EffortHoursUpdate } from '@/types';
 
 /** Full view of one ticket or work item. */
 export default function TicketDetailPage() {
@@ -348,7 +348,7 @@ export default function TicketDetailPage() {
     }
   };
 
-  const handleEffortChange = async (hours: { completedWork: number; remainingWork: number }) => {
+  const handleEffortChange = async (hours: EffortHoursUpdate) => {
     if (!ticket) return;
     try {
       const response = await fetch(`/api/devops/tickets/${ticketId}`, {

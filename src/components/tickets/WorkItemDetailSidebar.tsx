@@ -12,7 +12,7 @@ import {
   Plus,
   Tag,
 } from 'lucide-react';
-import type { WorkItem, TicketPriority, WorkItemType } from '@/types';
+import type { WorkItem, TicketPriority, WorkItemType, EffortHoursUpdate } from '@/types';
 import type { WorkItemActions } from '@/hooks/useWorkItemActions';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
@@ -33,7 +33,7 @@ interface WorkItemDetailSidebarProps {
   canEditTags?: boolean;
   onTagsChange?: (tags: string[]) => Promise<void>;
   /** Absent: effort hours are read-only. */
-  onEffortChange?: (hours: { completedWork: number; remainingWork: number }) => Promise<void>;
+  onEffortChange?: (hours: EffortHoursUpdate) => Promise<void>;
 }
 
 const priorityOptions: Array<{ value: number; label: TicketPriority }> = [

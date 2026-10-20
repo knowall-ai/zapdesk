@@ -2,26 +2,20 @@
 
 import { useState } from 'react';
 import { Check, Loader2, Pencil, Timer, X } from 'lucide-react';
+import { effortChanges, parseHours } from '@/lib/effort-edit';
+import type { EffortHoursUpdate } from '@/types';
 
 interface EffortHoursFieldProps {
   completedWork?: number;
   remainingWork?: number;
   /** Absent: shown read-only. */
-  onSave?: (hours: { completedWork: number; remainingWork: number }) => Promise<void>;
+  onSave?: (hours: EffortHoursUpdate) => Promise<void>;
 }
 
 /** Hours for display: whole numbers as they are, anything else to one decimal. */
 function formatHours(value?: number): string {
   const hours = value ?? 0;
   return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
-}
-
-/** A non-negative number of hours, or null when the input is not one. */
-function parseHours(raw: string): number | null {
-  const trimmed = raw.trim();
-  if (trimmed === '') return 0;
-  const value = Number(trimmed.replace(',', '.'));
-  return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 /**
@@ -41,8 +35,10 @@ export default function EffortHoursField({
   const [error, setError] = useState<string | null>(null);
 
   const startEditing = () => {
-    setCompleted(formatHours(completedWork));
-    setRemaining(formatHours(remainingWork));
+    // The exact values, not the rounded display: 1.25 shown as 1.3 would
+    // otherwise be saved back as 1.3 when only the other field was edited.
+    setCompleted(String(completedWork ?? 0));
+    setRemaining(String(remainingWork ?? 0));
     setError(null);
     setIsEditing(true);
   };
@@ -55,10 +51,19 @@ export default function EffortHoursField({
       setError('Enter hours as a number, 0 or more.');
       return;
     }
+    // Only what changed is sent (see effortChanges for why).
+    const changes = effortChanges(
+      { completedWork: completedHours, remainingWork: remainingHours },
+      { completedWork, remainingWork }
+    );
+    if (Object.keys(changes).length === 0) {
+      setIsEditing(false);
+      return;
+    }
     setIsSaving(true);
     setError(null);
     try {
-      await onSave({ completedWork: completedHours, remainingWork: remainingHours });
+      await onSave(changes);
       setIsEditing(false);
     } catch {
       setError('Could not save the hours.');

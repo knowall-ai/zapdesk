@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { ExternalLink, ChevronDown, Loader2, Maximize2, Trash2 } from 'lucide-react';
-import type { WorkItem, TicketComment, Attachment } from '@/types';
+import type { WorkItem, TicketComment, Attachment, EffortHoursUpdate } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import TicketDialogShell from './TicketDialogShell';
 import { useWorkItemActions } from '@/hooks/useWorkItemActions';
@@ -271,7 +271,7 @@ export default function WorkItemDetailDialog({
   } | null>(null);
 
   const handleEffortChange = useCallback(
-    async (hours: { completedWork: number; remainingWork: number }) => {
+    async (hours: EffortHoursUpdate) => {
       if (!workItem) return;
       try {
         const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}`, {
@@ -283,7 +283,16 @@ export default function WorkItemDetailDialog({
           const data = await response.json().catch(() => ({}));
           throw new Error(data.error || 'Failed to update hours');
         }
-        setSavedEffort({ forId: workItem.id, ...hours });
+        // Only the changed field was sent; the other keeps the value already
+        // shown, whether from an earlier save here or from the work item.
+        setSavedEffort((prev) => {
+          const shown = prev?.forId === workItem.id ? prev : workItem;
+          return {
+            forId: workItem.id,
+            completedWork: hours.completedWork ?? shown.completedWork,
+            remainingWork: hours.remainingWork ?? shown.remainingWork,
+          };
+        });
         toast.success('Hours updated');
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to update hours');

@@ -33,6 +33,7 @@ import type {
   WorkItemType,
   WorkItemUpdate,
   Attachment,
+  EffortHoursUpdate,
 } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { ensureActiveState } from '@/types';
@@ -82,7 +83,7 @@ interface TicketDetailProps {
   onDescriptionChange?: (description: string) => Promise<void>;
   onResolutionChange?: (resolution: string) => Promise<void>;
   onMitigationChange?: (mitigation: string) => Promise<void>;
-  onEffortChange?: (hours: { completedWork: number; remainingWork: number }) => Promise<void>;
+  onEffortChange?: (hours: EffortHoursUpdate) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onRefreshTicket?: () => Promise<void>;
   // Move to DevOps Recycle Bin. Caller is responsible for navigation/refresh
