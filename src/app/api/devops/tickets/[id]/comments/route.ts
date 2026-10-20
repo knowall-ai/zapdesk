@@ -6,6 +6,11 @@ import { isEmailTicket, extractRequesterEmail, sendAgentReply } from '@/lib/emai
 
 type RouteParams = { params: Promise<{ id: string }> };
 
+/**
+ * A ticket's comments. The ticket is found with one organisation-level
+ * request rather than one request per project (#7387). 400 for a bad id, 401
+ * without a session, 404 when the ticket cannot be found, 500 otherwise.
+ */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);

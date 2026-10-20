@@ -11,6 +11,14 @@ import { extractRequesterEmail, sendAssignmentNotification } from '@/lib/email';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
+/**
+ * One ticket with its comments and attachments.
+ *
+ * The work item is found with a single organisation-level request, and its
+ * attachments are read from the relations that request already returned
+ * (#7387). 400 for a bad id, 401 without a session, 404 when the ticket cannot
+ * be found, 500 otherwise.
+ */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
