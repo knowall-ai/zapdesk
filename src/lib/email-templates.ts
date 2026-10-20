@@ -46,7 +46,15 @@ const KNOWALL_URL = 'https://knowall.ai';
  */
 const KNOWALL_LOGO_URL = process.env.KNOWALL_LOGO_URL || '';
 
-export function layoutWrapper(content: string): string {
+/**
+ * Who an email is for. Customers have no ZapDesk account, so a link into the
+ * app only leads them to a sign-in page they cannot get past (#7371). Mail to
+ * customers carries no app links; mail to the support team keeps them.
+ */
+export type EmailAudience = 'customer' | 'team';
+
+export function layoutWrapper(content: string, audience: EmailAudience = 'team'): string {
+  const logo = `<img src="${ZAPDESK_LOGO_URL}" width="240" height="60" alt="${APP_NAME}" style="border: 0;" />`;
   return `
 <!DOCTYPE html>
 <html>
@@ -79,9 +87,7 @@ export function layoutWrapper(content: string): string {
   <div class="container">
     <div class="card">
       <div class="header">
-        <a href="${APP_URL}" style="text-decoration: none;">
-          <img src="${ZAPDESK_LOGO_URL}" width="240" height="60" alt="${APP_NAME}" style="border: 0;" />
-        </a>
+        ${audience === 'team' ? `<a href="${APP_URL}" style="text-decoration: none;">${logo}</a>` : logo}
       </div>
       ${content}
     </div>
@@ -115,18 +121,18 @@ export function ticketConfirmationTemplate(opts: {
   subject: string;
   requesterName: string;
 }): string {
-  const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
-  return layoutWrapper(`
+  return layoutWrapper(
+    `
     <p>Hi ${escapeText(opts.requesterName || 'there')},</p>
     <div class="content">
       <p>We've received your request and created ticket <strong>#${opts.ticketId}</strong>.</p>
       <p class="meta"><strong>Subject:</strong> ${escapeText(opts.subject)}</p>
       <p>Our team will review your request and get back to you as soon as possible.</p>
-      <p style="text-align: center; margin-top: 24px;">
-        <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
-      </p>
+      <p>To add more detail, just reply to this email.</p>
     </div>
-  `);
+  `,
+    'customer'
+  );
 }
 
 export interface HistoryEntry {
@@ -167,20 +173,18 @@ export function agentReplyTemplate(opts: {
   ticketId: number;
   agentName: string;
   replyContent: string;
-  ticketUrl?: string;
   history?: HistoryEntry[];
 }): string {
-  const ticketUrl = opts.ticketUrl || `${APP_URL}/tickets/${opts.ticketId}`;
-  return layoutWrapper(`
+  return layoutWrapper(
+    `
     <p class="meta">${escapeText(opts.agentName)} replied to ticket <strong>#${opts.ticketId}</strong>:</p>
     <div class="content">
       ${opts.replyContent}
     </div>
-    <p style="text-align: center; margin-top: 24px;">
-      <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
-    </p>
     ${renderHistory(opts.history || [])}
-  `);
+  `,
+    'customer'
+  );
 }
 
 export function customerReplyNotificationTemplate(opts: {
@@ -239,8 +243,8 @@ export function statusChangeTemplate(opts: {
   oldStatus: string;
   newStatus: string;
 }): string {
-  const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
-  return layoutWrapper(`
+  return layoutWrapper(
+    `
     <p>Hi ${escapeText(opts.requesterName || 'there')},</p>
     <div class="content">
       <p>The status of your ticket <strong>#${opts.ticketId}</strong> has been updated:</p>
@@ -248,9 +252,49 @@ export function statusChangeTemplate(opts: {
         ${statusBadge(opts.oldStatus)} &rarr; ${statusBadge(opts.newStatus)}
       </p>
       <p class="meta"><strong>Subject:</strong> ${escapeText(opts.subject)}</p>
-      <p style="text-align: center; margin-top: 24px;">
-        <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
-      </p>
     </div>
-  `);
+  `,
+    'customer'
+  );
+}
+
+export interface TicketFieldChange {
+  label: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * Told the customer their ticket's title or priority changed (#7724).
+ *
+ * Status changes have their own email; this covers the other fields a
+ * customer can see in their own thread.
+ */
+export function ticketUpdatedTemplate(opts: {
+  ticketId: number;
+  subject: string;
+  requesterName: string;
+  changes: TicketFieldChange[];
+}): string {
+  const rows = opts.changes
+    .map(
+      (c) => `
+      <tr>
+        <td style="padding: 4px 12px 4px 0; color: #71717a; vertical-align: top;"><strong>${escapeText(c.label)}</strong></td>
+        <td style="padding: 4px 0;"><span style="color: #71717a; text-decoration: line-through;">${escapeText(c.from || '—')}</span> &rarr; ${escapeText(c.to || '—')}</td>
+      </tr>`
+    )
+    .join('');
+  return layoutWrapper(
+    `
+    <p>Hi ${escapeText(opts.requesterName || 'there')},</p>
+    <div class="content">
+      <p>Your ticket <strong>#${opts.ticketId}</strong> has been updated:</p>
+      <table style="border-collapse: collapse; font-size: 14px; margin: 12px 0;">${rows}
+      </table>
+      <p class="meta"><strong>Subject:</strong> ${escapeText(opts.subject)}</p>
+    </div>
+  `,
+    'customer'
+  );
 }

@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
-import { extractRequesterEmail, sendAssignmentNotification } from '@/lib/email';
+import {
+  extractRequesterEmail,
+  isEmailTicket,
+  sendAssignmentNotification,
+  sendTicketUpdateNotification,
+} from '@/lib/email';
+import type { TicketFieldChange } from '@/lib/email-templates';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -212,6 +218,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updates.mitigation = mitigation;
     }
 
+    // Snapshot what the customer can see before changing it, so they can be
+    // told what changed (#7724). Only fetched when one of those fields moves.
+    const customerVisibleChange = title !== undefined || priority !== undefined;
+    const before = customerVisibleChange
+      ? workItemToTicket(await devopsService.getWorkItem(projectName, ticketId))
+      : null;
+
     // Update the work item
     const updatedWorkItem = await devopsService.updateTicketFields(projectName, ticketId, updates);
 
@@ -241,6 +254,28 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           assignedByEmail: session.user?.email ?? undefined,
           requesterEmail: extractRequesterEmail(ticket.tags ?? []) ?? undefined,
         }).catch(() => {});
+      }
+    }
+
+    // Tell an email customer their ticket's title or priority changed (#7724).
+    // Status changes already have their own email (the state route).
+    if (before && isEmailTicket(ticket.tags ?? [])) {
+      const requesterEmail = extractRequesterEmail(ticket.tags ?? []);
+      const changes: TicketFieldChange[] = [];
+      if (title !== undefined && before.title !== ticket.title) {
+        changes.push({ label: 'Title', from: before.title, to: ticket.title });
+      }
+      if (priority !== undefined && before.priority !== ticket.priority) {
+        changes.push({
+          label: 'Priority',
+          from: before.priority ?? '',
+          to: ticket.priority ?? '',
+        });
+      }
+      if (requesterEmail && changes.length > 0) {
+        sendTicketUpdateNotification(ticketId, ticket.title, requesterEmail, changes).catch(
+          () => {}
+        );
       }
     }
 

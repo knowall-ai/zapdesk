@@ -108,12 +108,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           if (isEmail) {
             try {
               const existing = await devopsService.getWorkItemComments(project.name, ticketId);
+              const requester = (extractRequesterEmail(tags) || '').toLowerCase();
               priorHistory = existing
                 // On the structured field, not the marker text. The marker is
                 // stripped when comments are read, so a text match silently
                 // stops excluding anything -- and this history is emailed to
                 // the customer.
                 .filter((c) => !c.isInternal)
+                // The customer already has their own replies in their Sent
+                // folder and in the thread; quoting them back made each one
+                // show up again in their inbox (#7722).
+                .filter((c) => !requester || (c.author.email || '').toLowerCase() !== requester)
                 .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
                 .map((c) => ({
                   authorName: c.author.displayName || 'Unknown',

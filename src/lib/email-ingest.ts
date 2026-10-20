@@ -330,6 +330,14 @@ function notifyAgentOfReply(
     );
   }
   const recipient = assignee ?? supportTeamFallback() ?? '';
+  // Never tell the customer that the customer replied (#7722). It happens
+  // when the ticket is assigned to the requester's own address.
+  if (recipient && recipient.trim().toLowerCase() === senderEmail.trim().toLowerCase()) {
+    console.log(
+      `[Notify] Ticket #${ticketId} is assigned to its requester — not echoing their reply back.`
+    );
+    return;
+  }
   if (!recipient) {
     console.log(
       `[Notify] No agent assigned and SUPPORT_TEAM_NOTIFY_EMAIL not set — skipping notification for ticket #${ticketId}`
