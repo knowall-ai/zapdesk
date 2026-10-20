@@ -3,7 +3,7 @@
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import { loginHref } from '@/lib/login-redirect';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
@@ -28,6 +28,20 @@ export default function TicketDetailPage() {
   const [history, setHistory] = useState<WorkItemUpdate[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  // The ticket (organisation and id) whose first load has finished. Only the
+  // first load of a ticket shows the full-page spinner. Every save (comment,
+  // status, priority...) refetches, and blanking the page each time read as
+  // the page constantly reloading and lost the reader's place (#7721).
+  const loadedForRef = useRef<string | null>(null);
+  // Refreshes run in the background while the page stays editable, so two can
+  // overlap (change the status while a priority save is still refetching).
+  // Only the latest may update the page: a slower, older answer landing last
+  // would otherwise put back the state from before the newer edit.
+  const fetchSeqRef = useRef(0);
+  // A stable signal, not the session object: NextAuth refetches the session
+  // whenever the window regains focus, so keying on it reloaded the ticket on
+  // every tab switch and after every download (#7391, #7719).
+  const isSignedIn = !!session?.accessToken;
 
   // Helper to build headers with org
   const orgHeaders = useCallback(
@@ -38,13 +52,20 @@ export default function TicketDetailPage() {
     [selectedOrganization]
   );
 
-  // Reset state when navigating to a different ticket
-  useEffect(() => {
+  // Reset when navigating to a different ticket, or when the same id is opened
+  // in another organisation -- it is a different ticket, and the old one must
+  // not stay on screen while the new one loads. Done while rendering, not in
+  // an effect, so the old ticket is never painted under the new address.
+  const orgName = selectedOrganization?.accountName;
+  const loadKey = `${orgName ?? ''}|${ticketId}`;
+  const [shownKey, setShownKey] = useState(loadKey);
+  if (shownKey !== loadKey) {
+    setShownKey(loadKey);
     setTicket(null);
     setComments([]);
     setHistory([]);
     setLoading(true);
-  }, [ticketId]);
+  }
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -54,7 +75,9 @@ export default function TicketDetailPage() {
 
   const fetchTicket = useCallback(async () => {
     if (!selectedOrganization) return;
-    setLoading(true);
+    const seq = ++fetchSeqRef.current;
+    const isLatest = () => seq === fetchSeqRef.current;
+    if (loadedForRef.current !== loadKey) setLoading(true);
     // Track whether we kicked off a route-replace so the finally block knows
     // not to flip loading off — otherwise we render `null` (blank page) for
     // a beat until the new route mounts.
@@ -63,8 +86,10 @@ export default function TicketDetailPage() {
       const response = await fetch(`/api/devops/tickets/${ticketId}`, {
         headers: orgHeaders(),
       });
+      if (!isLatest()) return;
       if (response.ok) {
         const data = await response.json();
+        if (!isLatest()) return;
         // Issue #372: route ticket vs internal work item to the URL that
         // matches its identity, so the sidebar highlight reflects reality.
         const isTicket = hasTicketTag(data.ticket.tags);
@@ -103,13 +128,18 @@ export default function TicketDetailPage() {
         router.push(pathname?.startsWith('/workitems/') ? '/kanban' : '/tickets');
       }
     } catch (error) {
+      if (!isLatest()) return;
       console.error('Failed to fetch ticket:', error);
       isRedirecting = true;
       router.push(pathname?.startsWith('/workitems/') ? '/kanban' : '/tickets');
     } finally {
-      if (!isRedirecting) setLoading(false);
+      // A superseded request leaves the loading state to the latest one.
+      if (!isRedirecting && isLatest()) {
+        loadedForRef.current = loadKey;
+        setLoading(false);
+      }
     }
-  }, [ticketId, router, selectedOrganization, orgHeaders, pathname]);
+  }, [ticketId, router, selectedOrganization, orgHeaders, pathname, loadKey]);
 
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -134,11 +164,11 @@ export default function TicketDetailPage() {
   }, [ticketId, orgHeaders]);
 
   useEffect(() => {
-    if (session?.accessToken && ticketId && selectedOrganization) {
+    if (isSignedIn && ticketId && selectedOrganization) {
       fetchTicket();
       fetchHistory();
     }
-  }, [session, ticketId, fetchTicket, fetchHistory, selectedOrganization]);
+  }, [isSignedIn, ticketId, fetchTicket, fetchHistory, selectedOrganization]);
 
   // Re-verify ticket exists when user tabs back (e.g., after deleting in DevOps)
   useEffect(() => {

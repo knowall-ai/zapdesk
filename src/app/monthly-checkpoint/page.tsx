@@ -163,18 +163,21 @@ function MonthlyCheckpointContent() {
   }, [selectedProject, selectedCustomer, startDate, endDate, devOpsGet, hasOrganization, orgName]);
 
   // Fetch projects
+  // Keyed on a stable flag, not the session object NextAuth replaces on every
+  // window focus -- that refetched everything on each tab switch (#7391).
+  const isSignedIn = !!session?.accessToken;
   useEffect(() => {
-    if (session?.accessToken) {
+    if (isSignedIn) {
       fetchProjects();
     }
-  }, [session, fetchProjects]);
+  }, [isSignedIn, fetchProjects]);
 
   // Fetch stats when project or dates change
   useEffect(() => {
-    if (selectedProject && startDate && endDate && session?.accessToken) {
+    if (selectedProject && startDate && endDate && isSignedIn) {
       fetchStats();
     }
-  }, [selectedProject, startDate, endDate, session, fetchStats]);
+  }, [selectedProject, startDate, endDate, isSignedIn, fetchStats]);
 
   const handleExportPDF = () => {
     // Use browser's print functionality with print-specific styles
