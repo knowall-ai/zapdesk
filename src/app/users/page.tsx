@@ -16,6 +16,9 @@ const USERS_TIMEOUT_MS = 15_000;
 
 export default function UsersPage() {
   const { data: session, status } = useSession();
+  // Stable across NextAuth's refetch on window focus, unlike the session
+  // object, so switching tabs does not reload the page (#7391).
+  const isSignedIn = !!session?.accessToken;
   const router = useRouter();
   const { selectedOrganization, isLoading: organizationsLoading } = useOrganization();
   const [users, setUsers] = useState<Customer[]>([]);
@@ -35,7 +38,7 @@ export default function UsersPage() {
   const org = selectedOrganization?.accountName;
 
   useEffect(() => {
-    if (!session?.accessToken || organizationsLoading) return;
+    if (!isSignedIn || organizationsLoading) return;
     if (!org) {
       // Discovery finished without an organization: show the empty list
       setUsers([]);
@@ -79,7 +82,7 @@ export default function UsersPage() {
       clearTimeout(timeout);
       controller.abort();
     };
-  }, [session, org, organizationsLoading]);
+  }, [isSignedIn, org, organizationsLoading]);
 
   // Get unique email domains for filter dropdown
   const emailDomains = Array.from(

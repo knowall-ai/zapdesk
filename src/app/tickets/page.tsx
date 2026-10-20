@@ -66,12 +66,23 @@ function TicketsPageContent() {
   // without this it would put its tickets under the newer selection.
   const fetchSeqRef = useRef(0);
 
+  // The selection the list on screen was loaded for. A refresh of the same
+  // selection (after a save, or the refresh button) updates the rows in place;
+  // only a different view, organisation or source shows the spinner. Blanking
+  // the list on every save read as the page constantly reloading (#7721).
+  const loadedKeyRef = useRef<string | null>(null);
+
+  // A stable signal rather than the session object, which NextAuth replaces on
+  // every window focus -- that reloaded the list on each tab switch (#7391).
+  const isSignedIn = !!session?.accessToken;
+
   const fetchTickets = useCallback(async () => {
     if (!selectedOrganization) return;
     const mySeq = ++fetchSeqRef.current;
     /** False once a later load has started; nothing from this one may show then. */
     const isCurrent = () => mySeq === fetchSeqRef.current;
-    setLoading(true);
+    const loadKey = `${selectedOrganization.accountName}|${view}|${sourceFilter}`;
+    if (loadedKeyRef.current !== loadKey) setLoading(true);
     try {
       // For kanban view, fetch all active tickets
       const fetchView = isKanbanView ? 'all-active' : view;
@@ -130,6 +141,7 @@ function TicketsPageContent() {
         toast.warning(`Could not load GitHub issues from ${gitHub.failedRepos.join(', ')}`);
       }
       setTickets([...devOpsTickets, ...gitHubTickets]);
+      loadedKeyRef.current = loadKey;
 
       // Fetch work item types for type icons, filtered to only ticket types
       const ticketTypeNames = new Set(devOpsTickets.map((t) => t.workItemType).filter(Boolean));
@@ -161,10 +173,10 @@ function TicketsPageContent() {
   }, [view, isKanbanView, selectedOrganization, sourceFilter]);
 
   useEffect(() => {
-    if (session?.accessToken && sourceReady) {
+    if (isSignedIn && sourceReady) {
       fetchTickets();
     }
-  }, [session, sourceReady, fetchTickets]);
+  }, [isSignedIn, sourceReady, fetchTickets]);
 
   const handleTicketStateChange = useCallback(
     async (ticketId: number, newState: string) => {

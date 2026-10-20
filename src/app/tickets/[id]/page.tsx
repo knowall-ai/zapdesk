@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
@@ -26,6 +26,14 @@ export default function TicketDetailPage() {
   const [history, setHistory] = useState<WorkItemUpdate[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Only the first load of a ticket shows the full-page spinner. Every save
+  // (comment, status, priority...) refetches, and blanking the page each time
+  // read as the page constantly reloading and lost the reader's place (#7721).
+  const hasLoadedRef = useRef(false);
+  // A stable signal, not the session object: NextAuth refetches the session
+  // whenever the window regains focus, so keying on it reloaded the ticket on
+  // every tab switch and after every download (#7391, #7719).
+  const isSignedIn = !!session?.accessToken;
 
   // Helper to build headers with org
   const orgHeaders = useCallback(
@@ -42,6 +50,7 @@ export default function TicketDetailPage() {
     setComments([]);
     setHistory([]);
     setLoading(true);
+    hasLoadedRef.current = false;
   }, [ticketId]);
 
   useEffect(() => {
@@ -52,7 +61,7 @@ export default function TicketDetailPage() {
 
   const fetchTicket = useCallback(async () => {
     if (!selectedOrganization) return;
-    setLoading(true);
+    if (!hasLoadedRef.current) setLoading(true);
     // Track whether we kicked off a route-replace so the finally block knows
     // not to flip loading off — otherwise we render `null` (blank page) for
     // a beat until the new route mounts.
@@ -105,7 +114,10 @@ export default function TicketDetailPage() {
       isRedirecting = true;
       router.push(pathname?.startsWith('/workitems/') ? '/kanban' : '/tickets');
     } finally {
-      if (!isRedirecting) setLoading(false);
+      if (!isRedirecting) {
+        hasLoadedRef.current = true;
+        setLoading(false);
+      }
     }
   }, [ticketId, router, selectedOrganization, orgHeaders, pathname]);
 
@@ -132,11 +144,11 @@ export default function TicketDetailPage() {
   }, [ticketId, orgHeaders]);
 
   useEffect(() => {
-    if (session?.accessToken && ticketId && selectedOrganization) {
+    if (isSignedIn && ticketId && selectedOrganization) {
       fetchTicket();
       fetchHistory();
     }
-  }, [session, ticketId, fetchTicket, fetchHistory, selectedOrganization]);
+  }, [isSignedIn, ticketId, fetchTicket, fetchHistory, selectedOrganization]);
 
   // Re-verify ticket exists when user tabs back (e.g., after deleting in DevOps)
   useEffect(() => {
