@@ -79,6 +79,12 @@ export async function GET(request: Request) {
       a.displayName.localeCompare(b.displayName)
     );
 
+    // A customer the project has never had is a bad request, not a report of
+    // zeroes that reads as "this customer raised nothing".
+    if (customerParam && !customerMap.has(customerParam)) {
+      return NextResponse.json({ error: 'Unknown customer for this project' }, { status: 400 });
+    }
+
     const allTickets = customerParam
       ? projectTickets.filter((t) => customerKey(t) === customerParam)
       : projectTickets;
@@ -131,7 +137,12 @@ export async function GET(request: Request) {
 
 /** Who raised a ticket, as the customer filter knows them. */
 function customerKey(ticket: Ticket): string {
-  return (ticket.requester?.email || ticket.requester?.displayName || '').trim().toLowerCase();
+  // Email first; then the identity id, so two people who share a display name
+  // are never merged; the name only as a last resort.
+  const requester = ticket.requester;
+  const key =
+    requester?.email?.trim() || requester?.id?.trim() || requester?.displayName?.trim() || '';
+  return key.toLowerCase();
 }
 
 function calculateKPIs(

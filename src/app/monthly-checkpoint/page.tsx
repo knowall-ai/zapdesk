@@ -90,8 +90,15 @@ function MonthlyCheckpointContent() {
     }
   }, [devOpsGet, hasOrganization]);
 
+  // Only the latest request may update the report. Without this, a slow answer
+  // for an earlier project, period or customer could land last and be shown
+  // under the newer selection.
+  const statsSeqRef = useRef(0);
+
   const fetchStats = useCallback(async () => {
     if (!hasOrganization) return;
+    const seq = ++statsSeqRef.current;
+    const isCurrent = () => seq === statsSeqRef.current;
     setIsLoading(true);
     setError(null);
     try {
@@ -103,9 +110,11 @@ function MonthlyCheckpointContent() {
       if (selectedCustomer) params.set('customer', selectedCustomer);
 
       const response = await devOpsGet(`/api/devops/monthly-checkpoint?${params}`);
+      if (!isCurrent()) return;
       if (!response.ok) throw new Error('Failed to fetch checkpoint data');
 
       const data: MonthlyCheckpointStats = await response.json();
+      if (!isCurrent()) return;
 
       // Convert date strings to Date objects for tickets
       data.tickets = data.tickets.map((t: Ticket) => ({
@@ -116,10 +125,11 @@ function MonthlyCheckpointContent() {
 
       setStats(data);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err instanceof Error ? err.message : 'Failed to load data');
       console.error('Failed to fetch stats:', err);
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
   }, [selectedProject, selectedCustomer, startDate, endDate, devOpsGet, hasOrganization]);
 
