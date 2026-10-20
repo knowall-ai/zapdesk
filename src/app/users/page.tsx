@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { useEffect, useRef, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { Avatar, LoadingSpinner } from '@/components/common';
@@ -14,6 +15,7 @@ import type { Customer } from '@/types';
 /** How long to wait for the users list before giving up. */
 const USERS_TIMEOUT_MS = 15_000;
 
+/** Users of the selected organisation. */
 export default function UsersPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -28,7 +30,7 @@ export default function UsersPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 

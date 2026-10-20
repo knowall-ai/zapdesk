@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { Avatar } from '@/components/common';
@@ -37,6 +38,7 @@ interface DevOpsProfile {
 /** How long to wait for the Azure DevOps profile before giving up. */
 const PROFILE_TIMEOUT_MS = 15_000;
 
+/** The signed-in user's profile page. */
 export default function ProfilePage() {
   const { data: session, status } = useSession();
   const { photoUrl } = useProfilePhoto(status === 'authenticated');
@@ -108,7 +110,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 
