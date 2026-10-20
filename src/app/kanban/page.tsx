@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { takeOpenRequest } from '@/lib/full-view';
 import {
   Suspense,
   useEffect,
@@ -500,6 +501,16 @@ function StandupPageContent() {
     },
     [devOpsGet]
   );
+
+  // Coming back from a ticket's full view: reopen its quick view (#7727).
+  const openRequestRef = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (openRequestRef.current === undefined) openRequestRef.current = takeOpenRequest();
+    const wanted = openRequestRef.current;
+    if (!wanted || !hasOrganization) return;
+    openRequestRef.current = null;
+    handleItemClick({ id: wanted } as StandupWorkItem);
+  }, [hasOrganization, handleItemClick]);
 
   // Dialog state-change: reuse existing kanban state-change logic, then
   // mirror the new state on selectedTicket so the dialog UI updates.

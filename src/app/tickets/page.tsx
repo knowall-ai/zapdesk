@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { takeOpenRequest } from '@/lib/full-view';
 import { useEffect, useRef, useState, Suspense, useCallback } from 'react';
 import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
@@ -165,6 +166,19 @@ function TicketsPageContent() {
       fetchTickets();
     }
   }, [session, sourceReady, fetchTickets]);
+
+  // Coming back from a ticket's full view: reopen its quick view (#7727).
+  const openRequestRef = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (openRequestRef.current === undefined) openRequestRef.current = takeOpenRequest();
+    const wanted = openRequestRef.current;
+    if (!wanted || tickets.length === 0) return;
+    const ticket = tickets.find((t) => t.id === wanted && t.source !== 'github');
+    if (ticket) {
+      setSelectedTicket(ticket);
+      openRequestRef.current = null;
+    }
+  }, [tickets]);
 
   const handleTicketStateChange = useCallback(
     async (ticketId: number, newState: string) => {

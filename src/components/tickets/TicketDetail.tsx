@@ -21,6 +21,7 @@ import {
   Tag,
   Trash2,
   Lock,
+  Minimize2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMentionableUsers } from '@/hooks/useMentionableUsers';
@@ -46,6 +47,7 @@ import {
   attachmentDownloadUrl,
 } from '@/lib/attachment-utils';
 import { hasTicketTag } from '@/lib/tags';
+import { exitFullViewHref } from '@/lib/full-view';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
@@ -142,6 +144,19 @@ export default function TicketDetail({
   // worse. The mitigation is making the internal state unmistakable, not
   // pretending the trade does not exist.
   const [isInternalNote, setIsInternalNote] = useState(false);
+
+  // Where "Exit full view" returns to: the list or board this was opened from,
+  // with the ticket's quick view open again (#7727). Read after mount, as the
+  // address is not available while rendering on the server.
+  const [exitHref, setExitHref] = useState<string | null>(null);
+  useEffect(() => {
+    setExitHref(exitFullViewHref(ticket.id));
+  }, [ticket.id]);
+  const leaveFullView = () => {
+    if (exitHref) router.push(exitHref);
+    else if (window.history.length > 1) router.back();
+    else router.push(isTicket ? '/tickets' : '/kanban');
+  };
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
   const [isDetailsSidebarOpen, setIsDetailsSidebarOpen] = useState(false);
@@ -725,10 +740,11 @@ export default function TicketDetail({
           <div className="mb-3 flex items-center gap-4">
             <button
               type="button"
-              onClick={() => (window.history.length > 1 ? router.back() : router.push('/tickets'))}
+              onClick={leaveFullView}
               className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
               style={{ color: 'var(--text-muted)' }}
-              aria-label="Go back"
+              aria-label={exitHref ? 'Exit full view' : 'Go back'}
+              title={exitHref ? 'Exit full view' : 'Go back'}
             >
               <ArrowLeft size={20} />
             </button>
@@ -746,6 +762,18 @@ export default function TicketDetail({
               Details
             </button>
             {/* Zap button moved to comment area */}
+            {exitHref && (
+              <button
+                type="button"
+                onClick={leaveFullView}
+                className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}
+                title="Back to where you opened this ticket"
+              >
+                <Minimize2 size={14} />
+                <span className="hidden sm:inline">Exit full view</span>
+              </button>
+            )}
             <a
               href={ticket.devOpsUrl}
               target="_blank"
