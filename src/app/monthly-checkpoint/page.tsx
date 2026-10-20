@@ -30,14 +30,16 @@ function MonthlyCheckpointContent() {
   // as customers belong to a project (#7385).
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
 
-  // A customer key means nothing in another organisation, and the API rejects
-  // one it does not know, so switching organisation clears it. Done while
-  // rendering rather than in an effect: an effect would let the report fetch
-  // run once with the old key before the reset landed.
+  // A customer key means nothing in another organisation or project, and the
+  // API rejects one it does not know, so changing either clears it -- whether
+  // the change came from the selectors or the URL. Done while rendering rather
+  // than in an effect: an effect would let the report fetch run once with the
+  // old key before the reset landed.
   const orgName = selectedOrganization?.accountName ?? null;
-  const [customerOrg, setCustomerOrg] = useState(orgName);
-  if (customerOrg !== orgName) {
-    setCustomerOrg(orgName);
+  const customerScope = `${orgName ?? ''}|${selectedProject}`;
+  const [customerScopeSeen, setCustomerScopeSeen] = useState(customerScope);
+  if (customerScopeSeen !== customerScope) {
+    setCustomerScopeSeen(customerScope);
     setSelectedCustomer('');
   }
   const [datePreset, setDatePreset] = useState<DatePreset>('last30');
@@ -234,9 +236,11 @@ function MonthlyCheckpointContent() {
               <button
                 onClick={handleExportPDF}
                 className="btn-primary flex items-center gap-2"
-                // Not while a report loads: the header already names the new
-                // selection, and the page still shows the old figures.
-                disabled={!stats || isLoading}
+                // Only when the page is showing a report for the current
+                // selection: while one loads the page shows a spinner, and
+                // after a failed load it shows the error, under a header that
+                // already names the new selection.
+                disabled={!stats || isLoading || !!error}
               >
                 <Download size={16} />
                 Export PDF
@@ -294,7 +298,9 @@ function MonthlyCheckpointContent() {
                   value={selectedCustomer}
                   onChange={(e) => setSelectedCustomer(e.target.value)}
                   className="input min-w-[200px]"
-                  disabled={isLoading || customerOptions.length === 0}
+                  // Kept usable while a customer is chosen, so "All customers"
+                  // can always be picked to get back to the full report.
+                  disabled={isLoading || (customerOptions.length === 0 && !selectedCustomer)}
                 >
                   <option value="">All customers</option>
                   {customerOptions.map((customer) => (
