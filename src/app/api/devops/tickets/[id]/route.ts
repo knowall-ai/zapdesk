@@ -275,9 +275,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       if (requesterEmail && changes.length > 0) {
         // Sent under the title the customer already knows, so it lands in
         // their existing thread; the new title is listed in the changes.
-        sendTicketUpdateNotification(ticketId, before.title, requesterEmail, changes).catch(
-          () => {}
-        );
+        //
+        // Awaited, unlike the other notifications: a send left running after
+        // the response can be cut off when App Service recycles the process,
+        // and the customer would never hear of the change. This cannot fail
+        // the update -- the sender logs and swallows its own errors, and its
+        // Graph calls time out -- and it only runs when an email ticket's
+        // title or priority actually changed.
+        await sendTicketUpdateNotification(ticketId, before.title, requesterEmail, changes);
       }
     }
 
