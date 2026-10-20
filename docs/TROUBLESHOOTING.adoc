@@ -24,7 +24,7 @@
 |User may not have write permission in Azure DevOps. Check the work item is not locked. Verify session hasn't expired.
 
 |**Customers cannot see files attached to a reply**
-|Files are emailed with a *public reply*, not with an internal note. A reply's files must fit in about 3 MB in total; any that do not are listed in the email as not included, and stay on the ticket.
+|Files are emailed only with a *public reply* on a ticket that arrived by email, never with an internal note. A reply's files must total about 2.25 MB or less: the limit is 3 MB once encoded for email, and encoding adds about a third. Files over it are listed in the email as not included, and stay on the ticket.
 
 |**Email webhook not creating tickets**
 |Verify EMAIL_WEBHOOK_SECRET header matches. Check sender domain has project mapping. Review server logs for error details.

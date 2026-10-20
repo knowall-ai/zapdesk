@@ -54,6 +54,11 @@ export default function CommentSection({
   // the wrong audience is making the choice unmistakable, not flipping it.
   const [isInternalNote, setIsInternalNote] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  // Files already uploaded whose reply has not been posted yet. Kept until the
+  // reply succeeds, so a failed send can be retried without losing them --
+  // otherwise the retry would post without naming the files, and the customer
+  // would not get them.
+  const [uploadedFiles, setUploadedFiles] = useState<Attachment[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -71,19 +76,25 @@ export default function CommentSection({
   };
 
   const handleSubmit = async () => {
-    if ((!newComment.trim() && pendingFiles.length === 0) || !onAddComment) return;
+    const hasFiles = pendingFiles.length > 0 || uploadedFiles.length > 0;
+    if ((!newComment.trim() && !hasFiles) || !onAddComment) return;
     setIsSubmitting(true);
     setUploadError(null);
     try {
       // Files go up first and are named in the comment, so a public reply
-      // emails them to the customer (#7376).
-      const uploaded: Attachment[] = [];
+      // emails them to the customer (#7376). Each one moves from pending to
+      // uploaded as it lands, so a retry neither re-uploads nor forgets it.
+      const uploaded = [...uploadedFiles];
       if (onUploadAttachment) {
-        for (const file of pendingFiles) uploaded.push(await onUploadAttachment(file));
+        for (const file of pendingFiles) {
+          uploaded.push(await onUploadAttachment(file));
+          setUploadedFiles([...uploaded]);
+          setPendingFiles((prev) => prev.filter((f) => f !== file));
+        }
       }
-      setPendingFiles([]);
       const body = [newComment.trim(), attachedFilesHtml(uploaded)].filter(Boolean).join('\n');
       if (body) await onAddComment(body, isTicket ? isInternalNote : false);
+      setUploadedFiles([]);
       setNewComment('');
       setIsInternalNote(false);
     } catch (error) {
@@ -301,8 +312,23 @@ export default function CommentSection({
             </div>
           )}
 
-          {pendingFiles.length > 0 && (
+          {(pendingFiles.length > 0 || uploadedFiles.length > 0) && (
             <div className="mb-2 flex flex-wrap gap-2">
+              {uploadedFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className="flex items-center gap-2 rounded-md px-2 py-1 text-xs"
+                  style={{
+                    backgroundColor: 'var(--surface-hover)',
+                    color: 'var(--text-secondary)',
+                  }}
+                  title="Uploaded; it is named in this reply when the reply is sent"
+                >
+                  <FileIcon contentType={file.contentType} size={14} />
+                  <span className="max-w-[150px] truncate">{file.fileName}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>(uploaded)</span>
+                </div>
+              ))}
               {pendingFiles.map((file, index) => (
                 <div
                   key={`${file.name}-${index}`}
@@ -373,7 +399,10 @@ export default function CommentSection({
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={(!newComment.trim() && pendingFiles.length === 0) || isSubmitting}
+                disabled={
+                  (!newComment.trim() && pendingFiles.length === 0 && uploadedFiles.length === 0) ||
+                  isSubmitting
+                }
                 className="btn-primary flex items-center gap-1 py-1.5 text-sm"
               >
                 {isSubmitting ? (
