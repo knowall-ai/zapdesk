@@ -52,12 +52,20 @@ export function takeOpenRequest(): number | null {
   if (typeof window === 'undefined') return null;
   const url = new URL(window.location.href);
   const raw = url.searchParams.get(OPEN_PARAM);
+  // Remembered for restoreBoardView: the page may remove the request before
+  // its board mounts and looks for it.
+  returnedTo = raw ? boardViewKey() : null;
   if (!raw) return null;
   url.searchParams.delete(OPEN_PARAM);
   window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`);
+  // Digits only: parseInt alone would read "7abc" or "7.9" as 7.
+  if (!/^\d+$/.test(raw)) return null;
   const id = Number.parseInt(raw, 10);
-  return Number.isInteger(id) && id > 0 ? id : null;
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
+
+/** The board key of the page an open request last came back to, if any. */
+let returnedTo: string | null = null;
 
 const BOARD_VIEW_PREFIX = 'zapdesk:board-view:';
 
@@ -88,12 +96,15 @@ export function saveBoardView(view: unknown): void {
 
 /**
  * The board controls saved for this page, but only when coming back from a
- * ticket's full view (the address carries the `open` request). Arriving any
- * other way starts the board fresh, as before.
+ * ticket's full view: the address carries the `open` request, or the page has
+ * already taken it (takeOpenRequest). Arriving any other way starts the board
+ * fresh, as before.
  */
 export function restoreBoardView<T>(): Partial<T> | null {
   if (typeof window === 'undefined') return null;
-  if (!new URLSearchParams(window.location.search).has(OPEN_PARAM)) return null;
+  const returning =
+    new URLSearchParams(window.location.search).has(OPEN_PARAM) || returnedTo === boardViewKey();
+  if (!returning) return null;
   try {
     const raw = window.sessionStorage.getItem(boardViewKey());
     const parsed: unknown = raw ? JSON.parse(raw) : null;

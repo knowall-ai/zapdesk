@@ -187,6 +187,14 @@ function TicketsPageContent() {
     currentOrgRef.current = selectedOrganization?.accountName;
   }, [selectedOrganization]);
 
+  // A ticket of the old organisation must not stay open: its edits would be
+  // sent with the new organisation's header.
+  const [dialogOrg, setDialogOrg] = useState(selectedOrganization?.accountName);
+  if (dialogOrg !== selectedOrganization?.accountName) {
+    setDialogOrg(selectedOrganization?.accountName);
+    setSelectedTicket(null);
+  }
+
   // The ticket may no longer be in this view's list -- assigning or closing it
   // in full view can move it out -- so it is fetched by id when it isn't.
   const openRequestRef = useRef<number | null | undefined>(undefined);
@@ -225,9 +233,13 @@ function TicketsPageContent() {
    * reopened from full view may have left this view; it is then only the
    * dialog's ticket, and edits must still work on it.
    */
+  // DevOps tickets only: a GitHub issue can have the same number, and its
+  // project must never reach a DevOps endpoint. The dialog's own ticket wins.
   const findTicket = useCallback(
     (id: number) =>
-      tickets.find((t) => t.id === id) ?? (selectedTicket?.id === id ? selectedTicket : undefined),
+      (selectedTicket?.id === id && selectedTicket.source !== 'github'
+        ? selectedTicket
+        : undefined) ?? tickets.find((t) => t.id === id && t.source !== 'github'),
     [tickets, selectedTicket]
   );
 
@@ -304,7 +316,11 @@ function TicketsPageContent() {
         const data = await response.json();
         const updatedTicket = data.ticket;
         if (updatedTicket) {
-          setTickets((prev) => prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)));
+          setTickets((prev) =>
+            prev.map((t) =>
+              t.id === updatedTicket.id && t.source !== 'github' ? updatedTicket : t
+            )
+          );
           setSelectedTicket((prev) =>
             prev && prev.id === updatedTicket.id ? updatedTicket : prev
           );
@@ -345,7 +361,9 @@ function TicketsPageContent() {
           completedWork: updated?.completedWork ?? hours.completedWork ?? ticket.completedWork,
           remainingWork: updated?.remainingWork ?? hours.remainingWork ?? ticket.remainingWork,
         };
-        setTickets((prev) => prev.map((t) => (t.id === workItemId ? { ...t, ...applied } : t)));
+        setTickets((prev) =>
+          prev.map((t) => (t.id === workItemId && t.source !== 'github' ? { ...t, ...applied } : t))
+        );
         setSelectedTicket((prev) =>
           prev && prev.id === workItemId ? { ...prev, ...applied } : prev
         );
@@ -379,7 +397,11 @@ function TicketsPageContent() {
         const data = await response.json();
         const updatedTicket = data.ticket;
         if (updatedTicket) {
-          setTickets((prev) => prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)));
+          setTickets((prev) =>
+            prev.map((t) =>
+              t.id === updatedTicket.id && t.source !== 'github' ? updatedTicket : t
+            )
+          );
           setSelectedTicket((prev) =>
             prev && prev.id === updatedTicket.id ? updatedTicket : prev
           );
@@ -415,7 +437,11 @@ function TicketsPageContent() {
         const data = await response.json();
         const updatedTicket = data.ticket;
         if (updatedTicket) {
-          setTickets((prev) => prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)));
+          setTickets((prev) =>
+            prev.map((t) =>
+              t.id === updatedTicket.id && t.source !== 'github' ? updatedTicket : t
+            )
+          );
           setSelectedTicket((prev) =>
             prev && prev.id === updatedTicket.id ? updatedTicket : prev
           );
@@ -459,7 +485,9 @@ function TicketsPageContent() {
           const data = await response.json().catch(() => ({}));
           throw new Error(data.error || 'Failed to update tags');
         }
-        setTickets((prev) => prev.map((t) => (t.id === workItemId ? { ...t, tags } : t)));
+        setTickets((prev) =>
+          prev.map((t) => (t.id === workItemId && t.source !== 'github' ? { ...t, tags } : t))
+        );
         setSelectedTicket((prev) => (prev && prev.id === workItemId ? { ...prev, tags } : prev));
         toast.success('Tags updated');
       } catch (error) {
@@ -502,7 +530,9 @@ function TicketsPageContent() {
         if (updates.description !== undefined) applied.description = updates.description;
         if (updates.resolution !== undefined) applied.resolution = updates.resolution;
         if (updates.mitigation !== undefined) applied.mitigation = updates.mitigation;
-        setTickets((prev) => prev.map((t) => (t.id === workItemId ? { ...t, ...applied } : t)));
+        setTickets((prev) =>
+          prev.map((t) => (t.id === workItemId && t.source !== 'github' ? { ...t, ...applied } : t))
+        );
         setSelectedTicket((prev) => (prev ? { ...prev, ...applied } : null));
         const fieldLabels: Record<keyof typeof updates, string> = {
           title: 'Title',

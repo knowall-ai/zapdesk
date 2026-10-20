@@ -78,6 +78,19 @@ describe('full view round trip (#7727)', () => {
     expect(restoreBoardView()).toEqual({ sortField: 'priority', searchQuery: 'printer' });
   });
 
+  it('restores the board when the page took the open request first', () => {
+    saveBoardView({ sortField: 'priority' });
+    goTo('/tickets?view=my-open&open=7');
+    expect(takeOpenRequest()).toBe(7);
+    expect(win.location.search).toBe('?view=my-open');
+    expect(restoreBoardView()).toEqual({ sortField: 'priority' });
+  });
+
+  it.each(['7abc', '7.9', '-7', '0'])('ignores a malformed open request %j', (raw) => {
+    goTo(`/tickets?open=${raw}`);
+    expect(takeOpenRequest()).toBeNull();
+  });
+
   it('keeps each page view separate', () => {
     saveBoardView({ searchQuery: 'printer' });
     goTo('/tickets?view=all-unsolved&open=7');
