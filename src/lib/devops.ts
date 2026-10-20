@@ -2010,7 +2010,13 @@ export class AzureDevOpsService {
           url: attachmentUrl,
           contentType: relation.attributes?.contentType || 'application/octet-stream',
           size: relation.attributes?.length || 0,
-          createdAt: new Date(relation.attributes?.resourceCreatedDate || Date.now()),
+          // When it was attached to this work item, which is when it was sent;
+          // the upload time is the fallback (#7726).
+          createdAt: new Date(
+            relation.attributes?.authorizedDate ||
+              relation.attributes?.resourceCreatedDate ||
+              Date.now()
+          ),
         });
       }
     }

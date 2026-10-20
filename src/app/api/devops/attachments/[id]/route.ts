@@ -33,6 +33,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       '';
     const rawFileName = request.nextUrl.searchParams.get('fileName') || 'attachment';
     const fileName = sanitizeFileName(rawFileName);
+    // `download=1` saves the file instead of opening it. Opening it took the
+    // user to another tab, and coming back reloaded the ticket (#7719).
+    const disposition =
+      request.nextUrl.searchParams.get('download') === '1' ? 'attachment' : 'inline';
 
     const devopsUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/_apis/wit/attachments/${id}?api-version=7.0`;
 
@@ -62,7 +66,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return new NextResponse(response.body, {
         headers: {
           'Content-Type': contentType,
-          'Content-Disposition': `inline; filename="${fileName}"`,
+          'Content-Disposition': `${disposition}; filename="${fileName}"`,
           // Not cached at all. `private` keeps bytes out of shared proxies but not
           // out of a browser profile, so a second account signing in on the same
           // machine could be served another's attachment without this route's
@@ -78,7 +82,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return new NextResponse(body, {
       headers: {
         'Content-Type': contentType,
-        'Content-Disposition': `inline; filename="${fileName}"`,
+        'Content-Disposition': `${disposition}; filename="${fileName}"`,
         // Not cached at all. `private` keeps bytes out of shared proxies but not
         // out of a browser profile, so a second account signing in on the same
         // machine could be served another's attachment without this route's
