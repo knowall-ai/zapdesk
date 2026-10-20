@@ -4,6 +4,7 @@ import { signIn, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
+import { currentCallbackUrl } from '@/lib/login-redirect';
 
 export default function LoginPage() {
   const { data: session, status } = useSession();
@@ -11,7 +12,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (session) {
-      router.push('/');
+      router.push(currentCallbackUrl());
     }
   }, [session, router]);
 
@@ -60,7 +61,7 @@ export default function LoginPage() {
 
         {/* Sign in button */}
         <button
-          onClick={() => signIn('azure-ad', { callbackUrl: '/' })}
+          onClick={() => signIn('azure-ad', { callbackUrl: currentCallbackUrl() })}
           className="flex w-full items-center justify-center gap-3 rounded-lg px-4 py-3 font-medium transition-colors"
           style={{
             backgroundColor: 'var(--surface-hover)',

@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import {
   Suspense,
   useEffect,
@@ -669,7 +670,7 @@ function StandupPageContent() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 

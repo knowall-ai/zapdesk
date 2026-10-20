@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
@@ -46,7 +47,7 @@ export default function TicketDetailPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 

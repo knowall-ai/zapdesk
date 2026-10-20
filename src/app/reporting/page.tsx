@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { format, subDays, startOfWeek } from 'date-fns';
 import Link from 'next/link';
@@ -57,7 +58,7 @@ export default function LiveDashboardPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 
