@@ -9,6 +9,7 @@ import type {
   MonthlyCheckpointStats,
   TicketTrendPoint,
   Organization,
+  CheckpointCustomer,
 } from '@/types';
 
 export async function GET(request: Request) {
@@ -23,6 +24,8 @@ export async function GET(request: Request) {
     const projectName = searchParams.get('project');
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');
+    // Optional: one customer's tickets only (#7385). Matched on requester email.
+    const customerParam = (searchParams.get('customer') || '').trim().toLowerCase();
 
     if (!projectName) {
       return NextResponse.json({ error: 'Project name is required' }, { status: 400 });
@@ -55,7 +58,30 @@ export async function GET(request: Request) {
       updatedAt: new Date(),
     };
 
-    const allTickets = workItems.map((wi) => workItemToTicket(wi, organization));
+    const projectTickets = workItems.map((wi) => workItemToTicket(wi, organization));
+
+    // The customers on offer come from the whole project, so picking one does
+    // not empty the list of the others.
+    const customerMap = new Map<string, CheckpointCustomer>();
+    for (const t of projectTickets) {
+      const key = customerKey(t);
+      if (!key) continue;
+      const existing = customerMap.get(key);
+      if (existing) existing.ticketCount += 1;
+      else
+        customerMap.set(key, {
+          key,
+          displayName: t.requester?.displayName || key,
+          ticketCount: 1,
+        });
+    }
+    const customers = [...customerMap.values()].sort((a, b) =>
+      a.displayName.localeCompare(b.displayName)
+    );
+
+    const allTickets = customerParam
+      ? projectTickets.filter((t) => customerKey(t) === customerParam)
+      : projectTickets;
 
     // Filter tickets created within the date range
     const ticketsInRange = allTickets.filter((t) => {
@@ -93,6 +119,7 @@ export async function GET(request: Request) {
       tickets: relevantTickets.sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       ),
+      customers,
     };
 
     return NextResponse.json(stats);
@@ -100,6 +127,11 @@ export async function GET(request: Request) {
     console.error('Error fetching monthly checkpoint data:', error);
     return NextResponse.json({ error: 'Failed to fetch monthly checkpoint data' }, { status: 500 });
   }
+}
+
+/** Who raised a ticket, as the customer filter knows them. */
+function customerKey(ticket: Ticket): string {
+  return (ticket.requester?.email || ticket.requester?.displayName || '').trim().toLowerCase();
 }
 
 function calculateKPIs(

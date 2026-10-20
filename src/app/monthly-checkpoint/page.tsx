@@ -22,6 +22,9 @@ function MonthlyCheckpointContent() {
 
   const [projects, setProjects] = useState<DevOpsProject[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
+  // '' is every customer. Cleared when the project changes, as customers belong
+  // to a project (#7385).
+  const [selectedCustomer, setSelectedCustomer] = useState<string>('');
   const [datePreset, setDatePreset] = useState<DatePreset>('last30');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -97,6 +100,7 @@ function MonthlyCheckpointContent() {
         startDate,
         endDate,
       });
+      if (selectedCustomer) params.set('customer', selectedCustomer);
 
       const response = await devOpsGet(`/api/devops/monthly-checkpoint?${params}`);
       if (!response.ok) throw new Error('Failed to fetch checkpoint data');
@@ -117,7 +121,7 @@ function MonthlyCheckpointContent() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedProject, startDate, endDate, devOpsGet, hasOrganization]);
+  }, [selectedProject, selectedCustomer, startDate, endDate, devOpsGet, hasOrganization]);
 
   // Fetch projects
   useEffect(() => {
@@ -223,7 +227,10 @@ function MonthlyCheckpointContent() {
               ) : (
                 <select
                   value={selectedProject}
-                  onChange={(e) => setSelectedProject(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedProject(e.target.value);
+                    setSelectedCustomer('');
+                  }}
                   className="input min-w-[200px]"
                 >
                   <option value="">Select a project...</option>
@@ -235,6 +242,31 @@ function MonthlyCheckpointContent() {
                 </select>
               )}
             </div>
+
+            {/* Customer filter (#7385) */}
+            {selectedProject && (
+              <div>
+                <label
+                  className="mb-1 block text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Customer
+                </label>
+                <select
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                  className="input min-w-[200px]"
+                  disabled={!stats?.customers?.length}
+                >
+                  <option value="">All customers</option>
+                  {(stats?.customers ?? []).map((customer) => (
+                    <option key={customer.key} value={customer.key}>
+                      {customer.displayName} ({customer.ticketCount})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Date preset */}
             <div>
@@ -324,6 +356,13 @@ function MonthlyCheckpointContent() {
             <p style={{ color: 'var(--text-secondary)' }}>
               <strong>Project:</strong> {selectedProject}
             </p>
+            {selectedCustomer && (
+              <p style={{ color: 'var(--text-secondary)' }}>
+                <strong>Customer:</strong>{' '}
+                {stats?.customers?.find((c) => c.key === selectedCustomer)?.displayName ??
+                  selectedCustomer}
+              </p>
+            )}
             <p style={{ color: 'var(--text-secondary)' }}>
               <strong>Period:</strong> {startDate && format(new Date(startDate), 'dd MMM yyyy')} -{' '}
               {endDate && format(new Date(endDate), 'dd MMM yyyy')}
