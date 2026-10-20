@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { useEffect, useState, useCallback } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner, StatusBadge } from '@/components/common';
@@ -19,6 +20,7 @@ import Link from 'next/link';
 import type { Epic, TreemapNode, TreemapColorScheme } from '@/types';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 
+/** A project's epics. */
 export default function ProjectEpicsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -87,7 +89,7 @@ export default function ProjectEpicsPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 

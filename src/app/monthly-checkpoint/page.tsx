@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { format, subDays, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { Calendar, Download, Plus, Loader2, RefreshCw } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
@@ -198,7 +199,7 @@ function MonthlyCheckpointContent() {
   }
 
   if (status === 'unauthenticated') {
-    router.push('/login');
+    router.push(loginHref());
     return null;
   }
 
