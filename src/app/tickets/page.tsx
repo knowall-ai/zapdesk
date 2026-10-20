@@ -170,6 +170,11 @@ function TicketsPageContent() {
   }, [session, sourceReady, fetchTickets]);
 
   // Coming back from a ticket's full view: reopen its quick view (#7727).
+  const currentOrgRef = useRef(selectedOrganization?.accountName);
+  useEffect(() => {
+    currentOrgRef.current = selectedOrganization?.accountName;
+  }, [selectedOrganization]);
+
   // The ticket may no longer be in this view's list -- assigning or closing it
   // in full view can move it out -- so it is fetched by id when it isn't.
   const openRequestRef = useRef<number | null | undefined>(undefined);
@@ -188,17 +193,31 @@ function TicketsPageContent() {
     // Not cancelled when this effect re-runs: the request has been taken, so a
     // cancelled fetch would never reopen the dialog. If the user has opened
     // something else by the time it answers, that choice wins.
+    const requestedOrg = selectedOrganization.accountName;
     fetch(`/api/devops/tickets/${wanted}`, {
-      headers: { 'x-devops-org': selectedOrganization.accountName },
+      headers: { 'x-devops-org': requestedOrg },
     })
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (!data?.ticket) return;
+        // Dropped if the organisation changed meanwhile: this ticket belongs
+        // to the old one, and edits would go to the new.
+        if (!data?.ticket || currentOrgRef.current !== requestedOrg) return;
         const [ticket] = reviveTicketDates([data.ticket]);
         setSelectedTicket((current) => current ?? ticket);
       })
       .catch((error) => console.error('Failed to reopen ticket from full view:', error));
   }, [tickets, loading, selectedOrganization]);
+
+  /**
+   * The ticket a dialog edit is for. Usually a row of the list, but a ticket
+   * reopened from full view may have left this view; it is then only the
+   * dialog's ticket, and edits must still work on it.
+   */
+  const findTicket = useCallback(
+    (id: number) =>
+      tickets.find((t) => t.id === id) ?? (selectedTicket?.id === id ? selectedTicket : undefined),
+    [tickets, selectedTicket]
+  );
 
   const handleTicketStateChange = useCallback(
     async (ticketId: number, newState: string) => {
@@ -254,7 +273,7 @@ function TicketsPageContent() {
 
   const handleDialogAssigneeChange = useCallback(
     async (workItemId: number, assigneeId: string | null) => {
-      const ticket = tickets.find((t) => t.id === workItemId);
+      const ticket = findTicket(workItemId);
       if (!ticket || !selectedOrganization) return;
       try {
         const response = await fetch(`/api/devops/tickets/${workItemId}`, {
@@ -286,12 +305,12 @@ function TicketsPageContent() {
         throw error;
       }
     },
-    [tickets, selectedOrganization, refreshCounts]
+    [findTicket, selectedOrganization, refreshCounts]
   );
 
   const handleDialogPriorityChange = useCallback(
     async (workItemId: number, priority: number) => {
-      const ticket = tickets.find((t) => t.id === workItemId);
+      const ticket = findTicket(workItemId);
       if (!ticket || !selectedOrganization) return;
       try {
         const response = await fetch(`/api/devops/tickets/${workItemId}`, {
@@ -322,12 +341,12 @@ function TicketsPageContent() {
         throw error;
       }
     },
-    [tickets, selectedOrganization]
+    [findTicket, selectedOrganization]
   );
 
   const handleDialogTypeChange = useCallback(
     async (workItemId: number, newType: string, additionalFields?: Record<string, string>) => {
-      const ticket = tickets.find((t) => t.id === workItemId);
+      const ticket = findTicket(workItemId);
       if (!ticket || !selectedOrganization) return;
       try {
         const response = await fetch(`/api/devops/tickets/${workItemId}/type`, {
@@ -364,7 +383,7 @@ function TicketsPageContent() {
         throw error;
       }
     },
-    [tickets, selectedOrganization]
+    [findTicket, selectedOrganization]
   );
 
   const handleZapClick = useCallback((item: WorkItem) => {
@@ -375,7 +394,7 @@ function TicketsPageContent() {
 
   const handleDialogTagsChange = useCallback(
     async (workItemId: number, tags: string[]) => {
-      const ticket = tickets.find((t) => t.id === workItemId);
+      const ticket = findTicket(workItemId);
       if (!ticket || !selectedOrganization) return;
       try {
         const response = await fetch(`/api/devops/tickets/${workItemId}`, {
@@ -399,7 +418,7 @@ function TicketsPageContent() {
         throw error;
       }
     },
-    [tickets, selectedOrganization]
+    [findTicket, selectedOrganization]
   );
 
   const handleWorkItemUpdate = useCallback(
@@ -412,7 +431,7 @@ function TicketsPageContent() {
         mitigation?: string;
       }
     ) => {
-      const ticket = tickets.find((t) => t.id === workItemId);
+      const ticket = findTicket(workItemId);
       if (!ticket || !selectedOrganization) return;
       try {
         const response = await fetch(`/api/devops/tickets/${workItemId}`, {
@@ -452,7 +471,7 @@ function TicketsPageContent() {
         throw error;
       }
     },
-    [tickets, selectedOrganization]
+    [findTicket, selectedOrganization]
   );
 
   if (status === 'loading' || loading) {
