@@ -51,11 +51,13 @@ function extractFileName(queryString: string): string | null {
 export function buildAttachmentProxyUrl(
   attachmentId: string,
   fileName?: string | null,
-  org?: string | null
+  org?: string | null,
+  download = false
 ): string {
   const params = new URLSearchParams();
   if (fileName) params.set('fileName', fileName);
   if (org) params.set('org', org);
+  if (download) params.set('download', '1');
   const query = params.toString();
   return `/api/devops/attachments/${attachmentId}${query ? `?${query}` : ''}`;
 }
@@ -82,7 +84,9 @@ export function attachmentDownloadUrl(attachment: {
 }): string {
   if (!attachment.id) return attachment.url ?? '';
   const org = attachment.url ? /dev\.azure\.com\/([^/]+)/.exec(attachment.url)?.[1] : undefined;
-  return buildAttachmentProxyUrl(attachment.id, attachment.fileName, org);
+  // Saved, not opened: opening went to a new tab, and returning to ZapDesk
+  // reloaded the ticket under the user (#7719).
+  return buildAttachmentProxyUrl(attachment.id, attachment.fileName, org, true);
 }
 
 function escapeAttr(value: string): string {

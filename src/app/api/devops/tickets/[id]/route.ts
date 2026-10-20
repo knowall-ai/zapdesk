@@ -2,9 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
-import { extractRequesterEmail, sendAssignmentNotification } from '@/lib/email';
+import {
+  extractRequesterEmail,
+  isEmailTicket,
+  sendAssignmentNotification,
+  sendTicketUpdateNotification,
+} from '@/lib/email';
+import type { TicketFieldChange } from '@/lib/email-templates';
 
 type RouteParams = { params: Promise<{ id: string }> };
+
+/** The body fields PATCH accepts; anything else is refused. */
+const PATCH_FIELDS = new Set([
+  'assignee',
+  'assignToMe',
+  'priority',
+  'project',
+  'title',
+  'description',
+  'tags',
+  'resolution',
+  'mitigation',
+  'workItemType',
+]);
+
+/** Lowest priority DevOps uses: 1 is urgent, 4 is low. */
+const MAX_PRIORITY = 4;
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
@@ -108,6 +131,23 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   }
 }
 
+/**
+ * Update a ticket's assignee, priority, title, description, tags, resolution
+ * or mitigation. `assignToMe: true` assigns the caller.
+ *
+ * Side effects, after the update is saved:
+ * - a new assignee is emailed (#7374);
+ * - for a ticket that arrived by email, the requester is emailed when the
+ *   title or priority actually changed (#7724). That send is awaited so it is
+ *   not lost to a process recycle; it cannot fail the update.
+ *
+ * The requester is read from the ticket's tags as they were before this
+ * request, so a PATCH that also edits the tags cannot redirect that email.
+ *
+ * Returns `{ ticket }`; 400 for a bad id, an unknown field, a priority outside
+ * 1-4 or bad tags; 401 without a session; 404 when the ticket cannot be found;
+ * 500 otherwise.
+ */
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
@@ -124,6 +164,38 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ error: 'Body must be a JSON object' }, { status: 400 });
+    }
+
+    // Refuse fields this route does not handle, so a misspelt one is an error
+    // rather than an update that silently did nothing.
+    const unknownFields = Object.keys(body).filter((key) => !PATCH_FIELDS.has(key));
+    if (unknownFields.length > 0) {
+      return NextResponse.json(
+        { error: `Unknown field: ${unknownFields.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
+    // Priority is 1 (urgent) to 4 (low). Anything else would be passed to
+    // DevOps as-is, and it also decides whether the customer is emailed.
+    if (
+      body.priority !== undefined &&
+      !(Number.isInteger(body.priority) && body.priority >= 1 && body.priority <= MAX_PRIORITY)
+    ) {
+      return NextResponse.json(
+        { error: `priority must be a whole number from 1 to ${MAX_PRIORITY}` },
+        { status: 400 }
+      );
+    }
+
+    // A non-list `tags` used to be skipped silently, so a request that also
+    // changed the title reported success for an update it half did.
+    if (body.tags !== undefined && !Array.isArray(body.tags)) {
+      return NextResponse.json({ error: 'tags must be a list of strings' }, { status: 400 });
+    }
+
     const {
       assignee,
       assignToMe,
@@ -212,6 +284,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updates.mitigation = mitigation;
     }
 
+    // Snapshot what the customer can see before changing it, so they can be
+    // told what changed (#7724). Only fetched when one of those fields moves.
+    const customerVisibleChange = title !== undefined || priority !== undefined;
+    const before = customerVisibleChange
+      ? workItemToTicket(await devopsService.getWorkItem(projectName, ticketId))
+      : null;
+
     // Update the work item
     const updatedWorkItem = await devopsService.updateTicketFields(projectName, ticketId, updates);
 
@@ -241,6 +320,50 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           assignedByEmail: session.user?.email ?? undefined,
           requesterEmail: extractRequesterEmail(ticket.tags ?? []) ?? undefined,
         }).catch(() => {});
+      }
+    }
+
+    // Tell an email customer their ticket's title or priority changed (#7724).
+    // Status changes already have their own email (the state route).
+    // Recipient from the tags as they were before this request: the same PATCH
+    // can rewrite `email` and `email-from:`, and must not be able to silence
+    // the notification or send ticket details to an address of its choosing.
+    if (before && isEmailTicket(before.tags ?? [])) {
+      const requesterEmail = extractRequesterEmail(before.tags ?? []);
+      const changes: TicketFieldChange[] = [];
+      if (title !== undefined && before.title !== ticket.title) {
+        changes.push({ label: 'Title', from: before.title, to: ticket.title });
+      }
+      if (priority !== undefined && before.priority !== ticket.priority) {
+        changes.push({
+          label: 'Priority',
+          from: before.priority ?? '',
+          to: ticket.priority ?? '',
+        });
+      }
+      if (requesterEmail && changes.length > 0) {
+        // The mail subject keeps the title the customer already knows, so it
+        // lands in their existing thread; the body shows the title as it now
+        // is, with the change listed.
+        //
+        // Awaited, unlike the other notifications: a send left running after
+        // the response can be cut off when App Service recycles the process,
+        // and the customer would never hear of the change. This cannot fail
+        // the update -- the sender logs and swallows its own errors, and its
+        // Graph calls time out -- and it only runs when an email ticket's
+        // title or priority actually changed.
+        //
+        // The thread subject is the title the ticket was created with, so it
+        // stays the same however many times the title changes; the title
+        // before this request is the fallback if history can't be read.
+        const threadTitle =
+          (await devopsService.getOriginalTitle(projectName, ticketId)) ?? before.title;
+        await sendTicketUpdateNotification(
+          ticketId,
+          { thread: threadTitle, current: ticket.title },
+          requesterEmail,
+          changes
+        );
       }
     }
 

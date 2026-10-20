@@ -4,6 +4,9 @@ import { authOptions } from '@/lib/auth';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
+/** The query parameters this route reads; anything else is refused. */
+const PROXY_PARAMS = new Set(['org', 'fileName', 'download']);
+
 /** Sanitize filename for Content-Disposition header (strip control chars and quotes). */
 function sanitizeFileName(name: string): string {
   return name.replace(/["\\\x00-\x1f\x7f]/g, '_').slice(0, 255);
@@ -25,6 +28,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id } = await params;
+
+    // Refuse parameters this route does not read. The links ZapDesk writes
+    // carry only these (buildAttachmentProxyUrl), including the ones stored
+    // in existing comments.
+    const unknown = [...new Set(request.nextUrl.searchParams.keys())].filter(
+      (key) => !PROXY_PARAMS.has(key)
+    );
+    if (unknown.length > 0) {
+      return NextResponse.json(
+        { error: `Unknown query parameter: ${unknown.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
     // Use org from query param (embedded in img src), fall back to header, then env
     const organization =
       request.nextUrl.searchParams.get('org') ||
@@ -33,6 +50,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       '';
     const rawFileName = request.nextUrl.searchParams.get('fileName') || 'attachment';
     const fileName = sanitizeFileName(rawFileName);
+    // `download=1` saves the file instead of opening it. Opening it took the
+    // user to another tab, and coming back reloaded the ticket (#7719).
+    const download = request.nextUrl.searchParams.get('download');
+    if (download !== null && download !== '1') {
+      return NextResponse.json({ error: 'download must be 1 when given' }, { status: 400 });
+    }
+    const disposition = download === '1' ? 'attachment' : 'inline';
 
     const devopsUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/_apis/wit/attachments/${id}?api-version=7.0`;
 
@@ -62,7 +86,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return new NextResponse(response.body, {
         headers: {
           'Content-Type': contentType,
-          'Content-Disposition': `inline; filename="${fileName}"`,
+          'Content-Disposition': `${disposition}; filename="${fileName}"`,
           // Not cached at all. `private` keeps bytes out of shared proxies but not
           // out of a browser profile, so a second account signing in on the same
           // machine could be served another's attachment without this route's
@@ -78,7 +102,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return new NextResponse(body, {
       headers: {
         'Content-Type': contentType,
-        'Content-Disposition': `inline; filename="${fileName}"`,
+        'Content-Disposition': `${disposition}; filename="${fileName}"`,
         // Not cached at all. `private` keeps bytes out of shared proxies but not
         // out of a browser profile, so a second account signing in on the same
         // machine could be served another's attachment without this route's
