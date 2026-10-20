@@ -5,6 +5,7 @@ import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService, workItemToTicket, setStateCategoryCache } from '@/lib/devops';
 import { TICKET_WORK_ITEM_TYPES } from '@/types';
 import { filterTicketsByView } from '@/lib/ticket-views';
+import { sendAssignmentNotification } from '@/lib/email';
 
 // TTL cache for state categories (avoids refetching on every request)
 let stateCategoryCacheData: {
@@ -85,6 +86,22 @@ async function fetchAndCacheStateCategories(accessToken: string, organization: s
   }
 }
 
+/**
+ * Create a ticket (or, with `asTicket: false`, an internal work item).
+ *
+ * Body: `project` and `title` are required; `description`, `priority`,
+ * `priorityFieldRef`, `assignee`, `tags`, `workItemType`, `iterationPath`,
+ * `areaPath`, `additionalFields` and `parentId` are optional and validated
+ * before reaching DevOps. The organisation comes from the `x-devops-org`
+ * header and must be one the caller can access.
+ *
+ * When the new ticket has an assignee, they are emailed that it is theirs
+ * (#7374), on the same terms as a reassignment: not for self-assignment, never
+ * to the polled mailbox, and without delaying or failing the creation.
+ *
+ * Returns `{ ticket, success: true }`; 400 for a missing field or bad tags,
+ * 401 without a session, 403 for an inaccessible organisation, 500 otherwise.
+ */
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -218,6 +235,21 @@ export async function POST(request: NextRequest) {
     );
 
     const ticket = workItemToTicket(workItem);
+
+    // A ticket created already assigned is as much an assignment as one
+    // reassigned later, but only the later path emailed anyone (#7374).
+    // Fire-and-forget; the self-assignment and polled-mailbox guards live in
+    // sendAssignmentNotification.
+    const assigneeEmail = ticket.assignee?.email;
+    if (assignee && assigneeEmail) {
+      sendAssignmentNotification({
+        ticketId: ticket.id,
+        subject: ticket.title,
+        assigneeEmail,
+        assignedByName: session.user?.name || 'A colleague',
+        assignedByEmail: session.user?.email ?? undefined,
+      }).catch(() => {});
+    }
 
     return NextResponse.json({ ticket, success: true });
   } catch (error) {
