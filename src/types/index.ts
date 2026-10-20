@@ -437,6 +437,15 @@ export interface MonthlyCheckpointStats {
   };
   trends: TicketTrendPoint[];
   tickets: Ticket[];
+  /** Everyone who raised a ticket in the project, for the customer filter (#7385). */
+  customers: CheckpointCustomer[];
+}
+
+export interface CheckpointCustomer {
+  /** Requester email, lower-cased; the value the `customer` filter takes. */
+  key: string;
+  displayName: string;
+  ticketCount: number;
 }
 
 export type TicketType = 'Bug' | 'Feature';

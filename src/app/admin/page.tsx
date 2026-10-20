@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { useCallback, useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner, AzureDevOpsIcon } from '@/components/common';
@@ -41,6 +42,7 @@ interface EmailConfig {
   };
 }
 
+/** Admin settings for the organisation, including the email configuration. */
 export default function AdminPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -89,7 +91,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 

@@ -26,6 +26,9 @@
 |**Email webhook not creating tickets**
 |Verify EMAIL_WEBHOOK_SECRET header matches. Check sender domain has project mapping. Review server logs for error details.
 
+|**No email when a ticket is assigned to me**
+|ZapDesk emails the assignee when a ticket is created already assigned, or reassigned in ZapDesk. It sends nothing when you assign a ticket to yourself, when the change is made directly in Azure DevOps, or when the assignee is the mailbox ZapDesk polls. Outbound mail also needs `MAIL_FROM`, plus app credentials: either the dedicated `MAIL_CLIENT_ID`, `MAIL_CLIENT_SECRET` and `MAIL_TENANT_ID`, or, when those are unset, the main sign-in app's `AZURE_AD_CLIENT_ID`, `AZURE_AD_CLIENT_SECRET` and `AZURE_AD_TENANT_ID`. The server log shows `[Email] Assignment of #N notified to ...` when one is sent.
+
 |**Blank page after login**
 |Check browser console for JavaScript errors. Verify all environment variables are set. Clear browser cache and cookies.
 

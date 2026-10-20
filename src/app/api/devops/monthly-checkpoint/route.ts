@@ -9,8 +9,26 @@ import type {
   MonthlyCheckpointStats,
   TicketTrendPoint,
   Organization,
+  CheckpointCustomer,
 } from '@/types';
 
+/** The query parameters this route reads; anything else is refused. */
+const ALLOWED_PARAMS = new Set(['project', 'startDate', 'endDate', 'customer']);
+
+/**
+ * Monthly checkpoint statistics for one project and period.
+ *
+ * Query: `project` is required. `startDate` and `endDate` default to the last
+ * 30 days. `customer` (a key from `customers`) narrows every figure to that
+ * customer's tickets (#7385).
+ *
+ * Returns the KPIs, daily trend points, the tickets created or resolved in the
+ * period, and `customers`: everyone who has raised a ticket in the project,
+ * so the filter can offer them.
+ *
+ * 400 for an unknown query parameter, without a project, or for a customer the
+ * project has never had; 401 without a session; 500 when Azure DevOps fails.
+ */
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -20,9 +38,23 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
+
+    // Refuse parameters this route does not read. A misspelt `customer` would
+    // otherwise be ignored and the whole project's report returned as if it
+    // were one customer's.
+    const unknown = [...new Set(searchParams.keys())].filter((key) => !ALLOWED_PARAMS.has(key));
+    if (unknown.length > 0) {
+      return NextResponse.json(
+        { error: `Unknown query parameter: ${unknown.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
     const projectName = searchParams.get('project');
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');
+    // Optional: one customer's tickets only (#7385). Matched on customerKey.
+    const customerParam = (searchParams.get('customer') || '').trim().toLowerCase();
 
     if (!projectName) {
       return NextResponse.json({ error: 'Project name is required' }, { status: 400 });
@@ -55,7 +87,36 @@ export async function GET(request: Request) {
       updatedAt: new Date(),
     };
 
-    const allTickets = workItems.map((wi) => workItemToTicket(wi, organization));
+    const projectTickets = workItems.map((wi) => workItemToTicket(wi, organization));
+
+    // The customers on offer come from the whole project, so picking one does
+    // not empty the list of the others.
+    const customerMap = new Map<string, CheckpointCustomer>();
+    for (const t of projectTickets) {
+      const key = customerKey(t);
+      if (!key) continue;
+      const existing = customerMap.get(key);
+      if (existing) existing.ticketCount += 1;
+      else
+        customerMap.set(key, {
+          key,
+          displayName: t.requester?.displayName || key,
+          ticketCount: 1,
+        });
+    }
+    const customers = [...customerMap.values()].sort((a, b) =>
+      a.displayName.localeCompare(b.displayName)
+    );
+
+    // A customer the project has never had is a bad request, not a report of
+    // zeroes that reads as "this customer raised nothing".
+    if (customerParam && !customerMap.has(customerParam)) {
+      return NextResponse.json({ error: 'Unknown customer for this project' }, { status: 400 });
+    }
+
+    const allTickets = customerParam
+      ? projectTickets.filter((t) => customerKey(t) === customerParam)
+      : projectTickets;
 
     // Filter tickets created within the date range
     const ticketsInRange = allTickets.filter((t) => {
@@ -93,6 +154,7 @@ export async function GET(request: Request) {
       tickets: relevantTickets.sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       ),
+      customers,
     };
 
     return NextResponse.json(stats);
@@ -102,6 +164,21 @@ export async function GET(request: Request) {
   }
 }
 
+/** Who raised a ticket, as the customer filter knows them. */
+function customerKey(ticket: Ticket): string {
+  // Email first; then the identity id, so two people who share a display name
+  // are never merged; the name only as a last resort.
+  const requester = ticket.requester;
+  const key =
+    requester?.email?.trim() || requester?.id?.trim() || requester?.displayName?.trim() || '';
+  return key.toLowerCase();
+}
+
+/**
+ * Headline figures for the period: tickets created, resolved, pending and
+ * open, average response and resolution times in hours, and the share of
+ * tickets answered within the response SLA.
+ */
 function calculateKPIs(
   ticketsCreated: Ticket[],
   ticketsResolved: Ticket[],
@@ -151,6 +228,7 @@ function calculateKPIs(
   };
 }
 
+/** Tickets created and resolved on each day of the period, for the trend charts. */
 function calculateTrends(tickets: Ticket[], startDate: Date, endDate: Date): TicketTrendPoint[] {
   const trends: TicketTrendPoint[] = [];
   const currentDate = new Date(startDate);
