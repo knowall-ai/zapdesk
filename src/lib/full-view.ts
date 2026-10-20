@@ -102,8 +102,13 @@ export function saveBoardView(view: unknown): void {
  */
 export function restoreBoardView<T>(): Partial<T> | null {
   if (typeof window === 'undefined') return null;
+  const key = boardViewKey();
+  // A board for another page means the user has moved on, so a later plain
+  // visit back here starts fresh. Cleared only on a mismatch: StrictMode runs
+  // this twice for the same board, and both runs must restore.
+  if (returnedTo !== null && returnedTo !== key) returnedTo = null;
   const returning =
-    new URLSearchParams(window.location.search).has(OPEN_PARAM) || returnedTo === boardViewKey();
+    new URLSearchParams(window.location.search).has(OPEN_PARAM) || returnedTo === key;
   if (!returning) return null;
   try {
     const raw = window.sessionStorage.getItem(boardViewKey());
