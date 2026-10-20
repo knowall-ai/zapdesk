@@ -10,6 +10,7 @@ interface EffortHoursFieldProps {
   onSave?: (hours: { completedWork: number; remainingWork: number }) => Promise<void>;
 }
 
+/** Hours for display: whole numbers as they are, anything else to one decimal. */
 function formatHours(value?: number): string {
   const hours = value ?? 0;
   return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);

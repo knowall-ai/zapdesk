@@ -43,6 +43,12 @@ const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
   { value: 4, label: 'Low' },
 ];
 
+/**
+ * The details column of the quick-view dialog: assignee, creator, priority,
+ * type, project, area, tags, effort hours and dates. Assignee, priority, type,
+ * tags and hours (`onEffortChange`, #7728) are editable when the caller allows
+ * it, and read-only otherwise.
+ */
 export default function WorkItemDetailSidebar({
   workItem,
   actions,
