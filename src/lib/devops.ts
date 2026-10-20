@@ -880,7 +880,6 @@ export class AzureDevOpsService {
     return allWorkItems;
   }
 
-  // Get a single work item by ID
   /**
    * The title a work item was created with, from its first revision, or null
    * when it cannot be read.
@@ -892,7 +891,8 @@ export class AzureDevOpsService {
     try {
       const response = await fetch(
         `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/revisions?$top=1&api-version=7.0`,
-        { headers: this.headers }
+        // A stalled lookup times out and falls back like any other failure.
+        { headers: this.headers, signal: AbortSignal.timeout(ORG_LOOKUP_TIMEOUT_MS) }
       );
       if (!response.ok) return null;
       const data = (await response.json()) as {
@@ -905,6 +905,7 @@ export class AzureDevOpsService {
     }
   }
 
+  // Get a single work item by ID
   async getWorkItem(projectName: string, workItemId: number): Promise<DevOpsWorkItem> {
     const response = await fetch(
       `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?$expand=all&api-version=7.0`,
