@@ -53,11 +53,15 @@ function safeDecode(value: string): string {
 function fileNameFrom(url: string, fallback: string): string {
   const match = /[?&]fileName=([^&"']+)/i.exec(url);
   if (!match) return fallback;
+  // The links are built with URLSearchParams, which writes a space as `+` (and
+  // a literal plus as %2B), so `+` is turned back into a space before the
+  // %-escapes are decoded. Otherwise "my report.pdf" arrives as "my+report.pdf".
+  const value = match[1].replace(/\+/g, ' ');
   try {
-    return decodeURIComponent(match[1]);
+    return decodeURIComponent(value);
   } catch {
     // A malformed escape is not worth failing a whole email over.
-    return match[1];
+    return value;
   }
 }
 
@@ -142,9 +146,36 @@ export function attachLinkedFiles(
     const label =
       String(text)
         .replace(/<[^>]*>/g, '')
-        .trim() || fileName.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-    return `<span>${label} (attached)</span>`;
+        .trim() || escapeMarkup(fileName);
+    // Marked rather than finished: whether the file really travels is only
+    // known once it has been fetched. finaliseLinkedFiles settles the wording.
+    return `<span ${FILE_MARKER}="${escapeMarkup(id)}">${label}</span>`;
   });
 
   return { html: rewritten, attachments };
+}
+
+/** Attribute that marks a linked file awaiting the outcome of its fetch. */
+const FILE_MARKER = 'data-zapdesk-file';
+
+const MARKED_FILE = new RegExp(`<span ${FILE_MARKER}="([^"]*)">([\\s\\S]*?)</span>`, 'g');
+
+function escapeMarkup(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+/**
+ * Say, against each linked file, whether it is on the message.
+ *
+ * A file that was too large or could not be fetched is left off the email;
+ * labelling it "(attached)" anyway contradicted the note beneath the reply
+ * and told the customer to look for something that is not there.
+ *
+ * `skippedIds` are the attachment ids that did not make it.
+ */
+export function finaliseLinkedFiles(html: string, skippedIds: string[]): string {
+  const skipped = new Set(skippedIds.map(escapeMarkup));
+  return html.replace(MARKED_FILE, (_whole, id: string, label: string) =>
+    skipped.has(id) ? `<span>${label} (not included)</span>` : `<span>${label} (attached)</span>`
+  );
 }
