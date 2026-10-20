@@ -21,6 +21,7 @@ vi.mock('@/lib/email', async () => {
 
 const getWorkItem = vi.fn();
 const updateTicketFields = vi.fn();
+const getOriginalTitle = vi.fn(async (..._args: unknown[]): Promise<string | null> => null);
 vi.mock('@/lib/devops', async () => {
   const actual = await vi.importActual<typeof import('./devops')>('./devops');
   return {
@@ -29,6 +30,7 @@ vi.mock('@/lib/devops', async () => {
       organizationName = 'KnowAll';
       getWorkItem = getWorkItem;
       updateTicketFields = updateTicketFields;
+      getOriginalTitle = getOriginalTitle;
     },
   };
 });
@@ -100,6 +102,21 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       { thread: 'Printer offline', current: 'Printer still offline' },
       'customer@example.test',
       [{ label: 'Title', from: 'Printer offline', to: 'Printer still offline' }]
+    );
+  });
+
+  it('threads every update under the title the ticket was created with', async () => {
+    // The title already changed once (to Printer offline); a later change must
+    // still use the original subject, or the customer's thread splits.
+    getOriginalTitle.mockResolvedValueOnce('Cannot print');
+    updateTicketFields.mockResolvedValue(workItem({ 'System.Title': 'Printer still offline' }));
+    await patch({ project: 'Internal', title: 'Printer still offline' });
+    expect(getOriginalTitle).toHaveBeenCalledWith('Internal', 7);
+    expect(sendTicketUpdateNotification).toHaveBeenCalledWith(
+      7,
+      { thread: 'Cannot print', current: 'Printer still offline' },
+      'customer@example.test',
+      expect.any(Array)
     );
   });
 

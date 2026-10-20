@@ -881,6 +881,30 @@ export class AzureDevOpsService {
   }
 
   // Get a single work item by ID
+  /**
+   * The title a work item was created with, from its first revision, or null
+   * when it cannot be read.
+   *
+   * Customer emails thread by subject, so the update notification keeps using
+   * the title the conversation started under however often it changes (#7724).
+   */
+  async getOriginalTitle(projectName: string, workItemId: number): Promise<string | null> {
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/revisions?$top=1&api-version=7.0`,
+        { headers: this.headers }
+      );
+      if (!response.ok) return null;
+      const data = (await response.json()) as {
+        value?: Array<{ fields?: { 'System.Title'?: unknown } }>;
+      };
+      const title = data.value?.[0]?.fields?.['System.Title'];
+      return typeof title === 'string' && title.trim() ? title : null;
+    } catch {
+      return null;
+    }
+  }
+
   async getWorkItem(projectName: string, workItemId: number): Promise<DevOpsWorkItem> {
     const response = await fetch(
       `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?$expand=all&api-version=7.0`,

@@ -352,9 +352,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         // the update -- the sender logs and swallows its own errors, and its
         // Graph calls time out -- and it only runs when an email ticket's
         // title or priority actually changed.
+        //
+        // The thread subject is the title the ticket was created with, so it
+        // stays the same however many times the title changes; the title
+        // before this request is the fallback if history can't be read.
+        const threadTitle =
+          (await devopsService.getOriginalTitle(projectName, ticketId)) ?? before.title;
         await sendTicketUpdateNotification(
           ticketId,
-          { thread: before.title, current: ticket.title },
+          { thread: threadTitle, current: ticket.title },
           requesterEmail,
           changes
         );
