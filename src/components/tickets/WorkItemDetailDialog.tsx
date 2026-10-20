@@ -28,6 +28,12 @@ interface WorkItemDetailDialogProps {
     additionalFields?: Record<string, string>
   ) => Promise<void>;
   onTagsChange?: (workItemId: number, tags: string[]) => Promise<void>;
+  /**
+   * Save effort hours (#7728). Like the other editable fields, the host does
+   * the saving, so it can update or refresh the collection it owns. Without
+   * it the hours are read-only.
+   */
+  onEffortChange?: (workItemId: number, hours: EffortHoursUpdate) => Promise<void>;
   onUpdate?: (
     workItemId: number,
     updates: { title?: string; description?: string; resolution?: string; mitigation?: string }
@@ -51,6 +57,7 @@ export default function WorkItemDetailDialog({
   onPriorityChange,
   onTypeChange,
   onTagsChange,
+  onEffortChange,
   onUpdate,
 }: WorkItemDetailDialogProps) {
   const router = useRouter();
@@ -260,48 +267,6 @@ export default function WorkItemDetailDialog({
     [workItem, fetchDevOps]
   );
 
-  /**
-   * Hours saved from this dialog, shown until the parent's copy catches up.
-   * Keyed to the item so they never show against a different one.
-   */
-  const [savedEffort, setSavedEffort] = useState<{
-    forId: number;
-    completedWork: number;
-    remainingWork: number;
-  } | null>(null);
-
-  const handleEffortChange = useCallback(
-    async (hours: EffortHoursUpdate) => {
-      if (!workItem) return;
-      try {
-        const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...hours, project: workItem.project }),
-        });
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || 'Failed to update hours');
-        }
-        // Only the changed field was sent; the other keeps the value already
-        // shown, whether from an earlier save here or from the work item.
-        setSavedEffort((prev) => {
-          const shown = prev?.forId === workItem.id ? prev : workItem;
-          return {
-            forId: workItem.id,
-            completedWork: hours.completedWork ?? shown.completedWork,
-            remainingWork: hours.remainingWork ?? shown.remainingWork,
-          };
-        });
-        toast.success('Hours updated');
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Failed to update hours');
-        throw error;
-      }
-    },
-    [workItem, fetchDevOps]
-  );
-
   const handleUpdate = useCallback(
     async (updates: {
       title?: string;
@@ -489,16 +454,12 @@ export default function WorkItemDetailDialog({
         Details
       </h3>
       <WorkItemDetailSidebar
-        workItem={
-          savedEffort?.forId === workItem.id
-            ? {
-                ...workItem,
-                completedWork: savedEffort.completedWork,
-                remainingWork: savedEffort.remainingWork,
-              }
-            : workItem
+        workItem={workItem}
+        onEffortChange={
+          onEffortChange && workItem.source !== 'github'
+            ? (hours: EffortHoursUpdate) => onEffortChange(workItem.id, hours)
+            : undefined
         }
-        onEffortChange={workItem.source === 'github' ? undefined : handleEffortChange}
         actions={actions}
         showAreaPath
         showEffortHours

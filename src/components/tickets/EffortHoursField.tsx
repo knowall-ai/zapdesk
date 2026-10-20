@@ -106,9 +106,7 @@ export default function EffortHoursField({
         <label className="text-xs" style={{ color: 'var(--text-muted)' }}>
           Completed
           <input
-            type="number"
-            min={0}
-            step={0.5}
+            type="text"
             inputMode="decimal"
             value={completed}
             onChange={(e) => setCompleted(e.target.value)}
@@ -121,9 +119,7 @@ export default function EffortHoursField({
         <label className="text-xs" style={{ color: 'var(--text-muted)' }}>
           Remaining
           <input
-            type="number"
-            min={0}
-            step={0.5}
+            type="text"
             inputMode="decimal"
             value={remaining}
             onChange={(e) => setRemaining(e.target.value)}

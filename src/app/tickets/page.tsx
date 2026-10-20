@@ -14,7 +14,7 @@ import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { useSourceFilter } from '@/components/providers/SourceProvider';
 import { ticketToWorkItem } from '@/lib/devops';
-import type { Ticket, WorkItem, User, WorkItemType } from '@/types';
+import type { Ticket, WorkItem, User, WorkItemType, EffortHoursUpdate } from '@/types';
 
 type TicketJson = Ticket & { createdAt: string; updatedAt: string };
 
@@ -257,6 +257,44 @@ function TicketsPageContent() {
     [tickets, selectedOrganization, refreshCounts]
   );
 
+  // Effort hours (#7728). Saved here, like the other fields, so the list row
+  // and the open dialog both take the saved values.
+  const handleDialogEffortChange = useCallback(
+    async (workItemId: number, hours: EffortHoursUpdate) => {
+      const ticket = tickets.find((t) => t.id === workItemId);
+      if (!ticket || !selectedOrganization) return;
+      try {
+        const response = await fetch(`/api/devops/tickets/${workItemId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-devops-org': selectedOrganization.accountName,
+          },
+          body: JSON.stringify({ ...hours, project: ticket.project }),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || 'Failed to update hours');
+        }
+        const data = await response.json();
+        const updated: Ticket | undefined = data.ticket;
+        const applied = {
+          completedWork: updated?.completedWork ?? hours.completedWork ?? ticket.completedWork,
+          remainingWork: updated?.remainingWork ?? hours.remainingWork ?? ticket.remainingWork,
+        };
+        setTickets((prev) => prev.map((t) => (t.id === workItemId ? { ...t, ...applied } : t)));
+        setSelectedTicket((prev) =>
+          prev && prev.id === workItemId ? { ...prev, ...applied } : prev
+        );
+        toast.success('Hours updated');
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to update hours');
+        throw error;
+      }
+    },
+    [tickets, selectedOrganization]
+  );
+
   const handleDialogPriorityChange = useCallback(
     async (workItemId: number, priority: number) => {
       const ticket = tickets.find((t) => t.id === workItemId);
@@ -472,6 +510,7 @@ function TicketsPageContent() {
           onStateChange={handleDialogStateChange}
           onAssigneeChange={handleDialogAssigneeChange}
           onPriorityChange={handleDialogPriorityChange}
+          onEffortChange={handleDialogEffortChange}
           onTypeChange={handleDialogTypeChange}
           onTagsChange={handleDialogTagsChange}
           onUpdate={handleWorkItemUpdate}

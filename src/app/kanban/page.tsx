@@ -39,6 +39,7 @@ import type {
   StandupColumn,
   StandupWorkItem,
   Ticket,
+  EffortHoursUpdate,
 } from '@/types';
 
 type GroupBy = 'project' | 'person';
@@ -559,6 +560,22 @@ function StandupPageContent() {
     [patchTicket, selectedTicket]
   );
 
+  // Effort hours (#7728). Through patchTicket like the other fields, so the
+  // open dialog takes the saved values and the board's cards refresh.
+  const handleDialogEffortChange = useCallback(
+    async (workItemId: number, hours: EffortHoursUpdate) => {
+      const project = selectedTicket?.id === workItemId ? selectedTicket.project : undefined;
+      try {
+        await patchTicket(workItemId, { ...hours, project });
+        toast.success('Hours updated');
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to update hours');
+        throw err;
+      }
+    },
+    [patchTicket, selectedTicket]
+  );
+
   const handleDialogPriorityChange = useCallback(
     async (workItemId: number, priority: number) => {
       const project = selectedTicket?.id === workItemId ? selectedTicket.project : undefined;
@@ -903,6 +920,7 @@ function StandupPageContent() {
           onStateChange={handleDialogStateChange}
           onAssigneeChange={handleDialogAssigneeChange}
           onPriorityChange={handleDialogPriorityChange}
+          onEffortChange={handleDialogEffortChange}
           onTypeChange={handleDialogTypeChange}
           onTagsChange={handleDialogTagsChange}
           onUpdate={handleDialogUpdate}
