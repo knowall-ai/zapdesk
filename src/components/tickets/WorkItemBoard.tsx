@@ -1208,9 +1208,14 @@ export default function WorkItemBoard({
                               )}
                             </>
                           ) : onWorkItemClick ? (
+                            // The `font: inherit` this had overrode text-sm, so
+                            // subjects were larger than every other column, and
+                            // line-clamp does not apply to a button itself, so
+                            // long subjects ran to many lines (#7392). The
+                            // clamp now sits on an inner span.
                             <button
                               onClick={() => onWorkItemClick(item)}
-                              className="line-clamp-2 text-sm hover:underline"
+                              className="text-left text-sm hover:underline"
                               title={item.title}
                               style={{
                                 color: 'var(--text-primary)',
@@ -1218,11 +1223,10 @@ export default function WorkItemBoard({
                                 background: 'none',
                                 border: 'none',
                                 padding: 0,
-                                font: 'inherit',
-                                textAlign: 'left',
+                                fontFamily: 'inherit',
                               }}
                             >
-                              {item.title}
+                              <span className="line-clamp-2">{item.title}</span>
                             </button>
                           ) : (
                             <Link
@@ -1241,7 +1245,9 @@ export default function WorkItemBoard({
                           <Link
                             href={`/projects/${item.organization?.id || ''}`}
                             className="text-sm hover:underline"
-                            style={{ color: 'var(--primary)' }}
+                            // Same colour as the other text columns; brand green
+                            // singled the project out for no reason (#7392).
+                            style={{ color: 'var(--text-secondary)' }}
                           >
                             {item.project || '-'}
                           </Link>
