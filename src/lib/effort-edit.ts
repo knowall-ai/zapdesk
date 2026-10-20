@@ -7,11 +7,13 @@ import type { EffortHoursUpdate } from '@/types';
 /**
  * A non-negative number of hours, or null when the input is not one.
  *
- * Empty means 0, and a comma is accepted as the decimal separator.
+ * Empty means 0, and a comma is accepted as the decimal separator. Only plain
+ * decimals are read: `Number()` alone would also take "0x10", "0b1" or "1e3".
  */
 export function parseHours(raw: string): number | null {
   const trimmed = raw.trim();
   if (trimmed === '') return 0;
+  if (!/^(\d+([.,]\d*)?|[.,]\d+)$/.test(trimmed)) return null;
   const value = Number(trimmed.replace(',', '.'));
   return Number.isFinite(value) && value >= 0 ? value : null;
 }

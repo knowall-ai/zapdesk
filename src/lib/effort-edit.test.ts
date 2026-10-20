@@ -9,13 +9,19 @@ describe('parseHours', () => {
     ['1.25', 1.25],
     ['1,5', 1.5],
     ['0', 0],
+    ['.5', 0.5],
+    ['2.', 2],
+    ['1,000', 1],
   ])('reads %j as %d', (raw, hours) => {
     expect(parseHours(raw)).toBe(hours);
   });
 
-  it.each(['-1', 'abc', 'Infinity', '1e999'])('refuses %j', (raw) => {
-    expect(parseHours(raw)).toBeNull();
-  });
+  it.each(['-1', 'abc', 'Infinity', '1e999', '1e3', '0x10', '0b1', '0o7', '1.2.3', '+1', '.'])(
+    'refuses %j',
+    (raw) => {
+      expect(parseHours(raw)).toBeNull();
+    }
+  );
 });
 
 describe('effortChanges (#7728)', () => {

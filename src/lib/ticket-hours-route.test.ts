@@ -1,29 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
 // Route-level coverage for editing effort hours through
-// PATCH /api/devops/tickets/[id] (#7728). DevOps is mocked at the service
-// boundary. This also guards the route's input checks: if a field allowlist
-// is added to PATCH without completedWork/remainingWork, saving hours breaks
-// and the first test fails.
+// PATCH /api/devops/tickets/[id] (#7728). The real AzureDevOpsService runs;
+// only the network (fetch) is mocked, so the JSON Patch sent to DevOps is
+// checked as well. This also guards the route's field allowlist: without
+// completedWork/remainingWork in it, saving hours breaks and the first test
+// fails.
 
 const getServerSession = vi.fn();
 vi.mock('next-auth', () => ({ getServerSession: () => getServerSession() }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
-
-const getWorkItem = vi.fn();
-const updateTicketFields = vi.fn();
-vi.mock('@/lib/devops', async () => {
-  const actual = await vi.importActual<typeof import('./devops')>('./devops');
-  return {
-    ...actual,
-    AzureDevOpsService: class {
-      organizationName = 'KnowAll';
-      getWorkItem = getWorkItem;
-      updateTicketFields = updateTicketFields;
-    },
-  };
-});
 
 const workItem = {
   id: 7,
@@ -41,6 +28,21 @@ const workItem = {
   },
 };
 
+const fetchMock = vi.fn();
+
+/** The JSON Patch documents sent to DevOps by PATCH requests. */
+const patchesSent = () =>
+  fetchMock.mock.calls
+    .filter(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH')
+    .map(([url, init]) => ({
+      url: String(url),
+      body: JSON.parse(String((init as RequestInit).body)) as Array<{
+        op: string;
+        path: string;
+        value: unknown;
+      }>,
+    }));
+
 const patch = async (body: unknown) => {
   const { PATCH } = await import('@/app/api/devops/tickets/[id]/route');
   const request = new NextRequest('https://zapdesk.test/api/devops/tickets/7', {
@@ -56,8 +58,12 @@ describe('PATCH /api/devops/tickets/[id] — effort hours (#7728)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getServerSession.mockResolvedValue({ accessToken: 'token', user: { name: 'Dana' } });
-    getWorkItem.mockResolvedValue(workItem);
-    updateTicketFields.mockResolvedValue(workItem);
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify(workItem)));
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('saves time spent and time remaining', async () => {
@@ -67,23 +73,41 @@ describe('PATCH /api/devops/tickets/[id] — effort hours (#7728)', () => {
       remainingWork: 4,
     });
     expect(status).toBe(200);
-    expect(updateTicketFields).toHaveBeenCalledWith(
-      'Internal',
-      7,
-      expect.objectContaining({ completedWork: 2.5, remainingWork: 4 })
-    );
+
+    const sent = patchesSent();
+    expect(sent).toHaveLength(1);
+    expect(sent[0].url).toContain('/Internal/_apis/wit/workitems/7');
+    expect(sent[0].body).toEqual([
+      { op: 'add', path: '/fields/Microsoft.VSTS.Scheduling.CompletedWork', value: 2.5 },
+      { op: 'add', path: '/fields/Microsoft.VSTS.Scheduling.RemainingWork', value: 4 },
+    ]);
     expect(body.ticket.completedWork).toBe(2.5);
     expect(body.ticket.remainingWork).toBe(4);
+  });
+
+  it('sends only the field given', async () => {
+    const { status } = await patch({ project: 'Internal', remainingWork: 1 });
+    expect(status).toBe(200);
+    expect(patchesSent()[0].body).toEqual([
+      { op: 'add', path: '/fields/Microsoft.VSTS.Scheduling.RemainingWork', value: 1 },
+    ]);
   });
 
   it('accepts zero', async () => {
     const { status } = await patch({ project: 'Internal', completedWork: 0, remainingWork: 0 });
     expect(status).toBe(200);
+    expect(patchesSent()[0].body.map((op) => op.value)).toEqual([0, 0]);
   });
 
-  it.each([-1, '2', Number.NaN, null])('rejects %j hours before touching DevOps', async (value) => {
+  it.each([-1, '2', null])('rejects %j hours before touching DevOps', async (value) => {
     const { status } = await patch({ project: 'Internal', remainingWork: value });
     expect(status).toBe(400);
-    expect(updateTicketFields).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects bad hours before looking up the project', async () => {
+    const { status } = await patch({ completedWork: -2 });
+    expect(status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

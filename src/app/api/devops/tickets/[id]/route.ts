@@ -198,6 +198,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'tags must be a list of strings' }, { status: 400 });
     }
 
+    // Hours must be real, non-negative numbers; DevOps would otherwise reject
+    // the whole patch with an error that names none of this. Checked before
+    // the project lookup, so bad input costs no DevOps request.
+    for (const name of ['completedWork', 'remainingWork'] as const) {
+      const value: unknown = body[name];
+      if (value === undefined) continue;
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+        return NextResponse.json(
+          { error: `${name} must be a number of hours, 0 or more` },
+          { status: 400 }
+        );
+      }
+    }
+
     const {
       assignee,
       assignToMe,
@@ -240,21 +254,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       remainingWork?: number;
     } = {};
 
-    // Hours must be real, non-negative numbers; DevOps would otherwise reject
-    // the whole patch with an error that names none of this.
-    for (const [name, value] of [
-      ['completedWork', completedWork],
-      ['remainingWork', remainingWork],
-    ] as const) {
-      if (value === undefined) continue;
-      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-        return NextResponse.json(
-          { error: `${name} must be a number of hours, 0 or more` },
-          { status: 400 }
-        );
-      }
-      updates[name] = value;
-    }
+    // Hours were checked above, before any DevOps lookup.
+    if (completedWork !== undefined) updates.completedWork = completedWork;
+    if (remainingWork !== undefined) updates.remainingWork = remainingWork;
 
     if (workItemType) {
       updates.workItemType = workItemType;

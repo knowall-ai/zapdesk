@@ -74,7 +74,12 @@ export default function EffortHoursField({
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') save();
-    if (e.key === 'Escape') setIsEditing(false);
+    if (e.key === 'Escape') {
+      // The quick view closes on Escape too; this one only cancels the edit.
+      e.preventDefault();
+      e.stopPropagation();
+      setIsEditing(false);
+    }
   };
 
   if (!isEditing) {
