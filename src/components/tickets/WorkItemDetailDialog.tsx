@@ -10,6 +10,7 @@ import TicketDialogShell from './TicketDialogShell';
 import { useWorkItemActions } from '@/hooks/useWorkItemActions';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import { hasTicketTag } from '@/lib/tags';
+import { fullViewHref } from '@/lib/full-view';
 import WorkItemDetailContent from './WorkItemDetailContent';
 import WorkItemDetailSidebar from './WorkItemDetailSidebar';
 import TypeChangeRequiredFields from './TypeChangeRequiredFields';
@@ -19,6 +20,13 @@ interface WorkItemDetailDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onDeleted?: (workItemId: number) => void;
+  /**
+   * The host reopens this dialog when someone leaves the full view it opened
+   * (it calls takeOpenRequest). Only then does Full View record where it was
+   * opened from; elsewhere "Exit full view" would lead to a page that
+   * ignores the request (#7727).
+   */
+  supportsReturn?: boolean;
   onStateChange?: (workItemId: number, state: string) => Promise<void>;
   onAssigneeChange?: (workItemId: number, assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (workItemId: number, priority: number) => Promise<void>;
@@ -52,6 +60,7 @@ export default function WorkItemDetailDialog({
   isOpen,
   onClose,
   onDeleted,
+  supportsReturn = false,
   onStateChange,
   onAssigneeChange,
   onPriorityChange,
@@ -415,7 +424,11 @@ export default function WorkItemDetailDialog({
           // so the sidebar doesn't highlight Tickets (issue #372). Default
           // to ticket routing when tags aren't loaded yet.
           const isTicket = workItem.tags ? hasTicketTag(workItem.tags) : true;
-          router.push(`${isTicket ? '/tickets' : '/workitems'}/${workItem.id}`);
+          router.push(
+            supportsReturn
+              ? fullViewHref(workItem.id, isTicket)
+              : `${isTicket ? '/tickets' : '/workitems'}/${workItem.id}`
+          );
           onClose();
         }}
         className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"

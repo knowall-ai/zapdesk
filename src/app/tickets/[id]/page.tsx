@@ -97,12 +97,13 @@ export default function TicketDetailPage() {
         const onWorkItemsRoute = pathname?.startsWith('/workitems/');
         if (isTicket && onWorkItemsRoute) {
           isRedirecting = true;
-          router.replace(`/tickets/${ticketId}`);
+          // Keep the query: it carries where full view was opened from (#7727).
+          router.replace(`/tickets/${ticketId}` + window.location.search);
           return;
         }
         if (!isTicket && onTicketsRoute) {
           isRedirecting = true;
-          router.replace(`/workitems/${ticketId}`);
+          router.replace(`/workitems/${ticketId}` + window.location.search);
           return;
         }
         setTicket({

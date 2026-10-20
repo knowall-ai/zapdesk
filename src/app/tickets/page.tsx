@@ -3,6 +3,7 @@
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { loginHref } from '@/lib/login-redirect';
+import { takeOpenRequest } from '@/lib/full-view';
 import { useEffect, useRef, useState, Suspense, useCallback } from 'react';
 import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
@@ -180,6 +181,68 @@ function TicketsPageContent() {
     }
   }, [isSignedIn, sourceReady, fetchTickets]);
 
+  // Coming back from a ticket's full view: reopen its quick view (#7727).
+  const currentOrgRef = useRef(selectedOrganization?.accountName);
+  useEffect(() => {
+    currentOrgRef.current = selectedOrganization?.accountName;
+  }, [selectedOrganization]);
+
+  // A ticket of the old organisation must not stay open: its edits would be
+  // sent with the new organisation's header.
+  const [dialogOrg, setDialogOrg] = useState(selectedOrganization?.accountName);
+  if (dialogOrg !== selectedOrganization?.accountName) {
+    setDialogOrg(selectedOrganization?.accountName);
+    setSelectedTicket(null);
+  }
+
+  // The ticket may no longer be in this view's list -- assigning or closing it
+  // in full view can move it out -- so it is fetched by id when it isn't.
+  const openRequestRef = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (openRequestRef.current === undefined) openRequestRef.current = takeOpenRequest();
+    const wanted = openRequestRef.current;
+    // Wait for the list of the current view, even when it turns out empty.
+    if (!wanted || loading || !selectedOrganization) return;
+    openRequestRef.current = null;
+
+    const listed = tickets.find((t) => t.id === wanted && t.source !== 'github');
+    if (listed) {
+      setSelectedTicket(listed);
+      return;
+    }
+    // Not cancelled when this effect re-runs: the request has been taken, so a
+    // cancelled fetch would never reopen the dialog. If the user has opened
+    // something else by the time it answers, that choice wins.
+    const requestedOrg = selectedOrganization.accountName;
+    fetch(`/api/devops/tickets/${wanted}`, {
+      headers: { 'x-devops-org': requestedOrg },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        // Dropped if the organisation changed meanwhile: this ticket belongs
+        // to the old one, and edits would go to the new.
+        if (!data?.ticket || currentOrgRef.current !== requestedOrg) return;
+        const [ticket] = reviveTicketDates([data.ticket]);
+        setSelectedTicket((current) => current ?? ticket);
+      })
+      .catch((error) => console.error('Failed to reopen ticket from full view:', error));
+  }, [tickets, loading, selectedOrganization]);
+
+  /**
+   * The ticket a dialog edit is for. Usually a row of the list, but a ticket
+   * reopened from full view may have left this view; it is then only the
+   * dialog's ticket, and edits must still work on it.
+   */
+  // DevOps tickets only: a GitHub issue can have the same number, and its
+  // project must never reach a DevOps endpoint. The dialog's own ticket wins.
+  const findTicket = useCallback(
+    (id: number) =>
+      (selectedTicket?.id === id && selectedTicket.source !== 'github'
+        ? selectedTicket
+        : undefined) ?? tickets.find((t) => t.id === id && t.source !== 'github'),
+    [tickets, selectedTicket]
+  );
+
   const handleTicketStateChange = useCallback(
     async (ticketId: number, newState: string) => {
       try {
@@ -234,7 +297,7 @@ function TicketsPageContent() {
 
   const handleDialogAssigneeChange = useCallback(
     async (workItemId: number, assigneeId: string | null) => {
-      const ticket = tickets.find((t) => t.id === workItemId);
+      const ticket = findTicket(workItemId);
       if (!ticket || !selectedOrganization) return;
       try {
         const response = await fetch(`/api/devops/tickets/${workItemId}`, {
@@ -253,7 +316,11 @@ function TicketsPageContent() {
         const data = await response.json();
         const updatedTicket = data.ticket;
         if (updatedTicket) {
-          setTickets((prev) => prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)));
+          setTickets((prev) =>
+            prev.map((t) =>
+              t.id === updatedTicket.id && t.source !== 'github' ? updatedTicket : t
+            )
+          );
           setSelectedTicket((prev) =>
             prev && prev.id === updatedTicket.id ? updatedTicket : prev
           );
@@ -266,7 +333,7 @@ function TicketsPageContent() {
         throw error;
       }
     },
-    [tickets, selectedOrganization, refreshCounts]
+    [findTicket, selectedOrganization, refreshCounts]
   );
 
   // Effort hours (#7728). Saved here, like the other fields, so the list row
@@ -294,7 +361,9 @@ function TicketsPageContent() {
           completedWork: updated?.completedWork ?? hours.completedWork ?? ticket.completedWork,
           remainingWork: updated?.remainingWork ?? hours.remainingWork ?? ticket.remainingWork,
         };
-        setTickets((prev) => prev.map((t) => (t.id === workItemId ? { ...t, ...applied } : t)));
+        setTickets((prev) =>
+          prev.map((t) => (t.id === workItemId && t.source !== 'github' ? { ...t, ...applied } : t))
+        );
         setSelectedTicket((prev) =>
           prev && prev.id === workItemId ? { ...prev, ...applied } : prev
         );
@@ -309,7 +378,7 @@ function TicketsPageContent() {
 
   const handleDialogPriorityChange = useCallback(
     async (workItemId: number, priority: number) => {
-      const ticket = tickets.find((t) => t.id === workItemId);
+      const ticket = findTicket(workItemId);
       if (!ticket || !selectedOrganization) return;
       try {
         const response = await fetch(`/api/devops/tickets/${workItemId}`, {
@@ -328,7 +397,11 @@ function TicketsPageContent() {
         const data = await response.json();
         const updatedTicket = data.ticket;
         if (updatedTicket) {
-          setTickets((prev) => prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)));
+          setTickets((prev) =>
+            prev.map((t) =>
+              t.id === updatedTicket.id && t.source !== 'github' ? updatedTicket : t
+            )
+          );
           setSelectedTicket((prev) =>
             prev && prev.id === updatedTicket.id ? updatedTicket : prev
           );
@@ -340,12 +413,12 @@ function TicketsPageContent() {
         throw error;
       }
     },
-    [tickets, selectedOrganization]
+    [findTicket, selectedOrganization]
   );
 
   const handleDialogTypeChange = useCallback(
     async (workItemId: number, newType: string, additionalFields?: Record<string, string>) => {
-      const ticket = tickets.find((t) => t.id === workItemId);
+      const ticket = findTicket(workItemId);
       if (!ticket || !selectedOrganization) return;
       try {
         const response = await fetch(`/api/devops/tickets/${workItemId}/type`, {
@@ -364,7 +437,11 @@ function TicketsPageContent() {
         const data = await response.json();
         const updatedTicket = data.ticket;
         if (updatedTicket) {
-          setTickets((prev) => prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)));
+          setTickets((prev) =>
+            prev.map((t) =>
+              t.id === updatedTicket.id && t.source !== 'github' ? updatedTicket : t
+            )
+          );
           setSelectedTicket((prev) =>
             prev && prev.id === updatedTicket.id ? updatedTicket : prev
           );
@@ -382,7 +459,7 @@ function TicketsPageContent() {
         throw error;
       }
     },
-    [tickets, selectedOrganization]
+    [findTicket, selectedOrganization]
   );
 
   const handleZapClick = useCallback((item: WorkItem) => {
@@ -393,7 +470,7 @@ function TicketsPageContent() {
 
   const handleDialogTagsChange = useCallback(
     async (workItemId: number, tags: string[]) => {
-      const ticket = tickets.find((t) => t.id === workItemId);
+      const ticket = findTicket(workItemId);
       if (!ticket || !selectedOrganization) return;
       try {
         const response = await fetch(`/api/devops/tickets/${workItemId}`, {
@@ -408,7 +485,9 @@ function TicketsPageContent() {
           const data = await response.json().catch(() => ({}));
           throw new Error(data.error || 'Failed to update tags');
         }
-        setTickets((prev) => prev.map((t) => (t.id === workItemId ? { ...t, tags } : t)));
+        setTickets((prev) =>
+          prev.map((t) => (t.id === workItemId && t.source !== 'github' ? { ...t, tags } : t))
+        );
         setSelectedTicket((prev) => (prev && prev.id === workItemId ? { ...prev, tags } : prev));
         toast.success('Tags updated');
       } catch (error) {
@@ -417,7 +496,7 @@ function TicketsPageContent() {
         throw error;
       }
     },
-    [tickets, selectedOrganization]
+    [findTicket, selectedOrganization]
   );
 
   const handleWorkItemUpdate = useCallback(
@@ -430,7 +509,7 @@ function TicketsPageContent() {
         mitigation?: string;
       }
     ) => {
-      const ticket = tickets.find((t) => t.id === workItemId);
+      const ticket = findTicket(workItemId);
       if (!ticket || !selectedOrganization) return;
       try {
         const response = await fetch(`/api/devops/tickets/${workItemId}`, {
@@ -451,7 +530,9 @@ function TicketsPageContent() {
         if (updates.description !== undefined) applied.description = updates.description;
         if (updates.resolution !== undefined) applied.resolution = updates.resolution;
         if (updates.mitigation !== undefined) applied.mitigation = updates.mitigation;
-        setTickets((prev) => prev.map((t) => (t.id === workItemId ? { ...t, ...applied } : t)));
+        setTickets((prev) =>
+          prev.map((t) => (t.id === workItemId && t.source !== 'github' ? { ...t, ...applied } : t))
+        );
         setSelectedTicket((prev) => (prev ? { ...prev, ...applied } : null));
         const fieldLabels: Record<keyof typeof updates, string> = {
           title: 'Title',
@@ -470,7 +551,7 @@ function TicketsPageContent() {
         throw error;
       }
     },
-    [tickets, selectedOrganization]
+    [findTicket, selectedOrganization]
   );
 
   if (status === 'loading' || loading) {
@@ -512,6 +593,7 @@ function TicketsPageContent() {
 
         {/* Work item detail dialog for list and kanban clicks */}
         <WorkItemDetailDialog
+          supportsReturn
           workItem={selectedTicket ? ticketToWorkItem(selectedTicket) : null}
           isOpen={!!selectedTicket}
           onClose={() => setSelectedTicket(null)}

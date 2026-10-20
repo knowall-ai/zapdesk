@@ -3,6 +3,7 @@
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { loginHref } from '@/lib/login-redirect';
+import { takeOpenRequest } from '@/lib/full-view';
 import {
   Suspense,
   useEffect,
@@ -474,36 +475,64 @@ function StandupPageContent() {
   // Fetch the full Ticket on card click and open the detail dialog.
   // Uses a monotonic seq id so out-of-order responses from rapid clicks
   // can't overwrite the dialog with a stale ticket.
+  const currentOrgRef = useRef(selectedOrganization?.accountName);
+  useEffect(() => {
+    currentOrgRef.current = selectedOrganization?.accountName;
+  }, [selectedOrganization]);
+
+  // A ticket of the old organisation must not stay open after a switch: its
+  // edits would be sent with the new organisation's header.
+  const [dialogOrg, setDialogOrg] = useState(selectedOrganization?.accountName);
+  if (dialogOrg !== selectedOrganization?.accountName) {
+    setDialogOrg(selectedOrganization?.accountName);
+    setSelectedTicket(null);
+    setIsLoadingTicket(false);
+  }
+
   const handleItemClick = useCallback(
     async (item: StandupWorkItem) => {
       const mySeq = ++ticketFetchSeqRef.current;
+      const requestedOrg = selectedOrganization?.accountName;
+      // Superseded by a newer click, or by an organisation switch.
+      const isStale = () =>
+        mySeq !== ticketFetchSeqRef.current || currentOrgRef.current !== requestedOrg;
       setIsLoadingTicket(true);
       try {
         const response = await devOpsGet(`/api/devops/tickets/${item.id}`);
-        if (mySeq !== ticketFetchSeqRef.current) return; // a newer click superseded us
+        if (isStale()) return;
         if (!response.ok) {
           throw new Error('Failed to fetch ticket');
         }
         const data = (await response.json()) as {
           ticket: Ticket & { createdAt: string; updatedAt: string };
         };
-        if (mySeq !== ticketFetchSeqRef.current) return;
+        if (isStale()) return;
         setSelectedTicket({
           ...data.ticket,
           createdAt: new Date(data.ticket.createdAt),
           updatedAt: new Date(data.ticket.updatedAt),
         });
       } catch (err) {
-        if (mySeq !== ticketFetchSeqRef.current) return;
+        if (isStale()) return;
         console.error('Failed to load ticket for dialog:', err);
       } finally {
-        if (mySeq === ticketFetchSeqRef.current) {
+        if (!isStale()) {
           setIsLoadingTicket(false);
         }
       }
     },
-    [devOpsGet]
+    [devOpsGet, selectedOrganization?.accountName]
   );
+
+  // Coming back from a ticket's full view: reopen its quick view (#7727).
+  const openRequestRef = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (openRequestRef.current === undefined) openRequestRef.current = takeOpenRequest();
+    const wanted = openRequestRef.current;
+    if (!wanted || !hasOrganization) return;
+    openRequestRef.current = null;
+    handleItemClick({ id: wanted } as StandupWorkItem);
+  }, [hasOrganization, handleItemClick]);
 
   // Dialog state-change: reuse existing kanban state-change logic, then
   // mirror the new state on selectedTicket so the dialog UI updates.
@@ -914,6 +943,7 @@ function StandupPageContent() {
 
         {/* Detail dialog (issue #368) */}
         <WorkItemDetailDialog
+          supportsReturn
           workItem={selectedTicket ? ticketToWorkItem(selectedTicket) : null}
           isOpen={!!selectedTicket}
           onClose={() => setSelectedTicket(null)}
