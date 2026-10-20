@@ -38,6 +38,10 @@ interface WorkItemDetailDialogProps {
 /** Stable reference, so deriving an empty list does not re-render on every pass. */
 const EMPTY_ATTACHMENTS: Attachment[] = [];
 
+/**
+ * Quick view of a ticket or work item, opened from a list or board: its
+ * fields, comments and attachments, with links to its full view and to DevOps.
+ */
 export default function WorkItemDetailDialog({
   workItem,
   isOpen,
