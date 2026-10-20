@@ -881,6 +881,31 @@ export class AzureDevOpsService {
     return allWorkItems;
   }
 
+  /**
+   * The title a work item was created with, from its first revision, or null
+   * when it cannot be read.
+   *
+   * Customer emails thread by subject, so the update notification keeps using
+   * the title the conversation started under however often it changes (#7724).
+   */
+  async getOriginalTitle(projectName: string, workItemId: number): Promise<string | null> {
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/revisions?$top=1&api-version=7.0`,
+        // A stalled lookup times out and falls back like any other failure.
+        { headers: this.headers, signal: AbortSignal.timeout(ORG_LOOKUP_TIMEOUT_MS) }
+      );
+      if (!response.ok) return null;
+      const data = (await response.json()) as {
+        value?: Array<{ fields?: { 'System.Title'?: unknown } }>;
+      };
+      const title = data.value?.[0]?.fields?.['System.Title'];
+      return typeof title === 'string' && title.trim() ? title : null;
+    } catch {
+      return null;
+    }
+  }
+
   // Get a single work item by ID
   async getWorkItem(projectName: string, workItemId: number): Promise<DevOpsWorkItem> {
     const response = await fetch(
@@ -3676,10 +3701,24 @@ export function attachmentsFromRelations(workItem: {
         url: attachmentUrl,
         contentType: relation.attributes?.contentType || 'application/octet-stream',
         size: relation.attributes?.length || 0,
-        createdAt: new Date(relation.attributes?.resourceCreatedDate || Date.now()),
+        // When it was attached to this work item, which is when it was sent;
+        // the upload time is the fallback (#7726). With neither it is left
+        // unknown: "now" would make an old file look new and move on refresh.
+        // Each parsed on its own, so an unreadable attach date still falls
+        // back to a readable upload date.
+        createdAt:
+          dateOrUndefined(relation.attributes?.authorizedDate) ??
+          dateOrUndefined(relation.attributes?.resourceCreatedDate),
       });
     }
   }
 
   return attachments;
+}
+
+/** A date from a DevOps attribute, or undefined when it is missing or unparseable. */
+function dateOrUndefined(value: string | undefined): Date | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }

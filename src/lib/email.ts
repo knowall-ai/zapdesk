@@ -14,9 +14,11 @@ import {
   ticketConfirmationTemplate,
   agentReplyTemplate,
   statusChangeTemplate,
+  ticketUpdatedTemplate,
   customerReplyNotificationTemplate,
   layoutWrapper,
   type HistoryEntry,
+  type TicketFieldChange,
 } from './email-templates';
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
@@ -455,9 +457,10 @@ export async function fetchInlineAttachments(
 function withSkippedNote(html: string, skipped: string[]): string {
   if (skipped.length === 0) return html;
   const names = skipped.map((n) => escapeHtml(n)).join(', ');
-  const label = skipped.length === 1 ? 'image' : 'images';
+  const label = skipped.length === 1 ? 'file' : 'files';
+  // No "open the ticket": customers have no ZapDesk account (#7371).
   return `${html}
-<p style="color: #71717a; font-size: 13px;"><em>${skipped.length} ${label} could not be included (${names}). Open the ticket to view ${skipped.length === 1 ? 'it' : 'them'}.</em></p>`;
+<p style="color: #71717a; font-size: 13px;"><em>${skipped.length} ${label} could not be included (${names}). Reply to this email if you need ${skipped.length === 1 ? 'it' : 'them'}.</em></p>`;
 }
 
 export async function sendAgentReply(
@@ -540,6 +543,45 @@ export async function sendStatusChangeNotification(
       `[Email] Failed to send status change notification for ticket #${ticketId}:`,
       error
     );
+  }
+}
+
+/**
+ * Tell the customer their ticket's title or priority changed (#7724).
+ *
+ * Sent in the customer's existing thread: ZapDesk threads mail by the
+ * `[ZapDesk #N]` subject. `titles.thread` is the title the customer already
+ * knows, used for the mail subject so a title change does not start a new
+ * conversation; `titles.current` is the title now, shown in the body.
+ */
+export async function sendTicketUpdateNotification(
+  ticketId: number,
+  titles: {
+    /** The title the customer's thread is under, for the mail subject. */
+    thread: string;
+    /** The ticket's title now, shown in the body. */
+    current: string;
+  },
+  requesterEmail: string,
+  changes: TicketFieldChange[]
+): Promise<void> {
+  if (!isEmailConfigured() || changes.length === 0) return;
+  if (isPolledMailbox(requesterEmail)) return;
+  try {
+    await sendViaGraph({
+      to: requesterEmail,
+      subject: threadedSubject(ticketId, `Re: ${titles.thread}`),
+      html: ticketUpdatedTemplate({
+        ticketId,
+        subject: titles.current,
+        requesterName: nameFromEmail(requesterEmail),
+        changes,
+      }),
+      messageId: generateMessageId(ticketId),
+    });
+    console.log(`[Email] Update notification sent for ticket #${ticketId} to ${requesterEmail}`);
+  } catch (error) {
+    console.error(`[Email] Failed to send update notification for ticket #${ticketId}:`, error);
   }
 }
 
