@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
+import {
+  AzureDevOpsService,
+  DevOpsApiError,
+  attachmentsFromRelations,
+  workItemToTicket,
+} from '@/lib/devops';
 import {
   extractRequesterEmail,
   isEmailTicket,
@@ -29,6 +34,14 @@ const PATCH_FIELDS = new Set([
 /** Lowest priority DevOps uses: 1 is urgent, 4 is low. */
 const MAX_PRIORITY = 4;
 
+/**
+ * One ticket with its comments and attachments.
+ *
+ * The work item is found with a single organisation-level request, and its
+ * attachments are read from the relations that request already returned
+ * (#7387). 400 for a bad id, 401 without a session, 404 when the ticket cannot
+ * be found, 500 otherwise.
+ */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
@@ -62,8 +75,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       updatedAt: new Date(),
     });
 
+    // The lookup fetched the work item with its relations, so the attachments
+    // are already in hand; fetching it again only for them doubled the wait.
     const comments = await devopsService.getWorkItemComments(found.project.name, ticketId);
-    const attachments = await devopsService.getWorkItemAttachments(found.project.name, ticketId);
+    const attachments = attachmentsFromRelations(found.workItem);
 
     return NextResponse.json({
       ticket: { ...ticket, attachments },

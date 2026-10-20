@@ -298,6 +298,22 @@ export interface DevOpsWorkItem {
   _links?: {
     html?: { href: string };
   };
+  /** Present when fetched with `$expand=all` or `relations`. */
+  relations?: DevOpsWorkItemRelation[];
+}
+
+/** A link from a work item: a parent, a child, an attached file... */
+export interface DevOpsWorkItemRelation {
+  rel: string;
+  url: string;
+  attributes?: {
+    name?: string;
+    comment?: string;
+    contentType?: string;
+    length?: number;
+    authorizedDate?: string;
+    resourceCreatedDate?: string;
+  };
 }
 
 export interface DevOpsIdentity {
