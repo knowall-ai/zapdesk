@@ -7,7 +7,12 @@
  * the main app credentials when the dedicated ones are not set.
  */
 
-import { inlineProxyImages, type OutboundAttachment } from './email-attachments';
+import {
+  attachLinkedFiles,
+  finaliseLinkedFiles,
+  inlineProxyImages,
+  type OutboundAttachment,
+} from './email-attachments';
 import { escapeHtml } from './email-clean';
 import {
   assignmentNotificationTemplate,
@@ -400,14 +405,31 @@ function copyRecipients(assigneeEmail: string | undefined, requesterEmail: strin
 export async function fetchInlineAttachments(
   wanted: OutboundAttachment[],
   fetchImpl: typeof fetch = fetch
-): Promise<{ attachments: GraphFileAttachment[]; skipped: string[] }> {
+): Promise<{
+  attachments: GraphFileAttachment[];
+  /** Names of the files left off, for the note under the reply. */
+  skipped: string[];
+  /** Attachment ids of the same files, to label them "not included". */
+  skippedIds: string[];
+}> {
   const pat = process.env.AZURE_DEVOPS_PAT;
   const defaultOrg = process.env.AZURE_DEVOPS_ORG;
-  if (!pat || !defaultOrg || wanted.length === 0) return { attachments: [], skipped: [] };
+  if (wanted.length === 0) return { attachments: [], skipped: [], skippedIds: [] };
+  if (!pat || !defaultOrg) {
+    // Nothing can be fetched, so every file is reported as left off rather
+    // than silently missing -- and never labelled "(attached)".
+    console.error('[Email] AZURE_DEVOPS_PAT or AZURE_DEVOPS_ORG unset; files not attached.');
+    return {
+      attachments: [],
+      skipped: wanted.map((item) => item.fileName),
+      skippedIds: wanted.map((item) => item.id),
+    };
+  }
 
   const auth = `Basic ${Buffer.from(`:${pat}`).toString('base64')}`;
   const collected: GraphFileAttachment[] = [];
   const skipped: string[] = [];
+  const skippedIds: string[] = [];
   let total = 0;
 
   for (const item of wanted) {
@@ -419,6 +441,7 @@ export async function fetchInlineAttachments(
       if (!response.ok) {
         console.error(`[Email] Attachment ${item.id} could not be read (${response.status}).`);
         skipped.push(item.fileName);
+        skippedIds.push(item.id);
         continue;
       }
 
@@ -426,24 +449,26 @@ export async function fetchInlineAttachments(
       if (total + contentBytes.length > MAX_ATTACHMENT_BASE64_BYTES) {
         console.error(`[Email] Attachment ${item.fileName} skipped: message size limit.`);
         skipped.push(item.fileName);
+        skippedIds.push(item.id);
         continue;
       }
       total += contentBytes.length;
 
+      const inline = item.inline !== false;
       collected.push({
         name: item.fileName,
         contentType: response.headers.get('content-type') || 'application/octet-stream',
         contentBytes,
-        contentId: item.contentId,
-        isInline: true,
+        ...(inline ? { contentId: item.contentId, isInline: true } : {}),
       });
     } catch (error) {
       console.error(`[Email] Attachment ${item.id} could not be read:`, error);
       skipped.push(item.fileName);
+      skippedIds.push(item.id);
     }
   }
 
-  return { attachments: collected, skipped };
+  return { attachments: collected, skipped, skippedIds };
 }
 
 /**
@@ -488,11 +513,17 @@ export async function sendAgentReply(
     // session can fetch. Sent as-is the customer gets a broken image where the
     // screenshot should be, so the bytes travel with the message instead.
     const inlined = inlineProxyImages(replyHtml);
-    const { attachments, skipped } = await fetchInlineAttachments(inlined.attachments);
+    // Files attached with the paperclip are linked, not drawn; they go on the
+    // message as ordinary attachments (#7376).
+    const linked = attachLinkedFiles(inlined.html, inlined.attachments);
+    const { attachments, skipped, skippedIds } = await fetchInlineAttachments([
+      ...inlined.attachments,
+      ...linked.attachments,
+    ]);
     const html = agentReplyTemplate({
       ticketId,
       agentName,
-      replyContent: withSkippedNote(inlined.html, skipped),
+      replyContent: withSkippedNote(finaliseLinkedFiles(linked.html, skippedIds), skipped),
       history,
     });
     await sendViaGraph({

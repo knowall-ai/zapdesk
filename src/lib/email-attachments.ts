@@ -25,6 +25,11 @@ export interface OutboundAttachment {
   fileName: string;
   /** Matches the `cid:` in the rewritten HTML. */
   contentId: string;
+  /**
+   * False for a file the agent attached rather than pasted: it travels as an
+   * ordinary attachment instead of being drawn into the body. Defaults to true.
+   */
+  inline?: boolean;
 }
 
 export interface InlineRewrite {
@@ -48,11 +53,15 @@ function safeDecode(value: string): string {
 function fileNameFrom(url: string, fallback: string): string {
   const match = /[?&]fileName=([^&"']+)/i.exec(url);
   if (!match) return fallback;
+  // The links are built with URLSearchParams, which writes a space as `+` (and
+  // a literal plus as %2B), so `+` is turned back into a space before the
+  // %-escapes are decoded. Otherwise "my report.pdf" arrives as "my+report.pdf".
+  const value = match[1].replace(/\+/g, ' ');
   try {
-    return decodeURIComponent(match[1]);
+    return decodeURIComponent(value);
   } catch {
     // A malformed escape is not worth failing a whole email over.
-    return match[1];
+    return value;
   }
 }
 
@@ -94,4 +103,79 @@ export function inlineProxyImages(html: string): InlineRewrite {
   });
 
   return { html: rewritten, attachments };
+}
+
+/** Proxy links (`<a href>`) this app writes for files attached to a reply. */
+const PROXY_LINK =
+  /<a\b[^>]*?href=(["'])((?:https?:\/\/[^"']*)?\/api\/devops\/attachments\/([^"'?]+)[^"']*)\1[^>]*>([\s\S]*?)<\/a>/gi;
+
+/**
+ * Turn links to attached files into real email attachments (#7376).
+ *
+ * A file attached with the paperclip, rather than pasted, is referenced in the
+ * comment as a proxy link. Like a pasted image, that link needs a ZapDesk
+ * session the customer does not have, so the file itself goes on the message
+ * and the link becomes plain text naming it.
+ *
+ * A file already carried inline (an image both pasted and linked) is not
+ * attached twice.
+ */
+export function attachLinkedFiles(
+  html: string,
+  alreadyAttached: OutboundAttachment[] = []
+): InlineRewrite {
+  const attachments: OutboundAttachment[] = [];
+  const seen = new Set(alreadyAttached.map((a) => a.id));
+
+  const rewritten = html.replace(PROXY_LINK, (_whole, _quote, url, rawId, text) => {
+    const id = safeDecode(rawId);
+    const fileName = fileNameFrom(url, `attachment-${attachments.length + 1}`);
+    if (!seen.has(id)) {
+      seen.add(id);
+      const org = /[?&](?:amp;)?org=([^&"'<]+)/i.exec(url)?.[1];
+      attachments.push({
+        id,
+        org: org ? safeDecode(org) : undefined,
+        fileName,
+        contentId: `zapdesk-file-${attachments.length + 1}-${id}@zapdesk`,
+        inline: false,
+      });
+    }
+    // The link text is already HTML from the stored comment; the name from
+    // the URL is decoded text and is escaped before going back into markup.
+    const label =
+      String(text)
+        .replace(/<[^>]*>/g, '')
+        .trim() || escapeMarkup(fileName);
+    // Marked rather than finished: whether the file really travels is only
+    // known once it has been fetched. finaliseLinkedFiles settles the wording.
+    return `<span ${FILE_MARKER}="${escapeMarkup(id)}">${label}</span>`;
+  });
+
+  return { html: rewritten, attachments };
+}
+
+/** Attribute that marks a linked file awaiting the outcome of its fetch. */
+const FILE_MARKER = 'data-zapdesk-file';
+
+const MARKED_FILE = new RegExp(`<span ${FILE_MARKER}="([^"]*)">([\\s\\S]*?)</span>`, 'g');
+
+function escapeMarkup(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+/**
+ * Say, against each linked file, whether it is on the message.
+ *
+ * A file that was too large or could not be fetched is left off the email;
+ * labelling it "(attached)" anyway contradicted the note beneath the reply
+ * and told the customer to look for something that is not there.
+ *
+ * `skippedIds` are the attachment ids that did not make it.
+ */
+export function finaliseLinkedFiles(html: string, skippedIds: string[]): string {
+  const skipped = new Set(skippedIds.map(escapeMarkup));
+  return html.replace(MARKED_FILE, (_whole, id: string, label: string) =>
+    skipped.has(id) ? `<span>${label} (not included)</span>` : `<span>${label} (attached)</span>`
+  );
 }

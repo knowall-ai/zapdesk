@@ -221,8 +221,9 @@ export default function WorkItemDetailDialog({
           const data = await response.json().catch(() => ({}));
           throw new Error(data.error || 'Failed to add comment');
         }
-        await fetchComments();
-        toast.success('Comment added');
+        // Refresh files too: a reply can carry attachments now.
+        await Promise.all([fetchComments(), fetchAttachments()]);
+        toast.success(isInternal ? 'Internal note added' : 'Comment added');
       } catch (error) {
         // Re-throw so CommentSection keeps the unsent text in the input
         // instead of clearing it on a silent failure.
@@ -231,7 +232,7 @@ export default function WorkItemDetailDialog({
         throw error;
       }
     },
-    [workItem, fetchComments, fetchDevOps, hasOrganization]
+    [workItem, fetchComments, fetchAttachments, fetchDevOps, hasOrganization]
   );
 
   const handleZapSent = useCallback(

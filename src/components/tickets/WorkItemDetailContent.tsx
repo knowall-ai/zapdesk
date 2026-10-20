@@ -23,7 +23,7 @@ interface WorkItemDetailContentProps {
   /** Files attached to the work item. Absent and empty render the same. */
   attachments?: Attachment[];
   isLoadingComments?: boolean;
-  onAddComment?: (comment: string) => Promise<void>;
+  onAddComment?: (comment: string, isInternal?: boolean) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onUpdate?: (updates: {
     title?: string;

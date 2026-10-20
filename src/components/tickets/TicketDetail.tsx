@@ -43,6 +43,7 @@ import {
   validateFile,
   rewriteAttachmentUrls,
   buildAttachmentProxyUrl,
+  attachedFilesHtml,
 } from '@/lib/attachment-utils';
 import { hasTicketTag } from '@/lib/tags';
 import StatusBadge from '../common/StatusBadge';
@@ -282,6 +283,9 @@ export default function TicketDetail({
 
   // Attachment state
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  // Uploaded, but the reply naming them not yet posted. Kept until it is, so
+  // a failed send can be retried without dropping the files from the reply.
+  const [uploadedFiles, setUploadedFiles] = useState<Attachment[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -684,25 +688,32 @@ export default function TicketDetail({
   };
 
   const handleSubmitWithAttachments = async () => {
-    if (!newComment.trim() && pendingFiles.length === 0) return;
+    if (!newComment.trim() && pendingFiles.length === 0 && uploadedFiles.length === 0) return;
 
     setIsSubmitting(true);
     setUploadError(null);
 
     try {
-      // Upload all pending files first
+      // Upload all pending files first. Each moves from pending to uploaded as
+      // it lands, so a retry neither re-uploads nor forgets it.
+      const uploaded = [...uploadedFiles];
       if (onUploadAttachment && pendingFiles.length > 0) {
         setIsUploadingFiles(true);
         for (const file of pendingFiles) {
-          await onUploadAttachment(file);
+          uploaded.push(await onUploadAttachment(file));
+          setUploadedFiles([...uploaded]);
+          setPendingFiles((prev) => prev.filter((f) => f !== file));
         }
         setIsUploadingFiles(false);
-        setPendingFiles([]);
       }
 
-      // Then add comment if there is one
-      if (newComment.trim() && onAddComment) {
-        await onAddComment(newComment, isInternalNote);
+      // Then the comment, naming the files. Uploaded on their own they were
+      // only linked to the work item, so the reply email never carried them
+      // and the customer did not get them (#7376).
+      const body = [newComment.trim(), attachedFilesHtml(uploaded)].filter(Boolean).join('\n');
+      if (body && onAddComment) {
+        await onAddComment(body, isInternalNote);
+        setUploadedFiles([]);
         setNewComment('');
         setIsInternalNote(false);
       }
@@ -1348,8 +1359,25 @@ export default function TicketDetail({
           )}
 
           {/* Pending files */}
-          {pendingFiles.length > 0 && (
+          {(pendingFiles.length > 0 || uploadedFiles.length > 0) && (
             <div className="mb-3 flex flex-wrap gap-2">
+              {uploadedFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className="flex items-center gap-2 rounded-md px-2 py-1 text-sm"
+                  style={{
+                    backgroundColor: 'var(--surface-hover)',
+                    color: 'var(--text-secondary)',
+                  }}
+                  title="Uploaded; it is named in this reply when the reply is sent"
+                >
+                  <FileIcon contentType={file.contentType} />
+                  <span className="max-w-[150px] truncate">{file.fileName}</span>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    (uploaded)
+                  </span>
+                </div>
+              ))}
               {pendingFiles.map((file, index) => (
                 <div
                   key={`${file.name}-${index}`}
@@ -1416,7 +1444,10 @@ export default function TicketDetail({
               )}
               <button
                 onClick={handleSubmitWithAttachments}
-                disabled={(!newComment.trim() && pendingFiles.length === 0) || isSubmitting}
+                disabled={
+                  (!newComment.trim() && pendingFiles.length === 0 && uploadedFiles.length === 0) ||
+                  isSubmitting
+                }
                 className="btn-primary flex items-center gap-1 py-1.5 text-sm"
               >
                 {isUploadingFiles ? (
