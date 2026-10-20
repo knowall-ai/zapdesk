@@ -694,6 +694,20 @@ describe('fetching', () => {
       ]);
     });
 
+    // An organization a project names stays with that project, even for a
+    // caller who cannot see it (#463 review)
+    it('keeps an organization a hidden project names out of *', async () => {
+      gitHubOrg([inRepo('acme/medite', { id: 1 }), inRepo('acme/private', { id: 2 })]);
+
+      const { tickets } = await getGitHubTickets([project('Medite')], 'KnowAll', {
+        token: 'secret-token',
+        projectRepos: { Private: ['acme/*'], '*': ['acme/*', 'acme/medite'] },
+      });
+
+      expect(tickets).toEqual([]);
+      expect(calledUrls()).toEqual([]);
+    });
+
     it('matches a single repository under * by its name', async () => {
       gitHub({ 'acme/medite': { open: [[issue({ id: 1 })]] } });
 

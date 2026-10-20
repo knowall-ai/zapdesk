@@ -636,7 +636,9 @@ export interface GitHubTicketsResult {
  *
  * Repositories under the `*` key (`ANY_PROJECT`) go to the project whose
  * name matches the repository's (`repoSlug`); one that matches no project the
- * caller can see is left out. A project the mapping names wins over `*`.
+ * caller can see is left out. A project the mapping names wins over `*`, and
+ * so does one that names a whole organization (`owner/*`), even for a caller
+ * who cannot see that project.
  *
  * `devOpsUsers` are the users whose identity a mapped or linked GitHub account
  * takes, and `linkedAccounts` the usernames people saved on their profiles.
@@ -672,13 +674,14 @@ export async function getGitHubTickets(
 
   // Every repository the mapping names, whether or not the caller can see its
   // project: a wildcard must not hand those out under another project.
-  const namedRepos = new Set(
-    Object.entries(config.projectRepos)
-      .filter(([projectName]) => projectName !== ANY_PROJECT)
-      .flatMap(([, repos]) => repos)
-      .filter((entry) => !isOrgWildcard(entry))
-      .map((entry) => entry.toLowerCase())
-  );
+  const namedEntries = Object.entries(config.projectRepos)
+    .filter(([projectName]) => projectName !== ANY_PROJECT)
+    .flatMap(([, repos]) => repos)
+    .map((entry) => entry.toLowerCase());
+  const namedRepos = new Set(namedEntries.filter((entry) => !isOrgWildcard(entry)));
+  // Likewise every organization a project names as `owner/*`: `*` must not
+  // hand its repositories out under another project.
+  const namedOrgs = new Set(namedEntries.filter(isOrgWildcard));
 
   for (const [projectName, repos] of Object.entries(config.projectRepos)) {
     if (projectName === ANY_PROJECT) continue;
@@ -696,6 +699,7 @@ export async function getGitHubTickets(
   for (const repo of config.projectRepos[ANY_PROJECT] ?? []) {
     const key = repo.toLowerCase();
     if (seen.has(key) || namedRepos.has(key)) continue;
+    if (namedOrgs.has(`${key.split('/')[0]}/*`)) continue;
     if (isOrgWildcard(repo)) {
       seen.add(key);
       targets.push({ repo });
