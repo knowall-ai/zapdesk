@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
@@ -27,10 +28,11 @@ export default function TicketDetailPage() {
   const [history, setHistory] = useState<WorkItemUpdate[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [loading, setLoading] = useState(true);
-  // Only the first load of a ticket shows the full-page spinner. Every save
-  // (comment, status, priority...) refetches, and blanking the page each time
-  // read as the page constantly reloading and lost the reader's place (#7721).
-  const hasLoadedRef = useRef(false);
+  // The ticket (organisation and id) whose first load has finished. Only the
+  // first load of a ticket shows the full-page spinner. Every save (comment,
+  // status, priority...) refetches, and blanking the page each time read as
+  // the page constantly reloading and lost the reader's place (#7721).
+  const loadedForRef = useRef<string | null>(null);
   // A stable signal, not the session object: NextAuth refetches the session
   // whenever the window regains focus, so keying on it reloaded the ticket on
   // every tab switch and after every download (#7391, #7719).
@@ -45,27 +47,30 @@ export default function TicketDetailPage() {
     [selectedOrganization]
   );
 
-  // Reset state when navigating to a different ticket, or when the same id is
-  // opened in another organisation -- it is a different ticket, and the old
-  // one must not stay on screen while the new one loads.
+  // Reset when navigating to a different ticket, or when the same id is opened
+  // in another organisation -- it is a different ticket, and the old one must
+  // not stay on screen while the new one loads. Done while rendering, not in
+  // an effect, so the old ticket is never painted under the new address.
   const orgName = selectedOrganization?.accountName;
-  useEffect(() => {
+  const loadKey = `${orgName ?? ''}|${ticketId}`;
+  const [shownKey, setShownKey] = useState(loadKey);
+  if (shownKey !== loadKey) {
+    setShownKey(loadKey);
     setTicket(null);
     setComments([]);
     setHistory([]);
     setLoading(true);
-    hasLoadedRef.current = false;
-  }, [ticketId, orgName]);
+  }
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 
   const fetchTicket = useCallback(async () => {
     if (!selectedOrganization) return;
-    if (!hasLoadedRef.current) setLoading(true);
+    if (loadedForRef.current !== loadKey) setLoading(true);
     // Track whether we kicked off a route-replace so the finally block knows
     // not to flip loading off — otherwise we render `null` (blank page) for
     // a beat until the new route mounts.
@@ -119,11 +124,11 @@ export default function TicketDetailPage() {
       router.push(pathname?.startsWith('/workitems/') ? '/kanban' : '/tickets');
     } finally {
       if (!isRedirecting) {
-        hasLoadedRef.current = true;
+        loadedForRef.current = loadKey;
         setLoading(false);
       }
     }
-  }, [ticketId, router, selectedOrganization, orgHeaders, pathname]);
+  }, [ticketId, router, selectedOrganization, orgHeaders, pathname, loadKey]);
 
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
