@@ -111,6 +111,14 @@ function MonthlyCheckpointContent() {
   // under the newer selection.
   const statsSeqRef = useRef(0);
 
+  // Which organisation and project the report on screen belongs to. The
+  // customer list comes from that report, so until the new project's report
+  // arrives the old list must not be offered: a customer picked from it would
+  // be sent to a project that has never had them, and rejected.
+  const [statsFor, setStatsFor] = useState<string | null>(null);
+  const selectionKey = `${orgName ?? ''}|${selectedProject}`;
+  const customerOptions = statsFor === selectionKey ? (stats?.customers ?? []) : [];
+
   /** Load the report for the current project, period and customer. */
   const fetchStats = useCallback(async () => {
     if (!hasOrganization) return;
@@ -141,6 +149,7 @@ function MonthlyCheckpointContent() {
       }));
 
       setStats(data);
+      setStatsFor(`${orgName ?? ''}|${selectedProject}`);
     } catch (err) {
       if (!isCurrent()) return;
       setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -148,7 +157,7 @@ function MonthlyCheckpointContent() {
     } finally {
       if (isCurrent()) setIsLoading(false);
     }
-  }, [selectedProject, selectedCustomer, startDate, endDate, devOpsGet, hasOrganization]);
+  }, [selectedProject, selectedCustomer, startDate, endDate, devOpsGet, hasOrganization, orgName]);
 
   // Fetch projects
   useEffect(() => {
@@ -225,7 +234,9 @@ function MonthlyCheckpointContent() {
               <button
                 onClick={handleExportPDF}
                 className="btn-primary flex items-center gap-2"
-                disabled={!stats}
+                // Not while a report loads: the header already names the new
+                // selection, and the page still shows the old figures.
+                disabled={!stats || isLoading}
               >
                 <Download size={16} />
                 Export PDF
@@ -283,10 +294,10 @@ function MonthlyCheckpointContent() {
                   value={selectedCustomer}
                   onChange={(e) => setSelectedCustomer(e.target.value)}
                   className="input min-w-[200px]"
-                  disabled={!stats?.customers?.length}
+                  disabled={isLoading || customerOptions.length === 0}
                 >
                   <option value="">All customers</option>
-                  {(stats?.customers ?? []).map((customer) => (
+                  {customerOptions.map((customer) => (
                     <option key={customer.key} value={customer.key}>
                       {customer.displayName} ({customer.ticketCount})
                     </option>

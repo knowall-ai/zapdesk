@@ -12,6 +12,9 @@ import type {
   CheckpointCustomer,
 } from '@/types';
 
+/** The query parameters this route reads; anything else is refused. */
+const ALLOWED_PARAMS = new Set(['project', 'startDate', 'endDate', 'customer']);
+
 /**
  * Monthly checkpoint statistics for one project and period.
  *
@@ -23,8 +26,8 @@ import type {
  * period, and `customers`: everyone who has raised a ticket in the project,
  * so the filter can offer them.
  *
- * 400 without a project or for a customer the project has never had, 401
- * without a session, 500 when Azure DevOps fails.
+ * 400 for an unknown query parameter, without a project, or for a customer the
+ * project has never had; 401 without a session; 500 when Azure DevOps fails.
  */
 export async function GET(request: Request) {
   try {
@@ -35,6 +38,18 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
+
+    // Refuse parameters this route does not read. A misspelt `customer` would
+    // otherwise be ignored and the whole project's report returned as if it
+    // were one customer's.
+    const unknown = [...new Set(searchParams.keys())].filter((key) => !ALLOWED_PARAMS.has(key));
+    if (unknown.length > 0) {
+      return NextResponse.json(
+        { error: `Unknown query parameter: ${unknown.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
     const projectName = searchParams.get('project');
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');
