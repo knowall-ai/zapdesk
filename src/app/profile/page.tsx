@@ -41,6 +41,9 @@ const PROFILE_TIMEOUT_MS = 15_000;
 /** The signed-in user's profile page. */
 export default function ProfilePage() {
   const { data: session, status } = useSession();
+  // Stable across NextAuth's refetch on window focus, unlike the session
+  // object, so switching tabs does not reload the page (#7391).
+  const isSignedIn = !!session?.accessToken;
   const { photoUrl } = useProfilePhoto(status === 'authenticated');
   const { selectedOrganization, isLoading: organizationsLoading } = useOrganization();
   const org = selectedOrganization?.accountName;
@@ -115,7 +118,7 @@ export default function ProfilePage() {
   }, [status, router]);
 
   useEffect(() => {
-    if (!session?.accessToken || organizationsLoading) return;
+    if (!isSignedIn || organizationsLoading) return;
     if (!org) {
       // Discovery finished without an organization: say so rather than spin
       setError('No Azure DevOps organization is available to your account');
@@ -158,7 +161,7 @@ export default function ProfilePage() {
       clearTimeout(timeout);
       controller.abort();
     };
-  }, [session, org, organizationsLoading]);
+  }, [isSignedIn, org, organizationsLoading]);
 
   if (status === 'loading' || loading) {
     return (

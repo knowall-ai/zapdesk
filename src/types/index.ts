@@ -194,13 +194,23 @@ export interface TicketComment {
 }
 
 // Attachment types for tickets and comments
+/**
+ * A change to a work item's effort hours (#7728). Only the fields being
+ * changed are present: some work item types have only one of the two.
+ */
+export interface EffortHoursUpdate {
+  completedWork?: number;
+  remainingWork?: number;
+}
+
 export interface Attachment {
   id: string;
   fileName: string;
   url: string;
   contentType: string;
   size: number;
-  createdAt: Date;
+  /** When it was attached. Absent when DevOps records no date for it. */
+  createdAt?: Date;
   createdBy?: User;
 }
 
@@ -296,6 +306,22 @@ export interface DevOpsWorkItem {
   url: string;
   _links?: {
     html?: { href: string };
+  };
+  /** Present when fetched with `$expand=all` or `relations`. */
+  relations?: DevOpsWorkItemRelation[];
+}
+
+/** A link from a work item: a parent, a child, an attached file... */
+export interface DevOpsWorkItemRelation {
+  rel: string;
+  url: string;
+  attributes?: {
+    name?: string;
+    comment?: string;
+    contentType?: string;
+    length?: number;
+    authorizedDate?: string;
+    resourceCreatedDate?: string;
   };
 }
 

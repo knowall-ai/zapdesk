@@ -16,7 +16,6 @@ import {
   Zap,
   Info,
   X,
-  Download,
   Plus,
   Tag,
   Trash2,
@@ -34,6 +33,7 @@ import type {
   WorkItemType,
   WorkItemUpdate,
   Attachment,
+  EffortHoursUpdate,
 } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { ensureActiveState } from '@/types';
@@ -44,7 +44,6 @@ import {
   validateFile,
   rewriteAttachmentUrls,
   buildAttachmentProxyUrl,
-  attachmentDownloadUrl,
 } from '@/lib/attachment-utils';
 import { hasTicketTag } from '@/lib/tags';
 import { exitFullViewHref } from '@/lib/full-view';
@@ -55,6 +54,8 @@ import SLABadge from '../common/SLABadge';
 import MentionInput from '../common/MentionInput';
 import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
+import AttachmentList from './AttachmentList';
+import EffortHoursField from './EffortHoursField';
 import TicketHistory from './TicketHistory';
 import TypeChangeRequiredFields from './TypeChangeRequiredFields';
 import type { RequiredField } from '@/hooks/useWorkItemActions';
@@ -83,6 +84,7 @@ interface TicketDetailProps {
   onDescriptionChange?: (description: string) => Promise<void>;
   onResolutionChange?: (resolution: string) => Promise<void>;
   onMitigationChange?: (mitigation: string) => Promise<void>;
+  onEffortChange?: (hours: EffortHoursUpdate) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onRefreshTicket?: () => Promise<void>;
   // Move to DevOps Recycle Bin. Caller is responsible for navigation/refresh
@@ -120,6 +122,7 @@ export default function TicketDetail({
   onDescriptionChange,
   onResolutionChange,
   onMitigationChange,
+  onEffortChange,
   onUploadAttachment,
   onRefreshTicket,
   onDelete,
@@ -1214,31 +1217,7 @@ export default function TicketDetail({
                   <Paperclip size={12} />
                   <span>Attachments ({ticket.attachments.length})</span>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {ticket.attachments.map((attachment) => (
-                    <a
-                      key={attachment.id}
-                      href={attachmentDownloadUrl(attachment)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                      style={{
-                        backgroundColor: 'var(--surface)',
-                        color: 'var(--text-secondary)',
-                      }}
-                      title={`Download ${attachment.fileName}`}
-                    >
-                      <FileIcon contentType={attachment.contentType} />
-                      <span className="max-w-[150px] truncate">{attachment.fileName}</span>
-                      {attachment.size > 0 && (
-                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          ({formatFileSize(attachment.size)})
-                        </span>
-                      )}
-                      <Download size={12} style={{ color: 'var(--text-muted)' }} />
-                    </a>
-                  ))}
-                </div>
+                <AttachmentList attachments={ticket.attachments} />
               </div>
             )}
 
@@ -1895,25 +1874,24 @@ export default function TicketDetail({
                 >
                   Attachments ({ticket.attachments.length})
                 </label>
-                <div className="space-y-1">
-                  {ticket.attachments.map((attachment) => (
-                    <a
-                      key={attachment.id}
-                      href={attachmentDownloadUrl(attachment)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                      style={{ color: 'var(--text-secondary)' }}
-                      title={`Download ${attachment.fileName}`}
-                    >
-                      <FileIcon contentType={attachment.contentType} />
-                      <span className="flex-1 truncate">{attachment.fileName}</span>
-                      <Download size={12} style={{ color: 'var(--text-muted)' }} />
-                    </a>
-                  ))}
-                </div>
+                <AttachmentList attachments={ticket.attachments} />
               </div>
             )}
+
+            {/* Time spent and remaining, editable here as in the dialog (#7728) */}
+            <div>
+              <label
+                className="mb-1 block text-xs uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Effort Tracking (hours)
+              </label>
+              <EffortHoursField
+                completedWork={ticket.completedWork}
+                remainingWork={ticket.remainingWork}
+                onSave={onEffortChange}
+              />
+            </div>
 
             {/* Dates */}
             <div>

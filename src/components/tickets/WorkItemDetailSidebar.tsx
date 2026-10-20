@@ -8,18 +8,18 @@ import {
   Search,
   Loader2,
   User as UserIcon,
-  Timer,
   X,
   Plus,
   Tag,
 } from 'lucide-react';
-import type { WorkItem, TicketPriority, WorkItemType } from '@/types';
+import type { WorkItem, TicketPriority, WorkItemType, EffortHoursUpdate } from '@/types';
 import type { WorkItemActions } from '@/hooks/useWorkItemActions';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
 import { useClickOutside } from '@/hooks';
 import { assigneeIdentity } from '@/lib/assignee';
 import { useCallback, useState } from 'react';
+import EffortHoursField from './EffortHoursField';
 
 interface WorkItemDetailSidebarProps {
   workItem: WorkItem;
@@ -32,6 +32,8 @@ interface WorkItemDetailSidebarProps {
   canEditType?: boolean;
   canEditTags?: boolean;
   onTagsChange?: (tags: string[]) => Promise<void>;
+  /** Absent: effort hours are read-only. */
+  onEffortChange?: (hours: EffortHoursUpdate) => Promise<void>;
 }
 
 const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
@@ -41,13 +43,12 @@ const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
   { value: 4, label: 'Low' },
 ];
 
-const formatHours = (hours: number) => {
-  // Whole hours read cleanly as "8"; anything else keeps one decimal so a
-  // half-hour estimate isn't rounded away (StandupKanbanCard does the same).
-  if (Number.isInteger(hours)) return hours.toString();
-  return hours.toFixed(1);
-};
-
+/**
+ * The details column of the quick-view dialog: assignee, creator, priority,
+ * type, project, area, tags, effort hours and dates. Assignee, priority, type,
+ * tags and hours (`onEffortChange`, #7728) are editable when the caller allows
+ * it, and read-only otherwise.
+ */
 export default function WorkItemDetailSidebar({
   workItem,
   actions,
@@ -59,6 +60,7 @@ export default function WorkItemDetailSidebar({
   canEditType = false,
   canEditTags = false,
   onTagsChange,
+  onEffortChange,
 }: WorkItemDetailSidebarProps) {
   const [newTag, setNewTag] = useState('');
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -499,13 +501,11 @@ export default function WorkItemDetailSidebar({
           <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
             Effort Tracking (hours)
           </label>
-          <div className="flex items-center gap-2">
-            <Timer size={14} style={{ color: 'var(--text-muted)' }} />
-            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {formatHours(workItem.completedWork)}h completed /{' '}
-              {formatHours(workItem.remainingWork)}h remaining
-            </span>
-          </div>
+          <EffortHoursField
+            completedWork={workItem.completedWork}
+            remainingWork={workItem.remainingWork}
+            onSave={onEffortChange}
+          />
         </div>
       )}
 

@@ -307,6 +307,14 @@ function supportTeamFallback(): string | null {
   return group;
 }
 
+/**
+ * Tell the ticket's assignee, or the team fallback address, that the customer
+ * replied by email.
+ *
+ * Skipped when nobody is configured to receive it, and never sent to the
+ * polled mailbox (it would loop) or to the customer themself (#7722).
+ * Fire-and-forget: a failed send must not cost the reply being stored.
+ */
 function notifyAgentOfReply(
   workItem: WorkItemFieldsResponse | null | undefined,
   ticketId: number,
@@ -330,6 +338,14 @@ function notifyAgentOfReply(
     );
   }
   const recipient = assignee ?? supportTeamFallback() ?? '';
+  // Never tell the customer that the customer replied (#7722). It happens
+  // when the ticket is assigned to the requester's own address.
+  if (recipient && recipient.trim().toLowerCase() === senderEmail.trim().toLowerCase()) {
+    console.log(
+      `[Notify] Ticket #${ticketId} is assigned to its requester — not echoing their reply back.`
+    );
+    return;
+  }
   if (!recipient) {
     console.log(
       `[Notify] No agent assigned and SUPPORT_TEAM_NOTIFY_EMAIL not set — skipping notification for ticket #${ticketId}`

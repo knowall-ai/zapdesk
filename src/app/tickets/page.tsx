@@ -15,7 +15,7 @@ import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { useSourceFilter } from '@/components/providers/SourceProvider';
 import { ticketToWorkItem } from '@/lib/devops';
-import type { Ticket, WorkItem, User, WorkItemType } from '@/types';
+import type { Ticket, WorkItem, User, WorkItemType, EffortHoursUpdate } from '@/types';
 
 type TicketJson = Ticket & { createdAt: string; updatedAt: string };
 
@@ -69,12 +69,23 @@ function TicketsPageContent() {
   // without this it would put its tickets under the newer selection.
   const fetchSeqRef = useRef(0);
 
+  // The selection the list on screen was loaded for. A refresh of the same
+  // selection (after a save, or the refresh button) updates the rows in place;
+  // only a different view, organisation or source shows the spinner. Blanking
+  // the list on every save read as the page constantly reloading (#7721).
+  const loadedKeyRef = useRef<string | null>(null);
+
+  // A stable signal rather than the session object, which NextAuth replaces on
+  // every window focus -- that reloaded the list on each tab switch (#7391).
+  const isSignedIn = !!session?.accessToken;
+
   const fetchTickets = useCallback(async () => {
     if (!selectedOrganization) return;
     const mySeq = ++fetchSeqRef.current;
     /** False once a later load has started; nothing from this one may show then. */
     const isCurrent = () => mySeq === fetchSeqRef.current;
-    setLoading(true);
+    const loadKey = `${selectedOrganization.accountName}|${view}|${sourceFilter}`;
+    if (loadedKeyRef.current !== loadKey) setLoading(true);
     try {
       // For kanban view, fetch all active tickets
       const fetchView = isKanbanView ? 'all-active' : view;
@@ -133,6 +144,7 @@ function TicketsPageContent() {
         toast.warning(`Could not load GitHub issues from ${gitHub.failedRepos.join(', ')}`);
       }
       setTickets([...devOpsTickets, ...gitHubTickets]);
+      loadedKeyRef.current = loadKey;
 
       // Fetch work item types for type icons, filtered to only ticket types
       const ticketTypeNames = new Set(devOpsTickets.map((t) => t.workItemType).filter(Boolean));
@@ -164,10 +176,10 @@ function TicketsPageContent() {
   }, [view, isKanbanView, selectedOrganization, sourceFilter]);
 
   useEffect(() => {
-    if (session?.accessToken && sourceReady) {
+    if (isSignedIn && sourceReady) {
       fetchTickets();
     }
-  }, [session, sourceReady, fetchTickets]);
+  }, [isSignedIn, sourceReady, fetchTickets]);
 
   // Coming back from a ticket's full view: reopen its quick view (#7727).
   const currentOrgRef = useRef(selectedOrganization?.accountName);
@@ -306,6 +318,44 @@ function TicketsPageContent() {
       }
     },
     [findTicket, selectedOrganization, refreshCounts]
+  );
+
+  // Effort hours (#7728). Saved here, like the other fields, so the list row
+  // and the open dialog both take the saved values.
+  const handleDialogEffortChange = useCallback(
+    async (workItemId: number, hours: EffortHoursUpdate) => {
+      const ticket = tickets.find((t) => t.id === workItemId);
+      if (!ticket || !selectedOrganization) return;
+      try {
+        const response = await fetch(`/api/devops/tickets/${workItemId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-devops-org': selectedOrganization.accountName,
+          },
+          body: JSON.stringify({ ...hours, project: ticket.project }),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || 'Failed to update hours');
+        }
+        const data = await response.json();
+        const updated: Ticket | undefined = data.ticket;
+        const applied = {
+          completedWork: updated?.completedWork ?? hours.completedWork ?? ticket.completedWork,
+          remainingWork: updated?.remainingWork ?? hours.remainingWork ?? ticket.remainingWork,
+        };
+        setTickets((prev) => prev.map((t) => (t.id === workItemId ? { ...t, ...applied } : t)));
+        setSelectedTicket((prev) =>
+          prev && prev.id === workItemId ? { ...prev, ...applied } : prev
+        );
+        toast.success('Hours updated');
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to update hours');
+        throw error;
+      }
+    },
+    [tickets, selectedOrganization]
   );
 
   const handleDialogPriorityChange = useCallback(
@@ -524,6 +574,7 @@ function TicketsPageContent() {
           onStateChange={handleDialogStateChange}
           onAssigneeChange={handleDialogAssigneeChange}
           onPriorityChange={handleDialogPriorityChange}
+          onEffortChange={handleDialogEffortChange}
           onTypeChange={handleDialogTypeChange}
           onTagsChange={handleDialogTagsChange}
           onUpdate={handleWorkItemUpdate}

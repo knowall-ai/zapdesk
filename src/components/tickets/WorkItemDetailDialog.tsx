@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { ExternalLink, ChevronDown, Loader2, Maximize2, Trash2 } from 'lucide-react';
-import type { WorkItem, TicketComment, Attachment } from '@/types';
+import type { WorkItem, TicketComment, Attachment, EffortHoursUpdate } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import TicketDialogShell from './TicketDialogShell';
 import { useWorkItemActions } from '@/hooks/useWorkItemActions';
@@ -36,6 +36,12 @@ interface WorkItemDetailDialogProps {
     additionalFields?: Record<string, string>
   ) => Promise<void>;
   onTagsChange?: (workItemId: number, tags: string[]) => Promise<void>;
+  /**
+   * Save effort hours (#7728). Like the other editable fields, the host does
+   * the saving, so it can update or refresh the collection it owns. Without
+   * it the hours are read-only.
+   */
+  onEffortChange?: (workItemId: number, hours: EffortHoursUpdate) => Promise<void>;
   onUpdate?: (
     workItemId: number,
     updates: { title?: string; description?: string; resolution?: string; mitigation?: string }
@@ -60,6 +66,7 @@ export default function WorkItemDetailDialog({
   onPriorityChange,
   onTypeChange,
   onTagsChange,
+  onEffortChange,
   onUpdate,
 }: WorkItemDetailDialogProps) {
   const router = useRouter();
@@ -461,6 +468,11 @@ export default function WorkItemDetailDialog({
       </h3>
       <WorkItemDetailSidebar
         workItem={workItem}
+        onEffortChange={
+          onEffortChange && workItem.source !== 'github'
+            ? (hours: EffortHoursUpdate) => onEffortChange(workItem.id, hours)
+            : undefined
+        }
         actions={actions}
         showAreaPath
         showEffortHours

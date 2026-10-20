@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 
@@ -15,6 +15,20 @@ interface FetchOptions extends Omit<RequestInit, 'headers'> {
 export function useDevOpsApi() {
   const { selectedOrganization } = useOrganization();
   const { refresh: refreshCounts } = useTicketCounts();
+
+  /**
+   * The counts refresh, read at call time rather than captured.
+   *
+   * `refresh` changes whenever the access token does (about hourly). As a
+   * dependency it rebuilt `fetchDevOps` and every helper below, so any page
+   * effect keyed on them -- `get` in particular -- refetched everything on a
+   * token refresh. Through a ref the helpers change only with the
+   * organisation, and writes still trigger the latest refresh.
+   */
+  const refreshCountsRef = useRef(refreshCounts);
+  useEffect(() => {
+    refreshCountsRef.current = refreshCounts;
+  }, [refreshCounts]);
 
   /**
    * Fetch wrapper that automatically adds the x-devops-org header
@@ -49,11 +63,11 @@ export function useDevOpsApi() {
       // that is cheaper than the class of staleness bugs the alternative
       // invites.
       const method = (options.method || 'GET').toUpperCase();
-      if (method !== 'GET' && response.ok) refreshCounts();
+      if (method !== 'GET' && response.ok) refreshCountsRef.current();
 
       return response;
     },
-    [selectedOrganization, refreshCounts]
+    [selectedOrganization]
   );
 
   /**
