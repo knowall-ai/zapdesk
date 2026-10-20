@@ -240,8 +240,12 @@ export async function POST(request: NextRequest) {
     // reassigned later, but only the later path emailed anyone (#7374).
     // Fire-and-forget; the self-assignment and polled-mailbox guards live in
     // sendAssignmentNotification.
+    //
+    // Decided on the ticket DevOps returned, not the request: a process rule
+    // or field default can assign the item during creation when the caller
+    // named nobody, and that owner deserves the email just the same.
     const assigneeEmail = ticket.assignee?.email;
-    if (assignee && assigneeEmail) {
+    if (assigneeEmail) {
       sendAssignmentNotification({
         ticketId: ticket.id,
         subject: ticket.title,
