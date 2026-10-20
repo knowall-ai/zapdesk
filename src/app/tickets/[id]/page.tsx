@@ -33,6 +33,11 @@ export default function TicketDetailPage() {
   // status, priority...) refetches, and blanking the page each time read as
   // the page constantly reloading and lost the reader's place (#7721).
   const loadedForRef = useRef<string | null>(null);
+  // Refreshes run in the background while the page stays editable, so two can
+  // overlap (change the status while a priority save is still refetching).
+  // Only the latest may update the page: a slower, older answer landing last
+  // would otherwise put back the state from before the newer edit.
+  const fetchSeqRef = useRef(0);
   // A stable signal, not the session object: NextAuth refetches the session
   // whenever the window regains focus, so keying on it reloaded the ticket on
   // every tab switch and after every download (#7391, #7719).
@@ -70,6 +75,8 @@ export default function TicketDetailPage() {
 
   const fetchTicket = useCallback(async () => {
     if (!selectedOrganization) return;
+    const seq = ++fetchSeqRef.current;
+    const isLatest = () => seq === fetchSeqRef.current;
     if (loadedForRef.current !== loadKey) setLoading(true);
     // Track whether we kicked off a route-replace so the finally block knows
     // not to flip loading off — otherwise we render `null` (blank page) for
@@ -79,8 +86,10 @@ export default function TicketDetailPage() {
       const response = await fetch(`/api/devops/tickets/${ticketId}`, {
         headers: orgHeaders(),
       });
+      if (!isLatest()) return;
       if (response.ok) {
         const data = await response.json();
+        if (!isLatest()) return;
         // Issue #372: route ticket vs internal work item to the URL that
         // matches its identity, so the sidebar highlight reflects reality.
         const isTicket = hasTicketTag(data.ticket.tags);
@@ -119,11 +128,13 @@ export default function TicketDetailPage() {
         router.push(pathname?.startsWith('/workitems/') ? '/kanban' : '/tickets');
       }
     } catch (error) {
+      if (!isLatest()) return;
       console.error('Failed to fetch ticket:', error);
       isRedirecting = true;
       router.push(pathname?.startsWith('/workitems/') ? '/kanban' : '/tickets');
     } finally {
-      if (!isRedirecting) {
+      // A superseded request leaves the loading state to the latest one.
+      if (!isRedirecting && isLatest()) {
         loadedForRef.current = loadKey;
         setLoading(false);
       }
