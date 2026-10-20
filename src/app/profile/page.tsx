@@ -37,6 +37,7 @@ interface DevOpsProfile {
 /** How long to wait for the Azure DevOps profile before giving up. */
 const PROFILE_TIMEOUT_MS = 15_000;
 
+/** The signed-in user's profile page. */
 export default function ProfilePage() {
   const { data: session, status } = useSession();
   // Stable across NextAuth's refetch on window focus, unlike the session

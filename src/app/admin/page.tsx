@@ -41,6 +41,7 @@ interface EmailConfig {
   };
 }
 
+/** Admin settings for the organisation, including the email configuration. */
 export default function AdminPage() {
   const { data: session, status } = useSession();
   // Stable across NextAuth's refetch on window focus, unlike the session

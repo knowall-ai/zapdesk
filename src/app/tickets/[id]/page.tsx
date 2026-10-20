@@ -12,6 +12,7 @@ import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { hasTicketTag } from '@/lib/tags';
 import type { Ticket, TicketComment, Attachment, WorkItemUpdate } from '@/types';
 
+/** Full view of one ticket or work item. */
 export default function TicketDetailPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
