@@ -17,6 +17,10 @@ vi.mock('@/lib/devops', async () => {
     AzureDevOpsService: class {
       getProjects = async () => [{ name: 'Internal' }];
       getWorkItem = async () => ({ id: 1, fields: {} });
+      findProjectForWorkItem = async () => ({
+        project: { name: 'Internal' },
+        workItem: { id: 1, fields: {} },
+      });
       getWorkItemComments = async () => [];
       addComment = addComment;
     },

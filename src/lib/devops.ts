@@ -6,6 +6,7 @@ function escapeWiql(value: string): string {
 }
 import type {
   DevOpsWorkItem,
+  DevOpsWorkItemRelation,
   DevOpsProject,
   Ticket,
   TicketStatus,
@@ -1986,60 +1987,46 @@ export class AzureDevOpsService {
       throw new Error(`Failed to fetch work item relations: ${response.statusText}`);
     }
 
-    const workItem = await response.json();
-    const attachments: Attachment[] = [];
-
-    // Filter relations for AttachedFile type
-    for (const relation of workItem.relations || []) {
-      if (relation.rel === 'AttachedFile') {
-        // Extract attachment ID from URL
-        const attachmentUrl = relation.url;
-        const idMatch = attachmentUrl.match(/attachments\/([a-f0-9-]+)/i);
-        const id = idMatch ? idMatch[1] : attachmentUrl;
-
-        // Parse filename from attributes or URL
-        const fileName =
-          relation.attributes?.name ||
-          relation.attributes?.comment ||
-          attachmentUrl.split('/').pop()?.split('?')[0] ||
-          'attachment';
-
-        attachments.push({
-          id,
-          fileName,
-          url: attachmentUrl,
-          contentType: relation.attributes?.contentType || 'application/octet-stream',
-          size: relation.attributes?.length || 0,
-          createdAt: new Date(relation.attributes?.resourceCreatedDate || Date.now()),
-        });
-      }
-    }
-
-    return attachments;
+    return attachmentsFromRelations(await response.json());
   }
 
   /**
-   * Find which project a work item belongs to by checking all accessible projects.
-   * Returns the project and the work item, or null if not found.
+   * Find which project a work item belongs to.
+   *
+   * One organisation-level request answers this. Trying each project in turn
+   * cost a round trip per project, and the ticket page did it on every load,
+   * which is most of why tickets took so long to open (#7387). The per-project
+   * search remains as a fallback, run in parallel, for when the organisation
+   * endpoint itself fails.
    */
   async findProjectForWorkItem(
     workItemId: number
   ): Promise<{ project: DevOpsProject; workItem: DevOpsWorkItem } | null> {
     const projects = await this.getProjects();
 
-    for (const project of projects) {
-      try {
-        const workItem = await this.getWorkItem(project.name, workItemId);
-        if (workItem) {
-          return { project, workItem };
-        }
-      } catch {
-        // Work item not in this project, continue
-        continue;
-      }
+    try {
+      const workItem = await this.getWorkItemByIdOrgLevel(workItemId);
+      if (!workItem) return null;
+      const projectName = String(workItem.fields?.['System.TeamProject'] ?? '');
+      const project =
+        projects.find((p) => p.name.toLowerCase() === projectName.toLowerCase()) ??
+        ({ id: projectName, name: projectName } as DevOpsProject);
+      return { project, workItem };
+    } catch (error) {
+      console.warn(`Org-level lookup of #${workItemId} failed, searching projects:`, error);
     }
 
-    return null;
+    const found = await Promise.all(
+      projects.map(async (project) => {
+        try {
+          const workItem = await this.getWorkItem(project.name, workItemId);
+          return workItem ? { project, workItem } : null;
+        } catch {
+          return null;
+        }
+      })
+    );
+    return found.find((entry) => entry !== null) ?? null;
   }
 
   // Get all tickets from all accessible projects (fetches in parallel)
@@ -3655,4 +3642,44 @@ export async function getSLALevelForProject(projectName: string): Promise<SLALev
 // Clear SLA cache (useful for testing or when project descriptions change)
 export function clearSLAMapCache(): void {
   slaMapCache = null;
+}
+
+/**
+ * Files attached to a work item, read from its relations.
+ *
+ * Exported so a caller that already holds the work item (fetched with
+ * `$expand=all` or `relations`) need not fetch it again.
+ */
+export function attachmentsFromRelations(workItem: {
+  relations?: DevOpsWorkItemRelation[];
+}): Attachment[] {
+  const attachments: Attachment[] = [];
+
+  // Filter relations for AttachedFile type
+  for (const relation of workItem.relations || []) {
+    if (relation.rel === 'AttachedFile') {
+      // Extract attachment ID from URL
+      const attachmentUrl = relation.url;
+      const idMatch = attachmentUrl.match(/attachments\/([a-f0-9-]+)/i);
+      const id = idMatch ? idMatch[1] : attachmentUrl;
+
+      // Parse filename from attributes or URL
+      const fileName =
+        relation.attributes?.name ||
+        relation.attributes?.comment ||
+        attachmentUrl.split('/').pop()?.split('?')[0] ||
+        'attachment';
+
+      attachments.push({
+        id,
+        fileName,
+        url: attachmentUrl,
+        contentType: relation.attributes?.contentType || 'application/octet-stream',
+        size: relation.attributes?.length || 0,
+        createdAt: new Date(relation.attributes?.resourceCreatedDate || Date.now()),
+      });
+    }
+  }
+
+  return attachments;
 }

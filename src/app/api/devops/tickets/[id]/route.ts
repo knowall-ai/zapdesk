@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
+import {
+  AzureDevOpsService,
+  DevOpsApiError,
+  attachmentsFromRelations,
+  workItemToTicket,
+} from '@/lib/devops';
 import { extractRequesterEmail, sendAssignmentNotification } from '@/lib/email';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -39,8 +44,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       updatedAt: new Date(),
     });
 
+    // The lookup fetched the work item with its relations, so the attachments
+    // are already in hand; fetching it again only for them doubled the wait.
     const comments = await devopsService.getWorkItemComments(found.project.name, ticketId);
-    const attachments = await devopsService.getWorkItemAttachments(found.project.name, ticketId);
+    const attachments = attachmentsFromRelations(found.workItem);
 
     return NextResponse.json({
       ticket: { ...ticket, attachments },
