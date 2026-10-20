@@ -44,14 +44,17 @@ export default function TicketDetailPage() {
     [selectedOrganization]
   );
 
-  // Reset state when navigating to a different ticket
+  // Reset state when navigating to a different ticket, or when the same id is
+  // opened in another organisation -- it is a different ticket, and the old
+  // one must not stay on screen while the new one loads.
+  const orgName = selectedOrganization?.accountName;
   useEffect(() => {
     setTicket(null);
     setComments([]);
     setHistory([]);
     setLoading(true);
     hasLoadedRef.current = false;
-  }, [ticketId]);
+  }, [ticketId, orgName]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
