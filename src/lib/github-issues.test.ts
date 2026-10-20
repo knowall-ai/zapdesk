@@ -16,6 +16,7 @@ import {
   gitHubUserToPerson,
   parseProjectRepos,
   parseUserMap,
+  repoSlug,
   type GitHubIssue,
 } from './github-issues';
 import type { DevOpsProject, User } from '@/types';
@@ -617,6 +618,106 @@ describe('fetching', () => {
 
       expect(tickets).toEqual([]);
       expect(failedRepos).toEqual(['acme/*']);
+    });
+  });
+
+  // GITHUB_PROJECT_REPOS={"*": ["owner/*"]} covers every project of the
+  // organization: each repository goes to the project named like it
+  describe('every project by name (*)', () => {
+    const inRepo = (fullName: string, overrides: Partial<GitHubIssue> = {}): GitHubIssue =>
+      issue({ repository: { full_name: fullName }, ...overrides });
+
+    /** The organization answers `open`; a single repository, its own issues from it. */
+    function gitHubOrg(open: GitHubIssue[]) {
+      fetchMock.mockImplementation(async (input: string) => {
+        const url = new URL(input);
+        const repo = url.pathname.match(/^\/repos\/(.+)\/issues$/)?.[1];
+        if (repo) {
+          if (url.searchParams.get('state') === 'closed' || url.searchParams.get('page') !== '1') {
+            return Response.json([]);
+          }
+          return Response.json(open.filter((i) => i.repository?.full_name === repo));
+        }
+        if (url.pathname !== '/orgs/acme/issues') return new Response('Not Found', { status: 404 });
+        if (url.searchParams.get('state') === 'closed') return Response.json([]);
+        return Response.json(url.searchParams.get('page') === '1' ? open : []);
+      });
+    }
+
+    it('spells a project name the way a repository is named', () => {
+      expect(repoSlug('Cairn Homes')).toBe('cairn-homes');
+      expect(repoSlug('W and R Barnett')).toBe('w-and-r-barnett');
+      expect(repoSlug(' Eir  Evo! ')).toBe('eir-evo');
+    });
+
+    it('puts each repository under the project of the same name', async () => {
+      gitHubOrg([
+        inRepo('acme/cairn-homes', { id: 1, number: 1 }),
+        inRepo('acme/Medite', { id: 2, number: 2 }),
+      ]);
+
+      const { tickets } = await getGitHubTickets(
+        [project('Cairn Homes'), project('Medite')],
+        'KnowAll',
+        { token: 'secret-token', projectRepos: { '*': ['acme/*'] } }
+      );
+
+      expect(tickets.map((t) => [t.sourceRef, t.project])).toEqual([
+        ['acme/cairn-homes#1', 'Cairn Homes'],
+        ['acme/Medite#2', 'Medite'],
+      ]);
+    });
+
+    it('leaves out repositories that match no project the caller can see', async () => {
+      gitHubOrg([inRepo('acme/medite', { id: 1 }), inRepo('acme/tooling', { id: 2 })]);
+
+      const { tickets } = await getGitHubTickets([project('Medite')], 'KnowAll', {
+        token: 'secret-token',
+        projectRepos: { '*': ['acme/*'] },
+      });
+
+      expect(tickets.map((t) => t.project)).toEqual(['Medite']);
+    });
+
+    it('keeps a repository a project names with that project', async () => {
+      gitHubOrg([inRepo('acme/medite', { id: 1 }), inRepo('acme/internal', { id: 2 })]);
+
+      const { tickets } = await getGitHubTickets(
+        [project('Medite'), project('Internal')],
+        'KnowAll',
+        { token: 'secret-token', projectRepos: { Internal: ['acme/medite'], '*': ['acme/*'] } }
+      );
+
+      expect(tickets.map((t) => [t.sourceRef, t.project])).toEqual([
+        ['acme/medite#12', 'Internal'],
+        ['acme/internal#12', 'Internal'],
+      ]);
+    });
+
+    // An organization a project names stays with that project, even for a
+    // caller who cannot see it (#463 review)
+    it('keeps an organization a hidden project names out of *', async () => {
+      gitHubOrg([inRepo('acme/medite', { id: 1 }), inRepo('acme/private', { id: 2 })]);
+
+      const { tickets } = await getGitHubTickets([project('Medite')], 'KnowAll', {
+        token: 'secret-token',
+        projectRepos: { Private: ['acme/*'], '*': ['acme/*', 'acme/medite'] },
+      });
+
+      expect(tickets).toEqual([]);
+      expect(calledUrls()).toEqual([]);
+    });
+
+    it('matches a single repository under * by its name', async () => {
+      gitHub({ 'acme/medite': { open: [[issue({ id: 1 })]] } });
+
+      const { tickets } = await getGitHubTickets([project('Medite')], 'KnowAll', {
+        token: 'secret-token',
+        projectRepos: { '*': ['acme/medite', 'acme/unrelated'] },
+      });
+
+      expect(tickets.map((t) => t.project)).toEqual(['Medite']);
+      expect(calledUrls().every((u) => !u.pathname.includes('unrelated'))).toBe(true);
     });
   });
 

@@ -331,6 +331,19 @@ the GitHub repositories that belong to it:
 A repository that is also named for another project stays with that project
 only. Up to 1,000 open issues and pull requests are read for an organization;
 beyond that, the server log says so and the rest are not shown.
+* The project name `*` covers every project of the organization without
+  listing them: each repository goes to the project whose name matches it.
+  Case does not matter, and spaces and punctuation count as hyphens, so
+  `your-org/cairn-homes` goes to the project *Cairn Homes*:
++
+[source,json]
+----
+{ "*": ["your-org/*"] }
+----
++
+A repository that matches no project is not shown. One whose name differs
+from its project's can be named for that project as well, which takes
+precedence: `{"*": ["your-org/*"], "W and R Barnett": ["your-org/stock-tracking"]}`.
 * A user sees a repository's issues only if they can see the DevOps project it
   is mapped to, in the organization they have selected.
 
