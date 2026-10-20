@@ -1,19 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { Send, Zap, Paperclip, Loader2 } from 'lucide-react';
+import { Send, Zap, Paperclip, Loader2, Lock, X } from 'lucide-react';
 import Avatar from '@/components/common/Avatar';
+import FileIcon from '@/components/common/FileIcon';
 import UserHtml from '@/components/common/UserHtml';
 import MentionInput from '@/components/common/MentionInput';
-import { buildAttachmentProxyUrl } from '@/lib/attachment-utils';
+import {
+  attachedFilesHtml,
+  buildAttachmentProxyUrl,
+  formatFileSize,
+  validateFile,
+} from '@/lib/attachment-utils';
+import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { useMentionableUsers } from '@/hooks/useMentionableUsers';
 import type { TicketComment, User, Attachment } from '@/types';
 
 interface CommentSectionProps {
   comments: TicketComment[];
   isLoading?: boolean;
-  onAddComment?: (comment: string) => Promise<void>;
+  onAddComment?: (comment: string, isInternal?: boolean) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   assignee?: User | null;
   onZapClick?: () => void;
@@ -43,13 +50,44 @@ export default function CommentSection({
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPastingImage, setIsPastingImage] = useState(false);
+  // Public by default, as in the full view: the mitigation for a note sent to
+  // the wrong audience is making the choice unmistakable, not flipping it.
+  const [isInternalNote, setIsInternalNote] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    setUploadError(null);
+    const accepted: File[] = [];
+    for (const file of files) {
+      const error = validateFile(file);
+      if (error) setUploadError(error);
+      else accepted.push(file);
+    }
+    if (accepted.length > 0) setPendingFiles((prev) => [...prev, ...accepted]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const handleSubmit = async () => {
-    if (!newComment.trim() || !onAddComment) return;
+    if ((!newComment.trim() && pendingFiles.length === 0) || !onAddComment) return;
     setIsSubmitting(true);
+    setUploadError(null);
     try {
-      await onAddComment(newComment.trim());
+      // Files go up first and are named in the comment, so a public reply
+      // emails them to the customer (#7376).
+      const uploaded: Attachment[] = [];
+      if (onUploadAttachment) {
+        for (const file of pendingFiles) uploaded.push(await onUploadAttachment(file));
+      }
+      setPendingFiles([]);
+      const body = [newComment.trim(), attachedFilesHtml(uploaded)].filter(Boolean).join('\n');
+      if (body) await onAddComment(body, isTicket ? isInternalNote : false);
       setNewComment('');
+      setIsInternalNote(false);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Failed to send');
     } finally {
       setIsSubmitting(false);
     }
@@ -181,21 +219,113 @@ export default function CommentSection({
           className={compact ? '' : 'border-t pt-4'}
           style={compact ? {} : { borderColor: 'var(--border)' }}
         >
-          {!compact && (
-            <div className="mb-3 flex items-center gap-2">
-              <label className="flex cursor-not-allowed items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked
-                  disabled
-                  className="h-4 w-4 rounded accent-[var(--primary)]"
-                />
-                <span className="text-xs" style={{ color: 'var(--primary)' }}>
-                  {isTicket
-                    ? 'Public reply – all comments are visible to customers in DevOps'
-                    : 'Comments are visible in DevOps'}
-                </span>
-              </label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            onChange={handleFileSelect}
+            accept={ALLOWED_ATTACHMENT_TYPES.join(',')}
+            className="hidden"
+          />
+
+          {/* Public reply vs internal note, in the dialog as well as the full
+              view -- it used to exist only in the full view (#7375). */}
+          {isTicket ? (
+            <div className="mb-2">
+              <div
+                role="radiogroup"
+                aria-label="Comment visibility"
+                className="inline-flex rounded-md border p-0.5"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                {[
+                  { internal: false, label: 'Public reply', Icon: Send },
+                  { internal: true, label: 'Internal note', Icon: Lock },
+                ].map(({ internal, label, Icon }) => {
+                  const active = isInternalNote === internal;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setIsInternalNote(internal)}
+                      className="flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors"
+                      style={{
+                        backgroundColor: active
+                          ? internal
+                            ? 'var(--warning-bg-hover)'
+                            : 'var(--surface-hover)'
+                          : 'transparent',
+                        color: active
+                          ? internal
+                            ? 'var(--text-primary)'
+                            : 'var(--primary)'
+                          : 'var(--text-muted)',
+                      }}
+                    >
+                      <Icon size={13} />
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                {isInternalNote
+                  ? 'Stays on the ticket. The requester is not emailed.'
+                  : 'Visible to the requester in DevOps, and emailed if the ticket arrived by email.'}
+              </p>
+            </div>
+          ) : (
+            !compact && (
+              <p className="mb-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                Comments are visible in DevOps
+              </p>
+            )
+          )}
+
+          {uploadError && (
+            <div
+              className="mb-2 flex items-center justify-between rounded-md p-2 text-xs"
+              style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}
+            >
+              <span>{uploadError}</span>
+              <button
+                type="button"
+                onClick={() => setUploadError(null)}
+                className="ml-2 hover:opacity-70"
+                aria-label="Dismiss"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          )}
+
+          {pendingFiles.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {pendingFiles.map((file, index) => (
+                <div
+                  key={`${file.name}-${index}`}
+                  className="flex items-center gap-2 rounded-md px-2 py-1 text-xs"
+                  style={{
+                    backgroundColor: 'var(--surface-hover)',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  <FileIcon contentType={file.type} size={14} />
+                  <span className="max-w-[150px] truncate">{file.name}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>({formatFileSize(file.size)})</span>
+                  <button
+                    type="button"
+                    onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== index))}
+                    className="hover:opacity-70"
+                    style={{ color: 'var(--text-muted)' }}
+                    aria-label={`Remove ${file.name}`}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
 
@@ -223,11 +353,11 @@ export default function CommentSection({
             )}
             <div className="mt-2 flex items-center justify-end gap-2">
               <button
-                onClick={() =>
-                  alert('Use Ctrl+V to paste images, or use the full view for file attachments')
-                }
-                className="rounded p-2 transition-colors hover:bg-[var(--surface-hover)]"
-                style={{ color: 'var(--text-muted)' }}
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!onUploadAttachment || isSubmitting}
+                className="rounded p-2 transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+                style={{ color: pendingFiles.length > 0 ? 'var(--primary)' : 'var(--text-muted)' }}
                 title="Attach file"
               >
                 <Paperclip size={compact ? 14 : 18} />
@@ -243,7 +373,7 @@ export default function CommentSection({
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={!newComment.trim() || isSubmitting}
+                disabled={(!newComment.trim() && pendingFiles.length === 0) || isSubmitting}
                 className="btn-primary flex items-center gap-1 py-1.5 text-sm"
               >
                 {isSubmitting ? (

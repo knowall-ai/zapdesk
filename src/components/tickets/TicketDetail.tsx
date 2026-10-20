@@ -44,6 +44,7 @@ import {
   rewriteAttachmentUrls,
   buildAttachmentProxyUrl,
   attachmentDownloadUrl,
+  attachedFilesHtml,
 } from '@/lib/attachment-utils';
 import { hasTicketTag } from '@/lib/tags';
 import StatusBadge from '../common/StatusBadge';
@@ -688,18 +689,22 @@ export default function TicketDetail({
 
     try {
       // Upload all pending files first
+      const uploaded: Attachment[] = [];
       if (onUploadAttachment && pendingFiles.length > 0) {
         setIsUploadingFiles(true);
         for (const file of pendingFiles) {
-          await onUploadAttachment(file);
+          uploaded.push(await onUploadAttachment(file));
         }
         setIsUploadingFiles(false);
         setPendingFiles([]);
       }
 
-      // Then add comment if there is one
-      if (newComment.trim() && onAddComment) {
-        await onAddComment(newComment, isInternalNote);
+      // Then the comment, naming the files. Uploaded on their own they were
+      // only linked to the work item, so the reply email never carried them
+      // and the customer did not get them (#7376).
+      const body = [newComment.trim(), attachedFilesHtml(uploaded)].filter(Boolean).join('\n');
+      if (body && onAddComment) {
+        await onAddComment(body, isInternalNote);
         setNewComment('');
         setIsInternalNote(false);
       }

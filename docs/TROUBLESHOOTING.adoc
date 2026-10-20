@@ -23,6 +23,9 @@
 |**Comments not saving**
 |User may not have write permission in Azure DevOps. Check the work item is not locked. Verify session hasn't expired.
 
+|**Customers cannot see files attached to a reply**
+|Files are emailed with a *public reply*, not with an internal note. A reply's files must fit in about 3 MB in total; any that do not are listed in the email as not included, and stay on the ticket.
+
 |**Email webhook not creating tickets**
 |Verify EMAIL_WEBHOOK_SECRET header matches. Check sender domain has project mapping. Review server logs for error details.
 

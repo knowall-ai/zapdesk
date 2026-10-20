@@ -25,6 +25,11 @@ export interface OutboundAttachment {
   fileName: string;
   /** Matches the `cid:` in the rewritten HTML. */
   contentId: string;
+  /**
+   * False for a file the agent attached rather than pasted: it travels as an
+   * ordinary attachment instead of being drawn into the body. Defaults to true.
+   */
+  inline?: boolean;
 }
 
 export interface InlineRewrite {
@@ -91,6 +96,54 @@ export function inlineProxyImages(html: string): InlineRewrite {
     seen.set(id, contentId);
     attachments.push({ id, org: org ? safeDecode(org) : undefined, fileName, contentId });
     return `src=${quote}cid:${contentId}${quote}`;
+  });
+
+  return { html: rewritten, attachments };
+}
+
+/** Proxy links (`<a href>`) this app writes for files attached to a reply. */
+const PROXY_LINK =
+  /<a\b[^>]*?href=(["'])((?:https?:\/\/[^"']*)?\/api\/devops\/attachments\/([^"'?]+)[^"']*)\1[^>]*>([\s\S]*?)<\/a>/gi;
+
+/**
+ * Turn links to attached files into real email attachments (#7376).
+ *
+ * A file attached with the paperclip, rather than pasted, is referenced in the
+ * comment as a proxy link. Like a pasted image, that link needs a ZapDesk
+ * session the customer does not have, so the file itself goes on the message
+ * and the link becomes plain text naming it.
+ *
+ * A file already carried inline (an image both pasted and linked) is not
+ * attached twice.
+ */
+export function attachLinkedFiles(
+  html: string,
+  alreadyAttached: OutboundAttachment[] = []
+): InlineRewrite {
+  const attachments: OutboundAttachment[] = [];
+  const seen = new Set(alreadyAttached.map((a) => a.id));
+
+  const rewritten = html.replace(PROXY_LINK, (_whole, _quote, url, rawId, text) => {
+    const id = safeDecode(rawId);
+    const fileName = fileNameFrom(url, `attachment-${attachments.length + 1}`);
+    if (!seen.has(id)) {
+      seen.add(id);
+      const org = /[?&](?:amp;)?org=([^&"'<]+)/i.exec(url)?.[1];
+      attachments.push({
+        id,
+        org: org ? safeDecode(org) : undefined,
+        fileName,
+        contentId: `zapdesk-file-${attachments.length + 1}-${id}@zapdesk`,
+        inline: false,
+      });
+    }
+    // The link text is already HTML from the stored comment; the name from
+    // the URL is decoded text and is escaped before going back into markup.
+    const label =
+      String(text)
+        .replace(/<[^>]*>/g, '')
+        .trim() || fileName.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+    return `<span>${label} (attached)</span>`;
   });
 
   return { html: rewritten, attachments };

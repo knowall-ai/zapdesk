@@ -7,7 +7,7 @@
  * the main app credentials when the dedicated ones are not set.
  */
 
-import { inlineProxyImages, type OutboundAttachment } from './email-attachments';
+import { attachLinkedFiles, inlineProxyImages, type OutboundAttachment } from './email-attachments';
 import { escapeHtml } from './email-clean';
 import {
   assignmentNotificationTemplate,
@@ -428,12 +428,12 @@ export async function fetchInlineAttachments(
       }
       total += contentBytes.length;
 
+      const inline = item.inline !== false;
       collected.push({
         name: item.fileName,
         contentType: response.headers.get('content-type') || 'application/octet-stream',
         contentBytes,
-        contentId: item.contentId,
-        isInline: true,
+        ...(inline ? { contentId: item.contentId, isInline: true } : {}),
       });
     } catch (error) {
       console.error(`[Email] Attachment ${item.id} could not be read:`, error);
@@ -485,11 +485,17 @@ export async function sendAgentReply(
     // session can fetch. Sent as-is the customer gets a broken image where the
     // screenshot should be, so the bytes travel with the message instead.
     const inlined = inlineProxyImages(replyHtml);
-    const { attachments, skipped } = await fetchInlineAttachments(inlined.attachments);
+    // Files attached with the paperclip are linked, not drawn; they go on the
+    // message as ordinary attachments (#7376).
+    const linked = attachLinkedFiles(inlined.html, inlined.attachments);
+    const { attachments, skipped } = await fetchInlineAttachments([
+      ...inlined.attachments,
+      ...linked.attachments,
+    ]);
     const html = agentReplyTemplate({
       ticketId,
       agentName,
-      replyContent: withSkippedNote(inlined.html, skipped),
+      replyContent: withSkippedNote(linked.html, skipped),
       history,
     });
     await sendViaGraph({
