@@ -12,6 +12,20 @@ import type {
   CheckpointCustomer,
 } from '@/types';
 
+/**
+ * Monthly checkpoint statistics for one project and period.
+ *
+ * Query: `project` is required. `startDate` and `endDate` default to the last
+ * 30 days. `customer` (a key from `customers`) narrows every figure to that
+ * customer's tickets (#7385).
+ *
+ * Returns the KPIs, daily trend points, the tickets created or resolved in the
+ * period, and `customers`: everyone who has raised a ticket in the project,
+ * so the filter can offer them.
+ *
+ * 400 without a project or for a customer the project has never had, 401
+ * without a session, 500 when Azure DevOps fails.
+ */
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -24,7 +38,7 @@ export async function GET(request: Request) {
     const projectName = searchParams.get('project');
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');
-    // Optional: one customer's tickets only (#7385). Matched on requester email.
+    // Optional: one customer's tickets only (#7385). Matched on customerKey.
     const customerParam = (searchParams.get('customer') || '').trim().toLowerCase();
 
     if (!projectName) {
@@ -145,6 +159,11 @@ function customerKey(ticket: Ticket): string {
   return key.toLowerCase();
 }
 
+/**
+ * Headline figures for the period: tickets created, resolved, pending and
+ * open, average response and resolution times in hours, and the share of
+ * tickets answered within the response SLA.
+ */
 function calculateKPIs(
   ticketsCreated: Ticket[],
   ticketsResolved: Ticket[],
@@ -194,6 +213,7 @@ function calculateKPIs(
   };
 }
 
+/** Tickets created and resolved on each day of the period, for the trend charts. */
 function calculateTrends(tickets: Ticket[], startDate: Date, endDate: Date): TicketTrendPoint[] {
   const trends: TicketTrendPoint[] = [];
   const currentDate = new Date(startDate);

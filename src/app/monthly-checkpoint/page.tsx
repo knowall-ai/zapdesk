@@ -13,18 +13,33 @@ import type { MonthlyCheckpointStats, DevOpsProject, Ticket } from '@/types';
 
 type DatePreset = 'last30' | 'thisMonth' | 'lastMonth' | 'custom';
 
+/**
+ * The checkpoint report: pick a project, a period and optionally one customer
+ * (#7385), then read the KPIs, trends and tickets, or export them as a PDF.
+ */
 function MonthlyCheckpointContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { get: devOpsGet, hasOrganization } = useDevOpsApi();
+  const { get: devOpsGet, hasOrganization, selectedOrganization } = useDevOpsApi();
   const printRef = useRef<HTMLDivElement>(null);
 
   const [projects, setProjects] = useState<DevOpsProject[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
-  // '' is every customer. Cleared when the project changes, as customers belong
-  // to a project (#7385).
+  // '' is every customer. Cleared when the project or the organisation changes,
+  // as customers belong to a project (#7385).
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
+
+  // A customer key means nothing in another organisation, and the API rejects
+  // one it does not know, so switching organisation clears it. Done while
+  // rendering rather than in an effect: an effect would let the report fetch
+  // run once with the old key before the reset landed.
+  const orgName = selectedOrganization?.accountName ?? null;
+  const [customerOrg, setCustomerOrg] = useState(orgName);
+  if (customerOrg !== orgName) {
+    setCustomerOrg(orgName);
+    setSelectedCustomer('');
+  }
   const [datePreset, setDatePreset] = useState<DatePreset>('last30');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -72,6 +87,7 @@ function MonthlyCheckpointContent() {
     }
   }, [searchParams]);
 
+  /** Load the projects for the selector, sorted by name. */
   const fetchProjects = useCallback(async () => {
     if (!hasOrganization) return;
     setIsLoadingProjects(true);
@@ -95,6 +111,7 @@ function MonthlyCheckpointContent() {
   // under the newer selection.
   const statsSeqRef = useRef(0);
 
+  /** Load the report for the current project, period and customer. */
   const fetchStats = useCallback(async () => {
     if (!hasOrganization) return;
     const seq = ++statsSeqRef.current;
@@ -486,6 +503,7 @@ function MonthlyCheckpointContent() {
   );
 }
 
+/** Route entry; Suspense is required because the content reads search params. */
 export default function MonthlyCheckpointPage() {
   return (
     <Suspense
