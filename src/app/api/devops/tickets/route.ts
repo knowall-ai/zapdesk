@@ -5,6 +5,7 @@ import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService, workItemToTicket, setStateCategoryCache } from '@/lib/devops';
 import { TICKET_WORK_ITEM_TYPES } from '@/types';
 import { filterTicketsByView } from '@/lib/ticket-views';
+import { sendAssignmentNotification } from '@/lib/email';
 
 // TTL cache for state categories (avoids refetching on every request)
 let stateCategoryCacheData: {
@@ -218,6 +219,21 @@ export async function POST(request: NextRequest) {
     );
 
     const ticket = workItemToTicket(workItem);
+
+    // A ticket created already assigned is as much an assignment as one
+    // reassigned later, but only the later path emailed anyone (#7374).
+    // Fire-and-forget; the self-assignment and polled-mailbox guards live in
+    // sendAssignmentNotification.
+    const assigneeEmail = ticket.assignee?.email;
+    if (assignee && assigneeEmail) {
+      sendAssignmentNotification({
+        ticketId: ticket.id,
+        subject: ticket.title,
+        assigneeEmail,
+        assignedByName: session.user?.name || 'A colleague',
+        assignedByEmail: session.user?.email ?? undefined,
+      }).catch(() => {});
+    }
 
     return NextResponse.json({ ticket, success: true });
   } catch (error) {
