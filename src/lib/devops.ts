@@ -2011,11 +2011,10 @@ export class AzureDevOpsService {
           contentType: relation.attributes?.contentType || 'application/octet-stream',
           size: relation.attributes?.length || 0,
           // When it was attached to this work item, which is when it was sent;
-          // the upload time is the fallback (#7726).
-          createdAt: new Date(
-            relation.attributes?.authorizedDate ||
-              relation.attributes?.resourceCreatedDate ||
-              Date.now()
+          // the upload time is the fallback (#7726). With neither it is left
+          // unknown: "now" would make an old file look new and move on refresh.
+          createdAt: dateOrUndefined(
+            relation.attributes?.authorizedDate || relation.attributes?.resourceCreatedDate
           ),
         });
       }
@@ -3661,4 +3660,11 @@ export async function getSLALevelForProject(projectName: string): Promise<SLALev
 // Clear SLA cache (useful for testing or when project descriptions change)
 export function clearSLAMapCache(): void {
   slaMapCache = null;
+}
+
+/** A date from a DevOps attribute, or undefined when it is missing or unparseable. */
+function dateOrUndefined(value: string | undefined): Date | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }

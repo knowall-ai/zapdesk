@@ -200,7 +200,8 @@ export interface Attachment {
   url: string;
   contentType: string;
   size: number;
-  createdAt: Date;
+  /** When it was attached. Absent when DevOps records no date for it. */
+  createdAt?: Date;
   createdBy?: User;
 }
 

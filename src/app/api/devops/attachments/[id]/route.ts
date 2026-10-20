@@ -35,8 +35,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const fileName = sanitizeFileName(rawFileName);
     // `download=1` saves the file instead of opening it. Opening it took the
     // user to another tab, and coming back reloaded the ticket (#7719).
-    const disposition =
-      request.nextUrl.searchParams.get('download') === '1' ? 'attachment' : 'inline';
+    const download = request.nextUrl.searchParams.get('download');
+    if (download !== null && download !== '1') {
+      return NextResponse.json({ error: 'download must be 1 when given' }, { status: 400 });
+    }
+    const disposition = download === '1' ? 'attachment' : 'inline';
 
     const devopsUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/_apis/wit/attachments/${id}?api-version=7.0`;
 
