@@ -39,6 +39,7 @@ const viewTitles: Record<string, string> = {
   kanban: 'Kanban Board',
 };
 
+/** The tickets list or Kanban view for the selected sidebar view. */
 function TicketsPageContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -490,6 +491,7 @@ function TicketsPageContent() {
   );
 }
 
+/** Route entry for the tickets list; Suspense is required because the list reads search params. */
 export default function TicketsPage() {
   return (
     <Suspense

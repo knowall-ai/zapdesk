@@ -20,6 +20,7 @@ import Link from 'next/link';
 import type { Epic, TreemapNode, TreemapColorScheme } from '@/types';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 
+/** A project's epics. */
 export default function ProjectEpicsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();

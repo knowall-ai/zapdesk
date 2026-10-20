@@ -117,6 +117,7 @@ function regroupByPerson(data: StandupData): GroupData[] {
     }));
 }
 
+/** Route entry for the Kanban board; Suspense is required because the board reads search params. */
 export default function StandupPage() {
   return (
     <Suspense
@@ -131,6 +132,7 @@ export default function StandupPage() {
   );
 }
 
+/** The Kanban board: work items grouped by project or person, with pull request activity. */
 function StandupPageContent() {
   const { data: session, status } = useSession();
   const router = useRouter();

@@ -12,6 +12,7 @@ import Link from 'next/link';
 import type { Epic, WorkItemType } from '@/types';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 
+/** One epic's features and their work items. */
 export default function EpicDetailPage() {
   const { data: session, status } = useSession();
   const router = useRouter();

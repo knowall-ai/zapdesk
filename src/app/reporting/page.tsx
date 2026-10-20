@@ -43,6 +43,7 @@ interface ProjectStats {
   resolvedToday: number;
 }
 
+/** Live reporting dashboard across projects. */
 export default function LiveDashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();

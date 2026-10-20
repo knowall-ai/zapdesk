@@ -40,6 +40,7 @@ type SortColumn =
   | 'avgResolution';
 type SortDirection = 'asc' | 'desc';
 
+/** The team's workload and recent activity. */
 export default function TeamPage() {
   const { data: session, status } = useSession();
   const { selectedOrganization } = useOrganization();

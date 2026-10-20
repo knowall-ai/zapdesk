@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { currentCallbackUrl } from '@/lib/login-redirect';
 
+/** Sign-in page. After signing in, people return to the page they were sent here from (`callbackUrl`, same-site paths only), or the home page (#7723). */
 export default function LoginPage() {
   const { data: session, status } = useSession();
   const router = useRouter();

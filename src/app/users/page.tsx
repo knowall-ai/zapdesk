@@ -15,6 +15,7 @@ import type { Customer } from '@/types';
 /** How long to wait for the users list before giving up. */
 const USERS_TIMEOUT_MS = 15_000;
 
+/** Users of the selected organisation. */
 export default function UsersPage() {
   const { data: session, status } = useSession();
   const router = useRouter();

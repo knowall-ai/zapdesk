@@ -19,6 +19,7 @@ interface ProjectWithSLA extends Organization {
   epicCount?: number;
 }
 
+/** All Azure DevOps projects in the selected organisation. */
 export default function ProjectsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
