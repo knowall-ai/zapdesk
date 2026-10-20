@@ -549,8 +549,9 @@ export async function sendStatusChangeNotification(
 /**
  * Tell the customer their ticket's title or priority changed (#7724).
  *
- * Sent in the customer's existing thread (same `[ZapDesk #N]` subject). The
- * subject used is the new title, so the thread name follows the change.
+ * Sent in the customer's existing thread: ZapDesk threads mail by the
+ * `[ZapDesk #N]` subject. Callers pass the title the customer already knows,
+ * not a just-changed one, so a title change does not start a new conversation.
  */
 export async function sendTicketUpdateNotification(
   ticketId: number,

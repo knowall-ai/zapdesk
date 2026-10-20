@@ -273,7 +273,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         });
       }
       if (requesterEmail && changes.length > 0) {
-        sendTicketUpdateNotification(ticketId, ticket.title, requesterEmail, changes).catch(
+        // Sent under the title the customer already knows, so it lands in
+        // their existing thread; the new title is listed in the changes.
+        sendTicketUpdateNotification(ticketId, before.title, requesterEmail, changes).catch(
           () => {}
         );
       }
