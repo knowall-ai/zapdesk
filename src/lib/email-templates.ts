@@ -53,6 +53,11 @@ const KNOWALL_LOGO_URL = process.env.KNOWALL_LOGO_URL || '';
  */
 export type EmailAudience = 'customer' | 'team';
 
+/**
+ * The shared card layout around every ZapDesk email: logo header, the given
+ * content, and the footer. For a `'customer'` audience the logo is not a link
+ * into ZapDesk, which customers cannot sign in to (#7371).
+ */
 export function layoutWrapper(content: string, audience: EmailAudience = 'team'): string {
   const logo = `<img src="${ZAPDESK_LOGO_URL}" width="240" height="60" alt="${APP_NAME}" style="border: 0;" />`;
   return `
@@ -116,6 +121,10 @@ function statusBadge(status: string): string {
   return `<span class="badge ${cls}">${escapeText(status)}</span>`;
 }
 
+/**
+ * First reply to a customer whose email opened a ticket: the ticket number and
+ * subject, and that replying adds detail. Carries no link into ZapDesk (#7371).
+ */
 export function ticketConfirmationTemplate(opts: {
   ticketId: number;
   subject: string;
@@ -169,6 +178,10 @@ function renderHistory(history: HistoryEntry[]): string {
     ${items}`;
 }
 
+/**
+ * An agent's public reply, as emailed to the customer, with the earlier
+ * conversation quoted beneath. Carries no link into ZapDesk (#7371).
+ */
 export function agentReplyTemplate(opts: {
   ticketId: number;
   agentName: string;
@@ -236,6 +249,10 @@ export function assignmentNotificationTemplate(opts: {
   `);
 }
 
+/**
+ * Tells the customer their ticket moved from one status to another. Carries no
+ * link into ZapDesk (#7371).
+ */
 export function statusChangeTemplate(opts: {
   ticketId: number;
   subject: string;

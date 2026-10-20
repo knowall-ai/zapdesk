@@ -114,6 +114,19 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   }
 }
 
+/**
+ * Update a ticket's assignee, priority, title, description, tags, resolution
+ * or mitigation. `assignToMe: true` assigns the caller.
+ *
+ * Side effects, after the update is saved:
+ * - a new assignee is emailed (#7374);
+ * - for a ticket that arrived by email, the requester is emailed when the
+ *   title or priority actually changed (#7724). That send is awaited so it is
+ *   not lost to a process recycle; it cannot fail the update.
+ *
+ * Returns `{ ticket }`; 400 for a bad id or tags, 401 without a session, 404
+ * when the ticket cannot be found, 500 otherwise.
+ */
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);

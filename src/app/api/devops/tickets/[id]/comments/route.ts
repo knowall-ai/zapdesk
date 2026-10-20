@@ -47,6 +47,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
+/**
+ * Add a comment to a ticket. `isInternal: true` stores it as an internal note,
+ * which is never emailed.
+ *
+ * A public reply on a ticket that arrived by email is also emailed to the
+ * requester, quoting the earlier public conversation -- without the
+ * requester's own replies, which they already have (#7722) -- and blind-copied
+ * to the assignee. The email is sent after responding and cannot fail the
+ * comment.
+ *
+ * 400 for an empty comment or one forging the email-origin marker, 401 without
+ * a session, 404 when the ticket cannot be found, 500 otherwise.
+ */
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);

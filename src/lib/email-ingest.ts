@@ -307,6 +307,14 @@ function supportTeamFallback(): string | null {
   return group;
 }
 
+/**
+ * Tell the ticket's assignee, or the team fallback address, that the customer
+ * replied by email.
+ *
+ * Skipped when nobody is configured to receive it, and never sent to the
+ * polled mailbox (it would loop) or to the customer themself (#7722).
+ * Fire-and-forget: a failed send must not cost the reply being stored.
+ */
 function notifyAgentOfReply(
   workItem: WorkItemFieldsResponse | null | undefined,
   ticketId: number,
