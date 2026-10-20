@@ -4,6 +4,9 @@ import { authOptions } from '@/lib/auth';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
+/** The query parameters this route reads; anything else is refused. */
+const PROXY_PARAMS = new Set(['org', 'fileName', 'download']);
+
 /** Sanitize filename for Content-Disposition header (strip control chars and quotes). */
 function sanitizeFileName(name: string): string {
   return name.replace(/["\\\x00-\x1f\x7f]/g, '_').slice(0, 255);
@@ -25,6 +28,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id } = await params;
+
+    // Refuse parameters this route does not read. The links ZapDesk writes
+    // carry only these (buildAttachmentProxyUrl), including the ones stored
+    // in existing comments.
+    const unknown = [...new Set(request.nextUrl.searchParams.keys())].filter(
+      (key) => !PROXY_PARAMS.has(key)
+    );
+    if (unknown.length > 0) {
+      return NextResponse.json(
+        { error: `Unknown query parameter: ${unknown.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
     // Use org from query param (embedded in img src), fall back to header, then env
     const organization =
       request.nextUrl.searchParams.get('org') ||

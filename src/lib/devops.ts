@@ -2013,9 +2013,11 @@ export class AzureDevOpsService {
           // When it was attached to this work item, which is when it was sent;
           // the upload time is the fallback (#7726). With neither it is left
           // unknown: "now" would make an old file look new and move on refresh.
-          createdAt: dateOrUndefined(
-            relation.attributes?.authorizedDate || relation.attributes?.resourceCreatedDate
-          ),
+          // Each parsed on its own, so an unreadable attach date still falls
+          // back to a readable upload date.
+          createdAt:
+            dateOrUndefined(relation.attributes?.authorizedDate) ??
+            dateOrUndefined(relation.attributes?.resourceCreatedDate),
         });
       }
     }
