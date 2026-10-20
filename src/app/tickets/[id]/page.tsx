@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
@@ -12,6 +13,7 @@ import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { hasTicketTag } from '@/lib/tags';
 import type { Ticket, TicketComment, Attachment, WorkItemUpdate } from '@/types';
 
+/** Full view of one ticket or work item. */
 export default function TicketDetailPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -46,7 +48,7 @@ export default function TicketDetailPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 

@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { takeOpenRequest } from '@/lib/full-view';
 import { useEffect, useRef, useState, Suspense, useCallback } from 'react';
 import { toast } from 'sonner';
@@ -39,6 +40,7 @@ const viewTitles: Record<string, string> = {
   kanban: 'Kanban Board',
 };
 
+/** The tickets list or Kanban view for the selected sidebar view. */
 function TicketsPageContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -58,7 +60,7 @@ function TicketsPageContent() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 
@@ -503,6 +505,7 @@ function TicketsPageContent() {
   );
 }
 
+/** Route entry for the tickets list; Suspense is required because the list reads search params. */
 export default function TicketsPage() {
   return (
     <Suspense
