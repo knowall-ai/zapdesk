@@ -58,3 +58,47 @@ export function takeOpenRequest(): number | null {
   const id = Number.parseInt(raw, 10);
   return Number.isInteger(id) && id > 0 ? id : null;
 }
+
+const BOARD_VIEW_PREFIX = 'zapdesk:board-view:';
+
+/** The storage key for this page's board, ignoring the one-off `open` request. */
+function boardViewKey(): string {
+  const url = new URL(window.location.href);
+  url.searchParams.delete(OPEN_PARAM);
+  return `${BOARD_VIEW_PREFIX}${url.pathname}${url.search}`;
+}
+
+/**
+ * Remember a board's own controls (sort, grouping, filters, search...) for
+ * this page, so leaving full view can put them back (#7727).
+ *
+ * Those controls live in component state, not the address, so returning to
+ * the page alone reset them to their defaults. Stored per tab
+ * (sessionStorage); failures are ignored, as losing this is only an
+ * inconvenience.
+ */
+export function saveBoardView(view: unknown): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(boardViewKey(), JSON.stringify(view));
+  } catch {
+    // Storage full or blocked: the board simply starts from its defaults.
+  }
+}
+
+/**
+ * The board controls saved for this page, but only when coming back from a
+ * ticket's full view (the address carries the `open` request). Arriving any
+ * other way starts the board fresh, as before.
+ */
+export function restoreBoardView<T>(): Partial<T> | null {
+  if (typeof window === 'undefined') return null;
+  if (!new URLSearchParams(window.location.search).has(OPEN_PARAM)) return null;
+  try {
+    const raw = window.sessionStorage.getItem(boardViewKey());
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' ? (parsed as Partial<T>) : null;
+  } catch {
+    return null;
+  }
+}

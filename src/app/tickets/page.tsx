@@ -476,6 +476,7 @@ function TicketsPageContent() {
 
         {/* Work item detail dialog for list and kanban clicks */}
         <WorkItemDetailDialog
+          supportsReturn
           workItem={selectedTicket ? ticketToWorkItem(selectedTicket) : null}
           isOpen={!!selectedTicket}
           onClose={() => setSelectedTicket(null)}

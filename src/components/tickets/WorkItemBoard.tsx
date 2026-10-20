@@ -31,6 +31,7 @@ import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import KanbanBoard from './KanbanBoard';
+import { restoreBoardView, saveBoardView } from '@/lib/full-view';
 
 // The states only feed the Statuses filter, so give up rather than hang
 const STATES_FETCH_TIMEOUT_MS = 15_000;
@@ -138,6 +139,60 @@ interface Filters {
   assignee: string[];
   requester: string[];
   type: string[];
+}
+
+const EMPTY_FILTERS: Filters = { status: [], priority: [], assignee: [], requester: [], type: [] };
+
+const SORT_FIELDS: readonly SortField[] = [
+  'id',
+  'type',
+  'status',
+  'subject',
+  'requester',
+  'requested',
+  'priority',
+  'updated',
+  'assignee',
+  'project',
+];
+const GROUP_BY_OPTIONS: readonly GroupByOption[] = ['none', 'assignee', 'userStory'];
+
+/** The board's own controls, kept across a trip to a ticket's full view (#7727). */
+interface BoardView {
+  sortField: SortField;
+  sortDirection: SortDirection;
+  groupBy: GroupByOption;
+  viewMode: 'list' | 'kanban';
+  ticketsOnly: boolean;
+  searchQuery: string;
+  filters: Partial<Filters>;
+}
+
+/**
+ * Saved controls, with anything unrecognised dropped. They come from storage,
+ * so an old or hand-edited value must not reach the board's state.
+ */
+function validBoardView(saved: Partial<BoardView> | null): Partial<BoardView> | null {
+  if (!saved) return null;
+  const filters: Partial<Filters> = {};
+  if (saved.filters && typeof saved.filters === 'object') {
+    for (const key of Object.keys(EMPTY_FILTERS) as (keyof Filters)[]) {
+      const value = (saved.filters as Record<string, unknown>)[key];
+      if (Array.isArray(value) && value.every((v) => typeof v === 'string')) filters[key] = value;
+    }
+  }
+  return {
+    sortField: SORT_FIELDS.includes(saved.sortField as SortField) ? saved.sortField : undefined,
+    sortDirection:
+      saved.sortDirection === 'asc' || saved.sortDirection === 'desc'
+        ? saved.sortDirection
+        : undefined,
+    groupBy: GROUP_BY_OPTIONS.includes(saved.groupBy as GroupByOption) ? saved.groupBy : undefined,
+    viewMode: saved.viewMode === 'list' || saved.viewMode === 'kanban' ? saved.viewMode : undefined,
+    ticketsOnly: typeof saved.ticketsOnly === 'boolean' ? saved.ticketsOnly : undefined,
+    searchQuery: typeof saved.searchQuery === 'string' ? saved.searchQuery : undefined,
+    filters,
+  };
 }
 
 interface GroupedItems {
@@ -287,20 +342,36 @@ export default function WorkItemBoard({
   project,
   organization,
 }: WorkItemBoardProps) {
-  const [sortField, setSortField] = useState<SortField>('updated');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  // Coming back from a ticket's full view: start from the controls the board
+  // had when the ticket was opened, not the defaults (#7727).
+  const [restored] = useState(() => validBoardView(restoreBoardView<BoardView>()));
+  const [sortField, setSortField] = useState<SortField>(restored?.sortField ?? 'updated');
+  const [sortDirection, setSortDirection] = useState<SortDirection>(
+    restored?.sortDirection ?? 'desc'
+  );
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
-  const [groupBy, setGroupBy] = useState<GroupByOption>(initialGroupBy);
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>(defaultViewMode);
-  const [ticketsOnly, setTicketsOnly] = useState(defaultTicketsOnly);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filters, setFilters] = useState<Filters>({
-    status: [],
-    priority: [],
-    assignee: [],
-    requester: [],
-    type: [],
-  });
+  const [groupBy, setGroupBy] = useState<GroupByOption>(restored?.groupBy ?? initialGroupBy);
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>(
+    restored?.viewMode ?? defaultViewMode
+  );
+  const [ticketsOnly, setTicketsOnly] = useState(restored?.ticketsOnly ?? defaultTicketsOnly);
+  const [searchQuery, setSearchQuery] = useState(restored?.searchQuery ?? '');
+  const [filters, setFilters] = useState<Filters>(() => ({
+    ...EMPTY_FILTERS,
+    ...restored?.filters,
+  }));
+
+  useEffect(() => {
+    saveBoardView({
+      sortField,
+      sortDirection,
+      groupBy,
+      viewMode,
+      ticketsOnly,
+      searchQuery,
+      filters,
+    });
+  }, [sortField, sortDirection, groupBy, viewMode, ticketsOnly, searchQuery, filters]);
   const [showBulkMenu, setShowBulkMenu] = useState(false);
   const [showGroupByMenu, setShowGroupByMenu] = useState(false);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);

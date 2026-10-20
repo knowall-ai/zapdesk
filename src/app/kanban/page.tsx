@@ -908,6 +908,7 @@ function StandupPageContent() {
 
         {/* Detail dialog (issue #368) */}
         <WorkItemDetailDialog
+          supportsReturn
           workItem={selectedTicket ? ticketToWorkItem(selectedTicket) : null}
           isOpen={!!selectedTicket}
           onClose={() => setSelectedTicket(null)}
