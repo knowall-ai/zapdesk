@@ -170,17 +170,35 @@ function TicketsPageContent() {
   }, [session, sourceReady, fetchTickets]);
 
   // Coming back from a ticket's full view: reopen its quick view (#7727).
+  // The ticket may no longer be in this view's list -- assigning or closing it
+  // in full view can move it out -- so it is fetched by id when it isn't.
   const openRequestRef = useRef<number | null | undefined>(undefined);
   useEffect(() => {
     if (openRequestRef.current === undefined) openRequestRef.current = takeOpenRequest();
     const wanted = openRequestRef.current;
-    if (!wanted || tickets.length === 0) return;
-    const ticket = tickets.find((t) => t.id === wanted && t.source !== 'github');
-    if (ticket) {
-      setSelectedTicket(ticket);
-      openRequestRef.current = null;
+    // Wait for the list of the current view, even when it turns out empty.
+    if (!wanted || loading || !selectedOrganization) return;
+    openRequestRef.current = null;
+
+    const listed = tickets.find((t) => t.id === wanted && t.source !== 'github');
+    if (listed) {
+      setSelectedTicket(listed);
+      return;
     }
-  }, [tickets]);
+    // Not cancelled when this effect re-runs: the request has been taken, so a
+    // cancelled fetch would never reopen the dialog. If the user has opened
+    // something else by the time it answers, that choice wins.
+    fetch(`/api/devops/tickets/${wanted}`, {
+      headers: { 'x-devops-org': selectedOrganization.accountName },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!data?.ticket) return;
+        const [ticket] = reviveTicketDates([data.ticket]);
+        setSelectedTicket((current) => current ?? ticket);
+      })
+      .catch((error) => console.error('Failed to reopen ticket from full view:', error));
+  }, [tickets, loading, selectedOrganization]);
 
   const handleTicketStateChange = useCallback(
     async (ticketId: number, newState: string) => {
