@@ -256,6 +256,39 @@ export default function WorkItemDetailDialog({
     [workItem, fetchDevOps]
   );
 
+  /**
+   * Hours saved from this dialog, shown until the parent's copy catches up.
+   * Keyed to the item so they never show against a different one.
+   */
+  const [savedEffort, setSavedEffort] = useState<{
+    forId: number;
+    completedWork: number;
+    remainingWork: number;
+  } | null>(null);
+
+  const handleEffortChange = useCallback(
+    async (hours: { completedWork: number; remainingWork: number }) => {
+      if (!workItem) return;
+      try {
+        const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...hours, project: workItem.project }),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || 'Failed to update hours');
+        }
+        setSavedEffort({ forId: workItem.id, ...hours });
+        toast.success('Hours updated');
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to update hours');
+        throw error;
+      }
+    },
+    [workItem, fetchDevOps]
+  );
+
   const handleUpdate = useCallback(
     async (updates: {
       title?: string;
@@ -443,7 +476,16 @@ export default function WorkItemDetailDialog({
         Details
       </h3>
       <WorkItemDetailSidebar
-        workItem={workItem}
+        workItem={
+          savedEffort?.forId === workItem.id
+            ? {
+                ...workItem,
+                completedWork: savedEffort.completedWork,
+                remainingWork: savedEffort.remainingWork,
+              }
+            : workItem
+        }
+        onEffortChange={workItem.source === 'github' ? undefined : handleEffortChange}
         actions={actions}
         showAreaPath
         showEffortHours

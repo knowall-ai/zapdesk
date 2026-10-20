@@ -8,7 +8,6 @@ import {
   Search,
   Loader2,
   User as UserIcon,
-  Timer,
   X,
   Plus,
   Tag,
@@ -20,6 +19,7 @@ import PriorityIndicator from '../common/PriorityIndicator';
 import { useClickOutside } from '@/hooks';
 import { assigneeIdentity } from '@/lib/assignee';
 import { useCallback, useState } from 'react';
+import EffortHoursField from './EffortHoursField';
 
 interface WorkItemDetailSidebarProps {
   workItem: WorkItem;
@@ -32,6 +32,8 @@ interface WorkItemDetailSidebarProps {
   canEditType?: boolean;
   canEditTags?: boolean;
   onTagsChange?: (tags: string[]) => Promise<void>;
+  /** Absent: effort hours are read-only. */
+  onEffortChange?: (hours: { completedWork: number; remainingWork: number }) => Promise<void>;
 }
 
 const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
@@ -40,13 +42,6 @@ const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
   { value: 3, label: 'Normal' },
   { value: 4, label: 'Low' },
 ];
-
-const formatHours = (hours: number) => {
-  // Whole hours read cleanly as "8"; anything else keeps one decimal so a
-  // half-hour estimate isn't rounded away (StandupKanbanCard does the same).
-  if (Number.isInteger(hours)) return hours.toString();
-  return hours.toFixed(1);
-};
 
 export default function WorkItemDetailSidebar({
   workItem,
@@ -59,6 +54,7 @@ export default function WorkItemDetailSidebar({
   canEditType = false,
   canEditTags = false,
   onTagsChange,
+  onEffortChange,
 }: WorkItemDetailSidebarProps) {
   const [newTag, setNewTag] = useState('');
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -499,13 +495,11 @@ export default function WorkItemDetailSidebar({
           <label className="mb-1 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
             Effort Tracking (hours)
           </label>
-          <div className="flex items-center gap-2">
-            <Timer size={14} style={{ color: 'var(--text-muted)' }} />
-            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {formatHours(workItem.completedWork)}h completed /{' '}
-              {formatHours(workItem.remainingWork)}h remaining
-            </span>
-          </div>
+          <EffortHoursField
+            completedWork={workItem.completedWork}
+            remainingWork={workItem.remainingWork}
+            onSave={onEffortChange}
+          />
         </div>
       )}
 

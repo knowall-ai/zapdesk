@@ -1743,9 +1743,28 @@ export class AzureDevOpsService {
       resolution?: string;
       mitigation?: string;
       workItemType?: string;
+      completedWork?: number;
+      remainingWork?: number;
     }
   ): Promise<DevOpsWorkItem> {
     const patchDocument: Array<{ op: string; path: string; value: string | number | null }> = [];
+
+    // Time spent and remaining (#7728). 'add' sets the field whether or not it
+    // already has a value.
+    if (updates.completedWork !== undefined) {
+      patchDocument.push({
+        op: 'add',
+        path: '/fields/Microsoft.VSTS.Scheduling.CompletedWork',
+        value: updates.completedWork,
+      });
+    }
+    if (updates.remainingWork !== undefined) {
+      patchDocument.push({
+        op: 'add',
+        path: '/fields/Microsoft.VSTS.Scheduling.RemainingWork',
+        value: updates.remainingWork,
+      });
+    }
 
     if (updates.tags !== undefined) {
       patchDocument.push({
