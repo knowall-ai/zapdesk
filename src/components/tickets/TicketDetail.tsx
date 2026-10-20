@@ -32,6 +32,7 @@ import type {
   WorkItemType,
   WorkItemUpdate,
   Attachment,
+  EffortHoursUpdate,
 } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { ensureActiveState } from '@/types';
@@ -52,6 +53,7 @@ import MentionInput from '../common/MentionInput';
 import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
 import AttachmentList from './AttachmentList';
+import EffortHoursField from './EffortHoursField';
 import TicketHistory from './TicketHistory';
 import TypeChangeRequiredFields from './TypeChangeRequiredFields';
 import type { RequiredField } from '@/hooks/useWorkItemActions';
@@ -80,6 +82,7 @@ interface TicketDetailProps {
   onDescriptionChange?: (description: string) => Promise<void>;
   onResolutionChange?: (resolution: string) => Promise<void>;
   onMitigationChange?: (mitigation: string) => Promise<void>;
+  onEffortChange?: (hours: EffortHoursUpdate) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onRefreshTicket?: () => Promise<void>;
   // Move to DevOps Recycle Bin. Caller is responsible for navigation/refresh
@@ -117,6 +120,7 @@ export default function TicketDetail({
   onDescriptionChange,
   onResolutionChange,
   onMitigationChange,
+  onEffortChange,
   onUploadAttachment,
   onRefreshTicket,
   onDelete,
@@ -1845,6 +1849,21 @@ export default function TicketDetail({
                 <AttachmentList attachments={ticket.attachments} />
               </div>
             )}
+
+            {/* Time spent and remaining, editable here as in the dialog (#7728) */}
+            <div>
+              <label
+                className="mb-1 block text-xs uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Effort Tracking (hours)
+              </label>
+              <EffortHoursField
+                completedWork={ticket.completedWork}
+                remainingWork={ticket.remainingWork}
+                onSave={onEffortChange}
+              />
+            </div>
 
             {/* Dates */}
             <div>

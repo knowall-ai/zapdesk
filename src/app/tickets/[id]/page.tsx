@@ -11,7 +11,7 @@ import { TicketDetail } from '@/components/tickets';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { hasTicketTag } from '@/lib/tags';
-import type { Ticket, TicketComment, Attachment, WorkItemUpdate } from '@/types';
+import type { Ticket, TicketComment, Attachment, WorkItemUpdate, EffortHoursUpdate } from '@/types';
 
 /** Full view of one ticket or work item. */
 export default function TicketDetailPage() {
@@ -378,6 +378,27 @@ export default function TicketDetailPage() {
     }
   };
 
+  const handleEffortChange = async (hours: EffortHoursUpdate) => {
+    if (!ticket) return;
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ ...hours, project: ticket.project }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to update hours');
+      }
+      await fetchTicket();
+      toast.success('Hours updated');
+    } catch (error) {
+      console.error('Failed to update hours:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update hours');
+      throw error;
+    }
+  };
+
   // Delete (Recycle Bin) — issue #374. Confirmation is rendered by TicketDetail.
   // Errors are surfaced via toast here; do not rethrow — the caller invokes
   // this from an onClick handler that React doesn't await, so a rejection
@@ -451,6 +472,7 @@ export default function TicketDetailPage() {
         onDescriptionChange={handleDescriptionChange}
         onResolutionChange={handleResolutionChange}
         onMitigationChange={handleMitigationChange}
+        onEffortChange={handleEffortChange}
         onUploadAttachment={handleUploadAttachment}
         onRefreshTicket={fetchTicket}
         onDelete={handleDelete}

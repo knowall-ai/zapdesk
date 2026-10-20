@@ -194,6 +194,15 @@ export interface TicketComment {
 }
 
 // Attachment types for tickets and comments
+/**
+ * A change to a work item's effort hours (#7728). Only the fields being
+ * changed are present: some work item types have only one of the two.
+ */
+export interface EffortHoursUpdate {
+  completedWork?: number;
+  remainingWork?: number;
+}
+
 export interface Attachment {
   id: string;
   fileName: string;

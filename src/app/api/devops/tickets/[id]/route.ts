@@ -29,6 +29,8 @@ const PATCH_FIELDS = new Set([
   'resolution',
   'mitigation',
   'workItemType',
+  'completedWork',
+  'remainingWork',
 ]);
 
 /** Lowest priority DevOps uses: 1 is urgent, 4 is low. */
@@ -211,6 +213,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'tags must be a list of strings' }, { status: 400 });
     }
 
+    // Hours must be real, non-negative numbers; DevOps would otherwise reject
+    // the whole patch with an error that names none of this. Checked before
+    // the project lookup, so bad input costs no DevOps request.
+    for (const name of ['completedWork', 'remainingWork'] as const) {
+      const value: unknown = body[name];
+      if (value === undefined) continue;
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+        return NextResponse.json(
+          { error: `${name} must be a number of hours, 0 or more` },
+          { status: 400 }
+        );
+      }
+    }
+
     const {
       assignee,
       assignToMe,
@@ -222,6 +238,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       resolution,
       mitigation,
       workItemType,
+      completedWork,
+      remainingWork,
     } = body;
 
     const organization = request.headers.get('x-devops-org') || undefined;
@@ -247,7 +265,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       resolution?: string;
       mitigation?: string;
       workItemType?: string;
+      completedWork?: number;
+      remainingWork?: number;
     } = {};
+
+    // Hours were checked above, before any DevOps lookup.
+    if (completedWork !== undefined) updates.completedWork = completedWork;
+    if (remainingWork !== undefined) updates.remainingWork = remainingWork;
 
     if (workItemType) {
       updates.workItemType = workItemType;
