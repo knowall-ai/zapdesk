@@ -29,6 +29,9 @@
 |**Email webhook not creating tickets**
 |Verify EMAIL_WEBHOOK_SECRET header matches. Check sender domain has project mapping. Review server logs for error details.
 
+|**The support team gets no email when a new ticket arrives**
+|Set `SUPPORT_TEAM_NOTIFY_EMAIL` to the team's address, or to several addresses separated by commas or semicolons, and restart. It must not be the mailbox ZapDesk polls (`MAIL_POLL_MAILBOX`): that address is skipped, because mail sent to it would be read back in. Only tickets created from email send this; replies on an existing ticket send "New customer reply" instead. The server log shows `[Email] New ticket notification sent for ticket #N` when one is sent, or `SUPPORT_TEAM_NOTIFY_EMAIL not set` when it was skipped.
+
 |**No email when a ticket is assigned to me**
 |ZapDesk emails the assignee when a ticket is created already assigned, or reassigned in ZapDesk. It sends nothing when you assign a ticket to yourself, when the change is made directly in Azure DevOps, or when the assignee is the mailbox ZapDesk polls. Outbound mail also needs `MAIL_FROM`, plus app credentials: either the dedicated `MAIL_CLIENT_ID`, `MAIL_CLIENT_SECRET` and `MAIL_TENANT_ID`, or, when those are unset, the main sign-in app's `AZURE_AD_CLIENT_ID`, `AZURE_AD_CLIENT_SECRET` and `AZURE_AD_TENANT_ID`. The server log shows `[Email] Assignment of #N notified to ...` when one is sent.
 

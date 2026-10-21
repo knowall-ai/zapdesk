@@ -21,6 +21,7 @@ import {
   statusChangeTemplate,
   ticketUpdatedTemplate,
   customerReplyNotificationTemplate,
+  newTicketNotificationTemplate,
   layoutWrapper,
   type HistoryEntry,
   type TicketFieldChange,
@@ -158,6 +159,17 @@ export function isPolledMailbox(address: string): boolean {
   return polled !== '' && address.trim().toLowerCase() === polled;
 }
 
+/**
+ * The addresses in a setting that may hold one or several, separated by commas
+ * or semicolons (#485). Blanks are dropped; order is kept.
+ */
+export function parseAddressList(value: string | undefined): string[] {
+  return (value || '')
+    .split(/[;,]/)
+    .map((address) => address.trim())
+    .filter(Boolean);
+}
+
 export function extractRequesterEmail(tags: string | string[]): string | null {
   const tagList = Array.isArray(tags) ? tags : tags.split(';').map((t) => t.trim());
   for (const tag of tagList) {
@@ -196,6 +208,7 @@ function threadedSubject(ticketId: number, subject: string): string {
 // ---------------------------------------------------------------------------
 
 interface GraphSendMailOptions {
+  /** One address, or several separated by commas or semicolons. */
   to: string;
   /** Blind copies. Blind so an internal address is never shown to a customer. */
   bcc?: string[];
@@ -236,7 +249,7 @@ async function sendViaGraph(options: GraphSendMailOptions): Promise<void> {
     subject: options.subject,
     body: { contentType: 'HTML', content: options.html },
     from: { emailAddress: { address: from, name: MAIL_FROM_NAME() } },
-    toRecipients: [{ emailAddress: { address: options.to } }],
+    toRecipients: parseAddressList(options.to).map((address) => ({ emailAddress: { address } })),
   };
 
   if (options.bcc?.length) {
@@ -650,6 +663,41 @@ export async function sendCustomerReplyNotification(
   } catch (error) {
     console.error(
       `[Email] Failed to send customer reply notification for ticket #${ticketId}:`,
+      error
+    );
+  }
+}
+
+/**
+ * Tell the support team a ticket has just arrived by email (#485), so it does
+ * not wait until someone happens to open ZapDesk.
+ *
+ * `recipients` is one address or several separated by commas or semicolons.
+ * Errors are logged and swallowed: the ticket already exists either way.
+ */
+export async function sendNewTicketNotification(opts: {
+  ticketId: number;
+  ticketSubject: string;
+  requesterEmail: string;
+  project: string;
+  messageHtml: string;
+  recipients: string;
+}): Promise<void> {
+  if (!isEmailConfigured()) return;
+  try {
+    const html = newTicketNotificationTemplate(opts);
+    await sendViaGraph({
+      to: opts.recipients,
+      subject: `[ZapDesk #${opts.ticketId}] New ticket — "${opts.ticketSubject}"`,
+      html,
+      messageId: generateMessageId(opts.ticketId, 'team-new-ticket'),
+    });
+    console.log(
+      `[Email] New ticket notification sent for ticket #${opts.ticketId} to ${opts.recipients}`
+    );
+  } catch (error) {
+    console.error(
+      `[Email] Failed to send new ticket notification for ticket #${opts.ticketId}:`,
       error
     );
   }

@@ -221,6 +221,32 @@ export function customerReplyNotificationTemplate(opts: {
 }
 
 /**
+ * Tells the support team a new ticket has arrived by email (#485). A team
+ * email, so it keeps its link into ZapDesk.
+ */
+export function newTicketNotificationTemplate(opts: {
+  ticketId: number;
+  ticketSubject: string;
+  requesterEmail: string;
+  project: string;
+  messageHtml: string;
+}): string {
+  const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
+  return layoutWrapper(`
+    <p class="meta">New ticket <strong>#${opts.ticketId}</strong> has arrived</p>
+    <p class="meta"><strong>Subject:</strong> ${escapeText(opts.ticketSubject)}</p>
+    <p class="meta"><strong>From:</strong> ${escapeText(opts.requesterEmail)}</p>
+    <p class="meta"><strong>Project:</strong> ${escapeText(opts.project)}</p>
+    <div class="content">
+      ${opts.messageHtml}
+    </div>
+    <p style="text-align: center; margin-top: 24px;">
+      <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
+    </p>
+  `);
+}
+
+/**
  * Told an engineer a ticket is now theirs.
  *
  * Deliberately short. It exists to get someone's attention and give them a way

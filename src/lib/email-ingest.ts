@@ -11,7 +11,9 @@ import { getProjectFromEmail } from '@/lib/devops';
 import { devOpsOrgOrDefault } from './devops-org';
 import {
   isPolledMailbox,
+  parseAddressList,
   sendCustomerReplyNotification,
+  sendNewTicketNotification,
   sendTicketConfirmation,
 } from '@/lib/email';
 import {
@@ -164,6 +166,7 @@ async function handleNewTicket(
 
   // Fire-and-forget — never block ticket creation on email send.
   sendTicketConfirmation(ticketId, email.subject, senderEmail).catch(() => {});
+  notifyTeamOfNewTicket(ticketId, email.subject, senderEmail, projectName, description);
 
   return { success: true, action: 'ticket_created', ticketId, project: projectName };
 }
@@ -296,15 +299,49 @@ export function renderForNotification(storedHtml: string): string {
  * notification into an outage of the whole app.
  */
 function supportTeamFallback(): string | null {
-  const group = (process.env.SUPPORT_TEAM_NOTIFY_EMAIL || '').trim();
-  if (!group) return null;
-  if (isPolledMailbox(group)) {
+  // One address or several (#485): a group, a distribution list, or people.
+  const team = parseAddressList(process.env.SUPPORT_TEAM_NOTIFY_EMAIL).filter((address) => {
+    if (!isPolledMailbox(address)) return true;
     console.error(
-      `[Notify] SUPPORT_TEAM_NOTIFY_EMAIL (${group}) is the mailbox ZapDesk polls — ignoring it, because notifying it would loop.`
+      `[Notify] SUPPORT_TEAM_NOTIFY_EMAIL includes ${address}, the mailbox ZapDesk polls — ignoring it, because notifying it would loop.`
     );
-    return null;
+    return false;
+  });
+  return team.length > 0 ? team.join(', ') : null;
+}
+
+/**
+ * Tell the support team a ticket has just arrived by email (#485).
+ *
+ * Goes to everyone in SUPPORT_TEAM_NOTIFY_EMAIL, except the polled mailbox (it
+ * would loop) and the customer who raised it. Skipped when nobody is left.
+ * Fire-and-forget: the ticket is already created.
+ */
+function notifyTeamOfNewTicket(
+  ticketId: number,
+  subject: string,
+  senderEmail: string,
+  projectName: string,
+  descriptionHtml: string
+): void {
+  const requester = senderEmail.trim().toLowerCase();
+  const recipients = parseAddressList(supportTeamFallback() ?? '').filter(
+    (address) => address.toLowerCase() !== requester
+  );
+  if (recipients.length === 0) {
+    console.log(
+      `[Notify] SUPPORT_TEAM_NOTIFY_EMAIL not set — nobody told about new ticket #${ticketId}`
+    );
+    return;
   }
-  return group;
+  sendNewTicketNotification({
+    ticketId,
+    ticketSubject: subject,
+    requesterEmail: senderEmail,
+    project: projectName,
+    messageHtml: renderForNotification(descriptionHtml),
+    recipients: recipients.join(', '),
+  }).catch(() => {});
 }
 
 /**
