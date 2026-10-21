@@ -16,6 +16,7 @@ import {
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { useMentionableUsers } from '@/hooks/useMentionableUsers';
 import type { TicketComment, User, Attachment } from '@/types';
+import { newestFirst } from '@/lib/comment-order';
 
 interface CommentSectionProps {
   comments: TicketComment[];
@@ -175,7 +176,7 @@ export default function CommentSection({
         </p>
       ) : (
         <div className={compact ? 'mb-4 space-y-3' : 'mb-4 space-y-4'}>
-          {comments.map((comment) => (
+          {newestFirst(comments).map((comment) => (
             <div
               key={comment.id}
               className={`${compact ? 'rounded-md p-3' : 'card p-4'} ${comment.isInternal ? 'border-l-4' : ''}`}
