@@ -27,7 +27,7 @@ import { useSourceFilter } from '@/components/providers/SourceProvider';
 import { readScrollTop, sessionPositionStorage, writeScrollTop } from '@/lib/kanban-position';
 import { ticketToWorkItem } from '@/lib/devops';
 import { debugLog } from '@/lib/debug';
-import { filterStandupByProject } from '@/lib/kanban-project';
+import { canonicalProject, filterStandupByProject } from '@/lib/kanban-project';
 import { createBoardCache } from '@/lib/standup-board-cache';
 import {
   activityWindowStart,
@@ -154,7 +154,7 @@ function StandupPageContent() {
   const groupBy: GroupBy = (searchParams.get('groupBy') as GroupBy) || 'project';
   const currentSprintOnly = searchParams.get('sprint') === 'true';
   // Only this project's items, when chosen (#7377).
-  const projectFilter = searchParams.get('project');
+  const requestedProject = searchParams.get('project');
   // Azure DevOps, GitHub or both, from the header toggle (#447)
   const { sourceFilter, sourceReady } = useSourceFilter();
 
@@ -683,14 +683,19 @@ function StandupPageContent() {
     [devOpsPatch, selectedTicket, fetchStandupData]
   );
 
-  const boardData = useMemo(
-    () => filterStandupByProject(standupData, projectFilter),
-    [standupData, projectFilter]
-  );
   const projectNames = useMemo(
     () =>
       (standupData?.projects ?? []).map((p) => p.projectName).sort((a, b) => a.localeCompare(b)),
     [standupData]
+  );
+  // The project as the board names it, so ?project=internal and the picker agree.
+  const projectFilter = useMemo(
+    () => canonicalProject(requestedProject, projectNames),
+    [requestedProject, projectNames]
+  );
+  const boardData = useMemo(
+    () => filterStandupByProject(standupData, projectFilter),
+    [standupData, projectFilter]
   );
 
   const groups: GroupData[] = useMemo(() => {
@@ -717,7 +722,12 @@ function StandupPageContent() {
     );
     // A project whose pull requests couldn't be read makes its own group's
     // count unknown, and every person's too: anyone may have worked there.
-    const failedProjects = new Set(prActivity?.failedProjects ?? []);
+    const failedProjects = new Set(
+      (prActivity?.failedProjects ?? []).filter(
+        // Another project's failure says nothing about the chosen one.
+        (name) => !projectFilter || name.toLowerCase() === projectFilter.toLowerCase()
+      )
+    );
     const incomplete = (groupName: string) =>
       groupBy === 'project' ? failedProjects.has(groupName) : failedProjects.size > 0;
     for (const group of groups) {
