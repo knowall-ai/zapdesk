@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Send, Loader2 } from 'lucide-react';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
+import { keptTicketType } from '@/lib/ticket-type';
 import type { DevOpsProject, User, WorkItemType, ClassificationNode } from '@/types';
 
 interface NewTicketForm {
@@ -121,10 +122,8 @@ export default function NewTicketPage() {
         if (requestId !== typesRequestId.current) return;
         const types: WorkItemType[] = data.types || [];
         setWorkItemTypes(types);
-        if (types.length > 0) {
-          const taskType = types.find((t) => t.name === 'Task');
-          setForm((prev) => ({ ...prev, workItemType: taskType?.name || types[0].name }));
-        }
+        // No default type: the person raising it chooses (#7379).
+        setForm((prev) => ({ ...prev, workItemType: keptTicketType(prev.workItemType, types) }));
       } catch (err) {
         if (requestId !== typesRequestId.current) return;
         console.error('Failed to fetch work item types:', err);
