@@ -10,6 +10,7 @@
 import { getProjectFromEmail } from '@/lib/devops';
 import { devOpsOrgOrDefault } from './devops-org';
 import {
+  isOwnSender,
   isPolledMailbox,
   parseAddressList,
   sendCustomerReplyNotification,
@@ -75,6 +76,7 @@ export interface IngestableEmail {
 export type IngestResult =
   | { success: true; action: 'ticket_created'; ticketId: number; project: string }
   | { success: true; action: 'comment_added'; ticketId: number }
+  | { success: true; action: 'ignored'; reason: string }
   | { success: false; status: number; error: string };
 
 interface UploadedAttachment {
@@ -92,6 +94,15 @@ export async function ingestEmail(email: IngestableEmail): Promise<IngestResult>
   const senderEmail = extractEmail(email.from);
   if (!senderEmail) {
     return { success: false, status: 400, error: 'Invalid sender email' };
+  }
+
+  // ZapDesk's own notifications can come back in when a team list that
+  // includes the support mailbox receives them. Read as a customer reply, each
+  // would add a comment and notify the same list again, on every poll. Counted
+  // as handled so the poller marks it read and moves on.
+  if (isOwnSender(senderEmail)) {
+    console.log(`[Ingest] Ignoring mail sent by ZapDesk itself: "${email.subject}"`);
+    return { success: true, action: 'ignored', reason: 'sent by ZapDesk' };
   }
 
   const pat = process.env.AZURE_DEVOPS_PAT;
@@ -374,7 +385,11 @@ function notifyAgentOfReply(
       `[Notify] Ticket #${ticketId} is assigned to ${assignedEmail}, the mailbox ZapDesk polls — notifying it would loop, so falling back to the team address.`
     );
   }
-  const recipient = assignee ?? supportTeamFallback() ?? '';
+  const requester = senderEmail.trim().toLowerCase();
+  const team = parseAddressList(supportTeamFallback() ?? '')
+    .filter((address) => address.toLowerCase() !== requester)
+    .join(', ');
+  const recipient = assignee ?? team;
   // Never tell the customer that the customer replied (#7722). It happens
   // when the ticket is assigned to the requester's own address.
   if (recipient && recipient.trim().toLowerCase() === senderEmail.trim().toLowerCase()) {

@@ -10,13 +10,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const h = vi.hoisted(() => ({
   sendNewTicketNotification: vi.fn(async () => undefined),
   sendTicketConfirmation: vi.fn(async () => undefined),
+  sendCustomerReplyNotification: vi.fn(async () => undefined),
 }));
 
 vi.mock('@/lib/email', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/email')>()),
   sendNewTicketNotification: h.sendNewTicketNotification,
   sendTicketConfirmation: h.sendTicketConfirmation,
-  sendCustomerReplyNotification: vi.fn(async () => undefined),
+  sendCustomerReplyNotification: h.sendCustomerReplyNotification,
 }));
 
 vi.mock('@/lib/devops', async (importOriginal) => ({
@@ -42,7 +43,7 @@ describe('new email ticket: the support team is told (#485)', () => {
   beforeEach(() => {
     process.env.AZURE_DEVOPS_PAT = 'test-pat';
     process.env.AZURE_DEVOPS_ORG = 'KnowAll';
-    process.env.MAIL_POLL_MAILBOX = 'support@knowall.ai';
+    process.env.MAIL_POLL_MAILBOX = 'support@zapdesk.test';
     h.sendNewTicketNotification.mockClear();
     h.sendTicketConfirmation.mockClear();
     vi.stubGlobal(
@@ -60,13 +61,13 @@ describe('new email ticket: the support team is told (#485)', () => {
   });
 
   it('emails the team address with the ticket and the message', async () => {
-    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support-team@knowall.ai';
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support-team@zapdesk.test';
     const result = await newTicket();
     expect(result).toMatchObject({ success: true, action: 'ticket_created', ticketId: 7200 });
     expect(h.sendTicketConfirmation).toHaveBeenCalledTimes(1);
     expect(sent()).toHaveLength(1);
     expect(sent()[0]).toMatchObject({
-      recipients: 'support-team@knowall.ai',
+      recipients: 'support-team@zapdesk.test',
       ticketId: 7200,
       project: 'Support',
     });
@@ -74,16 +75,17 @@ describe('new email ticket: the support team is told (#485)', () => {
   });
 
   it('emails every address in a list', async () => {
-    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'ana@knowall.ai; ben@knowall.ai, cara@knowall.ai';
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'ana@zapdesk.test; ben@zapdesk.test, cara@zapdesk.test';
     await newTicket();
-    expect(sent()[0].recipients).toBe('ana@knowall.ai, ben@knowall.ai, cara@knowall.ai');
+    expect(sent()[0].recipients).toBe('ana@zapdesk.test, ben@zapdesk.test, cara@zapdesk.test');
   });
 
   it('leaves out the polled mailbox and the customer who raised it', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'Support@KnowAll.ai, ana@knowall.ai, ben@knowall.ai';
-    await newTicket('Ben <BEN@knowall.ai>');
-    expect(sent()[0].recipients).toBe('ana@knowall.ai');
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL =
+      'Support@ZapDesk.test, ana@zapdesk.test, ben@zapdesk.test';
+    await newTicket('Ben <BEN@zapdesk.test>');
+    expect(sent()[0].recipients).toBe('ana@zapdesk.test');
     expect(err).toHaveBeenCalledWith(expect.stringContaining('would loop'));
   });
 
@@ -95,18 +97,66 @@ describe('new email ticket: the support team is told (#485)', () => {
 
   it('sends nothing when the only address is the polled mailbox', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support@knowall.ai';
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support@zapdesk.test';
     await newTicket();
     expect(h.sendNewTicketNotification).not.toHaveBeenCalled();
   });
 
-  it('does not send it for a reply on an existing ticket', async () => {
-    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support-team@knowall.ai';
+  it('keeps the customer out of a reply alert sent to a team list', async () => {
+    h.sendCustomerReplyNotification.mockClear();
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'ana@zapdesk.test, cust@example.com';
     await ingestEmail({
       from: 'Customer <cust@example.com>',
       subject: 'Re: [ZapDesk #7200] Printer on fire',
       body: 'Still smoking.',
     });
+    const args = h.sendCustomerReplyNotification.mock.calls[0] as unknown as unknown[];
+    expect(args[2]).toBe('ana@zapdesk.test');
+  });
+
+  it('does not send it for a reply on an existing ticket', async () => {
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support-team@zapdesk.test';
+    await ingestEmail({
+      from: 'Customer <cust@example.com>',
+      subject: 'Re: [ZapDesk #7200] Printer on fire',
+      body: 'Still smoking.',
+    });
+    expect(h.sendNewTicketNotification).not.toHaveBeenCalled();
+  });
+});
+
+describe('mail ZapDesk sent itself', () => {
+  beforeEach(() => {
+    process.env.AZURE_DEVOPS_PAT = 'test-pat';
+    process.env.MAIL_POLL_MAILBOX = 'support@zapdesk.test';
+    process.env.MAIL_FROM = 'support@zapdesk.test';
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'team@zapdesk.test';
+    h.sendNewTicketNotification.mockClear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => json({ id: 1 }))
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    for (const k of ['SUPPORT_TEAM_NOTIFY_EMAIL', 'MAIL_POLL_MAILBOX', 'MAIL_FROM'])
+      delete process.env[k];
+  });
+
+  // A team list that includes the support mailbox delivers ZapDesk's own
+  // "New ticket" email back to it. Read as a reply, it would comment and
+  // notify the list again on every poll.
+  it('is ignored, not filed as a reply', async () => {
+    const result = await ingestEmail({
+      from: 'ZapDesk Support <Support@ZapDesk.test>',
+      subject: '[ZapDesk #7200] New ticket — "Printer on fire"',
+      body: 'New ticket #7200 has arrived',
+    });
+    expect(result).toMatchObject({ success: true, action: 'ignored' });
+    expect(fetch).not.toHaveBeenCalled();
     expect(h.sendNewTicketNotification).not.toHaveBeenCalled();
   });
 });

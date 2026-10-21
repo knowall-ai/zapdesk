@@ -160,6 +160,17 @@ export function isPolledMailbox(address: string): boolean {
 }
 
 /**
+ * Mail from ZapDesk itself: the address it sends as (MAIL_FROM) or the mailbox
+ * it polls. Such mail only reaches the polled mailbox through a list or a
+ * forward -- a team list that includes the support mailbox, say -- and must not
+ * be read back in as a customer message.
+ */
+export function isOwnSender(address: string): boolean {
+  const own = (process.env.MAIL_FROM || '').trim().toLowerCase();
+  return isPolledMailbox(address) || (own !== '' && address.trim().toLowerCase() === own);
+}
+
+/**
  * The addresses in a setting that may hold one or several, separated by commas
  * or semicolons (#485). Blanks are dropped; order is kept.
  */
