@@ -2,6 +2,7 @@
 
 import { Clock, GitPullRequest, Highlighter, ListChecks } from 'lucide-react';
 import { ACTIVITY_WINDOW_MS, type GroupActivitySummary } from '@/lib/activity-summary';
+import { PR_ACTIVITY_COLORS } from '@/lib/activity-colors';
 import type { PullRequestActivity } from '@/types';
 
 export type PullRequestLoadState = 'loading' | 'ready' | 'error';
@@ -17,9 +18,14 @@ interface ActivitySummaryBarProps {
   onToggleHighlight: () => void;
 }
 
-function Count({ value, label }: { value: number; label: string }) {
+/** A count and its label. `color` is used when the count is above zero. */
+function Count({ value, label, color }: { value: number; label: string; color?: string }) {
   return (
-    <span style={{ color: value > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+    <span
+      style={{
+        color: value > 0 ? (color ?? 'var(--text-primary)') : 'var(--text-muted)',
+      }}
+    >
       <span className="font-semibold tabular-nums">{value}</span> {label}
     </span>
   );
@@ -97,11 +103,11 @@ export default function ActivitySummaryBar({
         <span style={{ color: 'var(--text-muted)' }}>PRs:</span>
         {pullRequestState === 'ready' ? (
           <>
-            <Count value={prs.created} label="created" />
+            <Count value={prs.created} label="created" color={PR_ACTIVITY_COLORS.created} />
             <Separator />
-            <Count value={prs.updated} label="updated" />
+            <Count value={prs.updated} label="updated" color={PR_ACTIVITY_COLORS.updated} />
             <Separator />
-            <Count value={prs.merged} label="merged" />
+            <Count value={prs.merged} label="merged" color={PR_ACTIVITY_COLORS.merged} />
           </>
         ) : (
           <span style={{ color: 'var(--text-muted)' }}>

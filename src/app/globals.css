@@ -29,6 +29,11 @@
   --status-resolved: #22c55e;
   --status-closed: #6b7280;
 
+  /* Pull request activity (#482): opened, pushed to, merged */
+  --pr-created: #3b82f6;
+  --pr-updated: #f59e0b;
+  --pr-merged: #a855f7;
+
   /* Priority colors */
   --priority-urgent: #ef4444;
   --priority-high: #f97316;

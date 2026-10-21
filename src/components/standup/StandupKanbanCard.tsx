@@ -8,6 +8,7 @@ import { Github } from 'lucide-react';
 import { Avatar, PriorityIndicator } from '@/components/common';
 import { isGitHubItem } from '@/lib/github-kanban';
 import type { HighlightReason } from '@/lib/activity-summary';
+import { HIGHLIGHT_COLORS, highlightRingColor } from '@/lib/activity-colors';
 import type { StandupWorkItem } from '@/types';
 
 interface StandupKanbanCardProps {
@@ -54,7 +55,7 @@ export default function StandupKanbanCard({
   });
 
   const highlightStyle: CSSProperties = highlight
-    ? { boxShadow: '0 0 0 2px var(--primary)' }
+    ? { boxShadow: `0 0 0 2px ${highlightRingColor(highlight)}` }
     : dimmed
       ? { opacity: 0.35 }
       : {};
@@ -119,7 +120,7 @@ export default function StandupKanbanCard({
             <span
               key={reason}
               className="rounded px-1 py-0.5 text-[10px] font-semibold"
-              style={{ backgroundColor: 'var(--primary)', color: 'white' }}
+              style={{ backgroundColor: HIGHLIGHT_COLORS[reason], color: 'white' }}
             >
               {highlightLabels[reason]}
             </span>
