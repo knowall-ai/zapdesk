@@ -88,8 +88,11 @@ async function gitHubActivity(
   session: { accessToken?: string; tenantId?: string | null },
   since: Date
 ): Promise<{ pullRequests: PullRequestActivity[]; failedProjects: string[] } | null> {
-  const projects = await devopsService.getProjects();
+  // Everything inside the try, project loading too: a GitHub-side failure must
+  // never cost the DevOps counts.
+  let projects: Awaited<ReturnType<AzureDevOpsService['getProjects']>> = [];
   try {
+    projects = await devopsService.getProjects();
     const source = await gitHubSourceFor(organization, projects, session.accessToken ?? '');
     if (!source) return null;
     const { devOpsUsers, linkedAccounts } = await gitHubPeopleFor(
