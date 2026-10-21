@@ -8,6 +8,10 @@ import './globals.css';
 
 const siteUrl = process.env.NEXTAUTH_URL || 'https://zapdesk.knowall.ai';
 
+// The query changes whenever the image does: sharing sites cache previews by
+// URL, and kept showing the old DevDesk card after the rebrand (#480).
+const OG_IMAGE = '/og-image.png?v=2';
+
 export const metadata: Metadata = {
   title: 'ZapDesk - Support Ticketing by KnowAll',
   description:
@@ -42,7 +46,7 @@ export const metadata: Metadata = {
       'A modern support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
     images: [
       {
-        url: '/og-image.png',
+        url: OG_IMAGE,
         width: 1200,
         height: 630,
         alt: 'ZapDesk - Support Ticketing Dashboard',
@@ -55,7 +59,7 @@ export const metadata: Metadata = {
     title: 'ZapDesk - Support Ticketing by KnowAll',
     description:
       'A modern support ticketing portal powered by Azure DevOps. Manage tickets, track issues, and deliver exceptional customer support.',
-    images: ['/og-image.png'],
+    images: [OG_IMAGE],
   },
   robots: {
     index: true,
