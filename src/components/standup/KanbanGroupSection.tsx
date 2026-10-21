@@ -175,7 +175,10 @@ export default function KanbanGroupSection({
   // A group with no activity has nothing to light up, so nothing is dimmed.
   const hasHighlights = (activity?.summary.highlights.size ?? 0) > 0;
   const highlightOn = highlighting && hasHighlights;
-  // Highlighting a collapsed group opens it, or the button would do nothing visible.
+  /**
+   * Switch this group's highlight off or on. Highlighting a collapsed group
+   * opens it, or the button would do nothing visible.
+   */
   const toggleHighlight = () => {
     const next = !highlightOn;
     setHighlighting(next);
