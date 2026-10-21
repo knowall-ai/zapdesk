@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filterStandupByProject } from './kanban-project';
+import { canonicalProject, filterStandupByProject } from './kanban-project';
 import type { StandupData } from '@/types';
 
 const item = (id: number) => ({ id }) as never;
@@ -40,5 +40,17 @@ describe('filterStandupByProject (#7377)', () => {
     const board = filterStandupByProject(data, 'HSE')!;
     expect(board.projects).toEqual([]);
     expect(board.summary).toEqual({ columnCounts: { New: 0, Active: 0 }, projectCount: 0 });
+  });
+});
+
+describe('canonicalProject', () => {
+  const names = ['Belfast Trust', 'Internal'];
+  it('names the project as the board does', () => {
+    expect(canonicalProject('  internal ', names)).toBe('Internal');
+  });
+  it('keeps an unknown project as typed, and none as null', () => {
+    expect(canonicalProject('HSE', names)).toBe('HSE');
+    expect(canonicalProject('  ', names)).toBeNull();
+    expect(canonicalProject(null, names)).toBeNull();
   });
 });

@@ -24,3 +24,17 @@ export function filterStandupByProject(
   }
   return { ...data, projects, summary: { columnCounts, projectCount: projects.length } };
 }
+
+/**
+ * The project an address asks for, written as the board names it: trimmed
+ * and matched without regard to case. An unknown name is kept as typed, so
+ * the board can say it has nothing for it; null when none is asked for.
+ */
+export function canonicalProject(
+  requested: string | null,
+  names: readonly string[]
+): string | null {
+  const wanted = requested?.trim();
+  if (!wanted) return null;
+  return names.find((name) => name.toLowerCase() === wanted.toLowerCase()) ?? wanted;
+}
