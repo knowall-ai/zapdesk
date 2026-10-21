@@ -8,11 +8,11 @@ describe('activity colours (#482)', () => {
   });
 
   it('rings a card purple when a pull request is among its reasons', () => {
-    expect(highlightRingColor(['updated', 'pr'])).toBe(HIGHLIGHT_COLORS.pr);
+    expect(highlightRingColor(['updated', 'pr'])).toBe(PR_ACTIVITY_COLORS.merged);
     expect(highlightRingColor(['created'])).toBe('var(--primary)');
   });
 
-  it('marks a pull request link the same colour as a merge', () => {
-    expect(HIGHLIGHT_COLORS.pr).toBe(PR_ACTIVITY_COLORS.merged);
+  it('puts the PR badge on the darker purple, readable under white text', () => {
+    expect(HIGHLIGHT_COLORS.pr).toBe('var(--pr-badge)');
   });
 });

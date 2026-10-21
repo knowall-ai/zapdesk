@@ -33,6 +33,8 @@
   --pr-created: #3b82f6;
   --pr-updated: #f59e0b;
   --pr-merged: #a855f7;
+  /* Badge fill for white text: 6.9:1 contrast, where --pr-merged is 3.9:1 */
+  --pr-badge: #7e22ce;
 
   /* Priority colors */
   --priority-urgent: #ef4444;

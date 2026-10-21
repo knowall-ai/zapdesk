@@ -13,15 +13,18 @@ export const PR_ACTIVITY_COLORS: Record<PullRequestActivityKind, string> = {
   merged: 'var(--pr-merged)',
 };
 
-/** A highlighted card's reason badges. A pull request link is purple, like a merge. */
+/**
+ * A highlighted card's reason badges, which carry white text. A pull request
+ * link is a darker purple than the merged count, so that text stays readable.
+ */
 export const HIGHLIGHT_COLORS: Record<HighlightReason, string> = {
   created: 'var(--primary)',
   updated: 'var(--primary)',
   closed: 'var(--primary)',
-  pr: 'var(--pr-merged)',
+  pr: 'var(--pr-badge)',
 };
 
 /** The ring round a highlighted card: purple when a pull request is among its reasons. */
 export function highlightRingColor(reasons: readonly HighlightReason[]): string {
-  return reasons.includes('pr') ? HIGHLIGHT_COLORS.pr : 'var(--primary)';
+  return reasons.includes('pr') ? PR_ACTIVITY_COLORS.merged : 'var(--primary)';
 }
