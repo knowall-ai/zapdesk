@@ -31,26 +31,8 @@
     <rect x="0" y="0" width="50" height="50" rx="6" fill="url(#greenGradient)"/>
     <rect x="0" y="0" width="50" height="50" rx="6" fill="url(#shineGradient)"/>
 
-    <!-- Stylized D with arrow cutout (scaled for 50x50) -->
-    <path
-      d="M 10.9375 9.375
-         L 10.9375 20.3125
-         L 17.1875 25
-         L 10.9375 29.6875
-         L 10.9375 40.625
-         L 21.875 40.625
-         C 37.5 40.625 42.1875 32.8125 42.1875 25
-         C 42.1875 17.1875 37.5 9.375 21.875 9.375
-         Z
-         M 18.75 15.625
-         L 21.875 15.625
-         C 32.8125 15.625 35.9375 20.3125 35.9375 25
-         C 35.9375 29.6875 32.8125 34.375 21.875 34.375
-         L 18.75 34.375
-         Z"
-      fill="#ffffff"
-      fill-rule="evenodd"
-    />
+    <!-- Lightning bolt, as in favicon.svg (64x64 scaled to 50x50) -->
+    <polygon points="37,5 17,35.5 29.5,35.5 24.5,59 47,28 34.5,28" transform="scale(0.78125)" fill="#ffffff"/>
 
     <!-- ZapDesk Text -->
     <text x="70" y="38" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#22c55e">Zap</text>

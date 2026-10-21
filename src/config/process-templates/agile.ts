@@ -13,7 +13,7 @@ export const agileConfig: ProcessTemplateConfig = {
   id: 'agile',
 
   workItemTypes: {
-    // Ticket types - must be tagged with "ticket" to appear in DevDesk
+    // Ticket types - must be tagged with "ticket" to appear in ZapDesk
     ticketTypes: ['Bug', 'Task', 'Issue'],
     defaultTicketType: 'Issue',
 
