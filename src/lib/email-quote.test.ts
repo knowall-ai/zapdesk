@@ -119,3 +119,58 @@ describe('one quote at a time (#7720 review)', () => {
     expect(stripQuotedText(body)).toBe(body);
   });
 });
+
+describe('Outlook quotes are judged on their header fields (#7720 review)', () => {
+  it('keeps a supplier quote whose body mentions ZapDesk (text)', () => {
+    const body = [
+      'Forwarding this.',
+      '-----Original Message-----',
+      'From: supplier@example.test',
+      'Subject: Delivery',
+      '',
+      'Please log this in your ZapDesk.',
+    ].join('\n');
+    expect(stripQuotedText(body)).toBe(body);
+  });
+
+  it('cuts an Outlook quote whose header is ZapDesk (text)', () => {
+    const body = [
+      'Thanks.',
+      '-----Original Message-----',
+      'From: ZapDesk Support',
+      'Subject: [ZapDesk #12] Printer',
+      '',
+      'Old text',
+    ].join('\n');
+    expect(stripQuotedText(body)).toBe('Thanks.');
+  });
+
+  it('keeps a supplier quote whose body mentions ZapDesk (HTML)', () => {
+    const html =
+      '<div>Forwarding this.</div><div id="divRplyFwdMsg"><b>From:</b> supplier@example.test<br><b>Subject:</b> Delivery</div><div>Please log this in your ZapDesk.</div>';
+    expect(stripQuotedHtml(html)).toContain('Please log this in your ZapDesk.');
+  });
+});
+
+describe('nested quotes (#7720 review)', () => {
+  it('removes a ZapDesk quote inside an unrelated one, keeping the outer text', () => {
+    const html =
+      '<div>See below.</div><blockquote>The supplier wrote this.' +
+      '<blockquote>[ZapDesk #7735] Your ticket was updated</blockquote></blockquote>';
+    const out = stripQuotedHtml(html);
+    expect(out).toContain('The supplier wrote this.');
+    expect(out).not.toContain('[ZapDesk #7735]');
+  });
+
+  it('removes a ZapDesk quote whole even when it quotes something else inside', () => {
+    const html =
+      '<div>Any update?</div><div>Support &lt;support@zapdesk.test&gt; wrote:</div>' +
+      '<blockquote>ZapDesk: your ticket was updated.' +
+      '<blockquote>The customer quoted their supplier here.</blockquote></blockquote>';
+    const out = stripQuotedHtml(html);
+    expect(out).toContain('Any update?');
+    expect(out).not.toContain('your ticket was updated');
+    expect(out).not.toContain('quoted their supplier');
+    expect(out).not.toContain('data-zapdesk-kept');
+  });
+});
