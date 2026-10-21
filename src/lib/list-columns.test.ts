@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { readHiddenColumns, resetColumns, setColumnHidden, visibleColumns } from './list-columns';
+import {
+  readHiddenColumns,
+  resetColumnMemory,
+  resetColumns,
+  setColumnHidden,
+  visibleColumns,
+} from './list-columns';
 
 const store = new Map<string, string>();
 const win = {
@@ -48,6 +54,27 @@ describe('list columns (#7397)', () => {
     resetColumns('tickets');
     expect(readHiddenColumns('tickets').size).toBe(0);
     store.set('zapdesk:hidden-columns:tickets', '{not json');
+    expect(readHiddenColumns('tickets').size).toBe(0);
+  });
+});
+
+describe('with storage blocked', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetColumnMemory();
+  });
+
+  it('still hides a column for this page load', () => {
+    const blocked = () => {
+      throw new Error('blocked');
+    };
+    vi.stubGlobal('window', {
+      localStorage: { getItem: blocked, setItem: blocked, removeItem: blocked },
+      dispatchEvent: vi.fn(),
+    });
+    setColumnHidden('tickets', 'project', true);
+    expect(readHiddenColumns('tickets').has('project')).toBe(true);
+    resetColumns('tickets');
     expect(readHiddenColumns('tickets').size).toBe(0);
   });
 });

@@ -5,11 +5,19 @@
  * Subject and the selection checkbox always stay: without them a row can't be
  * read or acted on. Kept in this browser (localStorage), per kind of list, so
  * a list that adds a column later still shows it until someone hides it.
+ * When storage is blocked the choice lasts until the page reloads.
  */
 import { useMemo, useSyncExternalStore } from 'react';
 
 const PREFIX = 'zapdesk:hidden-columns:';
 const CHANGE_EVENT = 'zapdesk:hidden-columns-change';
+
+/**
+ * The choices for this page load, used once storage refuses a read or a
+ * write (blocked or full), so hiding a column still works until reload.
+ */
+const memory = new Map<string, string>();
+let storageFailed = false;
 
 /** Columns that can't be hidden. */
 export const FIXED_COLUMNS: readonly string[] = ['checkbox', 'subject'];
@@ -28,10 +36,25 @@ export function visibleColumns<T extends { id: string }>(
 
 function read(listKey: string): string {
   if (typeof window === 'undefined') return '[]';
+  if (storageFailed) return memory.get(listKey) ?? '[]';
   try {
     return window.localStorage.getItem(PREFIX + listKey) ?? '[]';
   } catch {
-    return '[]';
+    storageFailed = true;
+    return memory.get(listKey) ?? '[]';
+  }
+}
+
+function write(listKey: string, value: string | null): void {
+  if (value === null) memory.delete(listKey);
+  else memory.set(listKey, value);
+  if (storageFailed) return;
+  try {
+    if (value === null) window.localStorage.removeItem(PREFIX + listKey);
+    else window.localStorage.setItem(PREFIX + listKey, value);
+  } catch {
+    // Blocked or full: carry on from memory for the rest of this page load.
+    storageFailed = true;
   }
 }
 
@@ -55,22 +78,14 @@ export function setColumnHidden(listKey: string, id: string, hidden: boolean): v
   const next = readHiddenColumns(listKey);
   if (hidden) next.add(id);
   else next.delete(id);
-  try {
-    window.localStorage.setItem(PREFIX + listKey, JSON.stringify([...next].sort()));
-  } catch {
-    // Storage blocked: nothing is remembered, and the list shows every column.
-  }
+  write(listKey, JSON.stringify([...next].sort()));
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 
 /** Show every column of a kind of list again. */
 export function resetColumns(listKey: string): void {
   if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.removeItem(PREFIX + listKey);
-  } catch {
-    // Storage blocked: there is nothing saved to clear.
-  }
+  write(listKey, null);
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 
@@ -91,4 +106,10 @@ export function useHiddenColumns(listKey: string): Set<string> {
     () => '[]'
   );
   return useMemo(() => parse(raw), [raw]);
+}
+
+/** For tests: forget the in-memory fallback. */
+export function resetColumnMemory(): void {
+  memory.clear();
+  storageFailed = false;
 }
