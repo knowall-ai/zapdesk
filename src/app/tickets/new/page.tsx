@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Send, Loader2 } from 'lucide-react';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
+import { keptTicketType } from '@/lib/ticket-type';
 import type { DevOpsProject, User, WorkItemType, ClassificationNode } from '@/types';
 
 interface NewTicketForm {
@@ -40,6 +41,8 @@ export default function NewTicketPage() {
   // isLoadingTypes is false and workItemType is non-empty, so Submit is enabled
   // and the ticket is filed against B with a type B may not even have.
   const typesRequestId = useRef(0);
+  // The type chosen before the project changed: kept if the new project has it (#7379).
+  const previousTypeRef = useRef('');
   /** Same guard for required-field discovery — see fetchRequiredFields. */
   const fieldsRequestId = useRef(0);
   const [isLoadingTypes, setIsLoadingTypes] = useState(false);
@@ -109,6 +112,7 @@ export default function NewTicketPage() {
       // failed or empty response leaves the form holding a type the new
       // project may not have -- and fetchRequiredFields is keyed on it, so the
       // required fields would be fetched for the wrong type too.
+      // The project picker has already remembered it in previousTypeRef.
       setForm((prev) => ({ ...prev, workItemType: '' }));
       try {
         const response = await get(
@@ -121,10 +125,13 @@ export default function NewTicketPage() {
         if (requestId !== typesRequestId.current) return;
         const types: WorkItemType[] = data.types || [];
         setWorkItemTypes(types);
-        if (types.length > 0) {
-          const taskType = types.find((t) => t.name === 'Task');
-          setForm((prev) => ({ ...prev, workItemType: taskType?.name || types[0].name }));
-        }
+        // No default type: the person raising it chooses (#7379).
+        const previous = previousTypeRef.current;
+        previousTypeRef.current = '';
+        setForm((prev) => ({
+          ...prev,
+          workItemType: keptTicketType(prev.workItemType || previous, types),
+        }));
       } catch (err) {
         if (requestId !== typesRequestId.current) return;
         console.error('Failed to fetch work item types:', err);
@@ -461,7 +468,9 @@ export default function NewTicketPage() {
             ) : (
               <select
                 value={form.project}
-                onChange={(e) =>
+                onChange={(e) => {
+                  // Remembered, then kept if the new project has it (#7379).
+                  if (form.workItemType) previousTypeRef.current = form.workItemType;
                   setForm((prev) => ({
                     ...prev,
                     project: e.target.value,
@@ -469,8 +478,8 @@ export default function NewTicketPage() {
                     workItemType: '',
                     iterationPath: '',
                     areaPath: '',
-                  }))
-                }
+                  }));
+                }}
                 className="input w-full"
                 required
               >
