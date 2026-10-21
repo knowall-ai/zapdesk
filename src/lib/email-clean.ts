@@ -1,8 +1,9 @@
 /**
  * Email body sanitisation for inbound mail.
  *
- * Inputs: plain-text `uniqueBody` from Microsoft Graph (already strips the
- * quoted thread from previous messages in the conversation).
+ * Inputs: `uniqueBody` from Microsoft Graph. That is meant to leave out the
+ * quoted thread, but for mail from outside the tenant (Gmail, for one) it
+ * often keeps it, so the quoted ZapDesk email is cut here too (#7720).
  * Outputs: trimmed text with signatures and confidentiality notices removed,
  * then HTML-escaped and wrapped for safe DevOps storage.
  */
@@ -73,6 +74,93 @@ export function stripSignature(body: string): string {
   return lines.slice(0, cutAt).join('\n').trimEnd();
 }
 
+/**
+ * True for text that is ZapDesk's own email: every message ZapDesk sends
+ * carries its logo, a ticket link or the `[ZapDesk #N]` subject, and the
+ * sender's name or address. Used to tell a customer quoting ZapDesk back to
+ * it (cut) from a customer quoting something else on purpose (kept).
+ */
+function isZapDeskQuote(text: string): boolean {
+  if (/zapdesk/i.test(text)) return true;
+  const mailbox = (process.env.MAIL_POLL_MAILBOX || process.env.MAIL_FROM || '').trim();
+  return mailbox !== '' && text.toLowerCase().includes(mailbox.toLowerCase());
+}
+
+/**
+ * Cut the quoted ZapDesk email from the bottom of a plain-text reply (#7720):
+ * the "On <date>, <sender> wrote:" line, an "-----Original Message-----"
+ * header, or a run of `>` lines, when what follows is ZapDesk's own mail.
+ */
+export function stripQuotedText(body: string): string {
+  if (!body) return '';
+  const lines = body.replace(/\r\n/g, '\n').split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const startsQuote =
+      /^On .{4,200}wrote:$/i.test(line) ||
+      /^-{2,}\s*Original Message\s*-{2,}$/i.test(line) ||
+      /^From:\s.+/i.test(line) ||
+      (line.startsWith('>') && (i === 0 || !lines[i - 1].trim().startsWith('>')));
+    if (!startsQuote) continue;
+    if (!isZapDeskQuote(lines.slice(i).join('\n'))) continue;
+    // A "wrote:" line just above the first `>` line belongs to the quote.
+    let cut = i;
+    if (line.startsWith('>') && cut > 0 && /:\s*$/.test(lines[cut - 1].trim())) cut -= 1;
+    return lines.slice(0, cut).join('\n').trimEnd();
+  }
+  return body;
+}
+
+/**
+ * Cut the quoted ZapDesk email from an HTML reply (#7720).
+ *
+ * Gmail puts the earlier message in a `<blockquote>` after an attribution
+ * line ("On <date>, Support <address> wrote:", in the sender's language), and
+ * Graph strips the `gmail_quote` class that would have marked it. Outlook
+ * starts its quote with a `divRplyFwdMsg` or `appendonsend` block, or a
+ * "From: … Sent: …" header. Each is cut, with its attribution line, only
+ * when the quoted part is ZapDesk's own email; other quotes stay.
+ */
+export function stripQuotedHtml(html: string): string {
+  if (!html) return '';
+  const markers: RegExp[] = [
+    /<blockquote\b/gi,
+    /<div[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>/gi,
+    /<div[^>]*id="?(?:divRplyFwdMsg|appendonsend)"?[^>]*>/gi,
+    /<hr[^>]*id="?stopSpelling"?[^>]*>/gi,
+    /-{2,}\s*Original Message\s*-{2,}/gi,
+  ];
+  let cutAt = -1;
+  for (const re of markers) {
+    for (const match of html.matchAll(re)) {
+      const index = match.index ?? 0;
+      if (cutAt !== -1 && index >= cutAt) break;
+      if (isZapDeskQuote(html.slice(index))) {
+        cutAt = index;
+        break;
+      }
+    }
+  }
+  if (cutAt === -1) return html;
+
+  let kept = html.slice(0, cutAt);
+  // The attribution line just before the quote: the last block whose text
+  // ends with ":" and names a sender (an address, or "wrote").
+  const lastBlock = Math.max(kept.lastIndexOf('<div'), kept.lastIndexOf('<p'));
+  if (lastBlock !== -1) {
+    const text = kept
+      .slice(lastBlock)
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&lt;|&gt;/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (/:$/.test(text) && (/@/.test(text) || /wrote/i.test(text)) && text.length < 300) {
+      kept = kept.slice(0, lastBlock);
+    }
+  }
+  return kept.trimEnd();
+}
+
 /** HTML-escape user input before embedding in DevOps fields. */
 export function escapeHtml(text: string): string {
   return text
@@ -85,7 +173,7 @@ export function escapeHtml(text: string): string {
 
 /** Clean + escape + wrap a plain-text email body for safe HTML storage. */
 export function renderEmailBody(rawText: string): string {
-  const stripped = stripSignature(rawText);
+  const stripped = stripSignature(stripQuotedText(rawText));
   const truncated =
     stripped.length > MAX_BODY_CHARS
       ? stripped.slice(0, MAX_BODY_CHARS) + '\n\n[truncated]'
@@ -279,7 +367,7 @@ function truncateHtml(html: string, max: number): string {
  */
 export function renderEmailBodyHtml(rawHtml: string): string {
   const sanitised = sanitizeEmailHtml(rawHtml);
-  const stripped = stripHtmlSignature(sanitised);
+  const stripped = stripHtmlSignature(stripQuotedHtml(sanitised));
   const truncated = truncateHtml(stripped, MAX_BODY_CHARS);
   // A screenshot-only email has no text nodes at all. Testing text alone threw
   // away the inline image that rewriteCidReferences had just spliced in, and
