@@ -27,6 +27,7 @@ import { useSourceFilter } from '@/components/providers/SourceProvider';
 import { readScrollTop, sessionPositionStorage, writeScrollTop } from '@/lib/kanban-position';
 import { ticketToWorkItem } from '@/lib/devops';
 import { debugLog } from '@/lib/debug';
+import { filterStandupByProject } from '@/lib/kanban-project';
 import { createBoardCache } from '@/lib/standup-board-cache';
 import {
   activityWindowStart,
@@ -71,10 +72,12 @@ function cacheKey(organization: string, currentSprintOnly: boolean, sources: Sou
 }
 
 /** Build /kanban URL with the given params */
-function buildKanbanUrl(groupBy: GroupBy, sprint: boolean): string {
+function buildKanbanUrl(groupBy: GroupBy, sprint: boolean, project?: string | null): string {
   const params = new URLSearchParams();
   if (groupBy !== 'project') params.set('groupBy', groupBy);
   if (sprint) params.set('sprint', 'true');
+  // One project's board (#7377), e.g. a support board.
+  if (project) params.set('project', project);
   const qs = params.toString();
   return `/kanban${qs ? `?${qs}` : ''}`;
 }
@@ -150,6 +153,8 @@ function StandupPageContent() {
   // Derive from URL — single source of truth
   const groupBy: GroupBy = (searchParams.get('groupBy') as GroupBy) || 'project';
   const currentSprintOnly = searchParams.get('sprint') === 'true';
+  // Only this project's items, when chosen (#7377).
+  const projectFilter = searchParams.get('project');
   // Azure DevOps, GitHub or both, from the header toggle (#447)
   const { sourceFilter, sourceReady } = useSourceFilter();
 
@@ -678,7 +683,18 @@ function StandupPageContent() {
     [devOpsPatch, selectedTicket, fetchStandupData]
   );
 
+  const boardData = useMemo(
+    () => filterStandupByProject(standupData, projectFilter),
+    [standupData, projectFilter]
+  );
+  const projectNames = useMemo(
+    () =>
+      (standupData?.projects ?? []).map((p) => p.projectName).sort((a, b) => a.localeCompare(b)),
+    [standupData]
+  );
+
   const groups: GroupData[] = useMemo(() => {
+    const standupData = boardData;
     if (!standupData) return [];
 
     if (groupBy === 'person') {
@@ -689,14 +705,16 @@ function StandupPageContent() {
       groupName: p.projectName,
       columns: p.columns,
     }));
-  }, [standupData, groupBy]);
+  }, [boardData, groupBy]);
 
   // Each group's last-24-working-hours summary, keyed by group name.
   const groupActivity = useMemo(() => {
     const map = new Map<string, GroupActivity>();
     if (!boardLoadedAt) return map;
     const since = activityWindowStart(new Date(boardLoadedAt)).getTime();
-    const allPullRequests = prActivity?.pullRequests ?? [];
+    const allPullRequests = (prActivity?.pullRequests ?? []).filter(
+      (pr) => !projectFilter || pr.project.toLowerCase() === projectFilter.toLowerCase()
+    );
     // A project whose pull requests couldn't be read makes its own group's
     // count unknown, and every person's too: anyone may have worked there.
     const failedProjects = new Set(prActivity?.failedProjects ?? []);
@@ -717,7 +735,7 @@ function StandupPageContent() {
       });
     }
     return map;
-  }, [groups, groupBy, prActivity, prState, boardLoadedAt]);
+  }, [groups, groupBy, prActivity, prState, boardLoadedAt, projectFilter]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -730,7 +748,7 @@ function StandupPageContent() {
   // remembered by each group; this is the scroll position of the board.
   const organizationName = selectedOrganization?.accountName ?? '';
   const groupScope = `${organizationName}:${groupBy}`;
-  const scrollScope = `${groupScope}:${currentSprintOnly ? 'sprint' : 'all'}`;
+  const scrollScope = `${groupScope}:${currentSprintOnly ? 'sprint' : 'all'}:${projectFilter ?? '*'}`;
   const boardRef = useRef<HTMLDivElement>(null);
   // The scope whose position has been put back. The saved position is applied
   // each time a board comes on screen (first load, or after the loading
@@ -782,8 +800,40 @@ function StandupPageContent() {
               <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
                 Kanban Board
               </h1>
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                All projects &middot;{' '}
+              <p
+                className="flex flex-wrap items-center gap-1 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <label htmlFor="kanban-project" className="sr-only">
+                  Project
+                </label>
+                <select
+                  id="kanban-project"
+                  value={projectFilter ?? ''}
+                  onChange={(e) =>
+                    router.replace(
+                      buildKanbanUrl(groupBy, currentSprintOnly, e.target.value || null),
+                      {
+                        scroll: false,
+                      }
+                    )
+                  }
+                  className="rounded border bg-transparent px-1 py-0.5 text-sm"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+                  title="Show one project's items only"
+                >
+                  <option value="">All projects</option>
+                  {projectFilter &&
+                    !projectNames.some((n) => n.toLowerCase() === projectFilter.toLowerCase()) && (
+                      <option value={projectFilter}>{projectFilter}</option>
+                    )}
+                  {projectNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                &middot;{' '}
                 {new Date().toLocaleDateString('en-GB', {
                   weekday: 'long',
                   day: 'numeric',
@@ -797,7 +847,7 @@ function StandupPageContent() {
               {/* Group By toggle */}
               <div className="flex rounded-md border" style={{ borderColor: 'var(--border)' }}>
                 <Link
-                  href={buildKanbanUrl('project', currentSprintOnly)}
+                  href={buildKanbanUrl('project', currentSprintOnly, projectFilter)}
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'project'
@@ -810,7 +860,7 @@ function StandupPageContent() {
                   Project
                 </Link>
                 <Link
-                  href={buildKanbanUrl('person', currentSprintOnly)}
+                  href={buildKanbanUrl('person', currentSprintOnly, projectFilter)}
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'person'
@@ -833,7 +883,9 @@ function StandupPageContent() {
                   type="checkbox"
                   checked={currentSprintOnly}
                   onChange={(e) =>
-                    router.replace(buildKanbanUrl(groupBy, e.target.checked), { scroll: false })
+                    router.replace(buildKanbanUrl(groupBy, e.target.checked, projectFilter), {
+                      scroll: false,
+                    })
                   }
                   className="accent-[var(--primary)]"
                 />
@@ -907,7 +959,10 @@ function StandupPageContent() {
             </div>
           ) : standupData ? (
             <div className="space-y-6">
-              <StandupSummaryCards columns={standupData.columns} summary={standupData.summary} />
+              <StandupSummaryCards
+                columns={standupData.columns}
+                summary={(boardData ?? standupData).summary}
+              />
 
               {groups.length > 0 ? (
                 groups.map((group) => (
