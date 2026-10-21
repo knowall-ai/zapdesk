@@ -23,8 +23,10 @@ import {
   X,
   ChevronsLeft,
   ChevronsRight,
+  Star,
 } from 'lucide-react';
 import ZapDeskIcon from '@/components/common/ZapDeskIcon';
+import { isDefaultViewId, saveDefaultView, useDefaultView } from '@/lib/default-view';
 
 interface ViewItem {
   id: string;
@@ -108,6 +110,9 @@ export default function Sidebar({
     recentlySolved: 0,
     createdToday: 0,
   };
+
+  // The view the Tickets page opens on (#7729), starred in the list below.
+  const defaultView = useDefaultView();
 
   const viewItems: ViewItem[] = [
     {
@@ -266,33 +271,61 @@ export default function Sidebar({
             {viewItems.map((view) => {
               const currentSearch = searchParams.toString();
               const currentUrl = pathname + (currentSearch ? `?${currentSearch}` : '');
-              const isActive = currentUrl === view.href;
+              const isDefault = defaultView === view.id;
+              // "/tickets" with no view shows the default, so that row is current too.
+              const isActive =
+                currentUrl === view.href ||
+                (isDefault && pathname === '/tickets' && !searchParams.get('view'));
+              const starLabel = isDefault
+                ? `Stop opening "${view.name}" by default`
+                : `Open "${view.name}" by default`;
               return (
-                <Link
-                  key={view.id}
-                  href={view.href}
-                  className={`flex items-center justify-between rounded px-2 py-1.5 text-sm transition-colors ${
-                    isActive
-                      ? 'bg-[rgba(34,197,94,0.15)] text-[var(--primary)]'
-                      : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
-                  }`}
-                  onClick={() => onClose?.()}
-                >
-                  <span className="truncate">{view.name}</span>
-                  {view.count !== undefined && (
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-                        isActive
-                          ? 'bg-[var(--primary)] text-white'
-                          : view.count > 0
-                            ? 'bg-[rgba(34,197,94,0.15)] text-[var(--primary)]'
-                            : 'bg-[var(--surface)] text-[var(--text-muted)]'
+                <div key={view.id} className="group flex items-center gap-1">
+                  <Link
+                    href={view.href}
+                    className={`flex min-w-0 flex-1 items-center justify-between rounded px-2 py-1.5 text-sm transition-colors ${
+                      isActive
+                        ? 'bg-[rgba(34,197,94,0.15)] text-[var(--primary)]'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
+                    }`}
+                    onClick={() => onClose?.()}
+                  >
+                    <span className="truncate">{view.name}</span>
+                    {view.count !== undefined && (
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                          isActive
+                            ? 'bg-[var(--primary)] text-white'
+                            : view.count > 0
+                              ? 'bg-[rgba(34,197,94,0.15)] text-[var(--primary)]'
+                              : 'bg-[var(--surface)] text-[var(--text-muted)]'
+                        }`}
+                      >
+                        {view.count}
+                      </span>
+                    )}
+                  </Link>
+                  {isDefaultViewId(view.id) && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        saveDefaultView(isDefault ? null : (view.id as typeof defaultView))
+                      }
+                      className={`shrink-0 rounded p-1 transition-opacity hover:bg-[var(--surface-hover)] focus-visible:opacity-100 ${
+                        isDefault ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                       }`}
+                      title={starLabel}
+                      aria-label={starLabel}
+                      aria-pressed={isDefault}
                     >
-                      {view.count}
-                    </span>
+                      <Star
+                        size={13}
+                        fill={isDefault ? 'var(--warning)' : 'none'}
+                        style={{ color: isDefault ? 'var(--warning)' : 'var(--text-muted)' }}
+                      />
+                    </button>
                   )}
-                </Link>
+                </div>
               );
             })}
           </div>

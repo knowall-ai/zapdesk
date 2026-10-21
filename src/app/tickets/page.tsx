@@ -15,6 +15,7 @@ import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { useSourceFilter } from '@/components/providers/SourceProvider';
 import { ticketToWorkItem } from '@/lib/devops';
+import { useDefaultView, viewToShow } from '@/lib/default-view';
 import type { Ticket, WorkItem, User, WorkItemType, EffortHoursUpdate } from '@/types';
 
 type TicketJson = Ticket & { createdAt: string; updatedAt: string };
@@ -48,7 +49,9 @@ function TicketsPageContent() {
   const { selectedOrganization } = useOrganization();
   const { refresh: refreshCounts } = useTicketCounts();
   const { sourceFilter, gitHubConfigured, sourceReady } = useSourceFilter();
-  const view = searchParams.get('view') || 'all-unsolved';
+  // No view asked for: the one starred in the sidebar, if any (#7729).
+  const defaultView = useDefaultView();
+  const view = viewToShow(searchParams.get('view'), defaultView);
   const displayParam = searchParams.get('display');
   const isKanbanView = view === 'kanban';
 
