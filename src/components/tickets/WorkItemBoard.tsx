@@ -22,11 +22,20 @@ import {
   Github,
   SquareKanban,
   ExternalLink,
+  Columns3,
+  Check,
 } from 'lucide-react';
 import type { Ticket, WorkItem, WorkItemType } from '@/types';
 import { TICKET_WORK_ITEM_TYPES } from '@/types';
 import { toast } from 'sonner';
 import { useClickOutside } from '@/hooks/useClickOutside';
+import {
+  canHideColumn,
+  resetColumns,
+  setColumnHidden,
+  useHiddenColumns,
+  visibleColumns,
+} from '@/lib/list-columns';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
@@ -105,6 +114,11 @@ interface WorkItemBoardProps {
   hideTicketsOnlyToggle?: boolean; // Hide the "Tickets only" toggle
   readOnlyKanban?: boolean; // Disable drag-and-drop in Kanban view
   columns?: ColumnConfig[];
+  /**
+   * Which saved column choice the list uses (#7397). Defaults to "workitems"
+   * for the work items columns and "tickets" otherwise.
+   */
+  columnsKey?: string;
   groupBy?: GroupByOption;
   availableGroupBy?: GroupByOption[]; // Which groupBy options to show in the toggle
   compact?: boolean;
@@ -328,6 +342,7 @@ export default function WorkItemBoard({
   hideTicketsOnlyToggle = false,
   readOnlyKanban = false,
   columns = TICKET_COLUMNS,
+  columnsKey,
   groupBy: initialGroupBy = 'assignee',
   availableGroupBy,
   compact = false,
@@ -374,6 +389,11 @@ export default function WorkItemBoard({
   }, [sortField, sortDirection, groupBy, viewMode, ticketsOnly, searchQuery, filters]);
   const [showBulkMenu, setShowBulkMenu] = useState(false);
   const [showGroupByMenu, setShowGroupByMenu] = useState(false);
+  const [showColumnsMenu, setShowColumnsMenu] = useState(false);
+  const columnsMenuRef = useClickOutside<HTMLDivElement>(
+    () => setShowColumnsMenu(false),
+    showColumnsMenu
+  );
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const { refresh: refreshCounts } = useTicketCounts();
   const bulkMenuRef = useRef<HTMLDivElement>(null);
@@ -821,9 +841,18 @@ export default function WorkItemBoard({
     return { 'All Items': displayItems };
   }, [sortedItems, groupBy]);
 
+  // The columns offered, minus those this person hid (#7397).
+  const listKey = columnsKey ?? (columns === WORKITEM_COLUMNS ? 'workitems' : 'tickets');
+  const hiddenColumns = useHiddenColumns(listKey);
+  const shownColumns = useMemo(
+    () => visibleColumns(columns, hiddenColumns),
+    [columns, hiddenColumns]
+  );
+  const choosableColumns = columns.filter((c) => c.label && canHideColumn(c.id));
+
   // Check which columns are visible
-  const hasColumn = (id: ColumnId) => columns.some((c) => c.id === id);
-  const columnCount = columns.length;
+  const hasColumn = (id: ColumnId) => shownColumns.some((c) => c.id === id);
+  const columnCount = shownColumns.length;
 
   const cellPadding = compact ? 'px-3 py-2' : 'px-4 py-3';
 
@@ -1056,6 +1085,75 @@ export default function WorkItemBoard({
                     </div>
                   )}
 
+                  {/* Column picker (#7397) */}
+                  {viewMode === 'list' && choosableColumns.length > 0 && (
+                    <div className="relative" ref={columnsMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => setShowColumnsMenu(!showColumnsMenu)}
+                        className="input flex items-center gap-1.5 text-sm"
+                        style={{
+                          color:
+                            shownColumns.length < columns.length
+                              ? 'var(--text-primary)'
+                              : 'var(--text-muted)',
+                        }}
+                        aria-expanded={showColumnsMenu}
+                        aria-haspopup="true"
+                        title="Choose the columns to show"
+                      >
+                        <Columns3 size={14} />
+                        Columns
+                        <ChevronDown size={14} />
+                      </button>
+                      {showColumnsMenu && (
+                        <div
+                          className="absolute top-full right-0 z-50 mt-1 min-w-44 rounded-lg border py-1 shadow-lg"
+                          style={{
+                            backgroundColor: 'var(--surface)',
+                            borderColor: 'var(--border)',
+                          }}
+                        >
+                          {choosableColumns.map((column) => {
+                            const shown = !hiddenColumns.has(column.id);
+                            return (
+                              <button
+                                key={column.id}
+                                type="button"
+                                role="menuitemcheckbox"
+                                aria-checked={shown}
+                                onClick={() => setColumnHidden(listKey, column.id, shown)}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                                style={{ color: 'var(--text-primary)' }}
+                              >
+                                <span
+                                  className="flex h-4 w-4 items-center justify-center rounded border"
+                                  style={{
+                                    borderColor: shown ? 'var(--primary)' : 'var(--border-light)',
+                                    backgroundColor: shown ? 'var(--primary)' : 'transparent',
+                                  }}
+                                >
+                                  {shown && <Check size={12} color="white" />}
+                                </span>
+                                {column.label}
+                              </button>
+                            );
+                          })}
+                          {shownColumns.length < columns.length && (
+                            <button
+                              type="button"
+                              onClick={() => resetColumns(listKey)}
+                              className="mt-1 w-full border-t px-3 py-2 text-left text-xs transition-colors hover:bg-[var(--surface-hover)]"
+                              style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+                            >
+                              Show all columns
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* View toggle */}
                   {!hideViewToggle && (
                     <div className="flex items-center gap-1 rounded-lg bg-[var(--surface)] p-1">
@@ -1129,7 +1227,7 @@ export default function WorkItemBoard({
                     />
                   </th>
                 )}
-                {columns
+                {shownColumns
                   .filter((col) => col.id !== 'checkbox')
                   .map((col) => (
                     <th
