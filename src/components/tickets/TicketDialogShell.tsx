@@ -74,7 +74,7 @@ export default function TicketDialogShell({
         {/* Content */}
         <ContentWrapper {...contentProps} className="flex flex-1 overflow-hidden">
           {/* Main content area */}
-          <div className="flex flex-1 flex-col overflow-hidden">{children}</div>
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
 
           {/* Optional sidebar */}
           {sidebar && (

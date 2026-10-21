@@ -330,7 +330,7 @@ export default function WorkItemDetailContent({
   };
 
   return (
-    <div className="flex-1 overflow-auto p-4">
+    <div className="min-w-0 flex-1 overflow-auto p-4">
       {/* Title with edit controls */}
       <div className="mb-4 flex items-start gap-2">
         {isEditing ? (
@@ -393,8 +393,8 @@ export default function WorkItemDetailContent({
               image={workItem.requester.avatarUrl}
               size="md"
             />
-            <div className="flex-1">
-              <div className="mb-2 flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
                 <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
                   {workItem.requester.displayName}
                 </span>

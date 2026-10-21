@@ -191,8 +191,8 @@ export default function CommentSection({
                   image={comment.author.avatarUrl}
                   size={avatarSize}
                 />
-                <div className="flex-1">
-                  <div className="mb-1 flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
                     <span
                       className={`font-medium ${compact ? 'text-sm' : ''}`}
                       style={{ color: 'var(--text-primary)' }}
