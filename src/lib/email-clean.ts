@@ -106,9 +106,8 @@ export function stripQuotedText(body: string): string {
     const line = lines[i].trim();
 
     if (/^-{2,}\s*Original Message\s*-{2,}$/i.test(line)) {
-      // Its header block: the From/Sent/To/Subject lines that follow.
-      const header = lines.slice(i, i + 6).join('\n');
-      if (isZapDeskQuote(header)) break;
+      // Judged on its header fields only, not the quoted message below.
+      if (isZapDeskQuote(headerFields(lines.slice(i + 1)))) break;
     }
 
     if (line.startsWith('>')) {
@@ -127,6 +126,33 @@ export function stripQuotedText(body: string): string {
     kept.push(lines[i]);
   }
   return kept.join('\n').trimEnd();
+}
+
+const HEADER_FIELD = /^\s*(From|Sent|Date|To|Cc|Subject)\s*:/i;
+
+/**
+ * The From/Sent/To/Subject lines at the top of an Outlook quote, and none of
+ * the quoted message: deciding on those alone keeps a supplier's quoted email
+ * that merely mentions ZapDesk in its body.
+ */
+function headerFields(lines: string[]): string {
+  const fields: string[] = [];
+  for (const line of lines) {
+    if (HEADER_FIELD.test(line)) fields.push(line);
+    else if (line.trim() !== '' && fields.length > 0) break;
+  }
+  return fields.join('\n');
+}
+
+/** The text lines of an HTML fragment, for reading its header fields. */
+function htmlLines(fragment: string): string[] {
+  return fragment
+    .replace(/<br\s*\/?>|<\/(?:p|div|tr)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .split('\n');
 }
 
 /** Where the element opened at `start` closes (after its end tag), counting nested ones. */
@@ -178,32 +204,52 @@ export function stripQuotedHtml(html: string): string {
   if (!html) return '';
   let out = html;
 
-  // Quote containers: judged and removed one at a time.
-  const container = /<(blockquote)\b[^>]*>|<(div)\b[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>/gi;
-  let searchFrom = 0;
+  // Quote containers, innermost first. A container is judged once everything
+  // nested in it has been: on its own text and attribution, without the
+  // quotes inside it that were kept. A ZapDesk quote inside an unrelated one
+  // goes and the outer one stays; a ZapDesk email that itself quotes
+  // something goes whole. Kept containers are marked while this runs.
+  const KEPT = 'data-zapdesk-kept';
+  const container =
+    /<(blockquote)\b(?![^>]*data-zapdesk-kept)[^>]*>|<(div)\b(?![^>]*data-zapdesk-kept)[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>/gi;
+  const keptElement = /<(blockquote|div)\b[^>]*data-zapdesk-kept[^>]*>/gi;
   for (;;) {
-    container.lastIndex = searchFrom;
-    const match = container.exec(out);
-    if (!match) break;
-    const tag = (match[1] || match[2]).toLowerCase();
-    const start = match.index;
-    const end = elementEnd(out, start, tag);
-    const from = attributionStart(out, start);
-    if (isZapDeskQuote(out.slice(from, end))) {
-      out = out.slice(0, from) + out.slice(end);
-      searchFrom = from;
-    } else {
-      searchFrom = end;
+    const ranges = [...out.matchAll(container)].map((m) => {
+      const start = m.index ?? 0;
+      return { start, end: elementEnd(out, start, (m[1] || m[2]).toLowerCase()) };
+    });
+    const ready = ranges.filter(
+      (r) => !ranges.some((o) => o !== r && o.start > r.start && o.end <= r.end)
+    );
+    if (ready.length === 0) break;
+    // From the last, so earlier positions stay valid as text changes.
+    for (const quote of ready.reverse()) {
+      const from = attributionStart(out, quote.start);
+      let own = out.slice(from, quote.end);
+      for (const kept of [...own.matchAll(keptElement)].reverse()) {
+        const at = kept.index ?? 0;
+        own = own.slice(0, at) + own.slice(elementEnd(own, at, kept[1].toLowerCase()));
+      }
+      if (isZapDeskQuote(own)) {
+        out = out.slice(0, from) + out.slice(quote.end);
+      } else {
+        const tagEnd = out.indexOf('>', quote.start);
+        const selfClosing = out[tagEnd - 1] === '/';
+        const at = selfClosing ? tagEnd - 1 : tagEnd;
+        out = `${out.slice(0, at)} ${KEPT}${out.slice(at)}`;
+      }
     }
   }
+  out = out.replace(/ data-zapdesk-kept/g, '');
 
   // Outlook headers: everything below them is the earlier message.
   const header =
     /<div[^>]*id="?(?:divRplyFwdMsg|appendonsend)"?[^>]*>|<hr[^>]*id="?stopSpelling"?[^>]*>|-{2,}\s*Original Message\s*-{2,}/gi;
   for (const match of out.matchAll(header)) {
     const start = match.index ?? 0;
-    // The header block itself: the next ~600 characters hold From/Sent/Subject.
-    if (isZapDeskQuote(out.slice(start, start + 600))) {
+    // Judged on the From/Sent/To/Subject fields only, not the quoted message.
+    const fields = headerFields(htmlLines(out.slice(start + match[0].length, start + 2000)));
+    if (isZapDeskQuote(fields)) {
       out = out.slice(0, attributionStart(out, start));
       break;
     }
