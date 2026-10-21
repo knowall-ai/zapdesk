@@ -844,6 +844,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                   type="submit"
                   disabled={
                     isSubmitting ||
+                    isLoadingTypes ||
                     !form.project ||
                     !form.title.trim() ||
                     !form.workItemType ||
