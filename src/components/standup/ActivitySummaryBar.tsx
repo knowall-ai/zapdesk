@@ -52,7 +52,10 @@ function windowLabel(since: number): { label: string; tooltip: string } {
 function pullRequestTooltip(pullRequests: PullRequestActivity[]): string {
   if (pullRequests.length === 0) return 'No pull request activity in this window';
   return pullRequests
-    .map((pr) => `!${pr.id} ${pr.title} (${pr.activity.join(', ')}) — ${pr.repository}`)
+    .map(
+      (pr) =>
+        `${pr.source === 'github' ? '#' : '!'}${pr.id} ${pr.title} (${pr.activity.join(', ')}) — ${pr.repository}`
+    )
     .join('\n');
 }
 
