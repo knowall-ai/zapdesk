@@ -156,8 +156,15 @@ The new title is shown in the email's list of changes.
 * Emails to the customer (confirmation, agent reply, status change, title or
   priority update) contain no links to ZapDesk: customers have no ZapDesk
   account. They are asked to reply to the email instead.
-* Emails to the support team (assignment, new customer reply) keep their
-  *View Ticket* link.
+* Emails to the support team (new ticket, assignment, new customer reply) keep
+  their *View Ticket* link.
+* As soon as a ticket arrives by email, everyone in `SUPPORT_TEAM_NOTIFY_EMAIL`
+  gets a "New ticket" email with the subject, sender, project and message. The
+  setting takes one address (a group or distribution list) or several,
+  separated by commas or semicolons. The polled mailbox and the customer who
+  raised the ticket are always left out. If a team list includes the support mailbox, ZapDesk
+  ignores its own email when it comes back in (anything sent from `MAIL_FROM`
+  or the polled mailbox), so it is never filed as a customer reply.
 * The "Earlier in this conversation" history quoted under an agent reply leaves
   out the customer's own replies, which they already have in their Sent folder.
 * No "new customer reply" alert is sent when the ticket is assigned to the
