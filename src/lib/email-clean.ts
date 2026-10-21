@@ -75,90 +75,141 @@ export function stripSignature(body: string): string {
 }
 
 /**
- * True for text that is ZapDesk's own email: every message ZapDesk sends
- * carries its logo, a ticket link or the `[ZapDesk #N]` subject, and the
- * sender's name or address. Used to tell a customer quoting ZapDesk back to
- * it (cut) from a customer quoting something else on purpose (kept).
+ * True for a quoted block that is ZapDesk's own email: every message ZapDesk
+ * sends carries its name or logo, a `[ZapDesk #N]` subject or ticket link, or
+ * the support address. Only ever given one quote block and its attribution,
+ * never the rest of the body, so a later ZapDesk quote can't qualify an
+ * earlier unrelated one.
  */
-function isZapDeskQuote(text: string): boolean {
-  if (/zapdesk/i.test(text)) return true;
+function isZapDeskQuote(block: string): boolean {
+  if (/zapdesk/i.test(block)) return true;
   const mailbox = (process.env.MAIL_POLL_MAILBOX || process.env.MAIL_FROM || '').trim();
-  return mailbox !== '' && text.toLowerCase().includes(mailbox.toLowerCase());
+  return mailbox !== '' && block.toLowerCase().includes(mailbox.toLowerCase());
 }
 
+/** "On <date>, <sender> wrote:", in English or the trailing-colon form other languages use. */
+const ATTRIBUTION_LINE = /^(On .{4,200}wrote:|.{0,200}wrote:|.{0,200}@.{0,200}:)$/i;
+
 /**
- * Cut the quoted ZapDesk email from the bottom of a plain-text reply (#7720):
- * the "On <date>, <sender> wrote:" line, an "-----Original Message-----"
- * header, or a run of `>` lines, when what follows is ZapDesk's own mail.
+ * Cut quoted ZapDesk email from a plain-text reply (#7720).
+ *
+ * A quote is a run of `>` lines with the attribution line just above it; it
+ * is removed when that run is ZapDesk's email, and the text around it stays.
+ * An "-----Original Message-----" header (Outlook) quotes everything below
+ * it, so it is cut to the end when its header block names ZapDesk.
  */
 export function stripQuotedText(body: string): string {
   if (!body) return '';
   const lines = body.replace(/\r\n/g, '\n').split('\n');
+  const kept: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
-    const startsQuote =
-      /^On .{4,200}wrote:$/i.test(line) ||
-      /^-{2,}\s*Original Message\s*-{2,}$/i.test(line) ||
-      /^From:\s.+/i.test(line) ||
-      (line.startsWith('>') && (i === 0 || !lines[i - 1].trim().startsWith('>')));
-    if (!startsQuote) continue;
-    if (!isZapDeskQuote(lines.slice(i).join('\n'))) continue;
-    // A "wrote:" line just above the first `>` line belongs to the quote.
-    let cut = i;
-    if (line.startsWith('>') && cut > 0 && /:\s*$/.test(lines[cut - 1].trim())) cut -= 1;
-    return lines.slice(0, cut).join('\n').trimEnd();
+
+    if (/^-{2,}\s*Original Message\s*-{2,}$/i.test(line)) {
+      // Its header block: the From/Sent/To/Subject lines that follow.
+      const header = lines.slice(i, i + 6).join('\n');
+      if (isZapDeskQuote(header)) break;
+    }
+
+    if (line.startsWith('>')) {
+      let end = i;
+      while (end + 1 < lines.length && lines[end + 1].trim().startsWith('>')) end++;
+      const previous = kept.length > 0 ? kept[kept.length - 1].trim() : '';
+      const hasAttribution = ATTRIBUTION_LINE.test(previous);
+      const block = [hasAttribution ? previous : '', ...lines.slice(i, end + 1)].join('\n');
+      if (isZapDeskQuote(block)) {
+        if (hasAttribution) kept.pop();
+        i = end;
+        continue;
+      }
+    }
+
+    kept.push(lines[i]);
   }
-  return body;
+  return kept.join('\n').trimEnd();
+}
+
+/** Where the element opened at `start` closes (after its end tag), counting nested ones. */
+function elementEnd(html: string, start: number, tag: string): number {
+  const re = new RegExp(`<(/?)${tag}\\b[^>]*>`, 'gi');
+  re.lastIndex = start;
+  let depth = 0;
+  for (let m = re.exec(html); m; m = re.exec(html)) {
+    depth += m[1] ? -1 : 1;
+    if (depth === 0) return m.index + m[0].length;
+  }
+  return html.length;
 }
 
 /**
- * Cut the quoted ZapDesk email from an HTML reply (#7720).
+ * Where the attribution line before `index` starts: the last block whose
+ * text ends with ":" and names a sender (an address, or "wrote"). `index`
+ * when there is none.
+ */
+function attributionStart(html: string, index: number): number {
+  const before = html.slice(0, index);
+  const lastBlock = Math.max(before.lastIndexOf('<div'), before.lastIndexOf('<p'));
+  if (lastBlock === -1) return index;
+  const text = before
+    .slice(lastBlock)
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&lt;|&gt;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return /:$/.test(text) && (/@/.test(text) || /wrote/i.test(text)) && text.length < 300
+    ? lastBlock
+    : index;
+}
+
+/**
+ * Cut quoted ZapDesk email from an HTML reply (#7720).
  *
  * Gmail puts the earlier message in a `<blockquote>` after an attribution
  * line ("On <date>, Support <address> wrote:", in the sender's language), and
- * Graph strips the `gmail_quote` class that would have marked it. Outlook
- * starts its quote with a `divRplyFwdMsg` or `appendonsend` block, or a
- * "From: … Sent: …" header. Each is cut, with its attribution line, only
- * when the quoted part is ZapDesk's own email; other quotes stay.
+ * Graph strips the `gmail_quote` class that would have marked it. Each quote
+ * container is judged on its own content and attribution, and removed only
+ * when it is ZapDesk's email; the text around it stays.
+ *
+ * Outlook quotes everything below a `divRplyFwdMsg` / `appendonsend` header
+ * block, a `stopSpelling` rule or "-----Original Message-----", so those are
+ * cut to the end when their header block names ZapDesk.
  */
 export function stripQuotedHtml(html: string): string {
   if (!html) return '';
-  const markers: RegExp[] = [
-    /<blockquote\b/gi,
-    /<div[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>/gi,
-    /<div[^>]*id="?(?:divRplyFwdMsg|appendonsend)"?[^>]*>/gi,
-    /<hr[^>]*id="?stopSpelling"?[^>]*>/gi,
-    /-{2,}\s*Original Message\s*-{2,}/gi,
-  ];
-  let cutAt = -1;
-  for (const re of markers) {
-    for (const match of html.matchAll(re)) {
-      const index = match.index ?? 0;
-      if (cutAt !== -1 && index >= cutAt) break;
-      if (isZapDeskQuote(html.slice(index))) {
-        cutAt = index;
-        break;
-      }
-    }
-  }
-  if (cutAt === -1) return html;
+  let out = html;
 
-  let kept = html.slice(0, cutAt);
-  // The attribution line just before the quote: the last block whose text
-  // ends with ":" and names a sender (an address, or "wrote").
-  const lastBlock = Math.max(kept.lastIndexOf('<div'), kept.lastIndexOf('<p'));
-  if (lastBlock !== -1) {
-    const text = kept
-      .slice(lastBlock)
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&lt;|&gt;/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (/:$/.test(text) && (/@/.test(text) || /wrote/i.test(text)) && text.length < 300) {
-      kept = kept.slice(0, lastBlock);
+  // Quote containers: judged and removed one at a time.
+  const container = /<(blockquote)\b[^>]*>|<(div)\b[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>/gi;
+  let searchFrom = 0;
+  for (;;) {
+    container.lastIndex = searchFrom;
+    const match = container.exec(out);
+    if (!match) break;
+    const tag = (match[1] || match[2]).toLowerCase();
+    const start = match.index;
+    const end = elementEnd(out, start, tag);
+    const from = attributionStart(out, start);
+    if (isZapDeskQuote(out.slice(from, end))) {
+      out = out.slice(0, from) + out.slice(end);
+      searchFrom = from;
+    } else {
+      searchFrom = end;
     }
   }
-  return kept.trimEnd();
+
+  // Outlook headers: everything below them is the earlier message.
+  const header =
+    /<div[^>]*id="?(?:divRplyFwdMsg|appendonsend)"?[^>]*>|<hr[^>]*id="?stopSpelling"?[^>]*>|-{2,}\s*Original Message\s*-{2,}/gi;
+  for (const match of out.matchAll(header)) {
+    const start = match.index ?? 0;
+    // The header block itself: the next ~600 characters hold From/Sent/Subject.
+    if (isZapDeskQuote(out.slice(start, start + 600))) {
+      out = out.slice(0, attributionStart(out, start));
+      break;
+    }
+  }
+
+  return out.trimEnd();
 }
 
 /** HTML-escape user input before embedding in DevOps fields. */
@@ -280,6 +331,8 @@ export function stripHtmlSignature(html: string): string {
     /<div[^>]*id="Signature"[^>]*>/i,
     /<div[^>]*class="[^"]*moz-signature[^"]*"[^>]*>/i,
     /(?:<br\s*\/?>\s*){1,3}--\s*(?:<br\s*\/?>|<\/?p>|<\/div>)/i,
+    // Gmail writes the RFC 3676 delimiter as its own span: <span>-- </span><br>
+    /<span[^>]*>\s*--\s*<\/span>\s*<br\s*\/?>/i,
     /(?:<br\s*\/?>|<p>|<div[^>]*>)\s*Sent from my (?:iPhone|iPad|Android|Galaxy|BlackBerry)/i,
     /(?:<br\s*\/?>|<p>|<div[^>]*>)\s*Sent from (?:Outlook|Mail) for (?:iOS|Android|Windows)/i,
     /(?:<br\s*\/?>|<p>|<div[^>]*>)\s*Get Outlook for (?:iOS|Android)/i,
