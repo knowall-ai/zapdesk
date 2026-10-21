@@ -80,3 +80,42 @@ describe('stripQuotedText (#7720)', () => {
     expect(stripQuotedText(body)).toBe(body);
   });
 });
+
+describe('one quote at a time (#7720 review)', () => {
+  it('keeps an unrelated quote above a ZapDesk quote', () => {
+    const html =
+      '<div>The supplier said:</div><blockquote>The part ships on Friday.</blockquote>' +
+      '<div>Any news?</div>' +
+      '<div>On Tue, ZapDesk Support &lt;support@zapdesk.test&gt; wrote:</div>' +
+      '<blockquote>Your ticket [ZapDesk #7735] was updated</blockquote>';
+    const out = stripQuotedHtml(html);
+    expect(out).toContain('The part ships on Friday.');
+    expect(out).toContain('Any news?');
+    expect(out).not.toContain('[ZapDesk #7735]');
+    expect(out).not.toContain('wrote:');
+  });
+
+  it('keeps text written below a removed quote', () => {
+    const html =
+      '<div>On Tue, Support &lt;support@zapdesk.test&gt; wrote:</div><blockquote>zapdesk</blockquote><div>My answer is below the quote.</div>';
+    expect(stripQuotedHtml(html)).toContain('My answer is below the quote.');
+  });
+
+  it('keeps an unrelated > quote above a ZapDesk one in plain text', () => {
+    const body = [
+      'The error says:',
+      '> Connection refused',
+      '',
+      'Any news?',
+      'On Tue, ZapDesk Support <support@zapdesk.test> wrote:',
+      '> [ZapDesk #7735] update',
+      '> zapdesk',
+    ].join('\n');
+    expect(stripQuotedText(body)).toBe('The error says:\n> Connection refused\n\nAny news?');
+  });
+
+  it('does not treat a plain "From:" line as a quote', () => {
+    const body = 'From: the accounts team\nWe still have no invoice. zapdesk was mentioned.';
+    expect(stripQuotedText(body)).toBe(body);
+  });
+});
