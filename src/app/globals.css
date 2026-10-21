@@ -330,6 +330,26 @@ body {
     color: var(--text-secondary) !important;
   }
 
+  /* Long unbroken text (chat IDs, URLs, file paths) wraps inside comments,
+     descriptions and resolutions instead of running out of the box (#481).
+     Code keeps its lines but wraps them; a wide table scrolls on its own. */
+  .user-content {
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+
+  .user-content pre,
+  .user-content code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .user-content table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
   /* Inline images in user content (comments, descriptions) */
   .user-content img {
     max-width: 100%;

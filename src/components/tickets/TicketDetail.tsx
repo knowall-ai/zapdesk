@@ -926,7 +926,7 @@ export default function TicketDetail({
 
         {/* Tab content */}
         {activeTab === 'details' ? (
-          <div className="flex-1 space-y-4 overflow-auto p-4">
+          <div className="min-w-0 flex-1 space-y-4 overflow-auto p-4">
             {/* Description */}
             <div className="card p-4">
               <div className="mb-2 flex items-center justify-between">
@@ -1258,8 +1258,8 @@ export default function TicketDetail({
                           image={comment.author.avatarUrl}
                           size="md"
                         />
-                        <div className="flex-1">
-                          <div className="mb-2 flex items-center gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-2 flex flex-wrap items-center gap-2">
                             <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
                               {comment.author.displayName}
                             </span>
@@ -1298,7 +1298,7 @@ export default function TicketDetail({
             </div>
           </div>
         ) : (
-          <div className="flex-1 overflow-auto p-4">
+          <div className="min-w-0 flex-1 overflow-auto p-4">
             <TicketHistory updates={history} loading={historyLoading} />
           </div>
         )}
