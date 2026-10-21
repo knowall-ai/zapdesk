@@ -170,14 +170,18 @@ export default function KanbanGroupSection({
       writeGroupExpanded(sessionPositionStorage(), positionScope, groupName, next);
     }
   };
-  const [highlighting, setHighlighting] = useState(false);
+  // On by default (#498), so cards with activity stand out straight away.
+  const [highlighting, setHighlighting] = useState(true);
+  // A group with no activity has nothing to light up, so nothing is dimmed.
+  const hasHighlights = (activity?.summary.highlights.size ?? 0) > 0;
+  const highlightOn = highlighting && hasHighlights;
   // Highlighting a collapsed group opens it, or the button would do nothing visible.
   const toggleHighlight = () => {
-    const next = !highlighting;
+    const next = !highlightOn;
     setHighlighting(next);
     if (next && !expanded) toggleExpanded();
   };
-  const highlights = highlighting ? activity?.summary.highlights : undefined;
+  const highlights = highlightOn ? activity?.summary.highlights : undefined;
   const [activeId, setActiveId] = useState<number | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -437,7 +441,7 @@ export default function KanbanGroupSection({
               since={activity.since}
               pullRequests={activity.pullRequests}
               pullRequestState={activity.pullRequestState}
-              highlighted={highlighting}
+              highlighted={highlightOn}
               onToggleHighlight={toggleHighlight}
             />
           </div>
