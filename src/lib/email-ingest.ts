@@ -101,7 +101,7 @@ export async function ingestEmail(email: IngestableEmail): Promise<IngestResult>
   // would add a comment and notify the same list again, on every poll. Counted
   // as handled so the poller marks it read and moves on.
   if (isOwnSender(senderEmail)) {
-    console.log(`[Ingest] Ignoring mail sent by ZapDesk itself: "${email.subject}"`);
+    console.log('[Ingest] Ignoring mail sent by ZapDesk itself');
     return { success: true, action: 'ignored', reason: 'sent by ZapDesk' };
   }
 
