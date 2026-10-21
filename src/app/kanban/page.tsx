@@ -31,6 +31,7 @@ import { createBoardCache } from '@/lib/standup-board-cache';
 import {
   activityWindowStart,
   pullRequestsForGroup,
+  assigneeEmails,
   summariseGroupActivity,
 } from '@/lib/activity-summary';
 import type {
@@ -315,24 +316,20 @@ function StandupPageContent() {
     ]
   );
 
-  // Pull requests come from Azure DevOps only, so there are none to count
-  // when the header toggle shows GitHub alone. A failure leaves the board
-  // alone and just marks the PR counts unavailable.
+  // Pull requests from Azure DevOps and GitHub (#483), following the header
+  // toggle. A failure leaves the board alone and just marks the PR counts
+  // unavailable.
   const fetchPrActivity = useCallback(
     async (forceRefresh = false) => {
       if (!session?.accessToken || !hasOrganization || !selectedOrganization?.accountName) return;
       const mySeq = ++prFetchSeqRef.current;
       const isCurrent = () => mySeq === prFetchSeqRef.current;
 
-      if (sourceFilter === 'github') {
-        setPrActivity(null);
-        setPrState('ready');
-        return;
-      }
-
       const organization = selectedOrganization.accountName;
+      // Cached per toggle setting: each asks for different pull requests.
+      const cacheKey = `${organization}|${sourceFilter}`;
       if (!forceRefresh) {
-        const cached = prActivityCache.getFresh(organization);
+        const cached = prActivityCache.getFresh(cacheKey);
         if (cached) {
           setPrActivity(cached);
           setPrState('ready');
@@ -341,10 +338,11 @@ function StandupPageContent() {
       }
 
       try {
-        const { data } = await prActivityCache.load(organization, organization, async () => {
+        const { data } = await prActivityCache.load(cacheKey, organization, async () => {
           const since = activityWindowStart(new Date()).toISOString();
+          const sources = sourceFilter === 'both' ? '' : `&sources=${sourceFilter}`;
           const response = await devOpsGet(
-            `/api/devops/pr-activity?since=${encodeURIComponent(since)}`
+            `/api/devops/pr-activity?since=${encodeURIComponent(since)}${sources}`
           );
           if (!response.ok) throw new Error('Failed to fetch pull request activity');
           return (await response.json()) as PullRequestActivityResponse;
@@ -705,7 +703,12 @@ function StandupPageContent() {
     const incomplete = (groupName: string) =>
       groupBy === 'project' ? failedProjects.has(groupName) : failedProjects.size > 0;
     for (const group of groups) {
-      const pullRequests = pullRequestsForGroup(allPullRequests, groupBy, group.groupName);
+      const pullRequests = pullRequestsForGroup(
+        allPullRequests,
+        groupBy,
+        group.groupName,
+        groupBy === 'person' ? assigneeEmails(group.columns) : undefined
+      );
       map.set(group.groupName, {
         summary: summariseGroupActivity(group.columns, pullRequests, since),
         since,

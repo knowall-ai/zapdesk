@@ -80,15 +80,45 @@ export function itemActivity(
   return kinds;
 }
 
-/** The pull requests that belong to a board group. */
+/**
+ * The pull requests that belong to a board group.
+ *
+ * By person, an author matches on name, ignoring case, or on email address
+ * (`groupEmails`: the addresses of the people on that group's cards), so a
+ * name written differently in DevOps and GitHub still lands with its person
+ * (#483). Unassigned gets none.
+ */
 export function pullRequestsForGroup(
   pullRequests: PullRequestActivity[],
   groupBy: 'project' | 'person',
-  groupName: string
+  groupName: string,
+  groupEmails: ReadonlySet<string> = new Set()
 ): PullRequestActivity[] {
-  return pullRequests.filter((pr) =>
-    groupBy === 'project' ? pr.project === groupName : pr.author.displayName === groupName
-  );
+  if (groupBy === 'project') {
+    const name = groupName.toLowerCase();
+    return pullRequests.filter((pr) => pr.project.toLowerCase() === name);
+  }
+  if (groupName === 'Unassigned') return [];
+  const name = groupName.trim().toLowerCase();
+  return pullRequests.filter((pr) => {
+    const authorEmail = pr.author.email?.trim().toLowerCase();
+    return (
+      pr.author.displayName?.trim().toLowerCase() === name ||
+      (!!authorEmail && groupEmails.has(authorEmail))
+    );
+  });
+}
+
+/** The email addresses of the people on a group's cards, in lower case. */
+export function assigneeEmails(columns: StandupColumn[]): Set<string> {
+  const emails = new Set<string>();
+  for (const column of columns) {
+    for (const item of column.items) {
+      const email = item.assignee?.email?.trim().toLowerCase();
+      if (email) emails.add(email);
+    }
+  }
+  return emails;
 }
 
 export function summariseGroupActivity(

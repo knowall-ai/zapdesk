@@ -645,6 +645,8 @@ export interface PullRequestActivity {
   activity: PullRequestActivityKind[];
   /** Work items the pull request links to. */
   workItemIds: number[];
+  /** Where it lives; Azure DevOps when absent (#483). */
+  source?: WorkSource;
 }
 
 export interface PullRequestActivityResponse {

@@ -269,7 +269,8 @@ connects to it.
 . *Webhook*: active, URL `https://zapdesk.yourdomain.com/api/github/webhook`,
   with a random secret (`GITHUB_APP_WEBHOOK_SECRET`). Optional: without it,
   changes show once the one-minute cache expires.
-. *Permissions*: Repository > *Issues*: read-only, *Metadata*: read-only.
+. *Permissions*: Repository > *Issues*: read-only, *Pull requests*: read-only
+  (for the Kanban board's pull request counts), *Metadata*: read-only.
   *Subscribe to events*: *Issues*.
 . *Where can this GitHub App be installed?*: *Any account*.
 . After creating it, note the *App ID* (`GITHUB_APP_ID`) and *Client ID*
@@ -297,7 +298,8 @@ Create a GitHub token the server uses to read issues, and set it as
 
 * A fine-grained personal access token is enough.
 * Repository access: only the repositories you will map.
-* Permissions: *Issues*, read-only.
+* Permissions: *Issues* and *Pull requests*, read-only. Pull requests feed the
+  Kanban board's 24h summary.
 
 The token stays on the server. It is shared by every ZapDesk user, so it has
 one rate limit (5,000 requests an hour); ZapDesk reuses each repository's
@@ -431,7 +433,10 @@ above), and under the GitHub username otherwise.
 
 Open issues are listed, plus closed issues updated in the last seven days,
 the same window the Kanban Board uses for closed work items. Pull requests are
-left out.
+not listed as tickets, but the Kanban board's 24h summary counts those opened,
+updated or merged in its window, under the person (mapped like issue authors)
+and the project of the repository. A GitHub pull request lights up the work
+items it names as `AB#123` in its title or description.
 
 Not covered yet: the project page and the sidebar counts. The *Your active
 tickets* view matches on email address, which GitHub does not expose, so it
