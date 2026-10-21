@@ -29,6 +29,9 @@
 |**Email webhook not creating tickets**
 |Verify EMAIL_WEBHOOK_SECRET header matches. Check sender domain has project mapping. Review server logs for error details.
 
+|**A customer's reply in the comments repeats the whole earlier email**
+|Replies are stored as the new message only since the fix for #7720: the quoted ZapDesk email below it is cut. Comments stored before that keep their quote. If a reply still shows the quote, the mail client marked it in a way ZapDesk does not recognise yet; the quote must contain ZapDesk's own email (its logo, a ticket link, or the support address) to be cut.
+
 |**The support team gets no email when a new ticket arrives**
 |Set `SUPPORT_TEAM_NOTIFY_EMAIL` to the team's address, or to several addresses separated by commas or semicolons, and restart. It must not be the mailbox ZapDesk polls (`MAIL_POLL_MAILBOX`): that address is skipped, because mail sent to it would be read back in. Only tickets created from email send this; replies on an existing ticket send "New customer reply" instead. The server log shows `[Email] New ticket notification sent for ticket #N` when one is sent, or `SUPPORT_TEAM_NOTIFY_EMAIL not set` when it was skipped.
 

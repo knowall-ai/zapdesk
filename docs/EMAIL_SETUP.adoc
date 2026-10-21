@@ -169,6 +169,10 @@ The new title is shown in the email's list of changes.
   out the customer's own replies, which they already have in their Sent folder.
 * No "new customer reply" alert is sent when the ticket is assigned to the
   customer's own address.
+* A customer's reply is stored as just their new message. The earlier ZapDesk
+  email their mail client quotes underneath (Gmail's "On … wrote:" block,
+  Outlook's "From: … Sent:" header, or `>` lines) is cut. A quote of anything
+  else, such as a supplier's message, is kept.
 
 == Security
 
