@@ -68,6 +68,7 @@ import {
 import { useClickOutside } from '@/hooks';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import { assigneeIdentity } from '@/lib/assignee';
+import { newestFirst } from '@/lib/comment-order';
 
 type DetailTab = 'details' | 'history';
 
@@ -1242,7 +1243,7 @@ export default function TicketDetail({
               </h3>
               {comments.length > 0 ? (
                 <div className="space-y-4">
-                  {comments.map((comment) => (
+                  {newestFirst(comments).map((comment) => (
                     <div
                       key={comment.id}
                       className={`rounded-md p-3 ${comment.isInternal ? 'border-l-4' : ''}`}
