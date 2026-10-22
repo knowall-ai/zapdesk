@@ -40,6 +40,7 @@ import {
 } from '@/config/process-templates';
 
 import { configuredDevOpsOrg, devOpsOrgOrDefault } from './devops-org';
+import { ticketFieldsToRequest } from './work-item-fields';
 
 /**
  * Read the resolution value from a work item, checking all possible field names
@@ -109,6 +110,17 @@ const currentIterationsCache: Map<string, { data: Map<string, string>; timestamp
   new Map();
 const currentIterationsInFlight: Map<string, Promise<Map<string, string>>> = new Map();
 const CURRENT_ITERATIONS_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Field names each organization defines, so no request names one it does not
+ * have. Keyed by organization rather than by token: a field definition belongs
+ * to the organization and is the same for everyone who can read it. Only
+ * successful lookups are cached, so one user's permission failure cannot leave
+ * everybody else on the reduced field list.
+ */
+const fieldNameCache: Map<string, { data: Set<string>; timestamp: number }> = new Map();
+const fieldNameInFlight: Map<string, Promise<Set<string> | null>> = new Map();
+const FIELD_NAME_TTL_MS = 60 * 60 * 1000; // 1 hour; process customisation is rare
 
 // Set the state category cache (called from API routes after fetching states)
 export function setStateCategoryCache(stateCategories: Record<string, string>) {
@@ -699,6 +711,60 @@ export class AzureDevOpsService {
     return projects;
   }
 
+  /**
+   * The field names this organization defines, or `null` when they could not be
+   * read.
+   *
+   * One organization-level call covers every project. `null` is deliberately
+   * distinct from an empty set: it means "unknown", and the caller then asks
+   * only for the fields every process is guaranteed to have, rather than
+   * assuming nothing exists.
+   */
+  private async availableFieldNames(): Promise<Set<string> | null> {
+    const key = this.organization.toLowerCase();
+    const now = Date.now();
+    const cached = fieldNameCache.get(key);
+    if (cached && now - cached.timestamp < FIELD_NAME_TTL_MS) return cached.data;
+
+    const inFlight = fieldNameInFlight.get(key);
+    if (inFlight) return inFlight;
+
+    const request = (async (): Promise<Set<string> | null> => {
+      try {
+        // Bounded like the other organisation-level lookups: this sits on the
+        // critical path of every ticket read, so a request that never settles
+        // would hang the list. A timeout lands in the catch below and falls
+        // back to the core fields, which is the point of the fallback.
+        const response = await fetch(`${this.baseUrl}/_apis/wit/fields?api-version=7.0`, {
+          headers: this.headers,
+          signal: AbortSignal.timeout(ORG_LOOKUP_TIMEOUT_MS),
+        });
+        if (!response.ok) {
+          console.error(
+            `Failed to read field names for ${this.organization}: ${response.statusText}`
+          );
+          return null;
+        }
+        const data = await response.json();
+        const names = new Set<string>(
+          ((data.value ?? []) as { referenceName?: string }[])
+            .map((field) => field.referenceName)
+            .filter((name): name is string => Boolean(name))
+        );
+        fieldNameCache.set(key, { data: names, timestamp: Date.now() });
+        return names;
+      } catch (error) {
+        console.error(`Failed to read field names for ${this.organization}:`, error);
+        return null;
+      } finally {
+        fieldNameInFlight.delete(key);
+      }
+    })();
+
+    fieldNameInFlight.set(key, request);
+    return request;
+  }
+
   // Get the process template name for a project
   async getProjectProcessTemplate(projectName: string): Promise<string | null> {
     try {
@@ -841,30 +907,13 @@ export class AzureDevOpsService {
     const batchSize = 200;
     const allWorkItems: DevOpsWorkItem[] = [];
 
+    // Only fields this organization defines: naming an absent one fails the
+    // whole batch with 400 TF51535, losing every ticket in it (see
+    // work-item-fields.ts).
+    const fields = ticketFieldsToRequest(await this.availableFieldNames()).join(',');
+
     for (let i = 0; i < workItemIds.length; i += batchSize) {
       const batch = workItemIds.slice(i, i + batchSize);
-      const fields = [
-        'System.Title',
-        'System.Description',
-        'System.State',
-        'System.CreatedDate',
-        'System.ChangedDate',
-        'System.CreatedBy',
-        'System.AssignedTo',
-        'System.Tags',
-        'Microsoft.VSTS.Common.Priority',
-        'System.TeamProject',
-        'System.WorkItemType',
-        'System.AreaPath',
-        'Microsoft.VSTS.Common.ResolvedReason',
-        'Microsoft.VSTS.Common.Resolution',
-        'Microsoft.VSTS.TCM.ReproSteps',
-        'Microsoft.VSTS.TCM.SystemInfo',
-        'Custom.CustomerResponse',
-        'Microsoft.VSTS.Scheduling.CompletedWork',
-        'Microsoft.VSTS.Scheduling.RemainingWork',
-        'Microsoft.VSTS.Scheduling.OriginalEstimate',
-      ].join(',');
       const workItemsResponse = await fetch(
         `${this.baseUrl}/_apis/wit/workitems?ids=${batch.join(',')}&fields=${fields}&api-version=7.0`,
         { headers: this.headers }
