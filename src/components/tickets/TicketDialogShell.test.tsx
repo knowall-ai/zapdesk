@@ -43,6 +43,11 @@ describe('TicketDialogShell renders as a dialog', () => {
     expect(screen.getByRole('dialog', { name: 'Printer jammed (#1405)' })).toBeDefined();
   });
 
+  it('takes focus without joining the Tab order', () => {
+    open();
+    expect(screen.getByRole('dialog').getAttribute('tabindex')).toBe('-1');
+  });
+
   it('is never nameless, even when the caller gives no label', () => {
     open();
     expect(screen.getByRole('dialog').getAttribute('aria-label')).toBeTruthy();
@@ -71,6 +76,13 @@ describe('the close button', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('is a plain button, so it can never submit a form', () => {
+    // The arrangement test below proves it sits outside the form today; this
+    // keeps it safe if the form is ever widened to wrap the header.
+    open();
+    expect(screen.getByRole('button', { name: 'Close' }).getAttribute('type')).toBe('button');
+  });
+
   it('does not submit the surrounding form', () => {
     // The button sits in the header, outside the <form> the shell renders when
     // asForm is set -- so this asserts the arrangement holds, rather than that
@@ -96,10 +108,14 @@ describe('dismissal', () => {
 
   it('closes when the backdrop is clicked', () => {
     const onClose = vi.fn();
-    const { container } = open({ onClose });
-    const backdrop = container.querySelector('[aria-hidden="true"]');
+    open({ onClose });
+    // Found by position, not by aria-hidden: the close button's icon is
+    // aria-hidden too, and clicking it would close the dialog on its own.
+    const backdrop = screen.getByRole('dialog').previousElementSibling as HTMLElement | null;
     expect(backdrop).not.toBeNull();
-    fireEvent.click(backdrop as Element);
+    expect(backdrop!.getAttribute('aria-hidden')).toBe('true');
+    expect(backdrop!.closest('button')).toBeNull();
+    fireEvent.click(backdrop!);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -120,10 +136,21 @@ describe('focus', () => {
     expect(document.activeElement).toBe(screen.getByRole('dialog'));
   });
 
-  it('returns to whatever was focused before, on close', () => {
+  // cleanup() removes only what render() mounted, so a trigger appended by
+  // hand is removed here too -- even when an assertion fails before the test
+  // gets to it, so it cannot leak into the tests that follow.
+  const triggers: HTMLElement[] = [];
+  const addTrigger = () => {
     const trigger = document.createElement('button');
     trigger.textContent = 'Open';
     document.body.appendChild(trigger);
+    triggers.push(trigger);
+    return trigger;
+  };
+  afterEach(() => triggers.splice(0).forEach((t) => t.remove()));
+
+  it('returns to whatever was focused before, on close', () => {
+    const trigger = addTrigger();
     trigger.focus();
     expect(document.activeElement).toBe(trigger);
 
@@ -132,19 +159,19 @@ describe('focus', () => {
 
     unmount();
     expect(document.activeElement).toBe(trigger);
-    trigger.remove();
   });
 
-  it('does not throw when the trigger is gone by the time it closes', () => {
+  it('leaves focus alone when the trigger is gone by the time it closes', () => {
     // A deleted ticket's row: the element that opened the dialog can be
-    // removed while it is open, so restoring focus is a best effort.
-    const trigger = document.createElement('button');
-    document.body.appendChild(trigger);
+    // removed while it is open, so focus is restored only if it is still there.
+    const trigger = addTrigger();
     trigger.focus();
 
     const { unmount } = open();
     trigger.remove();
+    const focus = vi.spyOn(trigger, 'focus');
 
-    expect(() => unmount()).not.toThrow();
+    unmount();
+    expect(focus).not.toHaveBeenCalled();
   });
 });
