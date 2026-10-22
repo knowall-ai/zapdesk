@@ -114,8 +114,8 @@ function TicketsPageContent() {
       const readSource = async (
         result: PromiseSettledResult<Response | null>,
         failure: string
-      ): Promise<{ tickets: Ticket[]; failedRepos: string[] }> => {
-        const nothing = { tickets: [], failedRepos: [] };
+      ): Promise<{ tickets: Ticket[]; failedRepos: string[]; failedProjects: string[] }> => {
+        const nothing = { tickets: [], failedRepos: [], failedProjects: [] };
         // Not asked for: the source toggle left this one out
         if (result.status === 'fulfilled' && !result.value) return nothing;
         try {
@@ -125,6 +125,7 @@ function TicketsPageContent() {
           return {
             tickets: reviveTicketDates(data.tickets || []),
             failedRepos: data.failedRepos || [],
+            failedProjects: data.failedProjects || [],
           };
         } catch (error) {
           console.error(`${failure}:`, error);
@@ -145,6 +146,12 @@ function TicketsPageContent() {
       if (!isCurrent()) return;
       if (gitHub.failedRepos.length > 0) {
         toast.warning(`Could not load GitHub issues from ${gitHub.failedRepos.join(', ')}`);
+      }
+      // A project that failed contributes no tickets, so the list below is
+      // short by an unknown amount. Naming the projects beats a list that
+      // quietly reads as "nothing open" (#509).
+      if (devOps.failedProjects.length > 0) {
+        toast.warning(`Could not load tickets from ${devOps.failedProjects.join(', ')}`);
       }
       setTickets([...devOpsTickets, ...gitHubTickets]);
       loadedKeyRef.current = loadKey;

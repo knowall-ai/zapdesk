@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     const devopsService = new AzureDevOpsService(session.accessToken, requestDevOpsOrg(request));
 
     // Fetch tickets, projects, and all users from entitlements API in parallel
-    const [tickets, projects, allUsersWithLicenses] = await Promise.all([
+    const [{ tickets }, projects, allUsersWithLicenses] = await Promise.all([
       devopsService.getAllTickets(),
       devopsService.getProjects(),
       devopsService.getAllUsersWithEntitlements(),

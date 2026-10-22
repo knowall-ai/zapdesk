@@ -21,7 +21,13 @@ const getTeamMembers = vi.fn();
 vi.mock('@/lib/devops', () => ({
   AzureDevOpsService: class {
     findWorkItemById = findWorkItemById;
-    getAllTickets = getAllTickets;
+    // getAllTickets now answers { tickets, failedProjects } so a project that
+    // fails is not silently missing (#509). The cases below still mock a plain
+    // array, which is what each one is about; the shape is added here once.
+    getAllTickets = async (...args: unknown[]) => ({
+      tickets: await getAllTickets(...args),
+      failedProjects: [],
+    });
     getProjects = getProjects;
     getTeamMembers = getTeamMembers;
   },

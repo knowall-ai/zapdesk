@@ -53,7 +53,7 @@ export async function GET(request: Request) {
 
     const devopsService = new AzureDevOpsService(session.accessToken, requestDevOpsOrg(request));
     // Get ALL work items (not just those tagged as "ticket") for accurate team activity
-    const tickets = await devopsService.getAllTickets(false);
+    const { tickets } = await devopsService.getAllTickets(false);
 
     // Collect all team members from projects
     const memberMap = new Map<string, User>();

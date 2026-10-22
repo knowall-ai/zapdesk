@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     }
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
-    const tickets = await devopsService.getAllTickets();
+    const { tickets } = await devopsService.getAllTickets();
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
