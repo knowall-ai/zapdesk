@@ -58,7 +58,7 @@ describe('useDevOpsApi keeps its helpers stable (#7391, #7721)', () => {
     expect(result.current.patch).toBe(patch);
   });
 
-  it('rebuilds the helpers when the organization changes, which should rebuild them', () => {
+  it('rebuilds the helpers when the organization changes, which should rebuild them', async () => {
     const { result, rerender } = renderHook(() => useDevOpsApi());
     const before = result.current.get;
 
@@ -66,6 +66,14 @@ describe('useDevOpsApi keeps its helpers stable (#7391, #7721)', () => {
     rerender();
 
     expect(result.current.get).not.toBe(before);
+
+    // Rebuilt is not enough: the new helpers must send the new organization.
+    await act(async () => {
+      await result.current.get('/api/devops/tickets');
+    });
+    const [, init] = (globalThis.fetch as unknown as { mock: { calls: [string, RequestInit][] } })
+      .mock.calls[0];
+    expect((init.headers as Record<string, string>)['x-devops-org']).toBe('KnowAllTest');
   });
 });
 
