@@ -56,10 +56,17 @@ export default function Header({ onMenuClick }: HeaderProps) {
   useEffect(() => {
     if (searchQuery.length < 2) {
       setSearchResults([]);
+      setSearchFailedProjects([]);
       setShowSearchResults(false);
       return;
     }
     if (!hasOrganization) return;
+
+    // The warning belongs to the query that produced it. Dropping it as soon
+    // as the query changes covers every way the next request can fail to
+    // replace it -- still in flight, non-OK, or thrown -- rather than only the
+    // one path. Raised by CodeRabbit on #520.
+    setSearchFailedProjects([]);
 
     const timeoutId = setTimeout(async () => {
       setIsSearching(true);
