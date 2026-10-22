@@ -21,6 +21,7 @@ import { ChevronDown, ChevronRight, Info } from 'lucide-react';
 import StandupKanbanCard from './StandupKanbanCard';
 import ActivitySummaryBar, { type PullRequestLoadState } from './ActivitySummaryBar';
 import { getColumnIcon, getColumnColor } from './columnConfig';
+import { highlightedFirst } from '@/lib/highlight-order';
 import {
   canTypeEnterColumn,
   resolveStateForColumn,
@@ -65,6 +66,10 @@ function DroppableColumn({
   const { setNodeRef, isOver } = useDroppable({ id: name, disabled: isBlocked });
   const color = getColumnColor(name, category);
   const isDoneColumn = category === 'Completed';
+  // Highlighted cards first while highlighting is on (#503). One array for both
+  // the rendered list and the SortableContext below: if those two disagree, a
+  // drag lands on the wrong card.
+  const ordered = useMemo(() => highlightedFirst(items, highlights), [items, highlights]);
 
   return (
     <div
@@ -97,8 +102,8 @@ function DroppableColumn({
         ref={setNodeRef}
         className={`kanban-column-content ${isOver ? 'kanban-column-over' : ''}`}
       >
-        <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-          {items.map((item) => (
+        <SortableContext items={ordered.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+          {ordered.map((item) => (
             <StandupKanbanCard
               key={item.id}
               item={item}
