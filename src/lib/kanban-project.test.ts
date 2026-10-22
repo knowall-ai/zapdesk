@@ -37,7 +37,7 @@ describe('filterStandupByProject (#7377)', () => {
   });
 
   it('shows an empty board for a project with nothing on it', () => {
-    const board = filterStandupByProject(data, 'HSE')!;
+    const board = filterStandupByProject(data, 'Fabrikam')!;
     expect(board.projects).toEqual([]);
     expect(board.summary).toEqual({ columnCounts: { New: 0, Active: 0 }, projectCount: 0 });
   });
@@ -49,7 +49,7 @@ describe('canonicalProject', () => {
     expect(canonicalProject('  internal ', names)).toBe('Internal');
   });
   it('keeps an unknown project as typed, and none as null', () => {
-    expect(canonicalProject('HSE', names)).toBe('HSE');
+    expect(canonicalProject('Fabrikam', names)).toBe('Fabrikam');
     expect(canonicalProject('  ', names)).toBeNull();
     expect(canonicalProject(null, names)).toBeNull();
   });
