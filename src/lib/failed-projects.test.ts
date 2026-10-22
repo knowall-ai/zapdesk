@@ -9,7 +9,6 @@ const getServerSession = vi.fn();
 vi.mock('next-auth', () => ({ getServerSession: () => getServerSession() }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 vi.mock('@/lib/devops-auth', () => ({ validateOrganizationAccess: async () => true }));
-vi.mock('@/lib/state-categories', () => ({ fetchAndCacheStateCategories: async () => {} }));
 
 const getAllTickets = vi.fn();
 vi.mock('@/lib/devops', async () => {
@@ -35,6 +34,12 @@ const get = async () => {
 describe('GET /api/devops/tickets reports projects it could not read (#509)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The route loads state categories with its own fetch to Azure DevOps.
+    // Without a stub every run made a live request and logged its failure.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ value: [] }), { status: 200 }))
+    );
     getServerSession.mockResolvedValue({ accessToken: 'token', user: { email: 'a@b.test' } });
   });
 
