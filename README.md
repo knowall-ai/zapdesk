@@ -33,7 +33,7 @@
 
 - **Microsoft Authentication** - Sign in with Azure AD/Microsoft accounts
 - **Azure DevOps Integration** - Work items tagged as "ticket" appear as support tickets
-- **Multi-tenant Support** - Different clients have different DevOps projects (e.g., Medite, Cairn Homes)
+- **Multi-tenant Support** - Different clients have different DevOps projects (e.g., Contoso Ltd, ABC Inc)
 - **Permission-based Access** - Users only see tickets from projects they have access to
 - **Email-to-Ticket** - Send emails to a configured mailbox to create tickets automatically
 - **Email Responses** - Replies to tickets email the requester via Exchange Online
@@ -105,11 +105,11 @@ Only Azure DevOps work items with the **"ticket"** tag will appear in ZapDesk. T
 
 ZapDesk maps Azure DevOps projects to organizations/clients:
 
-| Project     | Domain         | Description                |
-| ----------- | -------------- | -------------------------- |
-| Medite      | medite.com     | Medite client project      |
-| Cairn Homes | cairnhomes.com | Cairn Homes client project |
-| KnowAll     | knowall.ai     | Internal KnowAll project   |
+| Project     | Domain      | Description                |
+| ----------- | ----------- | -------------------------- |
+| Contoso Ltd | contoso.com | Contoso Ltd client project |
+| ABC Inc     | abc.example | ABC Inc client project     |
+| KnowAll     | knowall.ai  | Internal KnowAll project   |
 
 ## Email Integration
 
@@ -219,4 +219,4 @@ Proprietary - KnowAll AI Ltd.
 
 ## Support
 
-For support, email [support@knowall.ai](mailto:support@knowall.ai) or visit [knowall.ai](https://www.knowall.ai).
+For support, contact KnowAll AI through [knowall.ai](https://www.knowall.ai).

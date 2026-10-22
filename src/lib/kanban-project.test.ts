@@ -18,7 +18,7 @@ const data = {
       ],
     },
     {
-      projectName: 'Belfast Trust',
+      projectName: 'Contoso Ltd',
       columns: [{ name: 'New', category: 'Proposed', items: [item(4)] }],
     },
   ],
@@ -44,7 +44,7 @@ describe('filterStandupByProject (#7377)', () => {
 });
 
 describe('canonicalProject', () => {
-  const names = ['Belfast Trust', 'Internal'];
+  const names = ['Contoso Ltd', 'Internal'];
   it('names the project as the board does', () => {
     expect(canonicalProject('  internal ', names)).toBe('Internal');
   });

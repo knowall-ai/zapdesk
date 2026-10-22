@@ -342,8 +342,8 @@ Each client organization has:
 [source,typescript]
 ----
 const PROJECT_DOMAIN_MAP = {
-  'cairnhomes.com': 'Cairn Homes',
-  'medite.com': 'Medite',
+  'contoso.com': 'Contoso Ltd',
+  'abc.example': 'ABC Inc',
   'knowall.ai': 'KnowAll',
 };
 ----
