@@ -2122,9 +2122,20 @@ export class AzureDevOpsService {
     return found.find((entry) => entry !== null) ?? null;
   }
 
-  // Get all tickets from all accessible projects (fetches in parallel)
-  // Set ticketsOnly=false to get all work items (not just those tagged as "ticket")
-  async getAllTickets(ticketsOnly: boolean = true, allowedTypes?: string[]): Promise<Ticket[]> {
+  /**
+   * Tickets from every accessible project, fetched in parallel, with the names
+   * of any projects whose fetch failed.
+   *
+   * The failures are returned rather than only logged. A project that rejects
+   * contributes no tickets, so without this the list is quietly short and reads
+   * as "nothing open" instead of "some could not be loaded" (#509).
+   *
+   * Set `ticketsOnly` false for all work items, not only those tagged "ticket".
+   */
+  async getAllTickets(
+    ticketsOnly: boolean = true,
+    allowedTypes?: string[]
+  ): Promise<{ tickets: Ticket[]; failedProjects: string[] }> {
     const projects = await this.getProjects();
     const slaMap = await this.projectSLAMap(projects);
 
@@ -2196,16 +2207,24 @@ export class AzureDevOpsService {
     );
 
     const allTickets: Ticket[] = [];
+    const failedProjects: string[] = [];
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
       if (result.status === 'fulfilled') {
         allTickets.push(...result.value);
       } else {
+        // Named rather than only logged: a project that fails contributes no
+        // tickets, and a shorter list reads as "nothing open" rather than
+        // "some could not be loaded" (#509). That silence hid #501.
+        failedProjects.push(projects[i].name);
         console.error(`Failed to fetch tickets from ${projects[i].name}:`, result.reason);
       }
     }
 
-    return allTickets.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    return {
+      tickets: allTickets.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()),
+      failedProjects,
+    };
   }
 
   // Get all users from the organization (from User Entitlements API)

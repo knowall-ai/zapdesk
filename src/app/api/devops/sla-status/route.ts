@@ -20,7 +20,10 @@ export async function GET(request: NextRequest) {
     // (Task, Enhancement, Issue, Bug, Risk, Question) so Epics/Features/
     // User Stories tagged "ticket" don't inflate the SLA-breached count
     // on the Home page. (issue #408)
-    const tickets = await devopsService.getAllTickets(true, TICKET_WORK_ITEM_TYPES);
+    const { tickets, failedProjects } = await devopsService.getAllTickets(
+      true,
+      TICKET_WORK_ITEM_TYPES
+    );
 
     // Calculate SLA status for all active tickets
     const now = new Date();
@@ -40,6 +43,9 @@ export async function GET(request: NextRequest) {
     const response: SLAStatusResponse = {
       summary,
       tickets: atRiskTickets,
+      // Without this, a project that failed to load reads as "all on track"
+      // (#509). Present only when something failed.
+      ...(failedProjects.length > 0 ? { failedProjects } : {}),
     };
 
     return NextResponse.json(response);

@@ -292,14 +292,20 @@ export async function GET(request: NextRequest) {
     await fetchAndCacheStateCategories(session.accessToken, organization);
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
-    const tickets = await devopsService.getAllTickets(ticketsOnly, TICKET_WORK_ITEM_TYPES);
+    const { tickets, failedProjects } = await devopsService.getAllTickets(
+      ticketsOnly,
+      TICKET_WORK_ITEM_TYPES
+    );
 
     // Filter tickets based on view
     const filteredTickets = filterTicketsByView(tickets, view, session.user?.email);
 
+    // Named only when something failed, so a healthy response keeps its shape
+    // and callers can treat the key's presence as "this list is incomplete".
     return NextResponse.json({
       tickets: filteredTickets,
       total: filteredTickets.length,
+      ...(failedProjects.length > 0 ? { failedProjects } : {}),
     });
   } catch (error) {
     console.error('Error fetching tickets:', error);

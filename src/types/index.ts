@@ -256,6 +256,9 @@ export interface TicketCounts {
   createdToday: number;
   pending: number;
   recentlySolved: number;
+  /** Projects whose tickets could not be read, so every count is short (#509).
+   * Present only when something failed. */
+  failedProjects?: string[];
 }
 
 export interface WorkItemUpdate {
@@ -414,6 +417,8 @@ export interface SLAStatusResponse {
     onTrack: number;
   };
   tickets: TicketSLAStatus[];
+  /** Projects whose tickets could not be read (#509). Present only when something failed. */
+  failedProjects?: string[];
 }
 
 // Monthly Checkpoint Dashboard Types

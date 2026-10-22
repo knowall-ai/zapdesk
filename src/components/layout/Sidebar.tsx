@@ -77,6 +77,7 @@ interface SidebarProps {
     pending: number;
     recentlySolved: number;
     createdToday: number;
+    failedProjects?: string[];
   };
   onNewTicket?: () => void;
   isOpen?: boolean;
@@ -329,6 +330,22 @@ export default function Sidebar({
               );
             })}
           </div>
+
+          {/* A failed project makes every number above short, which would
+              otherwise read as a quiet week (#509). */}
+          {ticketCounts?.failedProjects && ticketCounts.failedProjects.length > 0 && (
+            <p
+              role="status"
+              className="mt-2 flex items-start gap-1.5 px-2 text-xs"
+              style={{ color: 'var(--warning)' }}
+              title={ticketCounts.failedProjects.join(', ')}
+            >
+              <AlertCircle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span>
+                Counts are incomplete: could not load {ticketCounts.failedProjects.join(', ')}.
+              </span>
+            </p>
+          )}
         </div>
 
         {/* Bottom section */}

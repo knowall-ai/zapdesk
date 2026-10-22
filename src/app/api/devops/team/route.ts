@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
     const ticketsOnly = request.nextUrl.searchParams.get('ticketsOnly') !== 'false';
 
     // Get all tickets to calculate metrics
-    const allTickets = await devopsService.getAllTickets(ticketsOnly);
+    const { tickets: allTickets } = await devopsService.getAllTickets(ticketsOnly);
 
     // Filter tickets by time period if specified
     const tickets = cutoffDate

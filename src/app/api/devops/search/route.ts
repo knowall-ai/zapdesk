@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
     // Search across all work items the user can access — not just those tagged
     // "ticket". The Kanban board surfaces Checkpoints, Features, Bugs, etc.,
     // and users expect global search to find them too.
-    const tickets = await devopsService.getAllTickets(false);
+    const { tickets } = await devopsService.getAllTickets(false);
     const matchingTickets = tickets
       .filter(
         (t) =>

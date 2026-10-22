@@ -23,6 +23,7 @@ import {
 import { StatusBadge, Avatar } from '@/components/common';
 import { TicketVolumeChart, ResponseTimeChart, TeamPerformanceChart } from '@/components/reporting';
 import type { Ticket as TicketType } from '@/types';
+import FailedProjectsNotice from '@/components/common/FailedProjectsNotice';
 
 type DateRange = 7 | 30 | 90 | 365;
 
@@ -34,6 +35,7 @@ interface LiveStats {
   resolvedToday: number;
   createdToday: number;
   avgResponseTime: string;
+  failedProjects?: string[];
 }
 
 interface ProjectStats {
@@ -52,6 +54,9 @@ export default function LiveDashboardPage() {
   const [allTickets, setAllTickets] = useState<TicketType[]>([]);
   const [recentTickets, setRecentTickets] = useState<TicketType[]>([]);
   const [projectStats, setProjectStats] = useState<ProjectStats[]>([]);
+  // The charts and project figures come from the tickets request, which can
+  // miss a project the stats request read (or the other way round) (#509).
+  const [ticketsFailedProjects, setTicketsFailedProjects] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -82,6 +87,7 @@ export default function LiveDashboardPage() {
       const ticketsResponse = await devOpsGet('/api/devops/tickets?view=all');
       if (ticketsResponse.ok) {
         const ticketsData = await ticketsResponse.json();
+        setTicketsFailedProjects(ticketsData.failedProjects ?? []);
         const tickets: TicketType[] = (ticketsData.tickets || []).map(
           (t: TicketType & { createdAt: string; updatedAt: string; resolvedAt?: string }) => ({
             ...t,
@@ -382,6 +388,11 @@ export default function LiveDashboardPage() {
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-4">
+          <FailedProjectsNotice
+            projects={[...new Set([...(stats?.failedProjects ?? []), ...ticketsFailedProjects])]}
+            className="mb-4"
+          />
+
           {/* Stats cards */}
           <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
             {statCards.map((stat) => (
