@@ -172,4 +172,29 @@ describe('getTickets — effort field selection', () => {
     expect(batchUrl).toContain('Microsoft.VSTS.Scheduling.RemainingWork');
     expect(workItems).toHaveLength(1);
   });
+
+  it('still returns tickets when the field lookup itself fails', async () => {
+    // The lookup is bounded by a timeout, so this path is reachable in
+    // production. Tickets without a priority column beat no tickets at all.
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        calls.push(u);
+        if (u.includes('/_apis/wit/fields')) throw new Error('TimeoutError');
+        const body = u.includes('/wiql')
+          ? { workItems: [{ id: 6609 }] }
+          : { value: [makeWorkItem()] };
+        return { ok: true, status: 200, json: async () => body } as unknown as Response;
+      })
+    );
+
+    const workItems = await new AzureDevOpsService('token', 'timeout-org').getTickets('Internal');
+
+    const batchUrl = calls.find((url) => url.includes('/workitems?ids='));
+    expect(batchUrl).toContain('System.Title');
+    expect(batchUrl).not.toContain('Custom.CustomerResponse');
+    expect(workItems).toHaveLength(1);
+  });
 });

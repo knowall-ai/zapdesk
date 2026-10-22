@@ -731,8 +731,13 @@ export class AzureDevOpsService {
 
     const request = (async (): Promise<Set<string> | null> => {
       try {
+        // Bounded like the other organisation-level lookups: this sits on the
+        // critical path of every ticket read, so a request that never settles
+        // would hang the list. A timeout lands in the catch below and falls
+        // back to the core fields, which is the point of the fallback.
         const response = await fetch(`${this.baseUrl}/_apis/wit/fields?api-version=7.0`, {
           headers: this.headers,
+          signal: AbortSignal.timeout(ORG_LOOKUP_TIMEOUT_MS),
         });
         if (!response.ok) {
           console.error(
