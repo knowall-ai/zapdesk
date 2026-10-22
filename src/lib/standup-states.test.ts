@@ -21,11 +21,17 @@ const PER_TYPE = {
 
 describe('partitionStandupStates', () => {
   // A resolved item still awaits verification, so it must not be limited to
-  // the 7-day closed window and drop off the board (#436).
-  it('keeps Resolved out of the 7-day closed window', () => {
-    const { closedStates, openStates } = partitionStandupStates(FLAT, new Set(), PER_TYPE);
+  // the 7-day closed window and drop off the board (#436) -- nor to the 90-day
+  // one, which only postponed that (#518). It gets a query with no date floor.
+  it('keeps Resolved out of both windows', () => {
+    const { closedStates, openStates, resolvedStates } = partitionStandupStates(
+      FLAT,
+      new Set(),
+      PER_TYPE
+    );
     expect(closedStates).toEqual(['Closed']);
-    expect(openStates).toContain('Resolved');
+    expect(resolvedStates).toEqual(['Resolved']);
+    expect(openStates).not.toContain('Resolved');
   });
 
   it('puts Proposed and InProgress states in the open query', () => {
@@ -67,10 +73,26 @@ describe('partitionStandupStates', () => {
 
   it('falls back to the flat map when per-type data is missing', () => {
     for (const perType of [undefined, {}]) {
-      const { closedStates, openStates } = partitionStandupStates(FLAT, new Set(), perType);
+      const { closedStates, resolvedStates } = partitionStandupStates(FLAT, new Set(), perType);
       expect(closedStates).toEqual(['Closed']);
-      expect(openStates).toContain('Resolved');
+      expect(resolvedStates).toEqual(['Resolved']);
     }
+  });
+
+  // Mirrors the Completed rule above: windowing is the risk, so a name only
+  // escapes the window when every type that defines it agrees.
+  it('keeps a name windowed unless every type agrees it is Resolved', () => {
+    const mixed = {
+      A: { Task: { Done: 'Resolved' } },
+      B: { Bug: { Done: 'InProgress' } },
+    };
+    const { openStates, resolvedStates } = partitionStandupStates(
+      { Done: 'Resolved' },
+      new Set(),
+      mixed
+    );
+    expect(resolvedStates).not.toContain('Done');
+    expect(openStates).toContain('Done');
   });
 });
 
@@ -173,7 +195,7 @@ describe('getStandupData query flow', () => {
 
   const target = new Date('2026-10-09T12:00:00Z');
 
-  it('fetches an old Resolved item through the 90-day query', async () => {
+  it('asks for Resolved items with no date floor at all', async () => {
     const wiql = stubDevOps({ Resolved: [1], Closed: [2] }, [
       workItem(1, 'Resolved', '2026-08-01T10:00:00Z'),
       workItem(2, 'Closed', '2026-10-08T10:00:00Z'),
@@ -189,8 +211,56 @@ describe('getStandupData query flow', () => {
     const doneQuery = wiql.find((q) => q.includes("IN ('Closed')"));
     expect(doneQuery).toContain(">= '2026-10-03'");
     expect(doneQuery).toContain("< '2026-10-10'");
-    const activeQuery = wiql.find((q) => q.includes("'Resolved'"));
+    // The 90-day floor is what hid 84 items resolved as far back as February
+    // (#518). The query that fetches them must carry no ChangedDate bound.
+    const resolvedQuery = wiql.find((q) => q.includes("IN ('Resolved')"));
+    expect(resolvedQuery).toBeDefined();
+    expect(resolvedQuery).not.toContain('ChangedDate] >=');
+    expect(resolvedQuery).not.toContain('ChangedDate] <');
+    // The open states keep their window: an untouched Active item really is
+    // stale, and this is a daily stand-up board.
+    const activeQuery = wiql.find((q) => q.includes("IN ('New', 'Active')"));
     expect(activeQuery).toContain(">= '2026-07-11'");
+  });
+
+  // The bug exactly as reported: resolved long ago, never closed, nobody can
+  // see it. Eight months is well outside the old 90-day floor (#518).
+  it('returns a Resolved item last touched eight months ago', async () => {
+    stubDevOps({ Resolved: [1] }, [workItem(1, 'Resolved', '2026-02-04T10:00:00Z')]);
+
+    const { items } = await new AzureDevOpsService('token', 'org').getStandupData(
+      target,
+      FLAT,
+      PER_TYPE
+    );
+
+    expect(items.map((item) => item.id)).toEqual([1]);
+  });
+
+  // A name two types disagree about is windowed, not unwindowed: it goes to
+  // the 90-day query, and the per-item check then trims whichever items are
+  // Completed for their own type (#436). This is the reachable half of that
+  // filter -- an item from the resolved query cannot be Completed for its own
+  // type, because a name only escapes the window when every type agrees.
+  it('trims a disputed name per item: Resolved for one type, windowed for the other', async () => {
+    const perType = {
+      A: { Task: { Done: 'Resolved' } },
+      B: { Bug: { Done: 'Completed' } },
+    };
+    stubDevOps({ Done: [1, 2] }, [
+      workItem(1, 'Done', '2026-02-04T10:00:00Z', 'Task', 'A'),
+      workItem(2, 'Done', '2026-02-04T10:00:00Z', 'Bug', 'B'),
+    ]);
+
+    const { items } = await new AzureDevOpsService('token', 'org').getStandupData(
+      target,
+      { Done: 'Resolved' },
+      perType
+    );
+
+    // The Task is Resolved for its type and stays however old; the Bug is
+    // Completed for its type and fell out of the 7-day window.
+    expect(items.map((item) => item.id)).toEqual([1]);
   });
 
   // "Done" is Completed for Task but Resolved for Bug, so nothing is windowed.
