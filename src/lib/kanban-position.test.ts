@@ -36,11 +36,11 @@ describe('expanded groups', () => {
   it('remembers a group that was opened and forgets one that was closed', () => {
     const storage = memoryStorage();
     writeGroupExpanded(storage, 'org:project', 'Internal', true);
-    writeGroupExpanded(storage, 'org:project', 'Glanau', true);
-    expect(readExpandedGroups(storage, 'org:project')).toEqual(['Internal', 'Glanau']);
+    writeGroupExpanded(storage, 'org:project', 'Contoso', true);
+    expect(readExpandedGroups(storage, 'org:project')).toEqual(['Internal', 'Contoso']);
 
     writeGroupExpanded(storage, 'org:project', 'Internal', false);
-    expect(readExpandedGroups(storage, 'org:project')).toEqual(['Glanau']);
+    expect(readExpandedGroups(storage, 'org:project')).toEqual(['Contoso']);
   });
 
   it('does not list a group twice when it is opened twice', () => {

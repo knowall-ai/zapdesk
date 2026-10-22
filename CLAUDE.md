@@ -273,4 +273,4 @@ When you encounter or help resolve an issue that admins or users might face:
 
 - **Project Owner**: KnowAll AI
 - **Repository**: https://github.com/knowall-ai/zapdesk
-- **Support**: support@knowall.ai
+- **Support**: see the support channel listed on https://www.knowall.ai

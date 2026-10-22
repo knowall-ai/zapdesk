@@ -201,5 +201,5 @@ curl -u ":YOUR_PAT" "https://dev.azure.com/KnowAll/_apis/projects?api-version=7.
 == Getting Help
 
 * Check GitHub Issues: https://github.com/knowall-ai/zapdesk/issues
-* Contact Support: support@knowall.ai
+* Contact Support: see the support channel listed on https://www.knowall.ai
 * Azure DevOps Status: https://status.dev.azure.com/

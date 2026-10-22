@@ -32,7 +32,7 @@ const json = (body: unknown) =>
 
 const seen: { url: string; init?: RequestInit }[] = [];
 
-function stubFetch(assignee = 'agent@knowall.ai') {
+function stubFetch(assignee = 'agent@example.test') {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     seen.push({ url, init });
@@ -81,7 +81,7 @@ describe('merge point: a customer reply still notifies the assigned agent', () =
     const args = h.sendCustomerReplyNotification.mock.calls[0] as unknown as unknown[];
     expect(args[0]).toBe(7145);
     expect(args[1]).toBe('Printer on fire');
-    expect(args[2]).toBe('agent@knowall.ai');
+    expect(args[2]).toBe('agent@example.test');
     expect(args[3]).toBe('cust@example.com');
     expect(args[4]).toContain('Still broken.');
   });
@@ -155,12 +155,12 @@ describe('unassigned tickets fall back to the support team, but never into a loo
   });
 
   it('notifies the support team when it is a different address', async () => {
-    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support-team@knowall.ai';
-    process.env.MAIL_POLL_MAILBOX = 'support@knowall.ai';
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support-team@example.test';
+    process.env.MAIL_POLL_MAILBOX = 'support@example.test';
     await unassigned();
     expect(h.sendCustomerReplyNotification).toHaveBeenCalledTimes(1);
     const args = h.sendCustomerReplyNotification.mock.calls[0] as unknown as unknown[];
-    expect(args[2]).toBe('support-team@knowall.ai');
+    expect(args[2]).toBe('support-team@example.test');
   });
 
   // The loop: ZapDesk mails the mailbox it polls, the poller ingests its own
@@ -168,8 +168,8 @@ describe('unassigned tickets fall back to the support team, but never into a loo
   // still-unassigned ticket, and it notifies again. Unbounded.
   it('refuses to notify the mailbox it polls', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support@knowall.ai';
-    process.env.MAIL_POLL_MAILBOX = 'support@knowall.ai';
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support@example.test';
+    process.env.MAIL_POLL_MAILBOX = 'support@example.test';
     await unassigned();
     expect(h.sendCustomerReplyNotification).not.toHaveBeenCalled();
     expect(err).toHaveBeenCalledWith(expect.stringContaining('would loop'));
@@ -177,14 +177,14 @@ describe('unassigned tickets fall back to the support team, but never into a loo
   });
 
   it('compares the two case- and whitespace-insensitively', async () => {
-    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = '  Support@KnowAll.ai ';
-    process.env.MAIL_POLL_MAILBOX = 'support@knowall.ai';
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = '  Support@Example.test ';
+    process.env.MAIL_POLL_MAILBOX = 'support@example.test';
     await unassigned();
     expect(h.sendCustomerReplyNotification).not.toHaveBeenCalled();
   });
 
   it('sends nothing when no fallback is configured', async () => {
-    process.env.MAIL_POLL_MAILBOX = 'support@knowall.ai';
+    process.env.MAIL_POLL_MAILBOX = 'support@example.test';
     await unassigned();
     expect(h.sendCustomerReplyNotification).not.toHaveBeenCalled();
   });
@@ -216,22 +216,22 @@ describe('a ticket assigned to the polled mailbox', () => {
 
   it('uses the team address instead of notifying itself', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.stubGlobal('fetch', stubFetch('support@knowall.ai'));
-    process.env.MAIL_POLL_MAILBOX = 'support@knowall.ai';
-    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support-team@knowall.ai';
+    vi.stubGlobal('fetch', stubFetch('support@example.test'));
+    process.env.MAIL_POLL_MAILBOX = 'support@example.test';
+    process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support-team@example.test';
 
     await reply();
 
     const args = h.sendCustomerReplyNotification.mock.calls[0] as unknown as unknown[];
-    expect(args[2]).toBe('support-team@knowall.ai');
+    expect(args[2]).toBe('support-team@example.test');
     expect(err).toHaveBeenCalledWith(expect.stringContaining('would loop'));
     err.mockRestore();
   });
 
   it('sends nothing when the team address is unset', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.stubGlobal('fetch', stubFetch('Support@KnowAll.ai'));
-    process.env.MAIL_POLL_MAILBOX = 'support@knowall.ai';
+    vi.stubGlobal('fetch', stubFetch('Support@Example.test'));
+    process.env.MAIL_POLL_MAILBOX = 'support@example.test';
 
     await reply();
 

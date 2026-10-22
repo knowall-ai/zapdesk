@@ -54,8 +54,8 @@ describe('parseProjectRepos', () => {
 
   it('reads a project to repositories mapping', () => {
     expect(
-      parseProjectRepos('{"Internal": ["acme/portal", "acme/api"], "Glanau": "acme/glanau"}')
-    ).toEqual({ Internal: ['acme/portal', 'acme/api'], Glanau: ['acme/glanau'] });
+      parseProjectRepos('{"Internal": ["acme/portal", "acme/api"], "Contoso": "acme/contoso"}')
+    ).toEqual({ Internal: ['acme/portal', 'acme/api'], Contoso: ['acme/contoso'] });
   });
 
   it.each([undefined, '', '   '])('is empty when unset (%j)', (raw) => {
@@ -700,11 +700,11 @@ describe('fetching', () => {
       gitHub({ 'acme/portal': { open: [[issue({ id: 1 })]] } });
 
       const { tickets } = await getGitHubTickets(
-        [project('Internal'), project('Glanau')],
+        [project('Internal'), project('Contoso')],
         'KnowAll',
         {
           token: 'secret-token',
-          projectRepos: { Internal: ['acme/portal'], Glanau: ['acme/portal'] },
+          projectRepos: { Internal: ['acme/portal'], Contoso: ['acme/portal'] },
         }
       );
 

@@ -209,20 +209,20 @@ describe('calculateNeedsAttention', () => {
   });
 
   it('ignores assigned work that is moving', () => {
-    const assigned = { email: 'a@knowall.ai' } as Ticket['assignee'];
+    const assigned = { email: 'a@example.test' } as Ticket['assignee'];
     expect(
       calculateNeedsAttention([ticket({ status: 'In Progress', assignee: assigned })], now)
     ).toBe(0);
   });
 
   it('counts assigned work that has gone stale', () => {
-    const assigned = { email: 'a@knowall.ai' } as Ticket['assignee'];
+    const assigned = { email: 'a@example.test' } as Ticket['assignee'];
     const stale = ticket({ status: 'In Progress', assignee: assigned, updatedAt: daysAgo(4) });
     expect(calculateNeedsAttention([stale], now)).toBe(1);
   });
 
   it('does not count a ticket that is exactly at the staleness boundary', () => {
-    const assigned = { email: 'a@knowall.ai' } as Ticket['assignee'];
+    const assigned = { email: 'a@example.test' } as Ticket['assignee'];
     const boundary = ticket({ status: 'Open', assignee: assigned, updatedAt: daysAgo(3) });
     expect(calculateNeedsAttention([boundary], now)).toBe(0);
   });
@@ -241,47 +241,47 @@ describe('calculateNeedsAttention', () => {
 
 describe('isInternalUser', () => {
   it('accepts a colleague on the same domain', () => {
-    expect(isInternalUser('ben@knowall.ai', 'knowall.ai')).toBe(true);
+    expect(isInternalUser('ben@example.test', 'example.test')).toBe(true);
   });
 
   it('is case-insensitive on both sides', () => {
-    expect(isInternalUser('Ben@KnowAll.AI', 'knowall.ai')).toBe(true);
-    expect(isInternalUser('ben@knowall.ai', 'KnowAll.ai')).toBe(true);
+    expect(isInternalUser('Ben@Example.TEST', 'example.test')).toBe(true);
+    expect(isInternalUser('ben@example.test', 'Example.test')).toBe(true);
   });
 
   it('rejects an outside domain', () => {
-    expect(isInternalUser('customer@example.com', 'knowall.ai')).toBe(false);
+    expect(isInternalUser('customer@example.com', 'example.test')).toBe(false);
   });
 
   // Exact match, not a suffix: otherwise anyone who registers a domain ending
   // in the internal one is treated as staff.
   it('rejects a lookalike domain that merely ends with the internal one', () => {
-    expect(isInternalUser('attacker@evil-knowall.ai', 'knowall.ai')).toBe(false);
-    expect(isInternalUser('attacker@mail.knowall.ai', 'knowall.ai')).toBe(false);
+    expect(isInternalUser('attacker@evil-example.test', 'example.test')).toBe(false);
+    expect(isInternalUser('attacker@mail.example.test', 'example.test')).toBe(false);
   });
 
   it('rejects missing or malformed input', () => {
-    expect(isInternalUser('', 'knowall.ai')).toBe(false);
-    expect(isInternalUser('ben@knowall.ai', '')).toBe(false);
-    expect(isInternalUser('not-an-email', 'knowall.ai')).toBe(false);
+    expect(isInternalUser('', 'example.test')).toBe(false);
+    expect(isInternalUser('ben@example.test', '')).toBe(false);
+    expect(isInternalUser('not-an-email', 'example.test')).toBe(false);
   });
 
   // Splitting on the first `@` and trusting the remainder let both of these
   // count as colleagues, putting malformed external records on the team list.
   it('rejects an address with no local part', () => {
-    expect(isInternalUser('@knowall.ai', 'knowall.ai')).toBe(false);
+    expect(isInternalUser('@example.test', 'example.test')).toBe(false);
   });
 
   it('rejects an address carrying a second @', () => {
-    expect(isInternalUser('user@knowall.ai@evil.example', 'knowall.ai')).toBe(false);
-    expect(isInternalUser('user@evil.example@knowall.ai', 'knowall.ai')).toBe(false);
+    expect(isInternalUser('user@example.test@evil.example', 'example.test')).toBe(false);
+    expect(isInternalUser('user@evil.example@example.test', 'example.test')).toBe(false);
   });
 
   it('rejects an address with no domain part', () => {
-    expect(isInternalUser('ben@', 'knowall.ai')).toBe(false);
+    expect(isInternalUser('ben@', 'example.test')).toBe(false);
   });
 
   it('tolerates surrounding whitespace', () => {
-    expect(isInternalUser('ben@ knowall.ai ', ' knowall.ai ')).toBe(true);
+    expect(isInternalUser('ben@ example.test ', ' example.test ')).toBe(true);
   });
 });

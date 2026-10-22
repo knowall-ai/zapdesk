@@ -152,14 +152,14 @@ export function calculateNeedsAttention(
  * The domain is taken from the signed-in user, which is how the team list
  * stays to colleagues rather than every customer who has ever been assigned a
  * ticket. Comparison is exact: a subdomain is a different organisation, and
- * suffix matching would let `evil-knowall.ai` in.
+ * suffix matching would let `evil-example.test` in.
  */
 export function isInternalUser(email: string, internalDomain: string): boolean {
   if (!email || !internalDomain) return false;
 
   // Exactly one `@`, with something either side. Splitting on the first `@`
-  // and trusting the remainder let `@knowall.ai` through with an empty local
-  // part, and read `user@knowall.ai@evil.example` as belonging to knowall.ai.
+  // and trusting the remainder let `@example.test` through with an empty local
+  // part, and read `user@example.test@evil.example` as belonging to example.test.
   const at = email.indexOf('@');
   if (at <= 0 || at !== email.lastIndexOf('@')) return false;
 
