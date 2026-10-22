@@ -5,7 +5,8 @@ import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService, workItemToTicket, setStateCategoryCache } from '@/lib/devops';
 import { TICKET_WORK_ITEM_TYPES } from '@/types';
 import { filterTicketsByView } from '@/lib/ticket-views';
-import { sendAssignmentNotification } from '@/lib/email';
+import { sendAssignmentNotification, sendNewTicketNotification } from '@/lib/email';
+import { supportTeamRecipients } from '@/lib/support-team';
 
 // TTL cache for state categories (avoids refetching on every request)
 let stateCategoryCacheData: {
@@ -248,6 +249,28 @@ export async function POST(request: NextRequest) {
         assigneeEmail,
         assignedByName: session.user?.name || 'A colleague',
         assignedByEmail: session.user?.email ?? undefined,
+      }).catch(() => {});
+    }
+
+    // Tell the support team, as the email path already did (#485). A ticket
+    // raised in the app told nobody at all unless it happened to be assigned,
+    // and then only the one person -- so an unassigned ticket raised here sat
+    // silently until somebody happened to look at the board (#7369).
+    //
+    // The person who raised it is excluded: they know. So is the assignee,
+    // who is getting the assignment email just above and does not need two
+    // messages about the same ticket.
+    const teamRecipients = supportTeamRecipients([session.user?.email, assigneeEmail]);
+    if (teamRecipients.length > 0) {
+      // Fire-and-forget: the ticket exists, and a failed notification must not
+      // turn a successful creation into an error.
+      sendNewTicketNotification({
+        ticketId: ticket.id,
+        ticketSubject: ticket.title,
+        requesterEmail: session.user?.email ?? 'someone in ZapDesk',
+        project: ticket.organization?.name ?? '',
+        messageHtml: ticket.description ?? '',
+        recipients: teamRecipients.join(', '),
       }).catch(() => {});
     }
 
