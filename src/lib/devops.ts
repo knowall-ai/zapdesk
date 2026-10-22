@@ -522,8 +522,14 @@ export function revisionTimestamp(update: {
  * older items of every type that uses it, so a name goes there only when every
  * type that defines it agrees it is Completed. When discovery was partial, an
  * undiscovered type may use the name differently, so nothing is known to be
- * agreed and every name goes to an unwindowed or 90-day query. Either way the
- * closed items those queries bring in are trimmed per item by
+ * agreed and every name goes to the 90-day query -- which means that while
+ * discovery is partial, Resolved items older than 90 days are hidden again.
+ * That is the #518 symptom returning, and it is accepted deliberately: the
+ * alternative is to trust a name is Resolved on the word of the types that did
+ * load, and a name wrongly left unwindowed would drag an entire project's
+ * closed history onto the board. Hiding the old resolved items is recoverable
+ * once discovery succeeds; the other way round is not.
+ * The closed items that query brings in are trimmed per item by
  * `isOutsideClosedWindow`.
  */
 export function partitionStandupStates(
