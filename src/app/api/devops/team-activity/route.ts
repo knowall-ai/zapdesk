@@ -15,6 +15,8 @@ interface TeamActivityResponse {
   activities: ActivityData[];
   members: User[];
   totalActivities: number;
+  /** Projects whose tickets could not be read, so the chart is short (#516). */
+  failedProjects?: string[];
 }
 
 function generateDateRange(startDate: Date, endDate: Date): string[] {
@@ -53,7 +55,7 @@ export async function GET(request: Request) {
 
     const devopsService = new AzureDevOpsService(session.accessToken, requestDevOpsOrg(request));
     // Get ALL work items (not just those tagged as "ticket") for accurate team activity
-    const { tickets } = await devopsService.getAllTickets(false);
+    const { tickets, failedProjects } = await devopsService.getAllTickets(false);
 
     // Collect all team members from projects
     const memberMap = new Map<string, User>();
@@ -163,6 +165,9 @@ export async function GET(request: Request) {
       activities,
       members: allMembers,
       totalActivities,
+      // A flat day in the chart may mean nobody worked, or may mean a project
+      // did not load. Present only when something failed (#516).
+      ...(failedProjects.length > 0 ? { failedProjects } : {}),
     };
 
     return NextResponse.json(response);

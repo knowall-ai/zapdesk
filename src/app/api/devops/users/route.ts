@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     const devopsService = new AzureDevOpsService(session.accessToken, requestDevOpsOrg(request));
 
     // Fetch tickets, projects, and all users from entitlements API in parallel
-    const [{ tickets }, projects, allUsersWithLicenses] = await Promise.all([
+    const [{ tickets, failedProjects }, projects, allUsersWithLicenses] = await Promise.all([
       devopsService.getAllTickets(),
       devopsService.getProjects(),
       devopsService.getAllUsersWithEntitlements(),
@@ -110,7 +110,13 @@ export async function GET(request: NextRequest) {
       a.displayName.localeCompare(b.displayName)
     );
 
-    return NextResponse.json({ users });
+    return NextResponse.json({
+      users,
+      // A project that failed to load contributes no requesters, so the list
+      // is short without looking short (#516). Present only when something
+      // failed, as on the tickets routes.
+      ...(failedProjects.length > 0 ? { failedProjects } : {}),
+    });
   } catch (error) {
     console.error('Error fetching users:', error);
     return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 });

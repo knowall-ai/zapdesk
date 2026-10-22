@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
     // Search across all work items the user can access — not just those tagged
     // "ticket". The Kanban board surfaces Checkpoints, Features, Bugs, etc.,
     // and users expect global search to find them too.
-    const { tickets } = await devopsService.getAllTickets(false);
+    const { tickets, failedProjects } = await devopsService.getAllTickets(false);
     const matchingTickets = tickets
       .filter(
         (t) =>
@@ -143,7 +143,12 @@ export async function GET(request: NextRequest) {
     const typePriority = { ticket: 0, user: 1, organization: 2 };
     results.sort((a, b) => typePriority[a.type] - typePriority[b.type]);
 
-    return NextResponse.json({ results: results.slice(0, 10) });
+    return NextResponse.json({
+      results: results.slice(0, 10),
+      // "No results" is a different answer from "no results in what I could
+      // read". Present only when something failed (#516).
+      ...(failedProjects.length > 0 ? { failedProjects } : {}),
+    });
   } catch (error) {
     console.error('Error searching:', error);
     return NextResponse.json({ error: 'Search failed' }, { status: 500 });

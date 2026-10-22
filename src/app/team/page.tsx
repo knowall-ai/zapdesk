@@ -20,15 +20,18 @@ import { ActivityCalendar, type Activity as CalendarActivity } from 'react-activ
 import { Tooltip } from 'react-tooltip';
 import type { TeamMember, TeamStats } from '@/types';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
+import FailedProjectsNotice from '@/components/common/FailedProjectsNotice';
 
 interface TeamData {
   members: TeamMember[];
   stats: TeamStats;
+  failedProjects?: string[];
 }
 
 interface ActivityData {
   activities: CalendarActivity[];
   totalActivities: number;
+  failedProjects?: string[];
 }
 
 type SortColumn =
@@ -288,6 +291,19 @@ export default function TeamPage() {
             </button>
           </div>
         </div>
+
+        {/* Every count below is short by whatever a failed project holds, which
+            reads as someone having done less work than they did (#516). */}
+        <FailedProjectsNotice
+          projects={[
+            ...new Set([
+              ...(teamData?.failedProjects ?? []),
+              ...(activityData?.failedProjects ?? []),
+            ]),
+          ]}
+          subject="These figures"
+          className="mb-4"
+        />
 
         {/* Stats cards */}
         <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
