@@ -7,6 +7,7 @@ import { Github, Zap } from 'lucide-react';
 import Avatar from '@/components/common/Avatar';
 import PriorityIndicator from '@/components/common/PriorityIndicator';
 import { isGitHubItem } from '@/lib/github-kanban';
+import { sourceAccentStyle } from '@/lib/source-colors';
 import type { Ticket, WorkItem, WorkItemType } from '@/types';
 
 // KanbanCard can work with either Ticket or WorkItem
@@ -135,9 +136,13 @@ export default function KanbanCard({
     disabled: readOnly,
   });
 
+  // Where the card came from, down its left edge (#465). A read-only card
+  // gets it too: a GitHub issue is always read-only here, so leaving it out of
+  // that branch would mean GitHub cards never showed their own colour.
   const style = readOnly
-    ? {}
+    ? sourceAccentStyle(item)
     : {
+        ...sourceAccentStyle(item),
         transform: CSS.Transform.toString(transform),
         transition,
       };

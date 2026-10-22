@@ -36,6 +36,20 @@
   /* Badge fill for white text: 6.9:1 contrast, where --pr-merged is 3.9:1 */
   --pr-badge: #7e22ce;
 
+  /* Where a card came from, on the boards that mix both (#465). Drawn only as
+     a bar down a card's left edge, a position no other colour uses, and always
+     with `SourceLegend` saying which is which.
+     Not the two products' brand colours, which was the intuitive choice and
+     measurably the worst: the board already spends purple on Enhancement
+     (#773b93) and pr-merged, and blue-cyan on Question (#009ccc) and
+     pr-created, so GitHub purple landed 12.8 from pr-merged and Azure blue
+     15.4 from pr-created in CIE76. These two sit 27.4 and 41.7 from anything
+     a card already wears, and 111 apart from each other.
+     `source-colors.test.ts` holds those distances, so a later edit cannot
+     quietly move one of them next to a type colour. */
+  --source-devops: #1d4ed8;
+  --source-github: #14b8a6;
+
   /* Priority colors */
   --priority-urgent: #ef4444;
   --priority-high: #f97316;
