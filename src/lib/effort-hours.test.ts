@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { workItemToTicket, ticketToWorkItem, AzureDevOpsService } from './devops';
+import { CORE_TICKET_FIELDS, OPTIONAL_TICKET_FIELDS } from './work-item-fields';
 import type { DevOpsWorkItem } from '@/types';
 
 /** Minimal work item with only the fields workItemToTicket needs. */
@@ -95,20 +96,32 @@ describe('ticketToWorkItem — effort hours', () => {
 });
 
 describe('getTickets — effort field selection', () => {
+  const ALL_FIELDS = [...CORE_TICKET_FIELDS, ...OPTIONAL_TICKET_FIELDS];
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  /** WIQL query first, then the batched work item fetch. */
-  function stubFetch(workItem: unknown) {
+  /**
+   * WIQL query, then the organization's field names, then the batched work item
+   * fetch. The field lookup decides which optional fields the batch may ask
+   * for, so a test that leaves it out gets the core fields only.
+   */
+  function stubFetch(workItem: unknown, availableFields: string[] = ALL_FIELDS) {
     const calls: string[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
-        calls.push(String(url));
-        const body = String(url).includes('/wiql')
-          ? { workItems: [{ id: 6609 }] }
-          : { value: [workItem] };
+        const u = String(url);
+        calls.push(u);
+        let body: unknown;
+        if (u.includes('/wiql')) {
+          body = { workItems: [{ id: 6609 }] };
+        } else if (u.includes('/_apis/wit/fields')) {
+          body = { value: availableFields.map((referenceName) => ({ referenceName })) };
+        } else {
+          body = { value: [workItem] };
+        }
         return { ok: true, status: 200, json: async () => body } as unknown as Response;
       })
     );
@@ -138,5 +151,25 @@ describe('getTickets — effort field selection', () => {
     expect(ticket.remainingWork).toBe(6.5);
     expect(ticket.completedWork).toBe(2);
     expect(ticket.originalEstimate).toBe(8);
+  });
+
+  it('still returns tickets for an organization without the customised field', async () => {
+    // Naming a field the organization does not define fails the whole batch
+    // with 400 TF51535, so every ticket in it was lost. Only KnowAll defines
+    // Custom.CustomerResponse; every other tenant saw an empty ticket list.
+    const withoutCustom = ALL_FIELDS.filter((f) => f !== 'Custom.CustomerResponse');
+    const calls = stubFetch(
+      makeWorkItem({ 'Microsoft.VSTS.Scheduling.RemainingWork': 6.5 }),
+      withoutCustom
+    );
+
+    const workItems = await new AzureDevOpsService('token', 'other-org').getTickets('ABC Inc');
+
+    const batchUrl = calls.find((url) => url.includes('/workitems?ids='));
+    expect(batchUrl).toBeDefined();
+    expect(batchUrl).not.toContain('Custom.CustomerResponse');
+    // The hours it does have are still asked for, so nothing else is lost.
+    expect(batchUrl).toContain('Microsoft.VSTS.Scheduling.RemainingWork');
+    expect(workItems).toHaveLength(1);
   });
 });
