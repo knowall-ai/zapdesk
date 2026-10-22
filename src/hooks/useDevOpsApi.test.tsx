@@ -46,14 +46,16 @@ beforeEach(() => {
 describe('useDevOpsApi keeps its helpers stable (#7391, #7721)', () => {
   it('returns the same helpers when the counts refresh changes identity', () => {
     const { result, rerender } = renderHook(() => useDevOpsApi());
-    const first = { get: result.current.get, fetchDevOps: result.current.fetchDevOps };
+    const { fetchDevOps, get, post, patch } = result.current;
 
     // What happens hourly when the access token refreshes.
     refreshCounts = vi.fn();
     rerender();
 
-    expect(result.current.fetchDevOps).toBe(first.fetchDevOps);
-    expect(result.current.get).toBe(first.get);
+    expect(result.current.fetchDevOps).toBe(fetchDevOps);
+    expect(result.current.get).toBe(get);
+    expect(result.current.post).toBe(post);
+    expect(result.current.patch).toBe(patch);
   });
 
   it('rebuilds the helpers when the organization changes, which should rebuild them', () => {
