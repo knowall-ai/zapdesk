@@ -12,6 +12,12 @@ interface TicketDialogShellProps {
   sidebar?: React.ReactNode;
   asForm?: boolean;
   onSubmit?: (e: React.FormEvent) => void;
+  /**
+   * What a screen reader announces when the dialog opens. The header is built
+   * from nodes the caller passes, so there is nothing here to point
+   * `aria-labelledby` at; callers that know the ticket should say so (#507).
+   */
+  label?: string;
 }
 
 export default function TicketDialogShell({
@@ -23,6 +29,7 @@ export default function TicketDialogShell({
   sidebar,
   asForm,
   onSubmit,
+  label = 'Ticket details',
 }: TicketDialogShellProps) {
   // Escape key to close
   useEffect(() => {
@@ -41,11 +48,15 @@ export default function TicketDialogShell({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      {/* Backdrop. Decorative: Escape and the close button are the real ways
+          out, so it is hidden rather than announced as an empty control. */}
+      <div aria-hidden="true" className="absolute inset-0 bg-black/50" onClick={onClose} />
 
       {/* Dialog */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={label}
         className="relative z-10 flex w-full max-w-4xl flex-col overflow-hidden rounded-lg"
         style={{
           height: '85vh',
@@ -62,7 +73,10 @@ export default function TicketDialogShell({
           <div className="flex items-center gap-2">
             {headerRight}
             <button
+              type="button"
               onClick={onClose}
+              aria-label="Close"
+              title="Close"
               className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
               style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
             >
