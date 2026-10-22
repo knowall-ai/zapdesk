@@ -23,6 +23,7 @@ import {
 import { StatusBadge, Avatar } from '@/components/common';
 import { TicketVolumeChart, ResponseTimeChart, TeamPerformanceChart } from '@/components/reporting';
 import type { Ticket as TicketType } from '@/types';
+import FailedProjectsNotice from '@/components/common/FailedProjectsNotice';
 
 type DateRange = 7 | 30 | 90 | 365;
 
@@ -34,6 +35,7 @@ interface LiveStats {
   resolvedToday: number;
   createdToday: number;
   avgResponseTime: string;
+  failedProjects?: string[];
 }
 
 interface ProjectStats {
@@ -382,6 +384,8 @@ export default function LiveDashboardPage() {
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-4">
+          <FailedProjectsNotice projects={stats?.failedProjects} className="mb-4" />
+
           {/* Stats cards */}
           <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
             {statCards.map((stat) => (

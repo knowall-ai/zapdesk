@@ -89,3 +89,58 @@ describe('GET /api/devops/tickets reports projects it could not read (#509)', ()
     expect(body.failedProjects).toEqual(['Contoso Ltd (Basic)']);
   });
 });
+
+const call = async (path: string) => {
+  const { GET } = await import(`@/app/api/devops/${path}/route`);
+  return GET(
+    new NextRequest(`https://zapdesk.test/api/devops/${path}`, {
+      headers: { 'x-devops-org': 'KnowAll' },
+    })
+  );
+};
+
+describe('analytics routes say when projects could not be read (#509)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ value: [] }), { status: 200 }))
+    );
+    getServerSession.mockResolvedValue({ accessToken: 'token', user: { email: 'a@b.test' } });
+  });
+
+  it('stats names the failed projects and claims no compliance rate when nothing loaded', async () => {
+    getAllTickets.mockResolvedValue({ tickets: [], failedProjects: ['Contoso Ltd (Basic)'] });
+
+    const body = await (await call('stats')).json();
+
+    expect(body.failedProjects).toEqual(['Contoso Ltd (Basic)']);
+    // Not 100%: the empty list is what failed, not a clean record.
+    expect(body.sla.complianceRate).toBeNull();
+  });
+
+  it('stats keeps its old shape and 100% when every project loaded and nothing is open', async () => {
+    getAllTickets.mockResolvedValue({ tickets: [], failedProjects: [] });
+
+    const body = await (await call('stats')).json();
+
+    expect('failedProjects' in body).toBe(false);
+    expect(body.sla.complianceRate).toBe(100);
+  });
+
+  it('sla-status names the failed projects', async () => {
+    getAllTickets.mockResolvedValue({ tickets: [], failedProjects: ['Contoso Ltd (Basic)'] });
+
+    const body = await (await call('sla-status')).json();
+
+    expect(body.failedProjects).toEqual(['Contoso Ltd (Basic)']);
+  });
+
+  it('sla-status leaves the key out when every project loaded', async () => {
+    getAllTickets.mockResolvedValue({ tickets: [], failedProjects: [] });
+
+    const body = await (await call('sla-status')).json();
+
+    expect('failedProjects' in body).toBe(false);
+  });
+});

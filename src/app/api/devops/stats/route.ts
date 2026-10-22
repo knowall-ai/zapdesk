@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     }
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
-    const { tickets } = await devopsService.getAllTickets();
+    const { tickets, failedProjects } = await devopsService.getAllTickets();
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     const openTickets = tickets.filter((t) => unsolvedStatuses.includes(t.status));
 
     // Calculate SLA compliance stats
-    const slaStats = calculateSLAStats(tickets);
+    const slaStats = calculateSLAStats(tickets, failedProjects.length > 0);
 
     const stats = {
       totalTickets: tickets.length,
@@ -45,6 +45,9 @@ export async function GET(request: NextRequest) {
       customerSatisfaction: 0, // Would need CSAT integration
       // SLA Stats
       sla: slaStats,
+      // Every figure above is short by whatever these projects hold (#509).
+      // Present only when something failed, as on the tickets routes.
+      ...(failedProjects.length > 0 ? { failedProjects } : {}),
     };
 
     return NextResponse.json(stats);
@@ -86,7 +89,8 @@ interface SLAStats {
   withinSLA: number;
   atRisk: number;
   breached: number;
-  complianceRate: number;
+  /** null when there is nothing to measure because projects failed to load. */
+  complianceRate: number | null;
   byLevel: {
     gold: { total: number; compliant: number };
     silver: { total: number; compliant: number };
@@ -94,7 +98,7 @@ interface SLAStats {
   };
 }
 
-function calculateSLAStats(tickets: Ticket[]): SLAStats {
+function calculateSLAStats(tickets: Ticket[], someProjectsFailed = false): SLAStats {
   const unsolvedStatuses: TicketStatus[] = ['New', 'Open', 'In Progress', 'Pending'];
   const activeTickets = tickets.filter((t) => unsolvedStatuses.includes(t.status));
 
@@ -147,7 +151,14 @@ function calculateSLAStats(tickets: Ticket[]): SLAStats {
   const totalActive = activeTickets.length;
   // Compliance rate: tickets not breached (within_sla + at_risk) / total
   const compliantCount = withinSLA + atRisk;
-  const complianceRate = totalActive > 0 ? Math.round((compliantCount / totalActive) * 100) : 100;
+  // No active tickets reads as 100% only when every project was read. If some
+  // failed, the empty list may just be what failed, so there is no rate (#509).
+  const complianceRate =
+    totalActive > 0
+      ? Math.round((compliantCount / totalActive) * 100)
+      : someProjectsFailed
+        ? null
+        : 100;
 
   return {
     withinSLA,
