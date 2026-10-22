@@ -52,10 +52,22 @@ describe('useDevOpsApi keeps its helpers stable (#7391, #7721)', () => {
     expect(source).toMatch(/\}, \[refreshCounts\]\)/);
   });
 
-  it('still refreshes the counts after a successful write', () => {
+  it('refreshes the counts only after a successful write', () => {
     // The ref exists to keep #404 working: a write moves tickets between
     // sidebar buckets, so the counts must still be invalidated.
-    expect(source).toMatch(/method !== 'GET' && response\.ok/);
+    //
+    // Asserting the guard and the call separately is not enough -- the call
+    // could sit outside the guard, refreshing on every GET and on failed
+    // writes, and both assertions would still pass. So the guard and the call
+    // are matched as one statement.
+    expect(source).toMatch(
+      /if \(method !== 'GET' && response\.ok\)\s*\{?\s*refreshCountsRef\.current\(\);?/
+    );
+  });
+
+  it('refreshes from exactly one place, so none is left unguarded', () => {
+    const calls = source.match(/refreshCountsRef\.current\(\)/g) ?? [];
+    expect(calls).toHaveLength(1);
   });
 
   it('calls the refresh only through the ref, never the captured value', () => {
