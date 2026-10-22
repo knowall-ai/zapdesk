@@ -131,7 +131,7 @@ const groups = [
 ];
 
 const renderSection = (s) =>
-  `<div class="section"><h3>${s.title}</h3><iframe srcdoc="${s.html.replace(/"/g, '&quot;')}"></iframe></div>`;
+  `<div class="section"><h3>${s.title}</h3><iframe srcdoc="${s.html.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></iframe></div>`;
 
 const wrapper = `
 <!doctype html>
