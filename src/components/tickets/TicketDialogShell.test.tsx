@@ -136,10 +136,21 @@ describe('focus', () => {
     expect(document.activeElement).toBe(screen.getByRole('dialog'));
   });
 
-  it('returns to whatever was focused before, on close', () => {
+  // cleanup() removes only what render() mounted, so a trigger appended by
+  // hand is removed here too -- even when an assertion fails before the test
+  // gets to it, so it cannot leak into the tests that follow.
+  const triggers: HTMLElement[] = [];
+  const addTrigger = () => {
     const trigger = document.createElement('button');
     trigger.textContent = 'Open';
     document.body.appendChild(trigger);
+    triggers.push(trigger);
+    return trigger;
+  };
+  afterEach(() => triggers.splice(0).forEach((t) => t.remove()));
+
+  it('returns to whatever was focused before, on close', () => {
+    const trigger = addTrigger();
     trigger.focus();
     expect(document.activeElement).toBe(trigger);
 
@@ -148,14 +159,12 @@ describe('focus', () => {
 
     unmount();
     expect(document.activeElement).toBe(trigger);
-    trigger.remove();
   });
 
   it('leaves focus alone when the trigger is gone by the time it closes', () => {
     // A deleted ticket's row: the element that opened the dialog can be
     // removed while it is open, so focus is restored only if it is still there.
-    const trigger = document.createElement('button');
-    document.body.appendChild(trigger);
+    const trigger = addTrigger();
     trigger.focus();
 
     const { unmount } = open();
