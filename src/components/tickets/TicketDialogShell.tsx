@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 
 interface TicketDialogShellProps {
@@ -41,6 +41,29 @@ export default function TicketDialogShell({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  /**
+   * Move focus into the dialog, and put it back where it came from on close.
+   *
+   * `aria-modal` says what the dialog is; it moves nothing. Without this a
+   * keyboard user who opens a ticket is still focused on the row behind the
+   * dialog, and closing it drops them at the top of the document rather than
+   * on the ticket they just came out of (#507).
+   *
+   * Focus trapping -- keeping Tab inside while it is open -- is a separate,
+   * larger change and is deliberately not attempted here.
+   */
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    return () => {
+      // The trigger can be gone by now -- a deleted ticket's row, say -- so
+      // this is only ever a best effort.
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const ContentWrapper = asForm ? 'form' : 'div';
@@ -54,9 +77,13 @@ export default function TicketDialogShell({
 
       {/* Dialog */}
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={label}
+        // Focusable so focus can be moved here on open; -1 keeps it out of the
+        // Tab order itself.
+        tabIndex={-1}
         className="relative z-10 flex w-full max-w-4xl flex-col overflow-hidden rounded-lg"
         style={{
           height: '85vh',

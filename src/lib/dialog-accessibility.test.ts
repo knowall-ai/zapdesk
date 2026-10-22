@@ -47,14 +47,34 @@ describe('the dialog close button (#507)', () => {
     expect(shell).toContain('aria-label="Close"');
   });
 
-  it('is type="button", so it cannot submit the form it sits inside', () => {
-    // The shell renders a <form> when asForm is set. Without an explicit type a
-    // button inside a form defaults to submit, so closing would have submitted
-    // the ticket instead of dismissing the dialog.
+  it('declares type="button" rather than relying on where it sits', () => {
+    // Not a live bug: the close button is in the header, and the optional
+    // <form> is a sibling rendered after it, so it was never inside a form and
+    // never submitted one. Stating the type anyway means moving the button --
+    // or wrapping more of the shell in the form -- cannot turn closing into
+    // submitting, which is a quiet way to break it.
     const tags = shell.match(/<button[^>]*>/g) ?? [];
     const close = tags.filter((tag) => tag.includes('aria-label="Close"'));
     expect(close, 'the close button should be findable by its label').toHaveLength(1);
     expect(close[0]).toContain('type="button"');
+  });
+});
+
+describe('the dialog takes focus and gives it back (#507)', () => {
+  it('is focusable, but stays out of the Tab order', () => {
+    expect(shell).toContain('tabIndex={-1}');
+    expect(shell).toContain('ref={dialogRef}');
+  });
+
+  it('moves focus into the dialog when it opens', () => {
+    // aria-modal says what the dialog is; it moves nothing. Without this a
+    // keyboard user stays focused on the row behind it.
+    expect(shell).toContain('dialogRef.current?.focus()');
+  });
+
+  it('puts focus back where it came from on close', () => {
+    expect(shell).toMatch(/const previous = document\.activeElement/);
+    expect(shell).toMatch(/previous\?\.isConnected[\s\S]*previous\.focus\(\)/);
   });
 });
 
