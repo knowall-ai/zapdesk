@@ -496,6 +496,7 @@ export default function WorkItemDetailDialog({
         headerLeft={headerLeft}
         headerRight={headerRight}
         sidebar={sidebar}
+        label={`${workItem.title} (#${workItem.id})`}
       >
         <WorkItemDetailContent
           workItem={workItem}
