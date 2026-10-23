@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Github } from 'lucide-react';
 import { Avatar, PriorityIndicator } from '@/components/common';
 import { isGitHubItem } from '@/lib/github-kanban';
+import { sourceAccentStyle } from '@/lib/source-colors';
 import type { HighlightReason } from '@/lib/activity-summary';
 import { HIGHLIGHT_COLORS, highlightRingColor } from '@/lib/activity-colors';
 import type { StandupWorkItem } from '@/types';
@@ -54,6 +55,9 @@ export default function StandupKanbanCard({
     disabled: isGitHub,
   });
 
+  // Where the card came from, down its left edge (#465).
+  const accent = sourceAccentStyle(item);
+
   const highlightStyle: CSSProperties = highlight
     ? { boxShadow: `0 0 0 2px ${highlightRingColor(highlight)}` }
     : dimmed
@@ -63,6 +67,7 @@ export default function StandupKanbanCard({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+    ...accent,
     ...highlightStyle,
   };
 
@@ -159,7 +164,7 @@ export default function StandupKanbanCard({
 
   if (isGitHub) {
     return (
-      <div className="kanban-card" style={highlightStyle} title={item.title}>
+      <div className="kanban-card" style={{ ...accent, ...highlightStyle }} title={item.title}>
         <a
           href={item.sourceUrl ?? item.devOpsUrl}
           target="_blank"
