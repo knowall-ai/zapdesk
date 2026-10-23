@@ -41,6 +41,7 @@ import {
 
 import { configuredDevOpsOrg, devOpsOrgOrDefault } from './devops-org';
 import { ticketFieldsToRequest } from './work-item-fields';
+import { isPendingStateName } from './state-categories';
 
 /**
  * Read the resolution value from a work item, checking all possible field names
@@ -129,6 +130,12 @@ export function setStateCategoryCache(stateCategories: Record<string, string>) {
 
 // Map Azure DevOps state to Zendesk-like status using cached categories
 function mapStateToStatus(state: string): TicketStatus {
+  // Checked before the category, because Blocked and Active share the
+  // InProgress category and the category alone cannot tell them apart. Going
+  // by category made every blocked ticket read as In Progress -- including the
+  // ones ZapDesk itself had set to Pending, since writing Pending writes the
+  // Blocked state (the mapping from #297, in state-categories.ts).
+  if (isPendingStateName(state)) return 'Pending';
   const category = stateCategoryCache[state];
   if (category) {
     return mapCategoryToStatus(category);
