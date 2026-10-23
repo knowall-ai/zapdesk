@@ -501,37 +501,43 @@ export function revisionTimestamp(update: {
 }
 
 /**
- * Split the board's state names between its two WIQL queries.
+ * Split the board's state names between its three WIQL queries.
  *
- * `closedStates` go to the query limited to the last 7 days; `openStates` go
- * to the 90-day query. Only Completed states belong in the short window.
- * Resolved means the work is done but not yet verified, so the item still needs
- * attention and must stay on the board however long it sits there. It used to
- * share the 7-day window with Closed, which made resolved items disappear
- * (#436).
+ * `closedStates` go to the query limited to the last 7 days, `openStates` to
+ * the 90-day query, and `resolvedStates` to a query with no date floor at all.
+ *
+ * Only Completed states belong in the short window. Resolved means the work is
+ * done but not yet verified, so the item still needs attention and must stay on
+ * the board however long it sits there. It used to share the 7-day window with
+ * Closed, which made resolved items disappear the moment they were resolved
+ * (#436); moving it to the 90-day window only postponed that, and 84 items
+ * resolved as far back as February had already fallen out of it (#518). A state
+ * whose purpose is to hold work pending somebody's decision cannot be trimmed
+ * by age — the oldest item in it is the one most in need of being seen. The
+ * 90-day floor stays for the genuinely open states, where an untouched item
+ * really is stale and the board really is a daily stand-up tool.
  *
  * As with the Removed filter, the flat map is lossy when two types use one
  * state name in different categories. Putting a name in the 7-day window hides
  * older items of every type that uses it, so a name goes there only when every
  * type that defines it agrees it is Completed. When discovery was partial, an
  * undiscovered type may use the name differently, so nothing is known to be
- * agreed and every name goes to the 90-day query. Either way the closed items
- * that query brings in are trimmed per item by `isOutsideClosedWindow`.
+ * agreed and every name goes to the 90-day query -- which means that while
+ * discovery is partial, Resolved items older than 90 days are hidden again.
+ * That is the #518 symptom returning, and it is accepted deliberately: the
+ * alternative is to trust a name is Resolved on the word of the types that did
+ * load, and a name wrongly left unwindowed would drag an entire project's
+ * closed history onto the board. Hiding the old resolved items is recoverable
+ * once discovery succeeds; the other way round is not.
+ * The closed items that query brings in are trimmed per item by
+ * `isOutsideClosedWindow`.
  */
 export function partitionStandupStates(
   stateCategories: Record<string, string>,
   removedOnly: Set<string>,
   categoriesByProjectType?: Record<string, Record<string, Record<string, string>>>,
   discoveryComplete = true
-): { closedStates: string[]; openStates: string[] } {
-  const hasPerType = Object.keys(categoriesByProjectType ?? {}).length > 0;
-  if (hasPerType && !discoveryComplete) {
-    return {
-      closedStates: [],
-      openStates: Object.keys(stateCategories).filter((state) => !removedOnly.has(state)),
-    };
-  }
-
+): { closedStates: string[]; openStates: string[]; resolvedStates: string[] } {
   const categoriesSeen = new Map<string, Set<string>>();
   for (const byType of Object.values(categoriesByProjectType ?? {})) {
     for (const byState of Object.values(byType)) {
@@ -543,20 +549,31 @@ export function partitionStandupStates(
     }
   }
 
+  // Agreement among the types that define a name. Partial discovery means an
+  // undiscovered type may use the name differently, so nothing counts as
+  // agreed and every name falls through to the branch that fetches most.
+  const hasPerType = Object.keys(categoriesByProjectType ?? {}).length > 0;
+  const agreedOn = (state: string, category: string, want: string): boolean => {
+    if (hasPerType && !discoveryComplete) return false;
+    const seen = categoriesSeen.get(state);
+    if (!seen || seen.size === 0) return category === want;
+    // A Removed category alongside the one we want doesn't disqualify the name:
+    // the Removed items are filtered out per item anyway.
+    return [...seen].every((c) => c === want || c === 'Removed') && seen.has(want);
+  };
+
   const closedStates: string[] = [];
   const openStates: string[] = [];
+  const resolvedStates: string[] = [];
   for (const [state, category] of Object.entries(stateCategories)) {
     if (removedOnly.has(state)) continue;
-    const seen = categoriesSeen.get(state);
-    // A Removed category alongside Completed doesn't make the name open: the
-    // Removed items are filtered out per item anyway.
-    const isClosed =
-      seen && seen.size > 0
-        ? [...seen].every((c) => c === 'Completed' || c === 'Removed') && seen.has('Completed')
-        : category === 'Completed';
-    (isClosed ? closedStates : openStates).push(state);
+    // Resolved is tested first: a name every type calls Resolved must not be
+    // windowed, and it can never also be agreed Completed.
+    if (agreedOn(state, category, 'Resolved')) resolvedStates.push(state);
+    else if (agreedOn(state, category, 'Completed')) closedStates.push(state);
+    else openStates.push(state);
   }
-  return { closedStates, openStates };
+  return { closedStates, openStates, resolvedStates };
 }
 
 /** Whether this item's state is Removed *for this item's own project and type*. */
@@ -3062,24 +3079,30 @@ export class AzureDevOpsService {
       discoveryComplete
     );
 
-    // Resolved states are fetched with the active ones, not in the 7-day
-    // window: a resolved item still awaits verification (#436).
-    const { closedStates: doneStates, openStates: activeStates } = partitionStandupStates(
+    // Resolved states get a query of their own with no date floor: a resolved
+    // item awaits verification, so it stays until somebody closes it (#436,
+    // #518).
+    const {
+      closedStates: doneStates,
+      openStates: activeStates,
+      resolvedStates,
+    } = partitionStandupStates(
       stateCategories,
       removedOnly,
       categoriesByProjectType,
       discoveryComplete
     );
 
-    // Either list can be empty, for example when no state name is Completed
+    // Any list can be empty, for example when no state name is Completed
     // for every type. Each query runs only when it has states to match.
-    if (doneStates.length === 0 && activeStates.length === 0) {
+    if (doneStates.length === 0 && activeStates.length === 0 && resolvedStates.length === 0) {
       return { items: [] };
     }
 
     const escapeState = (s: string) => s.replace(/'/g, "''");
     const doneStatesList = doneStates.map((s) => `'${escapeState(s)}'`).join(', ');
     const activeStatesList = activeStates.map((s) => `'${escapeState(s)}'`).join(', ');
+    const resolvedStatesList = resolvedStates.map((s) => `'${escapeState(s)}'`).join(', ');
 
     // Only show actionable work item types (exclude Epic, Feature, User Story)
     const allowedTypes = ['Task', 'Bug', 'Enhancement', 'Question', 'Issue', 'Risk'];
@@ -3127,6 +3150,20 @@ export class AzureDevOpsService {
       `,
     };
 
+    // Query 3: Resolved items, with no date floor. These are waiting on a
+    // person, so age is a reason to show them rather than to hide them (#518).
+    // Unbounded by design: the column is a work queue, and one long enough to
+    // strain this query is itself the thing the board needs to make visible.
+    const resolvedQuery = {
+      query: `
+        SELECT ${fields}
+        FROM WorkItems
+        WHERE [System.State] IN (${resolvedStatesList})
+          AND [System.WorkItemType] IN (${allowedTypesList})
+        ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
+      `,
+    };
+
     // Execute the WIQL queries in parallel at org level
     const runQuery = async (query: { query: string }, label: string): Promise<number[]> => {
       const response = await fetch(`${this.baseUrl}/_apis/wit/wiql?api-version=7.0`, {
@@ -3141,26 +3178,33 @@ export class AzureDevOpsService {
       return data.workItems?.map((wi: { id: number }) => wi.id) || [];
     };
 
-    const [doneIds, activeIds] = await Promise.all([
+    const [doneIds, activeIds, resolvedIds] = await Promise.all([
       doneStates.length > 0 ? runQuery(doneQuery, 'done') : Promise.resolve([]),
       activeStates.length > 0 ? runQuery(activeQuery, 'active') : Promise.resolve([]),
+      resolvedStates.length > 0 ? runQuery(resolvedQuery, 'resolved') : Promise.resolve([]),
     ]);
 
     // Combine IDs and batch-fetch in one pass — saves a round-trip when the
     // total fits in a single 200-item batch (the common case).
-    const items = await this.fetchWorkItemBatch([...doneIds, ...activeIds]);
-    const activeIdSet = new Set(activeIds);
+    const items = await this.fetchWorkItemBatch([...doneIds, ...activeIds, ...resolvedIds]);
+    // The 90-day query can carry an item that is Completed for its own type,
+    // so its ids are checked against the 7-day window below. The resolved
+    // query's ids cannot be — a name only reaches it when every type agrees it
+    // is Resolved — so including them is belt and braces, there to stay
+    // correct if that rule is ever loosened rather than to catch anything
+    // today. No test covers it, because nothing can reach it.
+    const unwindowedIds = new Set([...activeIds, ...resolvedIds]);
 
     // The precise half of the Removed filter. Here each item carries its own
     // project and type, so the ambiguous state names the query let through can
     // finally be judged correctly (#277). The same goes for closed items the
-    // 90-day query let through: they keep only the 7-day window (#436).
+    // other queries let through: they keep only the 7-day window (#436).
     return {
       items: items.filter(
         (item) =>
           !isRemovedItem(item, stateCategories, categoriesByProjectType) &&
           !(
-            activeIdSet.has(item.id) &&
+            unwindowedIds.has(item.id) &&
             isOutsideClosedWindow(item, sevenDaysAgoStr, nextDayStr, categoriesByProjectType)
           )
       ),
