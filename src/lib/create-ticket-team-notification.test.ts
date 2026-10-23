@@ -165,4 +165,40 @@ describe('POST /api/devops/tickets — support team email (#7369)', () => {
     expect(response.status).toBe(200);
     expect((await response.json()).success).toBe(true);
   });
+
+  // The Kanban board posts `asTicket: false` to raise an internal work item.
+  // It carries no 'ticket' tag, never reaches the Tickets screen and is not
+  // SLA tracked, so mailing the whole support team about it would announce a
+  // ticket that does not exist -- and bury the real ones in planning noise.
+  it('says nothing to the team about an internal work item', async () => {
+    const response = await post({
+      project: 'Internal',
+      title: 'Rework the board columns',
+      asTicket: false,
+    });
+
+    expect(response.status).toBe(200);
+    expect(sendNewTicketNotification).not.toHaveBeenCalled();
+  });
+
+  it('still tells the team when asTicket is passed explicitly true', async () => {
+    // Only `false` opts out, so the dialog's own `asTicket: !isKanbanContext`
+    // keeps notifying from every other screen.
+    await post({ project: 'Internal', title: 'Printer', asTicket: true });
+
+    expect(sendNewTicketNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('still assigns and notifies the assignee of an internal work item', async () => {
+    // Only the team broadcast is gated. Somebody given a work item still
+    // needs to hear about it.
+    createTicketWithAssignee.mockResolvedValue(
+      createdWorkItem({ id: 'u2', displayName: 'Rowan Blake', uniqueName: 'rowan@example.test' })
+    );
+
+    await post({ project: 'Internal', title: 'Rework', assignee: 'u2', asTicket: false });
+
+    expect(sendAssignmentNotification).toHaveBeenCalledTimes(1);
+    expect(sendNewTicketNotification).not.toHaveBeenCalled();
+  });
 });

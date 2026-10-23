@@ -260,7 +260,15 @@ export async function POST(request: NextRequest) {
     // The person who raised it is excluded: they know. So is the assignee,
     // who is getting the assignment email just above and does not need two
     // messages about the same ticket.
-    const teamRecipients = supportTeamRecipients([session.user?.email, assigneeEmail]);
+    //
+    // Only tickets. The Kanban board posts `asTicket: false` to raise an
+    // internal work item, which carries no 'ticket' tag and is deliberately
+    // outside the Tickets screen and SLA tracking -- so announcing one to the
+    // whole support team as a new ticket would be wrong twice over, and #523
+    // asks for tickets.
+    const teamRecipients = tagAsTicket
+      ? supportTeamRecipients([session.user?.email, assigneeEmail])
+      : [];
     if (teamRecipients.length > 0) {
       // Fire-and-forget: the ticket exists, and a failed notification must not
       // turn a successful creation into an error.
