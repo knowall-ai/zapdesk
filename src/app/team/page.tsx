@@ -20,15 +20,18 @@ import { ActivityCalendar, type Activity as CalendarActivity } from 'react-activ
 import { Tooltip } from 'react-tooltip';
 import type { TeamMember, TeamStats } from '@/types';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
+import FailedProjectsNotice from '@/components/common/FailedProjectsNotice';
 
 interface TeamData {
   members: TeamMember[];
   stats: TeamStats;
+  failedProjects?: string[];
 }
 
 interface ActivityData {
   activities: CalendarActivity[];
   totalActivities: number;
+  failedProjects?: string[];
 }
 
 type SortColumn =
@@ -97,15 +100,34 @@ export default function TeamPage() {
         if (isCurrent()) setTeamData(data);
       } else {
         const errorData = await response.json().catch(() => ({}));
-        if (isCurrent()) setError(errorData.error || 'Failed to load team data');
+        if (isCurrent()) {
+          // The error renders beside the stat cards, not instead of them, so
+          // leaving the old figures there would show them under the message
+          // saying they could not be loaded.
+          setTeamData(null);
+          setError(errorData.error || 'Failed to load team data');
+        }
       }
     } catch (err) {
       console.error('Failed to fetch team data:', err);
-      if (isCurrent()) setError('Unable to connect to the server. Please try again.');
+      if (isCurrent()) {
+        setTeamData(null);
+        setError('Unable to connect to the server. Please try again.');
+      }
     } finally {
       if (isCurrent()) setLoading(false);
     }
   }, [ticketsOnly, timePeriod, org]);
+
+  // Drop the previous organisation's answers the moment the organisation
+  // changes. Both fetches only ever write on success, so without this the old
+  // org's figures stay on screen while the new ones load -- and stay for good
+  // if the new request fails, naming a project that belongs to a different
+  // organisation entirely. Raised by CodeRabbit on #520.
+  useEffect(() => {
+    setTeamData(null);
+    setActivityData(null);
+  }, [org]);
 
   const fetchActivityData = useCallback(async () => {
     const request = ++activityRequest.current;
@@ -122,9 +144,14 @@ export default function TeamPage() {
       if (response.ok) {
         const data = await response.json();
         if (isCurrent()) setActivityData(data);
+      } else if (isCurrent()) {
+        // No error state is rendered for the calendar, so a failure used to
+        // leave the previous answer in place, failed-project names included.
+        setActivityData(null);
       }
     } catch (err) {
       console.error('Failed to fetch activity data:', err);
+      if (isCurrent()) setActivityData(null);
     } finally {
       if (isCurrent()) setActivityLoading(false);
     }
@@ -288,6 +315,19 @@ export default function TeamPage() {
             </button>
           </div>
         </div>
+
+        {/* Every count below is short by whatever a failed project holds, which
+            reads as someone having done less work than they did (#516). */}
+        <FailedProjectsNotice
+          projects={[
+            ...new Set([
+              ...(teamData?.failedProjects ?? []),
+              ...(activityData?.failedProjects ?? []),
+            ]),
+          ]}
+          subject="These figures"
+          className="mb-4"
+        />
 
         {/* Stats cards */}
         <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">

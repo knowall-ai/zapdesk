@@ -6,6 +6,7 @@ import { loginHref } from '@/lib/login-redirect';
 import { useEffect, useRef, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { Avatar, LoadingSpinner } from '@/components/common';
+import FailedProjectsNotice from '@/components/common/FailedProjectsNotice';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { Search, Plus, Upload, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
@@ -24,6 +25,7 @@ export default function UsersPage() {
   const router = useRouter();
   const { selectedOrganization, isLoading: organizationsLoading } = useOrganization();
   const [users, setUsers] = useState<Customer[]>([]);
+  const [failedProjects, setFailedProjects] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [domainFilter, setDomainFilter] = useState<string>('all');
@@ -53,6 +55,7 @@ export default function UsersPage() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), USERS_TIMEOUT_MS);
     setUsers([]);
+    setFailedProjects([]);
     setLoading(true);
 
     (async () => {
@@ -70,6 +73,7 @@ export default function UsersPage() {
               lastUpdated: c.lastUpdated ? new Date(c.lastUpdated) : undefined,
             }))
           );
+          setFailedProjects(data.failedProjects ?? []);
         }
       } catch (error) {
         if (current) console.error('Failed to fetch users:', error);
@@ -206,6 +210,10 @@ export default function UsersPage() {
             </button>
           </div>
         </div>
+
+        {/* A project that failed to load contributes no requesters, so the list
+            is short without looking short (#516). */}
+        <FailedProjectsNotice projects={failedProjects} subject="These users" className="mb-4" />
 
         {/* Search and filters */}
         <div className="mb-6 flex flex-wrap items-center gap-4">

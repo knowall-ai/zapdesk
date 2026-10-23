@@ -43,6 +43,9 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  // Projects whose work items the search could not read, so "no results" can
+  // be told apart from "no results in what I could read" (#516).
+  const [searchFailedProjects, setSearchFailedProjects] = useState<string[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
@@ -53,29 +56,59 @@ export default function Header({ onMenuClick }: HeaderProps) {
   useEffect(() => {
     if (searchQuery.length < 2) {
       setSearchResults([]);
+      setSearchFailedProjects([]);
       setShowSearchResults(false);
+      // A request may be in flight and about to be aborted below, and its
+      // `finally` will not run for an aborted fetch -- so clear the spinner
+      // here rather than leave it turning over an emptied box.
+      setIsSearching(false);
       return;
     }
-    if (!hasOrganization) return;
+    if (!hasOrganization) {
+      setIsSearching(false);
+      return;
+    }
+
+    // The warning belongs to the query that produced it. Dropping it as soon
+    // as the query changes covers every way the next request can fail to
+    // replace it -- still in flight, non-OK, or thrown -- rather than only the
+    // one path. Raised by CodeRabbit on #520.
+    setSearchFailedProjects([]);
+
+    // Clearing the timeout only cancels a debounce that has not fired yet.
+    // Once the request is away, nothing stopped its response from arriving
+    // after a later query's and restoring the earlier query's results and
+    // warning under the newer text. Aborting both drops that response and
+    // saves the round trip. Raised by CodeRabbit on #520.
+    const controller = new AbortController();
 
     const timeoutId = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const response = await getDevOps(`/api/devops/search?q=${encodeURIComponent(searchQuery)}`);
+        const response = await getDevOps(
+          `/api/devops/search?q=${encodeURIComponent(searchQuery)}`,
+          { signal: controller.signal }
+        );
         if (response.ok) {
           const data = await response.json();
           setSearchResults(data.results || []);
+          setSearchFailedProjects(data.failedProjects ?? []);
           setShowSearchResults(true);
           setSelectedIndex(-1);
         }
       } catch (error) {
+        // An abort is this search being superseded, not a failure.
+        if ((error as Error)?.name === 'AbortError') return;
         console.error('Search failed:', error);
       } finally {
-        setIsSearching(false);
+        if (!controller.signal.aborted) setIsSearching(false);
       }
     }, 300);
 
-    return () => clearTimeout(timeoutId);
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [searchQuery, getDevOps, hasOrganization]);
 
   // Keyboard shortcut (Cmd/Ctrl+K)
@@ -193,7 +226,14 @@ export default function Header({ onMenuClick }: HeaderProps) {
             >
               {searchResults.length === 0 ? (
                 <div className="px-4 py-3 text-sm" style={{ color: 'var(--text-muted)' }}>
-                  No results found for &quot;{searchQuery}&quot;
+                  {searchFailedProjects.length > 0 ? (
+                    <>
+                      No results found for &quot;{searchQuery}&quot; in the projects that could be
+                      searched. Could not search {searchFailedProjects.join(', ')}.
+                    </>
+                  ) : (
+                    <>No results found for &quot;{searchQuery}&quot;</>
+                  )}
                 </div>
               ) : (
                 <>
@@ -240,6 +280,16 @@ export default function Header({ onMenuClick }: HeaderProps) {
                       </span>
                     </Link>
                   ))}
+                  {searchFailedProjects.length > 0 && (
+                    // With results on screen the list looks complete, so say
+                    // what is missing from it (#516).
+                    <p
+                      className="mt-2 border-t px-4 py-2 text-xs"
+                      style={{ borderColor: 'var(--border)', color: 'var(--warning)' }}
+                    >
+                      Could not search {searchFailedProjects.join(', ')}, so there may be more.
+                    </p>
+                  )}
                   <div
                     className="mt-2 border-t px-4 py-2 text-xs"
                     style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
