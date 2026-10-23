@@ -242,14 +242,19 @@ describe('getStandupData query flow', () => {
   // Completed for their own type (#436). This is the reachable half of that
   // filter -- an item from the resolved query cannot be Completed for its own
   // type, because a name only escapes the window when every type agrees.
+  //
+  // Both items sit inside the 90-day window on purpose. A disputed name is
+  // not exempt from that floor -- only a name every type agrees is Resolved
+  // reaches the query with no floor -- so dating them earlier would assert on
+  // a pair the real query could never return.
   it('trims a disputed name per item: Resolved for one type, windowed for the other', async () => {
     const perType = {
       A: { Task: { Done: 'Resolved' } },
       B: { Bug: { Done: 'Completed' } },
     };
     stubDevOps({ Done: [1, 2] }, [
-      workItem(1, 'Done', '2026-02-04T10:00:00Z', 'Task', 'A'),
-      workItem(2, 'Done', '2026-02-04T10:00:00Z', 'Bug', 'B'),
+      workItem(1, 'Done', '2026-09-01T10:00:00Z', 'Task', 'A'),
+      workItem(2, 'Done', '2026-09-01T10:00:00Z', 'Bug', 'B'),
     ]);
 
     const { items } = await new AzureDevOpsService('token', 'org').getStandupData(
@@ -258,8 +263,9 @@ describe('getStandupData query flow', () => {
       perType
     );
 
-    // The Task is Resolved for its type and stays however old; the Bug is
-    // Completed for its type and fell out of the 7-day window.
+    // Both reached the batch. The Task is Resolved for its type, so the
+    // 7-day window does not apply to it; the Bug is Completed for its type
+    // and 2026-09-01 is outside that window, so it is trimmed.
     expect(items.map((item) => item.id)).toEqual([1]);
   });
 
