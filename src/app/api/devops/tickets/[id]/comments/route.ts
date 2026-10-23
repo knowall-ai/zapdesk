@@ -3,6 +3,14 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService, claimsEmailOrigin } from '@/lib/devops';
 import { isEmailTicket, extractRequesterEmail, sendAgentReply } from '@/lib/email';
+import {
+  MAX_WORK_ITEM_ID,
+  MAX_COMMENT_LENGTH,
+  validateJsonObject,
+  rejectUnknownKeys,
+  validateRequiredString,
+  validateOptionalBoolean,
+} from '@/lib/devops-request-validation';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -20,9 +28,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id } = await params;
+    if (!/^[0-9]+$/.test(id)) {
+      return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
+    }
     const ticketId = parseInt(id, 10);
-
-    if (isNaN(ticketId)) {
+    if (ticketId <= 0 || ticketId > MAX_WORK_ITEM_ID) {
       return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
     }
 
@@ -64,18 +74,47 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id } = await params;
+    if (!/^[0-9]+$/.test(id)) {
+      return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
+    }
     const ticketId = parseInt(id, 10);
-
-    if (isNaN(ticketId)) {
+    if (ticketId <= 0 || ticketId > MAX_WORK_ITEM_ID) {
       return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
     }
 
-    const body = await request.json();
-    const { comment, isInternal } = body;
-
-    if (typeof comment !== 'string' || comment.trim() === '') {
-      return NextResponse.json({ error: 'Comment is required' }, { status: 400 });
+    let rawBody: unknown;
+    try {
+      rawBody = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Request body must be JSON' }, { status: 400 });
     }
+
+    const bodyResult = validateJsonObject(rawBody);
+    if (!bodyResult.ok) {
+      return NextResponse.json({ error: bodyResult.error }, { status: bodyResult.status });
+    }
+
+    const keysResult = rejectUnknownKeys(bodyResult.data, ['comment', 'isInternal']);
+    if (!keysResult.ok) {
+      return NextResponse.json({ error: keysResult.error }, { status: keysResult.status });
+    }
+
+    const { comment: rawComment, isInternal: rawIsInternal } = bodyResult.data;
+
+    const commentResult = validateRequiredString(rawComment, 'comment', MAX_COMMENT_LENGTH);
+    if (!commentResult.ok) {
+      return NextResponse.json({ error: commentResult.error }, { status: commentResult.status });
+    }
+    const comment = commentResult.data;
+
+    const isInternalResult = validateOptionalBoolean(rawIsInternal, 'isInternal');
+    if (!isInternalResult.ok) {
+      return NextResponse.json(
+        { error: isInternalResult.error },
+        { status: isInternalResult.status }
+      );
+    }
+    const isInternal = isInternalResult.data;
 
     // The author shown against a comment is read from an email-origin marker in
     // its own text, so a caller able to write that marker could post under
