@@ -58,9 +58,16 @@ export default function Header({ onMenuClick }: HeaderProps) {
       setSearchResults([]);
       setSearchFailedProjects([]);
       setShowSearchResults(false);
+      // A request may be in flight and about to be aborted below, and its
+      // `finally` will not run for an aborted fetch -- so clear the spinner
+      // here rather than leave it turning over an emptied box.
+      setIsSearching(false);
       return;
     }
-    if (!hasOrganization) return;
+    if (!hasOrganization) {
+      setIsSearching(false);
+      return;
+    }
 
     // The warning belongs to the query that produced it. Dropping it as soon
     // as the query changes covers every way the next request can fail to
@@ -68,10 +75,20 @@ export default function Header({ onMenuClick }: HeaderProps) {
     // one path. Raised by CodeRabbit on #520.
     setSearchFailedProjects([]);
 
+    // Clearing the timeout only cancels a debounce that has not fired yet.
+    // Once the request is away, nothing stopped its response from arriving
+    // after a later query's and restoring the earlier query's results and
+    // warning under the newer text. Aborting both drops that response and
+    // saves the round trip. Raised by CodeRabbit on #520.
+    const controller = new AbortController();
+
     const timeoutId = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const response = await getDevOps(`/api/devops/search?q=${encodeURIComponent(searchQuery)}`);
+        const response = await getDevOps(
+          `/api/devops/search?q=${encodeURIComponent(searchQuery)}`,
+          { signal: controller.signal }
+        );
         if (response.ok) {
           const data = await response.json();
           setSearchResults(data.results || []);
@@ -80,13 +97,18 @@ export default function Header({ onMenuClick }: HeaderProps) {
           setSelectedIndex(-1);
         }
       } catch (error) {
+        // An abort is this search being superseded, not a failure.
+        if ((error as Error)?.name === 'AbortError') return;
         console.error('Search failed:', error);
       } finally {
-        setIsSearching(false);
+        if (!controller.signal.aborted) setIsSearching(false);
       }
     }, 300);
 
-    return () => clearTimeout(timeoutId);
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [searchQuery, getDevOps, hasOrganization]);
 
   // Keyboard shortcut (Cmd/Ctrl+K)
