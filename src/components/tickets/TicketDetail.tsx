@@ -52,6 +52,7 @@ import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
 import SLABadge from '../common/SLABadge';
+import SlaPausedNote from '../common/SlaPausedNote';
 import MentionInput from '../common/MentionInput';
 import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
@@ -1720,6 +1721,11 @@ export default function TicketDetail({
                   SLA Status
                 </label>
                 <SLABadge slaInfo={ticket.slaInfo} variant="full" showLevel />
+                {/* The badge above counts wall-clock time from creation, which
+                    includes any stretch where the ticket was nobody's to move.
+                    The history is already loaded on this screen, so the time
+                    that should not have counted can be stated exactly (7386). */}
+                <SlaPausedNote updates={history} createdAt={ticket.createdAt} />
               </div>
             )}
 
