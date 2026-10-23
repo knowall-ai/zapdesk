@@ -9,6 +9,7 @@
 
 import { getProjectFromEmail } from '@/lib/devops';
 import { devOpsOrgOrDefault } from './devops-org';
+import { supportTeamRecipients } from '@/lib/support-team';
 import {
   isOwnSender,
   isPolledMailbox,
@@ -311,13 +312,8 @@ export function renderForNotification(storedHtml: string): string {
  */
 function supportTeamFallback(): string | null {
   // One address or several (#485): a group, a distribution list, or people.
-  const team = parseAddressList(process.env.SUPPORT_TEAM_NOTIFY_EMAIL).filter((address) => {
-    if (!isPolledMailbox(address)) return true;
-    console.error(
-      `[Notify] SUPPORT_TEAM_NOTIFY_EMAIL includes ${address}, the mailbox ZapDesk polls — ignoring it, because notifying it would loop.`
-    );
-    return false;
-  });
+  // Shared with the in-app create path, which has the same rules (#7369).
+  const team = supportTeamRecipients([]);
   return team.length > 0 ? team.join(', ') : null;
 }
 
