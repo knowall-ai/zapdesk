@@ -64,6 +64,42 @@ it again.
 * `AZURE_DEVOPS_ORG` is only a default for server-side work such as email
   ingest. People pick their Azure DevOps organisation in the header.
 
+=== Approving an organisation
+
+Installing ZapDesk is open to any organisation, but only organisations
+KnowAll has approved can use it. Anyone signed in from another tenant sees a
+"Your organisation isn't set up on ZapDesk yet" page with a *Request access*
+button (an email to hello@knowall.ai with their tenant ID filled in) and
+nothing else: no tickets, no navigation, and every API route answers 403. An
+admin who has just installed ZapDesk for an unapproved tenant lands on the
+same page, marked "Installed, pending approval".
+
+These tenants are approved:
+
+* the KnowAll tenant, always;
+* `AZURE_AD_TENANT_ID`, the tenant running this ZapDesk, when it is a tenant ID
+  rather than `common` or `organizations`;
+* every tenant ID in `APPROVED_TENANT_IDS` (comma-separated GUIDs, any case).
+
+A sign-in with no tenant ID (`tid` claim) is never approved.
+
+To approve an organisation:
+
+. Take the tenant ID from their access request email, or from the
+  "not set up yet" page they saw.
+. In the Azure portal, open the ZapDesk App Service, then *Settings* >
+  *Environment variables*, and add the ID to `APPROVED_TENANT_IDS`, separated
+  from the others by a comma. Keep the IDs already there.
+. Apply. The App Service restarts, and their people can use ZapDesk at once;
+  nobody needs to sign in again.
+
+Removing an ID locks that organisation out on its next request.
+
+Guests invited into the KnowAll tenant (B2B) are approved when they sign in
+through it. With `AZURE_AD_MULTI_TENANT=true`, sign-in goes through each
+person's home tenant, so a guest from an unapproved organisation is treated as
+that organisation.
+
 == Azure DevOps Configuration
 
 === Personal Access Token (PAT)
@@ -178,6 +214,9 @@ Configure these secrets in your GitHub repository for the CI/CD pipeline:
 
 |`AZURE_AD_TENANT_ID`
 |Azure AD Directory (tenant) ID
+
+|`APPROVED_TENANT_IDS`
+|Comma-separated tenant IDs of the organisations approved to use ZapDesk, besides KnowAll and `AZURE_AD_TENANT_ID`. See <<Approving an organisation>>.
 
 |`AZURE_DEVOPS_PAT`
 |Azure DevOps Personal Access Token

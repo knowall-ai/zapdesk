@@ -125,6 +125,12 @@
 |**/install says "That install link has expired"**
 |The admin took more than ten minutes on Microsoft's page, or finished in another browser. Start again from `/install` in the same browser.
 
+|**Someone signs in and only sees "Your organisation isn't set up on ZapDesk yet"**
+|Their tenant is not approved. Add the tenant ID shown on that page to `APPROVED_TENANT_IDS` in the App Service configuration (comma-separated, keep the existing IDs) and apply. See _Approving an organisation_ in `SETUP.adoc`.
+
+|**An admin installed ZapDesk and sees "Installed, pending approval"**
+|The install worked, but the organisation is not approved yet. Approve it as above; the admin does not need to install again.
+
 |**Someone from another organisation gets `AADSTS50020` or `AADSTS700016` at sign-in**
 |The app registration is still single-tenant. Set *Supported account types* to multitenant. Their admin must also have installed ZapDesk from `/install`.
 

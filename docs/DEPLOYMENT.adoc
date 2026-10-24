@@ -91,6 +91,9 @@ Set the following environment variables in Azure App Service > Configuration:
 |`AZURE_AD_TENANT_ID`
 |common (for multi-tenant)
 
+|`APPROVED_TENANT_IDS`
+|<comma-separated tenant IDs of approved organisations>
+
 |`AZURE_DEVOPS_ORG`
 |KnowAll
 
