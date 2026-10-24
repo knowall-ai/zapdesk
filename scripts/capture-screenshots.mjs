@@ -137,8 +137,11 @@ const shots = [
       const button = page.locator(`button[role="radio"]:has-text("${range}d")`).first();
       if ((await button.count()) && (await button.getAttribute('aria-checked')) !== 'true') {
         await button.click();
-        await spinnersGone(page);
       }
+      await page
+        .locator('text=Loading pull requests…')
+        .waitFor({ state: 'hidden', timeout: 60000 })
+        .catch(() => {});
       await heading.evaluate((el) => el.scrollIntoView({ block: 'start' }));
       await page.evaluate(() => window.scrollBy(0, -24));
     },
