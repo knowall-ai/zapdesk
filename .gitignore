@@ -58,3 +58,6 @@ email-preview.html
 azure/**/local.settings.json
 azure/**/node_modules/
 azure/**/dist/
+
+# Local output of scripts/capture-screenshots.mjs
+screenshots/
