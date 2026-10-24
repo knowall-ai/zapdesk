@@ -71,7 +71,7 @@ KnowAll has approved can use it. Anyone signed in from another tenant sees a
 "Your organisation isn't set up on ZapDesk yet" page with a *Request access*
 button (a pre-filled email to KnowAll with their tenant ID) and nothing else:
 no tickets and no navigation. Every protected API route answers 403; only the
-sign-in and sign-out routes (`/login`, `/api/auth/*`), the install flow
+`/not-approved` page itself, the sign-in and sign-out routes (`/login`, `/api/auth/*`), the install flow
 (`/install`, `/api/install/*`, whose callback sends an unapproved admin to
 `/not-approved`) and the inbound webhooks (`/api/email/*`,
 `/api/github/webhook`) stay open. An admin who has just installed ZapDesk for
@@ -99,12 +99,15 @@ To approve an organisation:
 
 Removing an ID locks that organisation out on its next request.
 
-Guests invited into the KnowAll tenant (B2B) are approved when they sign in
-through it. With `AZURE_AD_MULTI_TENANT=true`, sign-in goes through the
-`organizations` endpoint, so a B2B guest signs in as their home organisation
-and their token carries their home tenant's `tid`, not the inviting tenant's.
-Being a guest in an approved tenant is not enough: to let such a guest in,
-approve their home tenant by adding its ID to `APPROVED_TENANT_IDS`.
+Approval is decided by the tenant ID (`tid`) in the person's token, and which
+tenant that is depends on where they sign in. Guests invited into the KnowAll
+tenant (B2B) who sign in through it get KnowAll's `tid` and are approved. With
+`AZURE_AD_MULTI_TENANT=true`, ZapDesk signs everyone in through the
+`organizations` endpoint, which resolves a B2B guest to their home
+organisation, so their token carries their home tenant's `tid` rather than the
+inviting tenant's. Being a guest in an approved tenant is then not enough: to
+let such a guest in, approve their home tenant by adding its ID to
+`APPROVED_TENANT_IDS`.
 
 == Azure DevOps Configuration
 

@@ -15,12 +15,17 @@
  * - listed in `APPROVED_TENANT_IDS` (comma-separated GUIDs).
  *
  * A missing or malformed `tid` is never approved: there is no default tenant
- * to fall back to. Under `AZURE_AD_MULTI_TENANT=true` a B2B guest's token
- * carries their home tenant's `tid`, so it is the home tenant that must be
- * approved.
+ * to fall back to. The check uses the token's `tid`, which depends on where
+ * the person signed in: a B2B guest signing in through KnowAll gets KnowAll's,
+ * but under `AZURE_AD_MULTI_TENANT=true` sign-in uses the `organizations`
+ * endpoint, which issues the guest's home tenant `tid`, so that home tenant is
+ * the one to approve.
  */
 
-/** KnowAll AI's own Entra tenant. Guests invited into it (B2B) sign in through it. */
+/**
+ * KnowAll AI's own Entra tenant. Guests invited into it (B2B) who sign in
+ * through it carry its `tid`; see the note above for multi-tenant sign-in.
+ */
 export const KNOWALL_TENANT_ID = 'f36f6414-cb7d-4545-9cf2-7574f7b5c584';
 
 /** Where an unapproved organisation is sent. */

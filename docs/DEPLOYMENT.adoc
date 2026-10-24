@@ -91,6 +91,9 @@ Set the following environment variables in Azure App Service > Configuration:
 |`AZURE_AD_TENANT_ID`
 |<your tenant ID (a GUID), even for multi-tenant; `common` would not approve your own tenant>
 
+|`AZURE_AD_MULTI_TENANT`
+|`true` to let other organisations install ZapDesk and sign in (multi-tenant app registration needed); omit for a single tenant. See _Letting other organisations install ZapDesk_ in `SETUP.adoc`.
+
 |`APPROVED_TENANT_IDS`
 |<comma-separated tenant IDs of approved organisations; set here only, the deploy workflow does not manage it>
 
