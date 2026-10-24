@@ -79,7 +79,9 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   // Render per request so Next can stamp each page's scripts with the CSP
-  // nonce from src/proxy.ts; a prerendered page would carry no nonce.
+  // nonce from src/proxy.ts. This costs the static shells of /login and
+  // /install, but a prerendered page would carry no nonce and the strict
+  // script-src would then block its own bootstrap scripts.
   await connection();
 
   return (

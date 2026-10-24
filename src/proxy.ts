@@ -18,8 +18,8 @@ import {
  *    requests pass through unchanged: pages and routes already handle those
  *    (401, or the sign-in page).
  * 2. A per-request nonce CSP on pages, following the Next 16 CSP guide. Next
- *    reads the nonce from the request's CSP header and stamps it on its own
- *    scripts; the root layout opts into dynamic rendering so every page gets a
+ *    reads the nonce from the request's Content-Security-Policy header (nothing
+ *    else is needed) and stamps it on its own scripts; the root layout opts into dynamic rendering so every page gets a
  *    fresh one. API routes get a fixed `default-src 'none'` policy from
  *    next.config.ts, prefetches don't render a document, and static files need
  *    no CSP.
@@ -66,7 +66,6 @@ function withPageCsp(request: NextRequest) {
   const csp = buildPageCsp(nonce);
 
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set('x-nonce', nonce);
   requestHeaders.set('Content-Security-Policy', csp);
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });

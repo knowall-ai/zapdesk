@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BASELINE_SECURITY_HEADERS, buildPageCsp } from './security-headers';
+import { API_CSP, BASELINE_SECURITY_HEADERS, buildPageCsp } from './security-headers';
 
 describe('buildPageCsp', () => {
   it('allows scripts only by nonce in production', () => {
@@ -12,11 +12,23 @@ describe('buildPageCsp', () => {
     expect(csp).toContain('upgrade-insecure-requests');
   });
 
+  it('lets images come from any HTTPS host, as the HTML sanitiser does', () => {
+    const csp = buildPageCsp('abc123', false);
+    const imgSrc = csp.split('; ').find((d) => d.startsWith('img-src'));
+    expect(imgSrc).toBe("img-src 'self' blob: data: https:");
+  });
+
   it('adds only what the dev server needs in development', () => {
     const csp = buildPageCsp('abc123', true);
     expect(csp).toContain("'unsafe-eval'");
     expect(csp).toContain("connect-src 'self' ws: wss:");
     expect(csp).not.toContain('upgrade-insecure-requests');
+  });
+});
+
+describe('API_CSP', () => {
+  it('gives API responses no sources and no framing', () => {
+    expect(API_CSP).toBe("default-src 'none'; frame-ancestors 'none'");
   });
 });
 
