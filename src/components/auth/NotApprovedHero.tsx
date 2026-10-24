@@ -59,7 +59,7 @@ export default function NotApprovedHero({
       <section className="flex flex-1 items-end px-6 pt-[40vh] pb-12 lg:items-center lg:px-16 lg:pt-0 lg:pb-16">
         <div className="max-w-xl">
           <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-[#22c55e]/40 bg-[#22c55e]/10 px-3 py-1 text-xs font-medium tracking-wide text-[#4ade80] uppercase">
-            {installed ? 'Installed, pending approval' : 'Awaiting approval'}
+            Awaiting approval
           </p>
           <h1 className="text-4xl leading-[1.05] font-bold tracking-tight sm:text-5xl lg:text-6xl">
             Your organisation isn&apos;t set up on {APP} yet.
@@ -67,7 +67,7 @@ export default function NotApprovedHero({
           <p className="mt-5 max-w-lg text-base text-gray-300 sm:text-lg">
             {installed
               ? 'Thanks for installing ZapDesk. KnowAll approves each organisation before its people can sign in, so drop us a line and we will switch you on.'
-              : 'ZapDesk is open to organisations KnowAll has approved. Drop us a line and we will get you set up.'}
+              : 'ZapDesk is open to organisations KnowAll has approved. Get in touch and we’ll set yours up.'}
           </p>
 
           <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-4">

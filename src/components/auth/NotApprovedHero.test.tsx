@@ -74,7 +74,8 @@ describe('NotApprovedHero', () => {
         email={null}
       />
     );
-    expect(screen.getByText('Installed, pending approval')).toBeTruthy();
+    expect(screen.getByText('Awaiting approval')).toBeTruthy();
+    expect(screen.getByText(/Thanks for installing ZapDesk/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Back to sign in' }).getAttribute('href')).toBe(
       '/login'
     );

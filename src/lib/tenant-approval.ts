@@ -77,12 +77,14 @@ export function accessRequestMailto({
   const body = [
     `Hello KnowAll,`,
     ``,
-    `Please approve our organisation for ${app}.`,
+    `Please could you set up our organisation on ${app}?`,
     ``,
     `App: ${app}`,
-    `Organisation: ${organisation || 'unknown'}`,
-    `Tenant ID: ${tenantId || 'unknown'}`,
-    `Email: ${email || 'unknown'}`,
+    `Organisation: ${organisation || 'Unknown'}`,
+    `Tenant ID: ${tenantId || 'Unknown'}`,
+    `Email: ${email || 'Unknown'}`,
+    ``,
+    `Thank you`,
   ].join('\n');
   const params = [
     `subject=${encodeURIComponent(`${app} access request`)}`,

@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 /**
  * Shown to people whose organisation KnowAll has not approved (see
  * src/lib/tenant-approval.ts), and to admins who have just installed ZapDesk
- * for one ("installed, pending approval").
+ * for one (the "thanks for installing" variant).
  */
 export default async function NotApprovedPage({
   searchParams,
