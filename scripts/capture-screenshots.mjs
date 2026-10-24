@@ -127,14 +127,18 @@ const shots = [
     prepare: (page) => chooseRange(page, range),
   },
   {
-    name: 'reporting-pull-requests',
-    path: '/reporting',
-    ready: 'h2:has-text("Ticket Volume")',
+    name: 'team-pull-requests',
+    path: '/team',
+    ready: 'h2:has-text("Team Members")',
     prepare: async (page) => {
-      await chooseRange(page, range);
       // Bring the Pull Requests card to the top of the viewport
       const heading = page.locator('h2:has-text("Pull Requests")').first();
       if (!(await heading.count())) throw new Error('No Pull Requests card on this build');
+      const button = page.locator(`button[role="radio"]:has-text("${range}d")`).first();
+      if ((await button.count()) && (await button.getAttribute('aria-checked')) !== 'true') {
+        await button.click();
+        await spinnersGone(page);
+      }
       await heading.evaluate((el) => el.scrollIntoView({ block: 'start' }));
       await page.evaluate(() => window.scrollBy(0, -24));
     },
@@ -241,8 +245,8 @@ async function captureScreenshots() {
       await page.addStyleTag({ content: HIDE_CSS });
       if (shot.prepare) await shot.prepare(page);
 
-      // Let charts and transitions finish
-      await page.waitForTimeout(1000);
+      // Let charts and transitions finish (recharts draws a line over 1.5s)
+      await page.waitForTimeout(2000);
 
       // Bring the tab to the front so the browser paints it (see above)
       await page.bringToFront();
