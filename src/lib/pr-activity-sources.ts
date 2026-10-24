@@ -30,7 +30,7 @@ export function sourcesRequested(value: string | null): {
 /**
  * Pull requests opened, pushed to or merged since `since`, from Azure DevOps
  * and from GitHub (#483), merged and newest first. Shared by the Kanban
- * activity summary and the Live Dashboard history chart, so both follow the
+ * activity summary and the Team page's history chart, so both follow the
  * header toggle the same way.
  */
 export async function collectPullRequests(

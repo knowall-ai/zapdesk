@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { PullRequestChart } from './PullRequestChart';
 
-// The Live Dashboard's pull request chart: what it says while loading and
+// The Team page's pull request chart: what it says while loading and
 // when the period is quiet. The bars themselves are Recharts' business and
 // need a measured container, which jsdom does not give.
 
@@ -15,7 +15,7 @@ describe('PullRequestChart', () => {
     expect(screen.getByText('Loading pull requests…')).toBeTruthy();
   });
 
-  it('says so when every bucket is empty, rather than drawing a blank axis', () => {
+  it('says so when every bucket is empty, rather than drawing a flat line', () => {
     render(
       <PullRequestChart
         data={[

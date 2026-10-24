@@ -169,7 +169,7 @@ ZapDesk is a customer support ticketing portal that provides a Zendesk-like expe
 
 |`/api/devops/pr-history`
 |GET
-|Pull requests opened or merged in the last `?days=` (7, 30, 90 or 365), for the Live Dashboard chart; `?sources=` as above
+|Pull requests opened or merged in the last `?days=` (7, 30, 90 or 365), for the Team page's Pull Requests chart; `?sources=` as above
 
 |`/api/devops/organizations`
 |GET

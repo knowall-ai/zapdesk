@@ -9,7 +9,7 @@ import type { PullRequestActivityResponse } from '@/types';
 
 /**
  * Pull requests opened or merged in the last `?days=` (7, 30, 90 or 365; 30
- * when absent), for the Live Dashboard's pull request chart.
+ * when absent), for the Team page's pull request chart.
  *
  * The Kanban board's `pr-activity` route looks back a week at most, because
  * its job is "what happened since the last stand-up". This one answers "how

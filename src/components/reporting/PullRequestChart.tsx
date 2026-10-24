@@ -1,8 +1,8 @@
 'use client';
 
 import {
-  BarChart,
-  Bar,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -18,10 +18,14 @@ interface PullRequestChartProps {
   loading?: boolean;
 }
 
+const OPENED = '#3b82f6';
+const MERGED = '#22c55e';
+
 /**
- * Pull requests opened and merged per day, week or month on the Live
- * Dashboard. Same shape and palette as the ticket volume chart beside it, so
- * the page reads as one system: blue for new work, green for finished.
+ * Pull requests opened and merged over time on the Team page, as two
+ * smoothed lines with a faint fill, so the rhythm of the work reads as rises
+ * and dips rather than a picket fence of bars. Same palette as the ticket
+ * charts: blue for new work, green for finished.
  */
 export function PullRequestChart({ data, loading = false }: PullRequestChartProps) {
   if (loading) {
@@ -42,7 +46,17 @@ export function PullRequestChart({ data, loading = false }: PullRequestChartProp
 
   return (
     <ResponsiveContainer width="100%" height={300}>
-      <BarChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+      <AreaChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="pr-opened-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={OPENED} stopOpacity={0.3} />
+            <stop offset="100%" stopColor={OPENED} stopOpacity={0} />
+          </linearGradient>
+          <linearGradient id="pr-merged-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={MERGED} stopOpacity={0.3} />
+            <stop offset="100%" stopColor={MERGED} stopOpacity={0} />
+          </linearGradient>
+        </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
         <XAxis
           dataKey="label"
@@ -59,7 +73,7 @@ export function PullRequestChart({ data, loading = false }: PullRequestChartProp
           tickLine={false}
         />
         <Tooltip
-          cursor={{ fill: 'var(--surface-hover)' }}
+          cursor={{ stroke: 'var(--border)' }}
           contentStyle={{
             backgroundColor: 'var(--surface)',
             border: '1px solid var(--border)',
@@ -68,9 +82,27 @@ export function PullRequestChart({ data, loading = false }: PullRequestChartProp
           }}
         />
         <Legend wrapperStyle={{ color: 'var(--text-secondary)', fontSize: 12 }} />
-        <Bar dataKey="opened" name="Opened" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-        <Bar dataKey="merged" name="Merged" fill="#22c55e" radius={[4, 4, 0, 0]} />
-      </BarChart>
+        <Area
+          type="monotone"
+          dataKey="opened"
+          name="Opened"
+          stroke={OPENED}
+          strokeWidth={2}
+          fill="url(#pr-opened-fill)"
+          dot={false}
+          activeDot={{ r: 4 }}
+        />
+        <Area
+          type="monotone"
+          dataKey="merged"
+          name="Merged"
+          stroke={MERGED}
+          strokeWidth={2}
+          fill="url(#pr-merged-fill)"
+          dot={false}
+          activeDot={{ r: 4 }}
+        />
+      </AreaChart>
     </ResponsiveContainer>
   );
 }

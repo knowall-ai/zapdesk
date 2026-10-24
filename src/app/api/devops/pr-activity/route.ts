@@ -19,7 +19,7 @@ import type { PullRequestActivityResponse } from '@/types';
  * or `?sources=github` follows the header toggle, anything else is both.
  * GitHub pull requests come from the repositories mapped to the projects the
  * user can see, with each author shown as their DevOps person. The collection
- * itself is shared with the Live Dashboard's `pr-history` route.
+ * itself is shared with the Team page's `pr-history` route.
  */
 export async function GET(request: NextRequest) {
   try {
