@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { connection } from 'next/server';
 import { Toaster } from 'sonner';
 import SessionProvider from '@/components/providers/SessionProvider';
 import OrganizationProvider from '@/components/providers/OrganizationProvider';
@@ -71,11 +72,15 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Render per request so Next can stamp each page's scripts with the CSP
+  // nonce from src/proxy.ts; a prerendered page would carry no nonce.
+  await connection();
+
   return (
     <html lang="en" className="dark">
       <body className="antialiased">
