@@ -9,12 +9,15 @@
  *
  * A tenant is approved when its id (the `tid` claim) is:
  * - the KnowAll tenant,
- * - the tenant running this ZapDesk (`AZURE_AD_TENANT_ID`), so a single-tenant
+ * - the tenant running this ZapDesk (`AZURE_AD_TENANT_ID`), but only when that
+ *   is a GUID (`common`/`organizations` approve nothing), so a single-tenant
  *   install keeps working, or
  * - listed in `APPROVED_TENANT_IDS` (comma-separated GUIDs).
  *
  * A missing or malformed `tid` is never approved: there is no default tenant
- * to fall back to.
+ * to fall back to. Under `AZURE_AD_MULTI_TENANT=true` a B2B guest's token
+ * carries their home tenant's `tid`, so it is the home tenant that must be
+ * approved.
  */
 
 /** KnowAll AI's own Entra tenant. Guests invited into it (B2B) sign in through it. */

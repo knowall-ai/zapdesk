@@ -89,10 +89,10 @@ Set the following environment variables in Azure App Service > Configuration:
 |<from-azure-ad-app>
 
 |`AZURE_AD_TENANT_ID`
-|common (for multi-tenant)
+|<your tenant ID (a GUID), even for multi-tenant; `common` would not approve your own tenant>
 
 |`APPROVED_TENANT_IDS`
-|<comma-separated tenant IDs of approved organisations>
+|<comma-separated tenant IDs of approved organisations; set here only, the deploy workflow does not manage it>
 
 |`AZURE_DEVOPS_ORG`
 |KnowAll
