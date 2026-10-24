@@ -28,8 +28,13 @@ This repository is public. Capture from the **KnowAllTest** demo organization (A
 ```bash
 node scripts/capture-screenshots.mjs --org KnowAllTest
 
-# Only some shots, with the Live Dashboard on 90 days and GitHub work items only
-node scripts/capture-screenshots.mjs --org KnowAllTest --only reporting --range 90 --source github
+# Only some shots, zoomed out, with the Live Dashboard on 90 days and GitHub work items only
+node scripts/capture-screenshots.mjs --org KnowAllTest --only reporting --range 90 --source github --zoom 0.67
+
+# From another machine: forward the dev server out and your browser's debug port back
+ssh -L 3102:localhost:3102 -R 9222:localhost:9222 <dev-machine>
+# then run the browser locally as above, and on the dev machine pass --cdp-url "http://[::1]:9222"
+# (the reverse forward listens on the IPv6 loopback when the IPv4 port is taken)
 ```
 
 ### Options
@@ -56,6 +61,8 @@ The script exits non-zero if any shot fails and prints the `--only` list to retr
 | `team.png`      | `/team`      | Team activity and members                  |
 | `projects.png`  | `/projects`  | Projects with their SLA and email settings |
 | `users.png`     | `/users`     | Users across the organization's projects   |
+
+The Team and Users shots show staff names and email addresses. Do not attach those to a public pull request or issue.
 
 ## Troubleshooting
 

@@ -8,17 +8,17 @@
 //
 // Usage:
 //   node scripts/capture-screenshots.mjs --org KnowAllTest \
-//     [--only tickets,reporting] [--range 30] [--source github] \
+//     [--only tickets,reporting] [--range 30] [--source github] [--zoom 0.67] \
 //     [--base-url http://localhost:3102] [--out screenshots]
 //
 // Every option can also come from an environment variable:
-//   ZAPDESK_ORG, ZAPDESK_ONLY, ZAPDESK_RANGE, ZAPDESK_SOURCE, ZAPDESK_BASE_URL,
-//   ZAPDESK_OUT, CDP_URL
+//   ZAPDESK_ORG, ZAPDESK_ONLY, ZAPDESK_RANGE, ZAPDESK_SOURCE, ZAPDESK_ZOOM,
+//   ZAPDESK_BASE_URL, ZAPDESK_OUT, CDP_URL
 //
 // The repository is public, so capture from the KnowAllTest demo organization
 // (ABC Inc, Contoso Ltd, DEF Inc...). Never capture a real client's project.
 import { chromium } from 'playwright';
-import { mkdir } from 'fs/promises';
+import { mkdir, writeFile } from 'fs/promises';
 import { parseArgs } from 'util';
 
 const VIEWPORT = { width: 1280, height: 720 };
@@ -31,6 +31,7 @@ const { values: args } = parseArgs({
     only: { type: 'string' },
     range: { type: 'string' },
     source: { type: 'string' },
+    zoom: { type: 'string' },
     'base-url': { type: 'string' },
     'cdp-url': { type: 'string' },
     out: { type: 'string' },
@@ -41,7 +42,7 @@ const { values: args } = parseArgs({
 if (args.help) {
   console.log(
     'Usage: node scripts/capture-screenshots.mjs --org <organization> [--only <name,name>] ' +
-      '[--range <7|30|90|365>] [--source <both|devops|github>] [--base-url <url>] ' +
+      '[--range <7|30|90|365>] [--source <both|devops|github>] [--zoom <0.5-1>] [--base-url <url>] ' +
       '[--cdp-url <url>] [--out <dir>]'
   );
   process.exit(0);
@@ -54,6 +55,7 @@ const only = (args.only ?? process.env.ZAPDESK_ONLY ?? '')
   .filter(Boolean);
 const range = args.range ?? process.env.ZAPDESK_RANGE ?? '30';
 const source = (args.source ?? process.env.ZAPDESK_SOURCE ?? 'both').toLowerCase();
+const zoom = Number(args.zoom ?? process.env.ZAPDESK_ZOOM ?? '1');
 const baseUrl = (
   args['base-url'] ??
   process.env.ZAPDESK_BASE_URL ??
@@ -70,6 +72,10 @@ if (!organization) {
 }
 if (!RANGES.includes(range)) {
   console.error(`--range must be one of ${RANGES.join(', ')}, not "${range}"`);
+  process.exit(1);
+}
+if (!(zoom >= 0.5 && zoom <= 1)) {
+  console.error(`--zoom must be between 0.5 and 1, not "${args.zoom ?? process.env.ZAPDESK_ZOOM}"`);
   process.exit(1);
 }
 if (!SOURCES.includes(source)) {
@@ -119,6 +125,19 @@ const shots = [
     path: '/reporting',
     ready: 'h2:has-text("Ticket Volume")',
     prepare: (page) => chooseRange(page, range),
+  },
+  {
+    name: 'reporting-pull-requests',
+    path: '/reporting',
+    ready: 'h2:has-text("Ticket Volume")',
+    prepare: async (page) => {
+      await chooseRange(page, range);
+      // Bring the Pull Requests card to the top of the viewport
+      const heading = page.locator('h2:has-text("Pull Requests")').first();
+      if (!(await heading.count())) throw new Error('No Pull Requests card on this build');
+      await heading.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+      await page.evaluate(() => window.scrollBy(0, -24));
+    },
   },
   {
     name: 'team',
@@ -182,8 +201,24 @@ async function captureScreenshots() {
     await dialog.dismiss().catch(() => {});
   });
 
-  await page.setViewportSize(VIEWPORT);
-  console.log(`✓ Viewport set to ${VIEWPORT.width}x${VIEWPORT.height}`);
+  // Zooming out shows more of a page in the same 1280x720 image: lay the page
+  // out on a larger viewport and capture it scaled back down.
+  const viewport = {
+    width: Math.round(VIEWPORT.width / zoom),
+    height: Math.round(VIEWPORT.height / zoom),
+  };
+  await page.setViewportSize(viewport);
+  const cdp = await context.newCDPSession(page);
+  // Pin one device pixel per CSS pixel: the clip scale below is multiplied by
+  // the screen's own density otherwise, and a HiDPI screen would give 2x files
+  await cdp.send('Emulation.setDeviceMetricsOverride', {
+    ...viewport,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  console.log(
+    `✓ Viewport set to ${VIEWPORT.width}x${VIEWPORT.height} at ${Math.round(zoom * 100)}% zoom`
+  );
 
   await mkdir(outputDir, { recursive: true });
 
@@ -212,8 +247,13 @@ async function captureScreenshots() {
       // Bring the tab to the front so the browser paints it (see above)
       await page.bringToFront();
       const filename = `${outputDir}/${shot.name}.png`;
-      // scale: 'css' keeps the file at 1280x720 on HiDPI screens
-      await page.screenshot({ path: filename, scale: 'css' });
+      // Capture through the protocol directly: its clip scale ignores the
+      // screen's own pixel density, so the file is 1280x720 whatever the zoom
+      const { data } = await cdp.send('Page.captureScreenshot', {
+        format: 'png',
+        clip: { x: 0, y: 0, width: viewport.width, height: viewport.height, scale: zoom },
+      });
+      await writeFile(filename, Buffer.from(data, 'base64'));
       console.log(`✓ Saved ${filename}`);
     } catch (err) {
       console.error(`✗ ${shot.name}: ${err.message.split('\n')[0]}`);
@@ -222,7 +262,9 @@ async function captureScreenshots() {
   }
 
   await page.close();
-  // Leave the browser open; we only attached to it
+  // Disconnect (the browser itself stays open; we only attached to it) so the
+  // script can exit.
+  await browser.close();
   console.log(`\nScreenshots saved to ${outputDir}/`);
   if (failed.length) {
     console.error(`Failed: ${failed.join(', ')}. Retry with --only ${failed.join(',')}`);
