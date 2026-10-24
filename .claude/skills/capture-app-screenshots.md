@@ -53,14 +53,15 @@ The script exits non-zero if any shot fails and prints the `--only` list to retr
 
 ## Shots
 
-| Filename        | Page         | What it shows                              |
-| --------------- | ------------ | ------------------------------------------ |
-| `tickets.png`   | `/tickets`   | The ticket list for the default view       |
-| `kanban.png`    | `/kanban`    | The Kanban board grouped by project        |
-| `reporting.png` | `/reporting` | The Live Dashboard on the chosen range     |
-| `team.png`      | `/team`      | Team activity and members                  |
-| `projects.png`  | `/projects`  | Projects with their SLA and email settings |
-| `users.png`     | `/users`     | Users across the organization's projects   |
+| Filename                 | Page         | What it shows                                                         |
+| ------------------------ | ------------ | --------------------------------------------------------------------- |
+| `tickets.png`            | `/tickets`   | The ticket list for the default view                                  |
+| `kanban.png`             | `/kanban`    | The Kanban board grouped by project                                   |
+| `reporting.png`          | `/reporting` | The Live Dashboard on the chosen range                                |
+| `team-pull-requests.png` | `/team`      | The Team page scrolled to the Pull Requests card, on the chosen range |
+| `team.png`               | `/team`      | Team activity and members                                             |
+| `projects.png`           | `/projects`  | Projects with their SLA and email settings                            |
+| `users.png`              | `/users`     | Users across the organization's projects                              |
 
 The Team and Users shots show staff names and email addresses. Do not attach those to a public pull request or issue.
 
