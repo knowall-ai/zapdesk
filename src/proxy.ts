@@ -1,22 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { NOT_APPROVED_PATH, isOpenPath, isTenantApproved } from '@/lib/tenant-approval';
-
-const PUBLIC_FILE = /\.[a-z0-9]+$/i;
+import {
+  NOT_APPROVED_PATH,
+  isOpenPath,
+  isPublicFile,
+  isTenantApproved,
+} from '@/lib/tenant-approval';
 
 /**
  * Approved organisations only (see src/lib/tenant-approval.ts).
  *
- * Someone signed in from a tenant that is not approved gets 403 from every API
- * route and is sent to `/not-approved` from every page. Signed-out requests
+ * Someone signed in from a tenant that is not approved gets 403 from every
+ * protected API route and is sent to `/not-approved` from every page; the
+ * sign-in, install and webhook paths in `isOpenPath` stay open. Signed-out requests
  * pass through unchanged: pages and routes already handle those (401, or the
  * sign-in page).
  */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  // Files from /public (images, icons). API paths are always checked, even
-  // ones that end in a file name.
-  if (!pathname.startsWith('/api/') && PUBLIC_FILE.test(pathname)) {
+  // Real static files only (/public and the app icons). Anything else that
+  // merely ends in a file name, such as /tickets/42.png, is still checked.
+  if (isPublicFile(pathname)) {
     return NextResponse.next();
   }
 

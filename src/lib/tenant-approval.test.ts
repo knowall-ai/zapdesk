@@ -3,6 +3,7 @@ import {
   KNOWALL_TENANT_ID,
   accessRequestMailto,
   isOpenPath,
+  isPublicFile,
   isTenantApproved,
   notApprovedView,
   organisationLabel,
@@ -106,6 +107,37 @@ describe('open paths', () => {
       '/loginx',
     ]) {
       expect(isOpenPath(path), path).toBe(false);
+    }
+  });
+});
+
+describe('public files', () => {
+  it('matches the static files in /public and the app icons', () => {
+    for (const path of [
+      '/og-image.png',
+      '/favicon.ico',
+      '/icon.svg',
+      '/apple-touch-icon.png',
+      '/favicon-16x16.png',
+      '/assets/not-approved-hero.png',
+      '/email/zapdesk-logo.png',
+    ]) {
+      expect(isPublicFile(path), path).toBe(true);
+    }
+  });
+
+  it('does not match routes that merely end in a file name', () => {
+    for (const path of [
+      '/tickets/42.png',
+      '/tickets/42/attachment.svg',
+      '/api/og-image.png',
+      '/api/devops/tickets.png',
+      '/assets/../tickets/42.png',
+      '/projects/x/icon.svg',
+      '/reporting.json',
+      '/tickets',
+    ]) {
+      expect(isPublicFile(path), path).toBe(false);
     }
   });
 });

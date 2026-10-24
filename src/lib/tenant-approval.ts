@@ -112,6 +112,18 @@ export function isOpenPath(pathname: string): boolean {
   return OPEN_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
+/**
+ * Static files the proxy lets through unchecked: an image or icon at the root
+ * (public/*.png, favicon.ico, the app icons) or under public/assets and
+ * public/email. A route that only ends in a file name (`/tickets/42.png`,
+ * `/api/x.svg`) is not one of them.
+ */
+const PUBLIC_FILE = /^\/(?:assets\/|email\/)?[\w-]+(?:\.[\w-]+)*\.(?:png|svg|ico|jpe?g|webp|gif)$/i;
+
+export function isPublicFile(pathname: string): boolean {
+  return PUBLIC_FILE.test(pathname);
+}
+
 export type NotApprovedView =
   | { redirect: string }
   | {

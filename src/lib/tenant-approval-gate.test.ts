@@ -135,6 +135,14 @@ describe('proxy', () => {
       expect((await proxyFor(path, STRANGER)).status, path).toBe(200);
     }
     expect((await proxyFor('/og-image.png', STRANGER)).status).toBe(200);
+    expect((await proxyFor('/assets/not-approved-hero.png', STRANGER)).status).toBe(200);
+  });
+
+  it('does not let a page route through just because it ends in a file name', async () => {
+    expect((await proxyFor('/tickets/42.png', STRANGER)).headers.get('location')).toBe(
+      'https://zapdesk.test/not-approved'
+    );
+    expect((await proxyFor('/api/devops/tickets.png', STRANGER)).status).toBe(403);
   });
 
   it('leaves signed-out requests to the existing handling', async () => {
