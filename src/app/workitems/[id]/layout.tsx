@@ -1,12 +1,2 @@
-import { notFoundUnlessWorkItemId } from '@/lib/work-item-id';
-
-export default async function WorkItemIdLayout({
-  children,
-  params,
-}: {
-  children: React.ReactNode;
-  params: Promise<{ id: string }>;
-}) {
-  await notFoundUnlessWorkItemId(params);
-  return children;
-}
+// Same guard as /tickets/[id]: a non-numeric id is a real HTTP 404.
+export { default } from '../../tickets/[id]/layout';

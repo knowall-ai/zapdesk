@@ -3,15 +3,15 @@ import { buildPageCsp } from '@/lib/security-headers';
 
 /**
  * Per-request nonce CSP, following the Next 16 CSP guide. Next reads the
- * nonce from the request's CSP header and stamps it on its own scripts; the
- * root layout opts into dynamic rendering so every page gets a fresh one.
+ * nonce from the request's Content-Security-Policy header (nothing else is
+ * needed) and stamps it on its own scripts; the root layout opts into dynamic
+ * rendering so every page gets a fresh one.
  */
 export function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
   const csp = buildPageCsp(nonce);
 
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set('x-nonce', nonce);
   requestHeaders.set('Content-Security-Policy', csp);
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
