@@ -30,7 +30,9 @@ interface Props {
 }
 
 export default function OrganizationProvider({ children }: Props) {
-  const { status } = useSession();
+  const { status: sessionStatus, data: session } = useSession();
+  // An unapproved organisation is signed in but has no data to load
+  const status = session?.tenantApproved === false ? 'unapproved' : sessionStatus;
   const [organizations, setOrganizations] = useState<DevOpsOrganization[]>([]);
   const [selectedOrganization, setSelectedOrgState] = useState<DevOpsOrganization | null>(null);
   const [isLoading, setIsLoading] = useState(false);

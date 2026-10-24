@@ -64,6 +64,51 @@ it again.
 * `AZURE_DEVOPS_ORG` is only a default for server-side work such as email
   ingest. People pick their Azure DevOps organisation in the header.
 
+=== Approving an organisation
+
+Installing ZapDesk is open to any organisation, but only organisations
+KnowAll has approved can use it. Anyone signed in from another tenant sees a
+"Your organisation isn't set up on ZapDesk yet" page with a *Request access*
+button (a pre-filled email to KnowAll with their tenant ID) and nothing else:
+no tickets and no navigation. Every protected API route answers 403; only the
+`/not-approved` page itself, the sign-in and sign-out routes (`/login`, `/api/auth/*`), the install flow
+(`/install`, `/api/install/*`, whose callback sends an unapproved admin to
+`/not-approved`) and the inbound webhooks (`/api/email/*`,
+`/api/github/webhook`) stay open. An admin who has just installed ZapDesk for
+an unapproved tenant lands on the same page, with a thank-you for installing.
+
+These tenants are approved:
+
+* the KnowAll tenant, always;
+* `AZURE_AD_TENANT_ID`, the tenant running this ZapDesk, but only when it is a
+  tenant ID (a GUID). `common` or `organizations` approves no tenant, so set
+  your own tenant ID there or list it in `APPROVED_TENANT_IDS`;
+* every tenant ID in `APPROVED_TENANT_IDS` (comma-separated GUIDs, any case).
+
+A sign-in with no tenant ID (`tid` claim) is never approved.
+
+To approve an organisation:
+
+. Take the tenant ID from their access request email, or from the
+  "not set up yet" page they saw.
+. In the Azure portal, open the ZapDesk App Service, then *Settings* >
+  *Environment variables*, and add the ID to `APPROVED_TENANT_IDS`, separated
+  from the others by a comma. Keep the IDs already there.
+. Apply. The App Service restarts, and their people can use ZapDesk at once;
+  nobody needs to sign in again.
+
+Removing an ID locks that organisation out on its next request.
+
+Approval is decided by the tenant ID (`tid`) in the person's token, and which
+tenant that is depends on where they sign in. Guests invited into the KnowAll
+tenant (B2B) who sign in through it get KnowAll's `tid` and are approved. With
+`AZURE_AD_MULTI_TENANT=true`, ZapDesk signs everyone in through the
+`organizations` endpoint, which resolves a B2B guest to their home
+organisation, so their token carries their home tenant's `tid` rather than the
+inviting tenant's. Being a guest in an approved tenant is then not enough: to
+let such a guest in, approve their home tenant by adding its ID to
+`APPROVED_TENANT_IDS`.
+
 == Azure DevOps Configuration
 
 === Personal Access Token (PAT)
@@ -158,7 +203,10 @@ az webapp config ssl bind \
 
 == GitHub Secrets
 
-Configure these secrets in your GitHub repository for the CI/CD pipeline:
+Configure these secrets in your GitHub repository for the CI/CD pipeline.
+`APPROVED_TENANT_IDS` is not one of them: the deploy workflow does not set it,
+so set it directly in the App Service configuration (see
+<<Approving an organisation>>), where a deploy leaves it untouched.
 
 [cols="1,2"]
 |===

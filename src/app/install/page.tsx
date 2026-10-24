@@ -127,6 +127,10 @@ export default async function InstallPage({
                 center.
               </li>
               <li>Each person still only sees the Azure DevOps projects they have access to.</li>
+              <li>
+                KnowAll approves each organisation before its people can use ZapDesk. Until then
+                they see a page asking you to get in touch.
+              </li>
             </ul>
             <a
               href="/api/install"
