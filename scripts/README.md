@@ -2,6 +2,14 @@
 
 This directory contains utility scripts for the ZapDesk project.
 
+## capture-screenshots.mjs
+
+Takes 1280x720 screenshots of the main pages from a browser you have already signed in to (Chrome or Edge started with `--remote-debugging-port=9222`), because ZapDesk's Microsoft sign-in cannot be scripted. Capture from the KnowAllTest demo organization only. See `.claude/skills/capture-app-screenshots.md` for setup and options.
+
+```bash
+node scripts/capture-screenshots.mjs --org KnowAllTest --only reporting --range 30
+```
+
 ## create-backlog.mjs
 
 Creates a realistic backlog of work items in Azure DevOps for demo/testing purposes. Supports multiple process templates (Agile, Scrum, T-Minus-15) with template-specific work item types and hierarchies.
