@@ -21,8 +21,19 @@ import {
   Zap,
 } from 'lucide-react';
 import { StatusBadge, Avatar } from '@/components/common';
-import { TicketVolumeChart, ResponseTimeChart, TeamPerformanceChart } from '@/components/reporting';
-import type { Ticket as TicketType } from '@/types';
+import {
+  TicketVolumeChart,
+  ResponseTimeChart,
+  TeamPerformanceChart,
+  PullRequestChart,
+} from '@/components/reporting';
+import { useSourceFilter } from '@/components/providers/SourceProvider';
+import { bucketPullRequests, filterBySource } from '@/lib/pr-history';
+import type {
+  PullRequestActivity,
+  PullRequestActivityResponse,
+  Ticket as TicketType,
+} from '@/types';
 import FailedProjectsNotice from '@/components/common/FailedProjectsNotice';
 
 type DateRange = 7 | 30 | 90 | 365;
@@ -61,6 +72,14 @@ export default function LiveDashboardPage() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [dateRange, setDateRange] = useState<DateRange>(365);
+  // Pull requests follow the header's DevOps / GitHub toggle (#447) and the
+  // same date range as the ticket charts. Fetched separately: they come from
+  // a different route with a different lookback.
+  const { sourceFilter, sourceReady } = useSourceFilter();
+  const [pullRequests, setPullRequests] = useState<PullRequestActivity[]>([]);
+  const [pullRequestsSince, setPullRequestsSince] = useState<Date | null>(null);
+  const [pullRequestsFailedProjects, setPullRequestsFailedProjects] = useState<string[]>([]);
+  const [pullRequestsLoading, setPullRequestsLoading] = useState(true);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -164,16 +183,58 @@ export default function LiveDashboardPage() {
     }
   }, [session?.accessToken, hasOrganization, fetchData]);
 
+  const fetchPullRequests = useCallback(async () => {
+    if (!session?.accessToken || !hasOrganization || !sourceReady) return;
+    setPullRequestsLoading(true);
+    try {
+      const sources = sourceFilter === 'both' ? '' : `&sources=${sourceFilter}`;
+      const response = await devOpsGet(`/api/devops/pr-history?days=${dateRange}${sources}`);
+      if (!response.ok) {
+        console.error('Failed to fetch pull request history:', response.status);
+        return;
+      }
+      const data: PullRequestActivityResponse = await response.json();
+      setPullRequests(data.pullRequests);
+      setPullRequestsSince(new Date(data.since));
+      setPullRequestsFailedProjects(data.failedProjects ?? []);
+    } catch (error) {
+      console.error('Failed to fetch pull request history:', error);
+    } finally {
+      setPullRequestsLoading(false);
+    }
+  }, [session?.accessToken, hasOrganization, sourceReady, sourceFilter, dateRange, devOpsGet]);
+
+  useEffect(() => {
+    fetchPullRequests();
+  }, [fetchPullRequests]);
+
   // Auto-refresh every 30 seconds
   useEffect(() => {
     if (!autoRefresh || !session?.accessToken || !hasOrganization) return;
 
     const interval = setInterval(() => {
       fetchData();
+      fetchPullRequests();
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [autoRefresh, session?.accessToken, hasOrganization, fetchData]);
+  }, [autoRefresh, session?.accessToken, hasOrganization, fetchData, fetchPullRequests]);
+
+  // The route already honours `sources`; filtering again keeps the chart
+  // right when the toggle changes before the new response lands.
+  const pullRequestData = useMemo(() => {
+    const now = new Date();
+    const since = pullRequestsSince ?? subDays(now, dateRange);
+    return bucketPullRequests(filterBySource(pullRequests, sourceFilter), since, now, dateRange);
+  }, [pullRequests, pullRequestsSince, sourceFilter, dateRange]);
+  const pullRequestTotals = useMemo(
+    () =>
+      pullRequestData.reduce(
+        (acc, p) => ({ opened: acc.opened + p.opened, merged: acc.merged + p.merged }),
+        { opened: 0, merged: 0 }
+      ),
+    [pullRequestData]
+  );
 
   // Compute chart data from tickets filtered by date range
   const chartData = useMemo(() => {
@@ -460,6 +521,40 @@ export default function LiveDashboardPage() {
                 </div>
                 <div className="p-4">
                   <TeamPerformanceChart data={chartData.teamData} />
+                </div>
+              </div>
+
+              {/* Pull Requests - full width, follows the DevOps / GitHub toggle */}
+              <div className="card mt-4">
+                <div
+                  className="flex items-start justify-between border-b p-4"
+                  style={{ borderColor: 'var(--border)' }}
+                >
+                  <div>
+                    <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      Pull Requests
+                    </h2>
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      Opened vs merged over time
+                      {sourceFilter === 'devops' && ', Azure DevOps only'}
+                      {sourceFilter === 'github' && ', GitHub only'}
+                    </p>
+                  </div>
+                  {!pullRequestsLoading && (
+                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      <span style={{ color: '#3b82f6' }}>{pullRequestTotals.opened} opened</span>
+                      {' · '}
+                      <span style={{ color: '#22c55e' }}>{pullRequestTotals.merged} merged</span>
+                    </p>
+                  )}
+                </div>
+                {pullRequestsFailedProjects.length > 0 && (
+                  <div className="px-4 pt-4">
+                    <FailedProjectsNotice projects={pullRequestsFailedProjects} />
+                  </div>
+                )}
+                <div className="p-4">
+                  <PullRequestChart data={pullRequestData} loading={pullRequestsLoading} />
                 </div>
               </div>
             </div>
