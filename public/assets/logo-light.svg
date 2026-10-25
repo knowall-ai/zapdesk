@@ -1,9 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100" width="400" height="100">
   <defs>
-    <linearGradient id="metalGradientFullLight" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#22c55e" />
-      <stop offset="100%" stop-color="#16a34a" />
-    </linearGradient>
     <linearGradient id="shineGradientFullLight" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#ffffff" stop-opacity="0.2" />
       <stop offset="50%" stop-color="#ffffff" stop-opacity="0" />
@@ -11,18 +7,18 @@
   </defs>
 
   <!-- Icon background -->
-  <rect x="10" y="20" width="60" height="60" rx="8" ry="8" fill="url(#metalGradientFullLight)" />
+  <rect x="10" y="20" width="60" height="60" rx="8" ry="8" fill="#9dff0a" />
   <rect x="10" y="20" width="60" height="60" rx="8" ry="8" fill="url(#shineGradientFullLight)" />
 
   <!-- Lightning bolt (scaled for 60x60 icon) -->
   <polygon
     points="44.69,24.69 25.94,53.28 37.66,53.28 32.97,75.31 54.06,46.25 42.34,46.25"
-    fill="#ffffff"
+    fill="#030712"
   />
 
-  <!-- "ZapDesk" wordmark, single brand green -->
+  <!-- "ZapDesk" wordmark: lime is unreadable on white, so the on-light brand green -->
   <text x="85" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700">
-    <tspan fill="#22c55e">ZapDesk</tspan>
+    <tspan fill="#4d7c0f">ZapDesk</tspan>
   </text>
 
   <!-- Tagline -->
