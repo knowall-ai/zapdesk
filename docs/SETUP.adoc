@@ -126,35 +126,50 @@ az webapp update \
 
 === Custom Domain
 
-. Add CNAME record: `zapdesk` → `zapdesk-knowall.azurewebsites.net`
-. Add custom domain to App Service:
+The public hostname is served by Azure Front Door, which terminates TLS,
+applies the web application firewall, and forwards to the App Service. The
+App Service only accepts traffic from Front Door, so the
+`*.azurewebsites.net` hostname returns 403 to everyone else.
+
+. Create a Front Door profile (Standard tier) with an endpoint, an origin
+  group containing the App Service, and a route for `/*` that forwards to it.
+  Set the origin host header to the App Service hostname
+  (`zapdesk-knowall.azurewebsites.net`); `NEXTAUTH_URL` and `APP_URL` stay on
+  the custom domain.
+. Attach a WAF policy to the endpoint. Custom rules are enough to start:
+  block common scanner paths and the `TRACE` method, and rate-limit to a few
+  hundred requests a minute per IP. The app's own endpoints are well within
+  that: the mailbox poller calls `/api/email/poll` once a minute from one IP.
+. Add the custom domain in Front Door with a managed certificate. Front Door
+  gives you a `_dnsauth.zapdesk` TXT record to prove ownership; add it to DNS
+  and wait for validation.
+. Add the CNAME record: `zapdesk` → `<endpoint>.z01.azurefd.net` (the Front
+  Door endpoint hostname, shown on the endpoint's overview page). Then
+  associate the domain with the route.
+. Lock the App Service to Front Door. Under *Networking → Access
+  restrictions* on the main site, allow the `AzureFrontDoor.Backend` service
+  tag with an `X-Azure-FDID` header filter set to your Front Door profile's
+  ID, and deny everything else. Leave the SCM site on its own rules so
+  deployments keep working. The `X-Azure-FDID` value is deliberately not
+  written in this repository; read it from the Front Door profile's
+  overview page.
 +
 [source,bash]
 ----
-az webapp config hostname add \
-  --webapp-name zapdesk-knowall \
+az afd profile show \
+  --profile-name <frontdoor-profile> \
   --resource-group KnowAllAIRG \
-  --hostname zapdesk.yourdomain.com
+  --query frontDoorId -o tsv
 ----
 
-. Create managed SSL certificate (after DNS propagates):
-+
-[source,bash]
-----
-# Create certificate
-az webapp config ssl create \
-  --name zapdesk-knowall \
-  --resource-group KnowAllAIRG \
-  --hostname zapdesk.yourdomain.com
+. Check that `/`, `/login` and `/api/auth/session` return 200 through the
+  custom domain, that the `*.azurewebsites.net` hostname returns 403, and
+  that `POST /api/email/poll` without the secret returns the app's own 401
+  rather than a WAF block.
 
-# Bind certificate (use thumbprint from previous command)
-az webapp config ssl bind \
-  --name zapdesk-knowall \
-  --resource-group KnowAllAIRG \
-  --hostname zapdesk.yourdomain.com \
-  --certificate-thumbprint <THUMBPRINT> \
-  --ssl-type SNI
-----
+Anything that calls ZapDesk from outside (the mailbox poller, the email
+webhook, the GitHub App webhook) must use the custom domain, never the
+`*.azurewebsites.net` hostname.
 
 == GitHub Secrets
 
