@@ -204,9 +204,11 @@ export function NewTicketModal({
                 }`}
                 style={{
                   backgroundColor:
-                    ticketType === 'Feature' ? 'rgba(34, 197, 94, 0.2)' : 'var(--background)',
-                  color: ticketType === 'Feature' ? 'var(--primary)' : 'var(--text-secondary)',
-                  borderColor: ticketType === 'Feature' ? 'var(--primary)' : 'transparent',
+                    ticketType === 'Feature'
+                      ? 'color-mix(in srgb, var(--color-brand) 20%, transparent)'
+                      : 'var(--background)',
+                  color: ticketType === 'Feature' ? 'var(--color-brand)' : 'var(--text-secondary)',
+                  borderColor: ticketType === 'Feature' ? 'var(--color-brand)' : 'transparent',
                 }}
               >
                 Feature

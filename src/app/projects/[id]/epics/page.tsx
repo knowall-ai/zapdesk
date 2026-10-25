@@ -124,7 +124,7 @@ export default function ProjectEpicsPage() {
     return (
       <MainLayout>
         <div className="flex h-full items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--primary)' }} />
+          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--color-brand)' }} />
         </div>
       </MainLayout>
     );
@@ -149,11 +149,8 @@ export default function ProjectEpicsPage() {
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div
-              className="flex h-10 w-10 items-center justify-center rounded-lg"
-              style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)' }}
-            >
-              <LayoutGrid size={20} style={{ color: 'var(--primary)' }} />
+            <div className="bg-brand/10 flex h-10 w-10 items-center justify-center rounded-lg">
+              <LayoutGrid size={20} style={{ color: 'var(--color-brand)' }} />
             </div>
             <div>
               <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -243,7 +240,7 @@ export default function ProjectEpicsPage() {
                         {selectedEpic?.id === epic.id && (
                           <div
                             className="h-2 w-2 rounded-full"
-                            style={{ backgroundColor: 'var(--primary)' }}
+                            style={{ backgroundColor: 'var(--color-brand)' }}
                           />
                         )}
                       </div>
@@ -309,7 +306,7 @@ export default function ProjectEpicsPage() {
                               style={{
                                 color:
                                   colorScheme === option.value
-                                    ? 'var(--primary)'
+                                    ? 'var(--color-brand)'
                                     : 'var(--text-secondary)',
                               }}
                             >
@@ -325,7 +322,7 @@ export default function ProjectEpicsPage() {
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-1 text-sm"
-                        style={{ color: 'var(--primary)' }}
+                        style={{ color: 'var(--color-brand)' }}
                       >
                         View in DevOps <ExternalLink size={12} />
                       </a>
@@ -372,7 +369,7 @@ export default function ProjectEpicsPage() {
                     <p className="text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
                       Completed
                     </p>
-                    <p className="mt-1 text-2xl font-bold" style={{ color: 'var(--primary)' }}>
+                    <p className="mt-1 text-2xl font-bold" style={{ color: 'var(--color-brand)' }}>
                       {selectedEpic.completedWork || 0}
                     </p>
                     <p className="text-xs" style={{ color: 'var(--text-muted)' }}>

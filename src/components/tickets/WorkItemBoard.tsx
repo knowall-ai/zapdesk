@@ -1013,7 +1013,7 @@ export default function WorkItemBoard({
                       onClick={() => setTicketsOnly(!ticketsOnly)}
                       className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                         ticketsOnly
-                          ? 'bg-[var(--primary)] text-white'
+                          ? 'bg-brand text-brand-foreground'
                           : 'bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                       }`}
                       title={
@@ -1072,7 +1072,9 @@ export default function WorkItemBoard({
                                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
                                 style={{
                                   color:
-                                    groupBy === option ? 'var(--primary)' : 'var(--text-primary)',
+                                    groupBy === option
+                                      ? 'var(--color-brand)'
+                                      : 'var(--text-primary)',
                                 }}
                               >
                                 <Icon size={14} />
@@ -1129,11 +1131,15 @@ export default function WorkItemBoard({
                                 <span
                                   className="flex h-4 w-4 items-center justify-center rounded border"
                                   style={{
-                                    borderColor: shown ? 'var(--primary)' : 'var(--border-light)',
-                                    backgroundColor: shown ? 'var(--primary)' : 'transparent',
+                                    borderColor: shown
+                                      ? 'var(--color-brand)'
+                                      : 'var(--border-light)',
+                                    backgroundColor: shown ? 'var(--color-brand)' : 'transparent',
                                   }}
                                 >
-                                  {shown && <Check size={12} color="white" />}
+                                  {shown && (
+                                    <Check size={12} color="var(--color-brand-foreground)" />
+                                  )}
                                 </span>
                                 {column.label}
                               </button>
@@ -1161,7 +1167,7 @@ export default function WorkItemBoard({
                         onClick={() => setViewMode('list')}
                         className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                           viewMode === 'list'
-                            ? 'bg-[var(--primary)] text-white'
+                            ? 'bg-brand text-brand-foreground'
                             : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                         }`}
                         title="List view"
@@ -1173,7 +1179,7 @@ export default function WorkItemBoard({
                         onClick={() => setViewMode('kanban')}
                         className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                           viewMode === 'kanban'
-                            ? 'bg-[var(--primary)] text-white'
+                            ? 'bg-brand text-brand-foreground'
                             : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                         }`}
                         title="Kanban view"
@@ -1540,7 +1546,7 @@ export default function WorkItemBoard({
                     });
                   }}
                   className="mt-2 text-sm transition-colors hover:underline"
-                  style={{ color: 'var(--primary)' }}
+                  style={{ color: 'var(--color-brand)' }}
                 >
                   Clear all filters
                 </button>

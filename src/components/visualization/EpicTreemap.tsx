@@ -28,8 +28,8 @@ interface TreemapDataItem {
 // Color mappings for different schemes
 const statusColors: Record<string, string> = {
   New: '#3b82f6', // Blue
-  Active: '#22c55e', // Green
-  'In Progress': '#22c55e', // Green
+  Active: 'var(--color-success)', // Green (status)
+  'In Progress': 'var(--color-success)', // Green (status)
   Resolved: '#eab308', // Yellow
   Closed: '#6b7280', // Gray
   Done: '#6b7280', // Gray
@@ -39,14 +39,14 @@ const statusColors: Record<string, string> = {
 const priorityColors: Record<string, string> = {
   Urgent: '#ef4444', // Red
   High: '#f97316', // Orange
-  Normal: '#22c55e', // Green
+  Normal: '#16a34a', // Green (categorical, not the brand)
   Low: '#3b82f6', // Blue
 };
 
 const workItemTypeColors: Record<string, string> = {
   Epic: '#8b5cf6', // Purple
   Feature: '#3b82f6', // Blue
-  'User Story': '#22c55e', // Green
+  'User Story': '#16a34a', // Green (categorical, not the brand)
   Task: '#06b6d4', // Cyan
   Bug: '#ef4444', // Red
   Issue: '#f97316', // Orange
@@ -267,7 +267,7 @@ export function EpicTreemap({ data, colorScheme, onNodeClick }: EpicTreemapProps
             dataKey="size"
             aspectRatio={4 / 3}
             stroke="var(--surface)"
-            fill="var(--primary)"
+            fill="var(--color-brand)"
             content={
               <CustomizedContent
                 x={0}

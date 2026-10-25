@@ -196,7 +196,7 @@ function MonthlyCheckpointContent() {
   if (status === 'loading') {
     return (
       <div className="flex h-screen items-center justify-center">
-        <Loader2 className="animate-spin" size={32} style={{ color: 'var(--primary)' }} />
+        <Loader2 className="animate-spin" size={32} style={{ color: 'var(--color-brand)' }} />
       </div>
     );
   }
@@ -434,7 +434,7 @@ function MonthlyCheckpointContent() {
               <Loader2
                 className="mb-4 animate-spin"
                 size={32}
-                style={{ color: 'var(--primary)' }}
+                style={{ color: 'var(--color-brand)' }}
               />
               <p style={{ color: 'var(--text-muted)' }}>Loading checkpoint data...</p>
             </div>
@@ -530,7 +530,7 @@ export default function MonthlyCheckpointPage() {
     <Suspense
       fallback={
         <div className="flex h-screen items-center justify-center">
-          <Loader2 className="animate-spin" size={32} style={{ color: 'var(--primary)' }} />
+          <Loader2 className="animate-spin" size={32} style={{ color: 'var(--color-brand)' }} />
         </div>
       }
     >

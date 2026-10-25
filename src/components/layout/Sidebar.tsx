@@ -181,7 +181,7 @@ export default function Sidebar({
             <ZapDeskIcon size={32} />
             <span
               className={`text-xl font-semibold ${hideWhenCollapsed}`}
-              style={{ color: 'var(--primary)' }}
+              style={{ color: 'var(--color-brand)' }}
             >
               ZapDesk
             </span>
@@ -286,7 +286,7 @@ export default function Sidebar({
                     href={view.href}
                     className={`flex min-w-0 flex-1 items-center justify-between rounded px-2 py-1.5 text-sm transition-colors ${
                       isActive
-                        ? 'bg-[rgba(34,197,94,0.15)] text-[var(--primary)]'
+                        ? 'bg-brand/15 text-brand'
                         : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
                     }`}
                     onClick={() => onClose?.()}
@@ -296,9 +296,9 @@ export default function Sidebar({
                       <span
                         className={`rounded px-1.5 py-0.5 text-xs font-medium ${
                           isActive
-                            ? 'bg-[var(--primary)] text-white'
+                            ? 'badge-brand'
                             : view.count > 0
-                              ? 'bg-[rgba(34,197,94,0.15)] text-[var(--primary)]'
+                              ? 'badge-brand-subtle'
                               : 'bg-[var(--surface)] text-[var(--text-muted)]'
                         }`}
                       >
@@ -377,7 +377,7 @@ export default function Sidebar({
               href="https://knowall.ai"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-[var(--primary)]"
+              className="hover:text-brand"
               aria-label="KnowAll AI (opens in new tab)"
             >
               KnowAll AI

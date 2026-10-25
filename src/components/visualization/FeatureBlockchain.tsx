@@ -716,7 +716,10 @@ export default function FeatureTimechain({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex shrink-0 items-center gap-1 rounded-lg px-3 py-2 text-sm"
-                style={{ backgroundColor: 'var(--primary)', color: 'white' }}
+                style={{
+                  backgroundColor: 'var(--color-brand)',
+                  color: 'var(--color-brand-foreground)',
+                }}
               >
                 DevOps <ExternalLink size={12} />
               </a>

@@ -180,9 +180,15 @@ When making changes:
 
 ### Modifying Theme Colors
 
-1. Update CSS variables in `src/app/globals.css` under `:root`
-2. Brand color is `--primary` (bright green: #22c55e)
-3. Background is dark theme by default
+1. Brand tokens live in the `@theme static` block of `src/app/globals.css`, named to match the other KnowAll apps:
+   - `--color-brand` (KnowAll luminous green `#9dff0a`), `--color-brand-hover` (`#b4ff3d`, lighter)
+   - `--color-brand-foreground` (gray-950 ink for text/icons on brand fills; never white on lime)
+   - `--color-brand-on-light` (`#4d7c0f`, brand text on white, e.g. email)
+   - `--color-primary` / `--color-primary-foreground` / `--color-ring` alias those
+2. Use `bg-brand`, `text-brand`, `text-brand-foreground`, tints like `bg-brand/15`, or `var(--color-brand)` in inline styles. Shared variants: `.btn-primary`, `.badge-brand`, `.badge-brand-subtle`. Never put a raw brand hex in a component; `src/lib/brand.ts` mirrors the hexes for email and `<meta>` only.
+3. Status green (success / resolved / paid / on track) is `--color-success` (`#22c55e`), not the brand. Bitcoin/Lightning stays `#f7931a`.
+4. Logos: edit colours in `scripts/generate-logo.js`, run it, then `bun run generate-icons` (PNG/ICO) and `bun run scripts/generate-email-assets.mjs`.
+5. Other CSS variables (surfaces, status, text) are under `:root`; the theme is dark by default.
 
 ## Environment Variables
 

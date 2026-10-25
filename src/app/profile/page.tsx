@@ -167,7 +167,7 @@ export default function ProfilePage() {
     return (
       <MainLayout>
         <div className="flex h-full items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--primary)' }} />
+          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--color-brand)' }} />
         </div>
       </MainLayout>
     );

@@ -861,7 +861,7 @@ function StandupPageContent() {
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'project'
-                      ? 'bg-[var(--primary)] text-white'
+                      ? 'bg-brand text-brand-foreground'
                       : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
                   }`}
                   style={{ borderRadius: '0.375rem 0 0 0.375rem' }}
@@ -874,7 +874,7 @@ function StandupPageContent() {
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'person'
-                      ? 'bg-[var(--primary)] text-white'
+                      ? 'bg-brand text-brand-foreground'
                       : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
                   }`}
                   style={{ borderRadius: '0 0.375rem 0.375rem 0' }}
@@ -897,7 +897,7 @@ function StandupPageContent() {
                       scroll: false,
                     })
                   }
-                  className="accent-[var(--primary)]"
+                  className="accent-brand"
                 />
                 Current Sprint
               </label>
@@ -914,7 +914,7 @@ function StandupPageContent() {
                 onClick={() => setLiveUpdate((on) => !on)}
                 className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
                   liveUpdate
-                    ? 'border-transparent bg-[var(--primary)] text-white'
+                    ? 'bg-brand text-brand-foreground border-transparent'
                     : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
                 }`}
                 style={liveUpdate ? undefined : { borderColor: 'var(--border)' }}
@@ -962,7 +962,10 @@ function StandupPageContent() {
               <button
                 onClick={() => fetchStandupData()}
                 className="rounded-md px-4 py-2 text-sm"
-                style={{ backgroundColor: 'var(--primary)', color: 'white' }}
+                style={{
+                  backgroundColor: 'var(--color-brand)',
+                  color: 'var(--color-brand-foreground)',
+                }}
               >
                 Retry
               </button>

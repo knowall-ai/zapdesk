@@ -356,7 +356,7 @@ export default function WorkItemDetailSidebar({
                         style={{
                           color:
                             type.name === workItem.workItemType
-                              ? 'var(--primary)'
+                              ? 'var(--color-brand)'
                               : 'var(--text-primary)',
                           cursor: 'pointer',
                         }}
@@ -477,7 +477,7 @@ export default function WorkItemDetailSidebar({
                   onClick={() => setIsAddingTag(true)}
                   className="flex items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors hover:bg-[var(--surface-hover)]"
                   style={{
-                    color: 'var(--primary)',
+                    color: 'var(--color-brand)',
                     cursor: 'pointer',
                     border: '1px dashed var(--border)',
                   }}

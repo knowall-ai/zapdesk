@@ -317,7 +317,7 @@ export default function LiveDashboardPage() {
       title: 'Avg Response',
       value: stats?.avgResponseTime ?? '-',
       icon: <Zap size={24} />,
-      color: 'var(--primary)',
+      color: 'var(--color-brand)',
       subtitle: 'First response',
     },
   ];
@@ -351,9 +351,12 @@ export default function LiveDashboardPage() {
                     onClick={() => setDateRange(opt.value)}
                     className="px-3 py-1.5 text-xs font-medium transition-colors"
                     style={{
-                      backgroundColor: dateRange === opt.value ? 'var(--primary)' : 'transparent',
+                      backgroundColor:
+                        dateRange === opt.value ? 'var(--color-brand)' : 'transparent',
                       color:
-                        dateRange === opt.value ? 'var(--background)' : 'var(--text-secondary)',
+                        dateRange === opt.value
+                          ? 'var(--color-brand-foreground)'
+                          : 'var(--text-secondary)',
                     }}
                   >
                     {opt.label}
@@ -483,7 +486,7 @@ export default function LiveDashboardPage() {
                 <Link
                   href="/tickets?view=recently-updated"
                   className="flex items-center gap-1 text-sm hover:underline"
-                  style={{ color: 'var(--primary)' }}
+                  style={{ color: 'var(--color-brand)' }}
                 >
                   View all <ArrowUpRight size={14} />
                 </Link>

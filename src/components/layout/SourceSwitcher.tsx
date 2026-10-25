@@ -43,7 +43,7 @@ export default function SourceSwitcher() {
             onClick={() => setSourceFilter(value)}
             className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium transition-colors ${
               selected
-                ? 'bg-[var(--primary)] text-white'
+                ? 'bg-brand text-brand-foreground'
                 : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
             }`}
           >

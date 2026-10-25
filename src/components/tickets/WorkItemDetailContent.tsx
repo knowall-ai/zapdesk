@@ -83,7 +83,7 @@ function ResolutionField({
           <button
             onClick={handleStartEdit}
             className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-            style={{ color: 'var(--primary)' }}
+            style={{ color: 'var(--color-brand)' }}
             title="Edit resolution"
           >
             Edit
@@ -212,7 +212,7 @@ function MitigationField({
                   style={{ color: 'var(--text-muted)' }}
                 />
               ) : (
-                <Check size={12} style={{ color: 'var(--primary)' }} />
+                <Check size={12} style={{ color: 'var(--color-brand)' }} />
               )}
             </button>
             <button
@@ -374,7 +374,7 @@ export default function WorkItemDetailContent({
               <button
                 onClick={handleStartEdit}
                 className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                style={{ color: 'var(--primary)' }}
+                style={{ color: 'var(--color-brand)' }}
                 title="Edit title and description"
               >
                 Edit
