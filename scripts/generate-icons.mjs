@@ -83,6 +83,15 @@ async function generateIcons() {
     console.warn(`Warning: ${ogSvgPath} not found, skipping OG image generation`);
   }
 
+  // Email header logo: the light logo on white (email clients can't render SVG)
+  const logoLightSvg = fs.readFileSync(path.join(publicDir, 'assets', 'logo-light.svg'));
+  await sharp(logoLightSvg, { density: 288 })
+    .resize(480, 120)
+    .flatten({ background: '#ffffff' })
+    .png()
+    .toFile(path.join(publicDir, 'email', 'zapdesk-logo.png'));
+  console.log('Created public/email/zapdesk-logo.png');
+
   console.log('All icons generated successfully!');
 }
 
