@@ -4,6 +4,12 @@
  *
  * ZapDesk is not embedded anywhere (it is not a Teams tab), so framing is
  * denied outright with both `X-Frame-Options` and CSP `frame-ancestors`.
+ *
+ * If the zapdesk-msteams tab (`/teams/my-tickets`) goes live, those routes
+ * must instead send `frame-ancestors` listing the Teams and Microsoft 365
+ * hosts (teams.microsoft.com, *.teams.microsoft.com, *.office.com,
+ * *.cloud.microsoft, *.skype.com) and no `X-Frame-Options`, since that header
+ * cannot allow-list origins. Every other route keeps denying framing.
  */
 
 export const BASELINE_SECURITY_HEADERS: { key: string; value: string }[] = [
