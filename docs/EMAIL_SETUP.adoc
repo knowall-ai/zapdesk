@@ -120,25 +120,29 @@ Customer support project for Acme. Email: acme.com
 Multiple domains can be listed comma-separated. The mapping is cached for
 ~5 minutes; descriptions can be edited at any time.
 
-== GitHub Actions Cron
+== Scheduling the Poll
 
-ZapDesk drives the mailbox poll from a workflow at
-`.github/workflows/email-poll.yml`. Set these *repository* secrets so the
-workflow can call the deployed app:
+Something outside the app has to call `POST /api/email/poll` with the
+`x-webhook-secret` header once a minute. The repository holds two ways of
+doing that, but the live KnowAll AI deployment uses neither:
 
-[cols="1,2"]
-|===
-|Secret |Value
+* *Logic App (what production runs)*: a Consumption Logic App with a
+  one-minute Recurrence trigger and a single HTTP action that POSTs to
+  `https://zapdesk.yourdomain.com/api/email/poll` with the secret header.
+  Run history on the Logic App shows each call and its status code. Use the
+  custom domain, never the `*.azurewebsites.net` hostname: the App Service
+  only accepts traffic through Front Door (see `SETUP.adoc`).
+* *Azure Functions timer* (`azure/email-poll/`): a timer trigger doing the
+  same job, built and tested in CI. See its README for configuration and the
+  Application Insights alert. It is not deployed at present.
+* *GitHub Actions workflow* (`.github/workflows/email-poll.yml`): the original
+  poller. It is disabled; GitHub's schedule floor is five minutes and
+  scheduled workflows stop after 60 days without repository activity.
 
-|`ZAPDESK_BASE_URL`
-|e.g. `https://zapdesk.yourdomain.com`
-
-|`EMAIL_WEBHOOK_SECRET`
-|Same value used by the deployed app
-|===
-
-The workflow runs on a 5-minute schedule by default; tighten the cron
-expression to `* * * * *` if you need lower latency.
+Whichever you pick, *run exactly one*. Each poll lists unread messages and
+only then marks them read, and the endpoint has no concurrency guard, so two
+pollers can file the same email twice. Hand over with a gap, never an
+overlap: unread mail simply waits for the next poll.
 
 == Email Threading
 
