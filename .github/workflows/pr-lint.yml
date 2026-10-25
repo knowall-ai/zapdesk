@@ -39,7 +39,8 @@ jobs:
           #    Bypass prefixes (Fixes line not required):
           #      chore: ... | ci: ... | docs: ... | deps: ... | test: ... | build: ... | style: ...
           #    A trailing "(#nnn)" or "(#nnn, #mmm)" reference is allowed but optional.
-          title_regex='^(feat|fix|perf|refactor|chore|ci|docs|deps|test|build|style): .+'
+          #    An optional conventional-commit scope is allowed: "fix(brand): ...".
+          title_regex='^(feat|fix|perf|refactor|chore|ci|docs|deps|test|build|style)(\([a-z0-9-]+\))?: .+'
           if ! echo "$PR_TITLE" | grep -Eq "$title_regex"; then
             echo "::error::PR title must start with a conventional-commit prefix:"
             echo "::error::  feat: ...     fix: ...     perf: ...     refactor: ..."
@@ -58,7 +59,7 @@ jobs:
 
           # 3. feat/fix/perf/refactor PRs must contain at least one 'Fixes #nnn' line.
           #    Other prefixes (chore/ci/docs/deps/test/build/style) skip this check.
-          if echo "$PR_TITLE" | grep -Eq '^(feat|fix|perf|refactor): '; then
+          if echo "$PR_TITLE" | grep -Eq '^(feat|fix|perf|refactor)(\([a-z0-9-]+\))?: '; then
             fixes_regex='^[[:space:]]*[-*]?[[:space:]]*Fixes #[0-9]+'
             if ! echo "$PR_BODY" | grep -Eq "$fixes_regex"; then
               echo "::error::PR body must contain at least one 'Fixes #nnn' line for feat/fix/perf/refactor PRs."
