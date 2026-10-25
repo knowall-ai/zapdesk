@@ -175,9 +175,9 @@ function generateFullLogoLight(width = 400, height = 100) {
     fill="${COLORS.ink}"
   />
 
-  <!-- "ZapDesk" wordmark: lime is unreadable on white, so the on-light brand green -->
+  <!-- "ZapDesk" wordmark: lime is unreadable on white, so ink; the lime tile carries the brand -->
   <text x="85" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700">
-    <tspan fill="${COLORS.brandOnLight}">ZapDesk</tspan>
+    <tspan fill="${COLORS.ink}">ZapDesk</tspan>
   </text>
 
   <!-- Tagline -->

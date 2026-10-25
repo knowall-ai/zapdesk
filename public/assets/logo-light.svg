@@ -16,9 +16,9 @@
     fill="#030712"
   />
 
-  <!-- "ZapDesk" wordmark: lime is unreadable on white, so the on-light brand green -->
+  <!-- "ZapDesk" wordmark: lime is unreadable on white, so ink; the lime tile carries the brand -->
   <text x="85" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700">
-    <tspan fill="#4d7c0f">ZapDesk</tspan>
+    <tspan fill="#030712">ZapDesk</tspan>
   </text>
 
   <!-- Tagline -->
