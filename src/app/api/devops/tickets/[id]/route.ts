@@ -14,6 +14,7 @@ import {
   sendTicketUpdateNotification,
 } from '@/lib/email';
 import type { TicketFieldChange } from '@/lib/email-templates';
+import { titleProblem } from '@/lib/ticket-title';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -213,6 +214,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'tags must be a list of strings' }, { status: 400 });
     }
 
+    // A ticket has to be called something, and DevOps caps the field. Left to
+    // DevOps, both come back as a 400 naming neither the field nor the limit.
+    // Checked before the project lookup, so bad input costs no DevOps request.
+    if (body.title !== undefined) {
+      const problem =
+        typeof body.title === 'string' ? titleProblem(body.title) : 'A title is required.';
+      if (problem) {
+        return NextResponse.json({ error: problem }, { status: 400 });
+      }
+    }
+
     // Hours must be real, non-negative numbers; DevOps would otherwise reject
     // the whole patch with an error that names none of this. Checked before
     // the project lookup, so bad input costs no DevOps request.
@@ -291,7 +303,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     if (title !== undefined) {
-      updates.title = title;
+      // Trimmed, so trailing whitespace cannot make a title look changed when
+      // it is not, and so the stored title matches what the customer is shown.
+      updates.title = title.trim();
     }
 
     if (description !== undefined) {

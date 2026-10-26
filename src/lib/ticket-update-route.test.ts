@@ -120,6 +120,30 @@ describe('PATCH /api/devops/tickets/[id]', () => {
     );
   });
 
+  it.each(['', '   ', null, 42])('rejects title %j before touching DevOps', async (title) => {
+    const { status } = await patch({ project: 'Internal', title });
+    expect(status).toBe(400);
+    expect(updateTicketFields).not.toHaveBeenCalled();
+  });
+
+  it('rejects a title longer than DevOps accepts, saying what the limit is', async () => {
+    const { status, body } = await patch({ project: 'Internal', title: 'x'.repeat(256) });
+    expect(status).toBe(400);
+    expect(body.error).toContain('255');
+    expect(updateTicketFields).not.toHaveBeenCalled();
+  });
+
+  it('saves a title trimmed, so padding cannot reach DevOps', async () => {
+    updateTicketFields.mockResolvedValue(workItem({ 'System.Title': 'Printer offline' }));
+    const { status } = await patch({ project: 'Internal', title: '  Printer still offline  ' });
+    expect(status).toBe(200);
+    expect(updateTicketFields).toHaveBeenCalledWith(
+      'Internal',
+      7,
+      expect.objectContaining({ title: 'Printer still offline' })
+    );
+  });
+
   it('rejects tags that are not a list instead of skipping them', async () => {
     const { status } = await patch({ project: 'Internal', title: 'New', tags: 'ticket' });
     expect(status).toBe(400);

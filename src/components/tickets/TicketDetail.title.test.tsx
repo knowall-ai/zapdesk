@@ -1,0 +1,158 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import type { Ticket } from '@/types';
+
+/**
+ * Renaming a ticket from the ticket screen (7772). Customers often raise a
+ * ticket with a subject that says nothing, and the title is what every list,
+ * board and email then shows.
+ */
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => '/tickets/7',
+}));
+
+vi.mock('@/hooks/useMentionableUsers', () => ({
+  useMentionableUsers: () => ({ users: [], loading: false }),
+}));
+
+// The screen and its children read the selected organisation; one stub covers
+// all of them without standing up the provider's own fetching.
+vi.mock('@/components/providers/OrganizationProvider', () => ({
+  default: ({ children }: { children: React.ReactNode }) => children,
+  useOrganization: () => ({
+    organizations: [],
+    selectedOrganization: { name: 'KnowAll', id: 'org1' },
+    setSelectedOrganization: () => {},
+    isLoading: false,
+    error: null,
+    refetch: async () => {},
+  }),
+}));
+
+import TicketDetail from './TicketDetail';
+
+const ticket = (overrides: Partial<Ticket> = {}): Ticket =>
+  ({
+    id: 7,
+    workItemId: 7,
+    title: 'FW: question',
+    description: '',
+    status: 'open',
+    devOpsState: 'Active',
+    workItemType: 'Task',
+    requester: {
+      id: 'c1',
+      displayName: 'Dana',
+      email: 'dana@example.test',
+      timezone: 'Europe/London',
+      tags: [],
+    },
+    tags: ['ticket'],
+    createdAt: new Date('2026-10-01T00:00:00Z'),
+    updatedAt: new Date('2026-10-02T00:00:00Z'),
+    devOpsUrl: 'https://dev.azure.test/item/7',
+    project: 'Internal',
+    comments: [],
+    ...overrides,
+  }) as unknown as Ticket;
+
+const show = (onTitleChange?: (title: string) => Promise<void>) =>
+  render(<TicketDetail ticket={ticket()} comments={[]} onTitleChange={onTitleChange} />);
+
+const openEditor = () => fireEvent.click(screen.getByRole('button', { name: 'Edit title' }));
+const input = () => screen.getByRole('textbox', { name: 'Ticket title' });
+const saveButton = () => screen.getByRole('button', { name: /^Save/ });
+
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response('[]', { status: 200 }))
+  );
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+describe('TicketDetail title editing', () => {
+  it('offers no way in when the reader may not rename the ticket', () => {
+    // The screen is shared with views that pass no handler.
+    show();
+    expect(screen.queryByRole('button', { name: 'Edit title' })).toBeNull();
+  });
+
+  it('opens with the current title, ready to be replaced', () => {
+    show(async () => {});
+    openEditor();
+    expect((input() as HTMLInputElement).value).toBe('FW: question');
+  });
+
+  it('saves the new title, trimmed', async () => {
+    const onTitleChange = vi.fn(async () => {});
+    show(onTitleChange);
+    openEditor();
+    fireEvent.change(input(), { target: { value: '  Cannot print from Leeds  ' } });
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(onTitleChange).toHaveBeenCalledWith('Cannot print from Leeds'));
+  });
+
+  it('saves on Enter, so renaming never needs the mouse', async () => {
+    const onTitleChange = vi.fn(async () => {});
+    show(onTitleChange);
+    openEditor();
+    fireEvent.change(input(), { target: { value: 'Cannot print' } });
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    await waitFor(() => expect(onTitleChange).toHaveBeenCalledWith('Cannot print'));
+  });
+
+  it('abandons the edit on Escape without saving', () => {
+    const onTitleChange = vi.fn(async () => {});
+    show(onTitleChange);
+    openEditor();
+    fireEvent.change(input(), { target: { value: 'Something else' } });
+    fireEvent.keyDown(input(), { key: 'Escape' });
+    expect(onTitleChange).not.toHaveBeenCalled();
+    expect(screen.getByText('FW: question')).toBeDefined();
+  });
+
+  it('refuses an empty title and says why, rather than letting the server refuse it', () => {
+    const onTitleChange = vi.fn(async () => {});
+    show(onTitleChange);
+    openEditor();
+    fireEvent.change(input(), { target: { value: '   ' } });
+    expect((saveButton() as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('A title is required.')).toBeDefined();
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    expect(onTitleChange).not.toHaveBeenCalled();
+  });
+
+  it('refuses a title longer than DevOps accepts, saying the limit', () => {
+    show(async () => {});
+    openEditor();
+    fireEvent.change(input(), { target: { value: 'x'.repeat(256) } });
+    expect((saveButton() as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/255 characters or fewer/)).toBeDefined();
+  });
+
+  it('will not save a title nobody changed', () => {
+    show(async () => {});
+    openEditor();
+    expect((saveButton() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('stays open when the save fails, so the typing is not lost', async () => {
+    const onTitleChange = vi.fn(async () => {
+      throw new Error('DevOps said no');
+    });
+    show(onTitleChange);
+    openEditor();
+    fireEvent.change(input(), { target: { value: 'Cannot print' } });
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(onTitleChange).toHaveBeenCalled());
+    expect((input() as HTMLInputElement).value).toBe('Cannot print');
+  });
+});
