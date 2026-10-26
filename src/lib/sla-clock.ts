@@ -85,8 +85,9 @@ export function buildStateTimeline(
  *
  * `now` closes any period the item is still in, so a ticket parked right now
  * keeps accruing paused time rather than counting against its target.
- * Periods are clamped to `[createdAt, now]`, so a clock skew or an out-of-order
- * revision cannot produce negative or future time.
+ * Periods are clamped to end at `now`, and a period that ends before it starts
+ * counts as zero, so clock skew or an out-of-order revision cannot produce
+ * negative or future time.
  */
 export function pausedMillis(
   timeline: readonly StatePeriod[],

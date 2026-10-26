@@ -45,11 +45,26 @@ describe('SlaPausedNote', () => {
   });
 
   it('reports a ticket blocked right now in the present tense', () => {
-    // "Blocked for 8h" and "spent 8h blocked" say different things to someone
+    // "Blocked now" and "spent 8h blocked" say different things to someone
     // deciding whether to chase it.
     show([change(1, 2, 'Active', 'Blocked')], at(10));
 
-    expect(screen.getByRole('note').textContent).toContain('Blocked for 8h');
+    expect(screen.getByRole('note').textContent).toContain('Blocked now, 8h in total');
+  });
+
+  it('calls the figure a total when an earlier stretch is included', () => {
+    // Blocked 1h-3h, picked up, blocked again at 9h. The note must not read as
+    // "this ticket has been stuck for 3h" when the current stretch is only 1h.
+    show(
+      [
+        change(1, 1, 'Active', 'Blocked'),
+        change(2, 3, 'Blocked', 'Active'),
+        change(3, 9, 'Active', 'Blocked'),
+      ],
+      at(10)
+    );
+
+    expect(screen.getByRole('note').textContent).toContain('Blocked now, 3h in total');
   });
 
   it('adds up separate blocked stretches rather than only the last', () => {

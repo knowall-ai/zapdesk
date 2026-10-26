@@ -44,7 +44,7 @@ export default function SlaPausedNote({
       <PauseCircle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
       <span>
         {stillPaused
-          ? `Blocked for ${duration} — the SLA badge above still counts it.`
+          ? `Blocked now, ${duration} in total — the SLA badge above still counts it.`
           : `Spent ${duration} blocked, which the SLA badge above still counts.`}
       </span>
     </p>
