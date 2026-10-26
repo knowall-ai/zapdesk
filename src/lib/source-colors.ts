@@ -5,9 +5,13 @@
  *
  * Each is drawn as a bar down the left edge of the card -- a position nothing
  * else on a card uses, so it cannot be mistaken for the type badge, the
- * priority dot or the highlight ring, even where a hue is close to one of
- * theirs. The hues are the two products' own brand colours, which is the one
- * palette a reader may already recognise without being told.
+ * priority dot or the highlight ring.
+ *
+ * The hues are deliberately not the two products' own brand colours. That was
+ * the intuitive choice and measurably the worst: this board already spends
+ * purple on Enhancement and blue-cyan on Question, so GitHub purple and Azure
+ * blue both landed close to colours a card already wears. `globals.css` has
+ * the measurements and `source-colors.test.ts` holds them to it.
  *
  * As with the activity colours, the colour is never the only signal: a GitHub
  * card also carries the GitHub mark and its `owner/repo#n` reference, a DevOps

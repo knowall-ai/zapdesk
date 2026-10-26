@@ -20,7 +20,11 @@ export default function SourceLegend({ sources, className = '' }: SourceLegendPr
   const shown = (['devops', 'github'] as const).filter((kind) => sources.includes(kind));
   if (shown.length < 2) return null;
   return (
-    <ul className={`flex items-center gap-3 ${className}`} aria-label="Card source colours">
+    <ul
+      className={`flex items-center gap-3 ${className}`}
+      aria-label="Card source colours"
+      data-testid="source-legend"
+    >
       {shown.map((kind) => (
         <li key={kind} className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
           <span

@@ -31,7 +31,12 @@ const highlightLabels: Record<HighlightReason, string> = {
   pr: 'PR',
 };
 
-const typeColors: Record<string, string> = {
+/**
+ * The work item type badge colours, exported so `source-colors.test.ts` can
+ * check the source accents against the colours a card actually wears rather
+ * than against a copy of them that can drift.
+ */
+export const typeColors: Record<string, string> = {
   Bug: '#cc293d',
   Task: '#f2cb1d',
   Enhancement: '#773b93',

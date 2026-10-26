@@ -407,9 +407,17 @@ export default function KanbanBoard({
 
   const boardContent = hasSwimLanes ? swimLaneContent : columnsContent;
 
-  // Which sources the board is actually showing, read off the cards: the
-  // legend is only worth the space once there are two to tell apart (#465).
-  const sourcesOnBoard: SourceKind[] = [...new Set(sourceItems.map((item) => sourceKindOf(item)))];
+  // Which sources the board is actually showing, read off the cards it
+  // renders. In swim lanes those come from `groupedItems`, which the board
+  // above may have built from a different set than `items` -- reading
+  // `sourceItems` there can show a legend the cards contradict. The legend is
+  // only worth the space once there are two to tell apart (#465).
+  const renderedItems: readonly { source?: string }[] = hasSwimLanes
+    ? Object.values(groupedItems).flat()
+    : sourceItems;
+  const sourcesOnBoard: SourceKind[] = [
+    ...new Set(renderedItems.map((item) => sourceKindOf(item))),
+  ];
   const legend = <SourceLegend sources={sourcesOnBoard} className="mb-2 px-1" />;
 
   // ReadOnly mode: just render columns without drag-and-drop

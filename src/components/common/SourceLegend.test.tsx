@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, within } from '@testing-library/react';
 import SourceLegend from './SourceLegend';
 import { SOURCE_LABELS } from '@/lib/source-colors';
 
@@ -30,15 +30,18 @@ describe('SourceLegend', () => {
 
   it('puts the two in a fixed order, whichever order it is given them in', () => {
     // Otherwise the legend reshuffles as cards arrive, which reads as a change
-    // of meaning.
+    // of meaning. Scoped to the legend so a list elsewhere on a board cannot
+    // satisfy or break this.
     render(<SourceLegend sources={['github', 'devops']} />);
-    const names = screen.getAllByRole('listitem').map((li) => li.textContent);
+    const legend = within(screen.getByTestId('source-legend'));
+    const names = legend.getAllByRole('listitem').map((li) => li.textContent);
     expect(names).toEqual([SOURCE_LABELS.devops, SOURCE_LABELS.github]);
   });
 
   it('gives every swatch a name beside it', () => {
     render(<SourceLegend sources={['devops', 'github']} />);
-    for (const item of screen.getAllByRole('listitem')) {
+    const legend = within(screen.getByTestId('source-legend'));
+    for (const item of legend.getAllByRole('listitem')) {
       // One decorative swatch, and text that is not empty.
       expect(item.querySelectorAll('[aria-hidden="true"]')).toHaveLength(1);
       expect(item.textContent?.trim()).toBeTruthy();

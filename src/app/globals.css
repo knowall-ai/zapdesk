@@ -37,8 +37,8 @@
   --pr-badge: #7e22ce;
 
   /* Where a card came from, on the boards that mix both (#465). Drawn only as
-     a bar down a card's left edge, a position no other colour uses, and always
-     with `SourceLegend` saying which is which.
+     a bar down a card's left edge, a position no other colour uses, and, once
+     both sources are on the board, with `SourceLegend` saying which is which.
      Not the two products' brand colours, which was the intuitive choice and
      measurably the worst: the board already spends purple on Enhancement
      (#773b93) and pr-merged, and blue-cyan on Question (#009ccc) and

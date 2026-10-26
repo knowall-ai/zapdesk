@@ -125,6 +125,27 @@ function regroupByPerson(data: StandupData): GroupData[] {
     }));
 }
 
+/**
+ * Which sources have at least one card on the board.
+ *
+ * Read off the cards rather than guessed from the source filter -- the filter
+ * can ask for both while only one has any items, and a legend for a colour
+ * nobody can see is noise (#465). A module-level function rather than inline
+ * work in a `useMemo`, which the React Compiler cannot preserve.
+ */
+function sourceKindsOnBoard(data: StandupData | null): SourceKind[] {
+  const kinds = new Set<SourceKind>();
+  for (const project of data?.projects ?? []) {
+    for (const column of project.columns) {
+      for (const item of column.items) {
+        kinds.add(sourceKindOf(item));
+        if (kinds.size === 2) return [...kinds];
+      }
+    }
+  }
+  return [...kinds];
+}
+
 /** Route entry for the Kanban board; Suspense is required because the board reads search params. */
 export default function StandupPage() {
   return (
@@ -700,22 +721,7 @@ function StandupPageContent() {
     [standupData, projectFilter]
   );
 
-  // Which sources are actually on the board, read off the cards rather than
-  // guessed from the source filter -- the filter can ask for both while only
-  // one has any items, and a legend for a colour nobody can see is noise
-  // (#465).
-  const sourcesOnBoard = useMemo<SourceKind[]>(() => {
-    const kinds = new Set<SourceKind>();
-    for (const project of boardData?.projects ?? []) {
-      for (const column of project.columns) {
-        for (const item of column.items) {
-          kinds.add(sourceKindOf(item));
-          if (kinds.size === 2) return [...kinds];
-        }
-      }
-    }
-    return [...kinds];
-  }, [boardData]);
+  const sourcesOnBoard = useMemo<SourceKind[]>(() => sourceKindsOnBoard(boardData), [boardData]);
 
   const groups: GroupData[] = useMemo(() => {
     const standupData = boardData;
