@@ -114,7 +114,7 @@ describe('the accents stay distinguishable from everything else on a card', () =
     'pr-updated': cssVar('--pr-updated'),
     'pr-merged': cssVar('--pr-merged'),
     'pr-badge': cssVar('--pr-badge'),
-    'highlight ring': cssVar('--primary'),
+    'highlight ring': cssVar('--color-brand'),
     'card surface': cssVar('--surface'),
     'body text': cssVar('--foreground'),
   };
