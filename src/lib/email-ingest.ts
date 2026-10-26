@@ -804,6 +804,23 @@ export function buildAppendixHtml(
     parts.push(`<p><strong>Inline images:</strong></p><ul>${items}</ul>`);
   }
 
+  // Files that uploaded cleanly and are not shown in the body. Without this
+  // the message carries no sign of them at all: they land in the work item's
+  // attachment panel, so a customer who does not say what they sent leaves
+  // the reader to notice the panel changed (7768). A spreadsheet or a PDF is
+  // exactly the case -- unlike a screenshot, it cannot be spliced into the
+  // body, so nothing about the message looked any different.
+  const files = uploaded.filter((u) => !u.isInline);
+  if (files.length) {
+    const items = files
+      .map(
+        (u) =>
+          `<li><a href="${escapeHtml(u.url)}" rel="noopener noreferrer">${escapeHtml(u.filename)}</a></li>`
+      )
+      .join('');
+    parts.push(`<p><strong>Attachments:</strong></p><ul>${items}</ul>`);
+  }
+
   if (referenceLinks.length) {
     const items = referenceLinks
       .map(

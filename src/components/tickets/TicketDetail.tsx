@@ -46,7 +46,7 @@ import {
   buildAttachmentProxyUrl,
   attachedFilesHtml,
 } from '@/lib/attachment-utils';
-import { hasTicketTag } from '@/lib/tags';
+import { hasEmailTag, hasTicketTag } from '@/lib/tags';
 import { exitFullViewHref } from '@/lib/full-view';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
@@ -1304,7 +1304,18 @@ export default function TicketDetail({
           </div>
         ) : (
           <div className="min-w-0 flex-1 overflow-auto p-4">
-            <TicketHistory updates={history} loading={historyLoading} />
+            <TicketHistory
+              updates={history}
+              loading={historyLoading}
+              emailRequester={
+                hasEmailTag(ticket.tags)
+                  ? {
+                      displayName: ticket.requester.displayName,
+                      avatarUrl: ticket.requester.avatarUrl,
+                    }
+                  : undefined
+              }
+            />
           </div>
         )}
 

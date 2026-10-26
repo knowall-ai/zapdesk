@@ -8,6 +8,12 @@ const inline = (filename: string, contentId?: string) => ({
   isInline: true,
 });
 
+const attached = (filename: string) => ({
+  filename,
+  url: `https://devops/attachments/${filename}`,
+  isInline: false,
+});
+
 const none = new Set<string>();
 
 const fail = (filename: string, hasFallbackLink = false) => ({
@@ -54,6 +60,30 @@ describe('buildAppendixHtml', () => {
     const uploaded = [inline('a.png', 'abc')];
     const out = buildAppendixHtml(uploaded, [], [], [], new Set(['abc']));
     expect(out).not.toContain('Inline images');
+  });
+
+  it('names an ordinary file, which the message otherwise never mentions', () => {
+    // A spreadsheet cannot be spliced into the body the way a screenshot can,
+    // so without naming it the message looks identical to one with nothing
+    // attached -- the file only appears in the attachment panel (7768).
+    const out = buildAppendixHtml([attached('costs.xlsx')], [], [], [], none);
+    expect(out).toContain('Attachments');
+    expect(out).toContain('costs.xlsx');
+  });
+
+  it('links the file, so it is reachable from the message itself', () => {
+    const out = buildAppendixHtml([attached('report.pdf')], [], [], [], none);
+    expect(out).toContain('https://devops/attachments/report.pdf');
+  });
+
+  it('does not list an image the body already shows as a file as well', () => {
+    // Otherwise a screenshot appears twice: once in the body, once as a name.
+    const out = buildAppendixHtml([inline('shot.png', 'abc')], [], [], [], new Set(['abc']));
+    expect(out).not.toContain('Attachments');
+  });
+
+  it('says nothing when there was nothing attached', () => {
+    expect(buildAppendixHtml([], [], [], [], none)).toBe('');
   });
 
   it('shows an inline image the body never spliced in', () => {
