@@ -3,6 +3,8 @@
  * All templates share a common card layout with branding.
  */
 
+import { BRAND_COLORS } from './brand';
+
 /**
  * Escape a plain-text value for interpolation into an HTML email.
  *
@@ -76,15 +78,15 @@ export function layoutWrapper(content: string, audience: EmailAudience = 'team')
     .header img { display: block; margin: 0 auto; max-width: 100%; height: auto; }
     .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
     .badge-new { background: #3b82f6; color: #fff; }
-    .badge-active { background: #22c55e; color: #fff; }
+    .badge-active { background: ${BRAND_COLORS.success}; color: #fff; }
     .badge-resolved { background: #8b5cf6; color: #fff; }
     .badge-closed { background: #6b7280; color: #fff; }
     .content { margin: 16px 0; line-height: 1.6; }
     .quoted { border-left: 3px solid #d4d4d8; padding-left: 12px; margin: 16px 0; color: #71717a; }
     .footer { text-align: center; margin-top: 24px; font-size: 12px; color: #a1a1aa; }
-    .footer a { color: #22c55e; text-decoration: none; }
+    .footer a { color: ${BRAND_COLORS.brandOnLight}; text-decoration: none; }
     .footer img { display: block; margin: 8px auto 4px; max-width: 100%; height: auto; }
-    .btn { display: inline-block; padding: 12px 24px; background: #22c55e; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; line-height: 1; }
+    .btn { display: inline-block; padding: 12px 24px; background: ${BRAND_COLORS.brand}; color: ${BRAND_COLORS.brandForeground}; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; line-height: 1; }
     .meta { font-size: 13px; color: #71717a; margin-bottom: 16px; }
   </style>
 </head>

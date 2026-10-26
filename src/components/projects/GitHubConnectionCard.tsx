@@ -134,8 +134,10 @@ export default function GitHubConnectionCard({
         <div
           className="mb-4 rounded-md p-3 text-sm"
           style={{
-            backgroundColor: result.ok ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-            color: result.ok ? 'var(--primary)' : 'var(--priority-urgent)',
+            backgroundColor: result.ok
+              ? 'color-mix(in srgb, var(--color-success) 10%, transparent)'
+              : 'rgba(239, 68, 68, 0.1)',
+            color: result.ok ? 'var(--color-success)' : 'var(--priority-urgent)',
           }}
         >
           {result.text}

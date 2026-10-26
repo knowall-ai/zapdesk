@@ -460,7 +460,7 @@ export default function KanbanGroupSection({
       {expanded && totalItems > 0 && (
         <div className="border-t" style={{ borderColor: 'var(--border)' }}>
           {isUpdating && (
-            <div className="bg-[var(--primary)] px-4 py-1.5 text-center text-xs text-white">
+            <div className="bg-brand text-brand-foreground px-4 py-1.5 text-center text-xs">
               Updating...
             </div>
           )}

@@ -124,7 +124,7 @@ export default function AdminPage() {
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-center gap-3">
-            <Settings size={28} style={{ color: 'var(--primary)' }} />
+            <Settings size={28} style={{ color: 'var(--color-brand)' }} />
             <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
               Admin Settings
             </h1>
@@ -159,7 +159,7 @@ export default function AdminPage() {
                         {config.name}
                       </h3>
                     </div>
-                    <CheckCircle size={18} className="text-green-500" />
+                    <CheckCircle size={18} className="text-success" />
                   </div>
 
                   {/* Ticket Types */}
@@ -176,13 +176,13 @@ export default function AdminPage() {
                           key={type}
                           className={`rounded px-1.5 py-0.5 text-xs ${
                             type === config.workItemTypes.defaultTicketType
-                              ? 'bg-[rgba(34,197,94,0.15)] font-medium'
+                              ? 'bg-brand/15 font-medium'
                               : 'bg-[var(--surface-hover)]'
                           }`}
                           style={{
                             color:
                               type === config.workItemTypes.defaultTicketType
-                                ? 'var(--primary)'
+                                ? 'var(--color-brand)'
                                 : 'var(--text-muted)',
                           }}
                         >
@@ -247,7 +247,7 @@ export default function AdminPage() {
                     </p>
                     {config.fields.priority ? (
                       <div className="flex items-center gap-1.5">
-                        <CheckCircle size={14} className="text-green-500" />
+                        <CheckCircle size={14} className="text-success" />
                         <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                           Supported
                         </span>
@@ -317,7 +317,7 @@ export default function AdminPage() {
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm hover:underline"
-              style={{ color: 'var(--primary)' }}
+              style={{ color: 'var(--color-brand)' }}
             >
               Request support for a new process template &rarr;
             </a>
@@ -354,7 +354,7 @@ export default function AdminPage() {
                     </h3>
                   </div>
                   {emailConfig?.outbound.configured && emailConfig?.credentials?.ok !== false ? (
-                    <CheckCircle size={18} className="text-green-500" />
+                    <CheckCircle size={18} className="text-success" />
                   ) : (
                     <XCircle size={18} className="text-red-400" />
                   )}
@@ -377,7 +377,7 @@ export default function AdminPage() {
                       {emailConfig.credentials?.ok === false ? (
                         <XCircle size={14} className="text-red-400" />
                       ) : (
-                        <CheckCircle size={14} className="text-green-500" />
+                        <CheckCircle size={14} className="text-success" />
                       )}
                     </div>
                     {emailConfig.credentials?.ok === false && (
@@ -419,7 +419,7 @@ export default function AdminPage() {
                     </h3>
                   </div>
                   {emailConfig?.inbound.pollConfigured ? (
-                    <CheckCircle size={18} className="text-green-500" />
+                    <CheckCircle size={18} className="text-success" />
                   ) : (
                     <XCircle size={18} className="text-red-400" />
                   )}
@@ -437,7 +437,7 @@ export default function AdminPage() {
                   <div className="flex items-center justify-between">
                     <span style={{ color: 'var(--text-muted)' }}>Webhook Secret</span>
                     {emailConfig?.inbound.webhookConfigured ? (
-                      <CheckCircle size={14} className="text-green-500" />
+                      <CheckCircle size={14} className="text-success" />
                     ) : (
                       <XCircle size={14} className="text-red-400" />
                     )}
@@ -445,7 +445,7 @@ export default function AdminPage() {
                   <div className="flex items-center justify-between">
                     <span style={{ color: 'var(--text-muted)' }}>Service Account (PAT)</span>
                     {emailConfig?.inbound.patConfigured ? (
-                      <CheckCircle size={14} className="text-green-500" />
+                      <CheckCircle size={14} className="text-success" />
                     ) : (
                       <XCircle size={14} className="text-red-400" />
                     )}
@@ -492,8 +492,7 @@ export default function AdminPage() {
                     <button
                       onClick={handleSendTestEmail}
                       disabled={!testEmail || testSending}
-                      className="flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50"
-                      style={{ backgroundColor: 'var(--primary)' }}
+                      className="btn-primary flex w-full items-center justify-center gap-2 px-3 py-2 text-sm"
                     >
                       {testSending ? (
                         <>
@@ -512,9 +511,9 @@ export default function AdminPage() {
                         className="flex items-center gap-2 rounded-md px-3 py-2 text-xs"
                         style={{
                           backgroundColor: testResult.success
-                            ? 'rgba(34,197,94,0.1)'
+                            ? 'color-mix(in srgb, var(--color-success) 10%, transparent)'
                             : 'rgba(239,68,68,0.1)',
-                          color: testResult.success ? '#22c55e' : '#ef4444',
+                          color: testResult.success ? 'var(--color-success)' : '#ef4444',
                         }}
                       >
                         {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
@@ -563,7 +562,7 @@ export default function AdminPage() {
               ].map((feature) => (
                 <div key={feature.label} className="flex items-center gap-1.5">
                   {feature.ready ? (
-                    <CheckCircle size={12} className="shrink-0 text-green-500" />
+                    <CheckCircle size={12} className="text-success shrink-0" />
                   ) : (
                     <XCircle size={12} className="shrink-0 text-red-400" />
                   )}

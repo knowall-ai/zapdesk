@@ -1,16 +1,12 @@
 @import 'tailwindcss';
 
-/* KnowAll ZapDesk - Dark Theme with Bright Green Accent */
+/* KnowAll ZapDesk - Dark Theme with the KnowAll luminous green accent */
 :root {
   /* Dark theme as default */
   --background: #0f1117;
   --foreground: #e5e7eb;
 
-  /* KnowAll Brand Colors */
-  --primary: #22c55e;
-  --primary-hover: #16a34a;
-  --primary-light: #4ade80;
-  --primary-dark: #15803d;
+  /* Brand colours live in @theme below (--color-brand*); no copies here. */
 
   /* Surface colors */
   --surface: #1a1d26;
@@ -26,7 +22,7 @@
   --status-open: #f59e0b;
   --status-progress: #8b5cf6;
   --status-pending: #ec4899;
-  --status-resolved: #22c55e;
+  --status-resolved: var(--color-success);
   --status-closed: #6b7280;
 
   /* Pull request activity (#482): opened, pushed to, merged */
@@ -71,14 +67,31 @@
   /* Sidebar */
   --sidebar-bg: #0a0c10;
   --sidebar-hover: #1a1d26;
-  --sidebar-active: #22c55e;
+}
+
+/* KnowAll brand tokens, shared by name with the website, Sallie and Timmie.
+   `static` so they are always emitted: inline styles use var(--color-brand). */
+@theme static {
+  --color-brand: #9dff0a;
+  /* Hover goes lighter, never darker */
+  --color-brand-hover: #b4ff3d;
+  /* Ink on brand fills: never white on lime */
+  --color-brand-foreground: var(--color-gray-950);
+  /* Brand text on a white surface (e.g. email), where lime is unreadable */
+  --color-brand-on-light: #4d7c0f;
+
+  /* Semantic status green (success / resolved / paid / on track). Not the brand. */
+  --color-success: #22c55e;
+
+  /* shadcn-style aliases, so `bg-primary`, `ring` etc. resolve to the brand */
+  --color-primary: var(--color-brand);
+  --color-primary-foreground: var(--color-brand-foreground);
+  --color-ring: var(--color-brand);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-primary: var(--primary);
-  --color-primary-hover: var(--primary-hover);
   --color-surface: var(--surface);
   --color-surface-hover: var(--surface-hover);
   --color-border: var(--border);
@@ -150,9 +163,9 @@ body {
   }
 
   .sla-within {
-    background: rgba(34, 197, 94, 0.15);
-    color: #22c55e;
-    border: 1px solid rgba(34, 197, 94, 0.3);
+    background: color-mix(in srgb, var(--color-success) 15%, transparent);
+    color: var(--color-success);
+    border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
   }
 
   .sla-at-risk {
@@ -203,7 +216,7 @@ body {
   /* Focus ring for accessibility */
   .focus-ring {
     @apply focus:ring-2 focus:ring-offset-2 focus:outline-none;
-    --tw-ring-color: var(--primary);
+    --tw-ring-color: var(--color-ring);
     --tw-ring-offset-color: var(--background);
   }
 
@@ -224,19 +237,30 @@ body {
 
   /* Button styles */
   .btn-primary {
-    background: var(--primary);
-    color: white;
+    background: var(--color-brand);
+    color: var(--color-brand-foreground);
     cursor: pointer;
     @apply rounded-md px-4 py-2 font-medium transition-colors;
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--primary-hover);
+    background: var(--color-brand-hover);
   }
 
   .btn-primary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  /* Brand badges: a solid count/label pill, and a subtle tinted one */
+  .badge-brand {
+    background: var(--color-brand);
+    color: var(--color-brand-foreground);
+  }
+
+  .badge-brand-subtle {
+    background: color-mix(in srgb, var(--color-brand) 15%, transparent);
+    color: var(--color-brand);
   }
 
   .btn-secondary {
@@ -267,9 +291,9 @@ body {
   }
 
   .input:focus {
-    border-color: var(--primary);
+    border-color: var(--color-brand);
     outline: none;
-    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand) 20%, transparent);
   }
 
   .input::placeholder {
@@ -310,7 +334,7 @@ body {
   }
 
   .toggle-checkbox:checked {
-    background: var(--primary);
+    background: var(--color-brand);
   }
 
   .toggle-checkbox:checked::before {
@@ -319,7 +343,7 @@ body {
 
   .toggle-checkbox:focus {
     outline: none;
-    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand) 30%, transparent);
   }
 
   /* Sidebar navigation */
@@ -334,8 +358,8 @@ body {
   }
 
   .nav-item.active {
-    background: rgba(34, 197, 94, 0.15);
-    color: var(--primary);
+    background: color-mix(in srgb, var(--color-brand) 15%, transparent);
+    color: var(--color-brand);
   }
 
   /* Override inline color styles from copy-pasted content (e.g., from Outlook/Word).
@@ -375,8 +399,8 @@ body {
 
   /* Mention styles */
   .mention {
-    background: rgba(34, 197, 94, 0.15);
-    color: var(--primary);
+    background: color-mix(in srgb, var(--color-brand) 15%, transparent);
+    color: var(--color-brand);
     padding: 0.125rem 0.25rem;
     border-radius: 0.25rem;
     font-weight: 500;
@@ -384,7 +408,7 @@ body {
   }
 
   .mention:hover {
-    background: rgba(34, 197, 94, 0.25);
+    background: color-mix(in srgb, var(--color-brand) 25%, transparent);
   }
 }
 
@@ -441,9 +465,9 @@ body {
 }
 
 .sla-on-track {
-  background: rgba(34, 197, 94, 0.15);
+  background: color-mix(in srgb, var(--color-success) 15%, transparent);
   color: var(--status-resolved);
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
 }
 
 /* SLA indicator dots */
@@ -552,7 +576,7 @@ body {
 }
 
 .kanban-column-over {
-  background: rgba(34, 197, 94, 0.05);
+  background: color-mix(in srgb, var(--color-brand) 5%, transparent);
 }
 
 .kanban-card {
@@ -578,7 +602,7 @@ body {
 
 .kanban-card-dragging {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  border-color: var(--primary);
+  border-color: var(--color-brand);
   opacity: 0.9;
 }
 

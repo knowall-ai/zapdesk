@@ -12,7 +12,7 @@ interface TeamPerformanceChartProps {
 }
 
 const BAR_COLORS = [
-  '#22c55e',
+  'var(--color-brand)',
   '#3b82f6',
   '#8b5cf6',
   '#f59e0b',

@@ -4,18 +4,13 @@
       <stop offset="0%" stop-color="#0a0a0a" />
       <stop offset="100%" stop-color="#1a1a2e" />
     </linearGradient>
-    <linearGradient id="metalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4ade80" />
-      <stop offset="50%" stop-color="#22c55e" />
-      <stop offset="100%" stop-color="#16a34a" />
-    </linearGradient>
     <linearGradient id="shineGradient" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#ffffff" stop-opacity="0.3" />
       <stop offset="50%" stop-color="#ffffff" stop-opacity="0" />
     </linearGradient>
     <linearGradient id="glowGradient" x1="50%" y1="0%" x2="50%" y2="100%">
-      <stop offset="0%" stop-color="#22c55e" stop-opacity="0.2" />
-      <stop offset="100%" stop-color="#22c55e" stop-opacity="0" />
+      <stop offset="0%" stop-color="#9dff0a" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#9dff0a" stop-opacity="0" />
     </linearGradient>
   </defs>
 
@@ -26,18 +21,18 @@
   <ellipse cx="600" cy="250" rx="400" ry="200" fill="url(#glowGradient)" />
 
   <!-- Icon background -->
-  <rect x="540" y="140" width="120" height="120" rx="16" ry="16" fill="url(#metalGradient)" />
+  <rect x="540" y="140" width="120" height="120" rx="16" ry="16" fill="#9dff0a" />
   <rect x="540" y="140" width="120" height="120" rx="16" ry="16" fill="url(#shineGradient)" />
 
   <!-- Lightning bolt (scaled for 120x120 icon, centered at 600,200) -->
   <polygon
     points="609.375,149.375 571.875,206.5625 595.25,206.5625 585.875,250.625 628.125,192.5 604.6875,192.5"
-    fill="#ffffff"
+    fill="#030712"
   />
 
   <!-- "ZapDesk" text -->
   <text x="600" y="340" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="72" font-weight="700">
-    <tspan fill="#22c55e">Zap</tspan><tspan fill="#f3f4f6">Desk</tspan>
+    <tspan fill="#9dff0a">Zap</tspan><tspan fill="#f3f4f6">Desk</tspan>
   </text>
 
   <!-- Tagline -->

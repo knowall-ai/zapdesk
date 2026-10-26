@@ -56,7 +56,7 @@ export function TicketVolumeChart({ data }: TicketVolumeChartProps) {
         />
         <Legend wrapperStyle={{ color: 'var(--text-secondary)', fontSize: 12 }} />
         <Bar dataKey="created" name="Created" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-        <Bar dataKey="resolved" name="Resolved" fill="#22c55e" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="resolved" name="Resolved" fill="var(--color-success)" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );

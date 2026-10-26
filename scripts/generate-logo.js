@@ -29,6 +29,9 @@
  *   - public/assets/logo.svg       - Full logo for dark backgrounds
  *   - public/assets/logo-light.svg - Full logo for light backgrounds
  *   - src/app/icon.svg             - Next.js App Router icon
+ *   - src/app/apple-icon.svg       - Next.js App Router apple icon
+ *   - public/favicon.svg           - Source for the favicon PNGs/ICO (generate-icons.mjs)
+ *   - public/apple-touch-icon.svg  - Source for apple-touch-icon.png
  */
 
 const fs = require('fs');
@@ -67,10 +70,12 @@ function round(n) {
   return Math.round(n * 100) / 100;
 }
 
+// Mirrors the @theme tokens in src/app/globals.css (and src/lib/brand.ts);
+// src/lib/brand-tokens.test.ts fails if they drift.
 const COLORS = {
-  primary: '#22c55e', // Main brand green
-  primaryLight: '#4ade80', // Lighter green for gradients
-  primaryDark: '#16a34a', // Darker green for depth
+  brand: '#9dff0a', // --color-brand: KnowAll luminous green
+  brandOnLight: '#4d7c0f', // --color-brand-on-light: brand text on white
+  ink: '#030712', // --color-brand-foreground (gray-950): never white on lime
   white: '#ffffff',
   textLight: '#f3f4f6', // Light theme text
   textDark: '#1f2937', // Dark theme text
@@ -83,21 +88,15 @@ const COLORS = {
  * The design features:
  * - Bold, geometric "D" shape
  * - Arrow/triangle on left stroke pointing right into the D
- * - Subtle gradient for metallic depth
+ * - Flat brand tile with a white shine overlay for depth
  * - Works well at small sizes (favicon, sidebar)
  */
-function generateIconSVG(size = 64) {
+function generateIconSVG(size = 64, displaySize = size) {
   // Scale factor for the icon paths
   const s = size / 64;
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${displaySize}" height="${displaySize}">
   <defs>
-    <!-- Gradient for metallic effect -->
-    <linearGradient id="metalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="${COLORS.primaryLight}" />
-      <stop offset="50%" stop-color="${COLORS.primary}" />
-      <stop offset="100%" stop-color="${COLORS.primaryDark}" />
-    </linearGradient>
     <!-- Subtle shine for 3D effect -->
     <linearGradient id="shineGradient" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="${COLORS.white}" stop-opacity="0.3" />
@@ -106,13 +105,13 @@ function generateIconSVG(size = 64) {
   </defs>
 
   <!-- Background with rounded corners -->
-  <rect x="0" y="0" width="${size}" height="${size}" rx="${8 * s}" ry="${8 * s}" fill="url(#metalGradient)" />
+  <rect x="0" y="0" width="${size}" height="${size}" rx="${8 * s}" ry="${8 * s}" fill="${COLORS.brand}" />
 
   <!-- Subtle shine overlay -->
   <rect x="0" y="0" width="${size}" height="${size}" rx="${8 * s}" ry="${8 * s}" fill="url(#shineGradient)" />
 
   <!-- Lightning bolt -->
-  <polygon points="${boltPolygon(size)}" fill="${COLORS.white}" />
+  <polygon points="${boltPolygon(size)}" fill="${COLORS.ink}" />
 </svg>`;
 }
 
@@ -125,11 +124,6 @@ function generateFullLogoDark(width = 400, height = 100) {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
   <defs>
-    <linearGradient id="metalGradientFull" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="${COLORS.primaryLight}" />
-      <stop offset="50%" stop-color="${COLORS.primary}" />
-      <stop offset="100%" stop-color="${COLORS.primaryDark}" />
-    </linearGradient>
     <linearGradient id="shineGradientFull" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="${COLORS.white}" stop-opacity="0.3" />
       <stop offset="50%" stop-color="${COLORS.white}" stop-opacity="0" />
@@ -137,18 +131,18 @@ function generateFullLogoDark(width = 400, height = 100) {
   </defs>
 
   <!-- Icon background -->
-  <rect x="10" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="8" ry="8" fill="url(#metalGradientFull)" />
+  <rect x="10" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="8" ry="8" fill="${COLORS.brand}" />
   <rect x="10" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="8" ry="8" fill="url(#shineGradientFull)" />
 
   <!-- Lightning bolt (scaled for 60x60 icon) -->
   <polygon
     points="${boltPolygon(iconSize, 10, iconY)}"
-    fill="${COLORS.white}"
+    fill="${COLORS.ink}"
   />
 
   <!-- "ZapDesk" wordmark, single brand green -->
   <text x="85" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700">
-    <tspan fill="${COLORS.primary}">ZapDesk</tspan>
+    <tspan fill="${COLORS.brand}">ZapDesk</tspan>
   </text>
 
   <!-- Tagline -->
@@ -165,10 +159,6 @@ function generateFullLogoLight(width = 400, height = 100) {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
   <defs>
-    <linearGradient id="metalGradientFullLight" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="${COLORS.primary}" />
-      <stop offset="100%" stop-color="${COLORS.primaryDark}" />
-    </linearGradient>
     <linearGradient id="shineGradientFullLight" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="${COLORS.white}" stop-opacity="0.2" />
       <stop offset="50%" stop-color="${COLORS.white}" stop-opacity="0" />
@@ -176,18 +166,18 @@ function generateFullLogoLight(width = 400, height = 100) {
   </defs>
 
   <!-- Icon background -->
-  <rect x="10" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="8" ry="8" fill="url(#metalGradientFullLight)" />
+  <rect x="10" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="8" ry="8" fill="${COLORS.brand}" />
   <rect x="10" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="8" ry="8" fill="url(#shineGradientFullLight)" />
 
   <!-- Lightning bolt (scaled for 60x60 icon) -->
   <polygon
     points="${boltPolygon(iconSize, 10, iconY)}"
-    fill="${COLORS.white}"
+    fill="${COLORS.ink}"
   />
 
-  <!-- "ZapDesk" wordmark, single brand green -->
+  <!-- "ZapDesk" wordmark: lime is unreadable on white, so ink; the lime tile carries the brand -->
   <text x="85" y="55" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700">
-    <tspan fill="${COLORS.primary}">ZapDesk</tspan>
+    <tspan fill="${COLORS.ink}">ZapDesk</tspan>
   </text>
 
   <!-- Tagline -->
@@ -233,12 +223,18 @@ function main() {
   fs.writeFileSync(path.join(appDir, 'apple-icon.svg'), icon64);
   console.log('Generated: src/app/apple-icon.svg');
 
+  // Public icon sources that scripts/generate-icons.mjs rasterises to PNG/ICO
+  const publicDir = path.join(rootDir, 'public');
+  fs.writeFileSync(path.join(publicDir, 'favicon.svg'), generateIconSVG(64, 32));
+  console.log('Generated: public/favicon.svg');
+  fs.writeFileSync(path.join(publicDir, 'apple-touch-icon.svg'), generateIconSVG(64, 180));
+  console.log('Generated: public/apple-touch-icon.svg');
+
   console.log('\nAll logo assets generated successfully!');
   console.log('\nDesign features:');
   console.log('  - Lightning bolt, matching ZapDeskIcon in the app');
   console.log('  - Rounded square tile behind the mark');
-  console.log('  - Metallic gradient for modern depth');
-  console.log('  - Brand green (#22c55e) maintained');
+  console.log(`  - KnowAll luminous green tile (${COLORS.brand}) with an ink bolt`);
 }
 
 main();

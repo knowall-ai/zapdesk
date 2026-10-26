@@ -136,7 +136,7 @@ export default function ActivitySummaryBar({
         disabled={highlightCount === 0 && !highlighted}
         className={`flex min-w-[7.5rem] items-center justify-center gap-1.5 rounded-md border px-2.5 py-1 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
           highlighted
-            ? 'border-transparent bg-[var(--primary)] text-white'
+            ? 'bg-brand text-brand-foreground border-transparent'
             : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
         }`}
         style={highlighted ? undefined : { borderColor: 'var(--border)' }}

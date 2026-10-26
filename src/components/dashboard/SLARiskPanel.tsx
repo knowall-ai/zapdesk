@@ -59,7 +59,7 @@ export function SLARiskPanel({ accessToken }: SLARiskPanelProps) {
         <div className="flex items-center justify-center py-8">
           <div
             className="h-6 w-6 animate-spin rounded-full border-2 border-current border-t-transparent"
-            style={{ color: 'var(--primary)' }}
+            style={{ color: 'var(--color-brand)' }}
           />
         </div>
       </div>
@@ -134,7 +134,7 @@ export function SLARiskPanel({ accessToken }: SLARiskPanelProps) {
             <Link
               href="/tickets?view=all-active"
               className="mt-3 flex items-center justify-center gap-1 rounded-md py-2 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-              style={{ color: 'var(--primary)' }}
+              style={{ color: 'var(--color-brand)' }}
             >
               View all {tickets.length} tickets
               <ExternalLink size={14} />

@@ -164,7 +164,7 @@ export default function UsersPage() {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline"
-                  style={{ color: 'var(--primary)' }}
+                  style={{ color: 'var(--color-brand)' }}
                 >
                   Azure DevOps
                 </a>
@@ -192,7 +192,7 @@ export default function UsersPage() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-1 flex items-center gap-1 text-sm"
-                style={{ color: 'var(--primary)' }}
+                style={{ color: 'var(--color-brand)' }}
               >
                 See users in Azure DevOps <ExternalLink size={12} />
               </a>
@@ -331,7 +331,7 @@ export default function UsersPage() {
                         <Link
                           href={`/users/${user.id}`}
                           className="font-medium hover:underline"
-                          style={{ color: 'var(--primary)' }}
+                          style={{ color: 'var(--color-brand)' }}
                         >
                           {user.displayName}
                         </Link>

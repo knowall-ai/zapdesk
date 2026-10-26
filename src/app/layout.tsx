@@ -5,6 +5,7 @@ import OrganizationProvider from '@/components/providers/OrganizationProvider';
 import TicketCountsProvider from '@/components/providers/TicketCountsProvider';
 import SourceProvider from '@/components/providers/SourceProvider';
 import './globals.css';
+import { BRAND_COLORS } from '@/lib/brand';
 
 const siteUrl = process.env.NEXTAUTH_URL || 'https://zapdesk.knowall.ai';
 
@@ -66,7 +67,7 @@ export const metadata: Metadata = {
     follow: true,
   },
   other: {
-    'msapplication-TileColor': '#22c55e',
+    'msapplication-TileColor': BRAND_COLORS.brand,
     'theme-color': '#0f1117',
   },
 };

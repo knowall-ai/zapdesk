@@ -222,7 +222,7 @@ export function TrendCharts({ trends }: TrendChartsProps) {
       <DualLineChart
         data={slaMetricsData}
         color1="var(--priority-high)"
-        color2="var(--primary)"
+        color2="var(--color-brand)"
         title="SLA Metrics"
         legend1="Response Time"
         legend2="Resolution Time"

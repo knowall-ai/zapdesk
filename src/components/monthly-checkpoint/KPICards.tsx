@@ -102,7 +102,7 @@ export function KPICards({ kpis }: KPICardsProps) {
           />
         </svg>
       ),
-      color: 'var(--primary)',
+      color: 'var(--color-brand)',
       isText: true,
     },
     {

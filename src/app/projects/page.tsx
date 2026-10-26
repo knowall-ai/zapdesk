@@ -95,7 +95,7 @@ export default function ProjectsPage() {
               target="_blank"
               rel="noopener noreferrer"
               className="mt-1 flex items-center gap-1 text-sm"
-              style={{ color: 'var(--primary)' }}
+              style={{ color: 'var(--color-brand)' }}
             >
               See all projects in Azure DevOps <ExternalLink size={12} />
             </a>
@@ -180,7 +180,7 @@ export default function ProjectsPage() {
                       <Link
                         href={`/projects/${project.id}`}
                         className="font-medium hover:underline"
-                        style={{ color: 'var(--primary)' }}
+                        style={{ color: 'var(--color-brand)' }}
                       >
                         {project.name}
                       </Link>
@@ -243,8 +243,7 @@ export default function ProjectsPage() {
                       {project.epicCount !== undefined && project.epicCount > 0 ? (
                         <Link
                           href={`/projects/${project.id}/epics`}
-                          className="inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-sm font-medium transition-colors hover:opacity-80"
-                          style={{ backgroundColor: 'var(--primary)', color: 'white' }}
+                          className="badge-brand inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-sm font-medium transition-colors hover:opacity-80"
                         >
                           {project.epicCount}
                         </Link>

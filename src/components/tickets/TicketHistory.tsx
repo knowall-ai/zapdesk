@@ -86,8 +86,8 @@ export default function TicketHistory({ updates, loading }: TicketHistoryProps) 
               <div
                 className="flex h-[18px] w-[18px] items-center justify-center rounded-full"
                 style={{
-                  backgroundColor: isCreation ? 'var(--primary)' : 'var(--surface-hover)',
-                  color: isCreation ? 'white' : 'var(--text-muted)',
+                  backgroundColor: isCreation ? 'var(--color-brand)' : 'var(--surface-hover)',
+                  color: isCreation ? 'var(--color-brand-foreground)' : 'var(--text-muted)',
                 }}
               >
                 <GitCommitHorizontal size={10} />

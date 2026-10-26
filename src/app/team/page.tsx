@@ -265,7 +265,7 @@ export default function TeamPage() {
       title: 'Team Members',
       value: teamData?.stats.totalMembers ?? 0,
       icon: <Users2 size={24} />,
-      color: 'var(--primary)',
+      color: 'var(--color-brand)',
     },
     {
       title: 'Open Tickets',
@@ -305,7 +305,7 @@ export default function TeamPage() {
               onClick={() => setTicketsOnly(!ticketsOnly)}
               className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                 ticketsOnly
-                  ? 'bg-[var(--primary)] text-white'
+                  ? 'bg-brand text-brand-foreground'
                   : 'bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }`}
               title={ticketsOnly ? 'Showing only items tagged "ticket"' : 'Showing all work items'}
@@ -366,10 +366,7 @@ export default function TeamPage() {
                   {new Date().getFullYear()}
                 </p>
               </div>
-              <div
-                className="rounded-lg p-3"
-                style={{ backgroundColor: 'rgba(34, 197, 94, 0.2)', color: 'var(--primary)' }}
-              >
+              <div className="bg-brand/20 text-brand rounded-lg p-3">
                 <Activity size={24} />
               </div>
             </div>
@@ -392,10 +389,10 @@ export default function TeamPage() {
                     theme={{
                       dark: [
                         'var(--surface)',
-                        'var(--primary-dark)',
-                        'var(--primary-hover)',
-                        'var(--primary)',
-                        'var(--primary-light)',
+                        'color-mix(in srgb, var(--color-brand) 30%, var(--surface))',
+                        'color-mix(in srgb, var(--color-brand) 55%, var(--surface))',
+                        'color-mix(in srgb, var(--color-brand) 80%, var(--surface))',
+                        'var(--color-brand)',
                       ],
                     }}
                     labels={{

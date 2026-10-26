@@ -1,10 +1,5 @@
 <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="greenGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4ade80" />
-      <stop offset="50%" stop-color="#22c55e" />
-      <stop offset="100%" stop-color="#16a34a" />
-    </linearGradient>
     <linearGradient id="shineGradient" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#ffffff" stop-opacity="0.3" />
       <stop offset="50%" stop-color="#ffffff" stop-opacity="0" />
@@ -22,20 +17,20 @@
   <rect width="1200" height="630" fill="url(#bgGradient)"/>
 
   <!-- Decorative gradient accent -->
-  <ellipse cx="1100" cy="100" rx="300" ry="200" fill="#22c55e" opacity="0.05"/>
-  <ellipse cx="100" cy="530" rx="250" ry="180" fill="#22c55e" opacity="0.03"/>
+  <ellipse cx="1100" cy="100" rx="300" ry="200" fill="#9dff0a" opacity="0.05"/>
+  <ellipse cx="100" cy="530" rx="250" ry="180" fill="#9dff0a" opacity="0.03"/>
 
   <!-- Logo Section -->
   <g transform="translate(60, 40)">
     <!-- Logo Icon Background -->
-    <rect x="0" y="0" width="50" height="50" rx="6" fill="url(#greenGradient)"/>
+    <rect x="0" y="0" width="50" height="50" rx="6" fill="#9dff0a"/>
     <rect x="0" y="0" width="50" height="50" rx="6" fill="url(#shineGradient)"/>
 
     <!-- Lightning bolt, as in favicon.svg (64x64 scaled to 50x50) -->
-    <polygon points="37,5 17,35.5 29.5,35.5 24.5,59 47,28 34.5,28" transform="scale(0.78125)" fill="#ffffff"/>
+    <polygon points="37,5 17,35.5 29.5,35.5 24.5,59 47,28 34.5,28" transform="scale(0.78125)" fill="#030712"/>
 
     <!-- ZapDesk Text -->
-    <text x="70" y="38" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#22c55e">Zap</text>
+    <text x="70" y="38" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#9dff0a">Zap</text>
     <text x="131" y="38" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#f3f4f6">Desk</text>
   </g>
 
@@ -45,9 +40,9 @@
     <rect x="0" y="0" width="200" height="450" rx="12" fill="#0a0c10"/>
 
     <!-- Sidebar Nav Items -->
-    <rect x="12" y="20" width="176" height="36" rx="6" fill="#22c55e" opacity="0.15"/>
-    <circle cx="32" cy="38" r="8" fill="#22c55e"/>
-    <rect x="50" y="32" width="60" height="12" rx="3" fill="#22c55e"/>
+    <rect x="12" y="20" width="176" height="36" rx="6" fill="#9dff0a" opacity="0.15"/>
+    <circle cx="32" cy="38" r="8" fill="#9dff0a"/>
+    <rect x="50" y="32" width="60" height="12" rx="3" fill="#9dff0a"/>
 
     <circle cx="32" cy="78" r="8" fill="#6b7280"/>
     <rect x="50" y="72" width="70" height="12" rx="3" fill="#6b7280"/>
@@ -95,8 +90,8 @@
     <text x="156" y="30" font-family="Arial, sans-serif" font-size="12" fill="#6b7280">Search tickets...</text>
 
     <!-- Action Buttons -->
-    <rect x="680" y="12" width="80" height="26" rx="6" fill="url(#greenGradient)"/>
-    <text x="720" y="30" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white" text-anchor="middle">+ New</text>
+    <rect x="680" y="12" width="80" height="26" rx="6" fill="#9dff0a"/>
+    <text x="720" y="30" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#030712" text-anchor="middle">+ New</text>
 
     <rect x="770" y="12" width="70" height="26" rx="6" fill="#2d313d"/>
     <text x="805" y="30" font-family="Arial, sans-serif" font-size="11" fill="#9ca3af" text-anchor="middle">Filter</text>

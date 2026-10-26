@@ -795,7 +795,7 @@ export default function TicketDetail({
               target="_blank"
               rel="noopener noreferrer"
               className="hidden items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)] sm:flex"
-              style={{ color: 'var(--primary)' }}
+              style={{ color: 'var(--color-brand)' }}
             >
               View in DevOps <ExternalLink size={14} />
             </a>
@@ -897,14 +897,14 @@ export default function TicketDetail({
             onClick={() => setActiveTab('details')}
             className="relative px-4 py-2.5 text-sm font-medium transition-colors"
             style={{
-              color: activeTab === 'details' ? 'var(--primary)' : 'var(--text-muted)',
+              color: activeTab === 'details' ? 'var(--color-brand)' : 'var(--text-muted)',
             }}
           >
             Details
             {activeTab === 'details' && (
               <span
                 className="absolute right-0 bottom-0 left-0 h-0.5"
-                style={{ backgroundColor: 'var(--primary)' }}
+                style={{ backgroundColor: 'var(--color-brand)' }}
               />
             )}
           </button>
@@ -912,14 +912,14 @@ export default function TicketDetail({
             onClick={() => setActiveTab('history')}
             className="relative px-4 py-2.5 text-sm font-medium transition-colors"
             style={{
-              color: activeTab === 'history' ? 'var(--primary)' : 'var(--text-muted)',
+              color: activeTab === 'history' ? 'var(--color-brand)' : 'var(--text-muted)',
             }}
           >
             Timeline
             {activeTab === 'history' && (
               <span
                 className="absolute right-0 bottom-0 left-0 h-0.5"
-                style={{ backgroundColor: 'var(--primary)' }}
+                style={{ backgroundColor: 'var(--color-brand)' }}
               />
             )}
           </button>
@@ -968,7 +968,7 @@ export default function TicketDetail({
                       <button
                         onClick={handleEditDescription}
                         className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                        style={{ color: 'var(--primary)' }}
+                        style={{ color: 'var(--color-brand)' }}
                       >
                         Edit
                       </button>
@@ -1061,7 +1061,7 @@ export default function TicketDetail({
                     <button
                       onClick={handleStartEditResolution}
                       className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                      style={{ color: 'var(--primary)' }}
+                      style={{ color: 'var(--color-brand)' }}
                     >
                       Edit
                     </button>
@@ -1165,7 +1165,7 @@ export default function TicketDetail({
                         <button
                           onClick={handleStartEditMitigation}
                           className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                          style={{ color: 'var(--primary)' }}
+                          style={{ color: 'var(--color-brand)' }}
                         >
                           Edit
                         </button>
@@ -1351,7 +1351,7 @@ export default function TicketDetail({
                         color: active
                           ? internal
                             ? 'var(--text-primary)'
-                            : 'var(--primary)'
+                            : 'var(--color-brand)'
                           : 'var(--text-muted)',
                       }}
                     >
@@ -1456,7 +1456,9 @@ export default function TicketDetail({
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="rounded p-2 transition-colors hover:bg-[var(--surface-hover)]"
-                style={{ color: pendingFiles.length > 0 ? 'var(--primary)' : 'var(--text-muted)' }}
+                style={{
+                  color: pendingFiles.length > 0 ? 'var(--color-brand)' : 'var(--text-muted)',
+                }}
                 title="Attach file"
                 disabled={!onUploadAttachment}
               >
@@ -1795,7 +1797,7 @@ export default function TicketDetail({
                               style={{
                                 color:
                                   type.name === ticket.workItemType
-                                    ? 'var(--primary)'
+                                    ? 'var(--color-brand)'
                                     : 'var(--text-primary)',
                               }}
                             >
@@ -1889,7 +1891,7 @@ export default function TicketDetail({
                         onClick={() => setIsAddingTag(true)}
                         className="flex items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors hover:bg-[var(--surface-hover)]"
                         style={{
-                          color: 'var(--primary)',
+                          color: 'var(--color-brand)',
                           cursor: 'pointer',
                           border: '1px dashed var(--border)',
                         }}

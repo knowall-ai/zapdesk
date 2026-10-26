@@ -18,13 +18,13 @@ export const PR_ACTIVITY_COLORS: Record<PullRequestActivityKind, string> = {
  * link is a darker purple than the merged count, so that text stays readable.
  */
 export const HIGHLIGHT_COLORS: Record<HighlightReason, string> = {
-  created: 'var(--primary)',
-  updated: 'var(--primary)',
-  closed: 'var(--primary)',
+  created: 'var(--color-brand)',
+  updated: 'var(--color-brand)',
+  closed: 'var(--color-brand)',
   pr: 'var(--pr-badge)',
 };
 
 /** The ring round a highlighted card: purple when a pull request is among its reasons. */
 export function highlightRingColor(reasons: readonly HighlightReason[]): string {
-  return reasons.includes('pr') ? PR_ACTIVITY_COLORS.merged : 'var(--primary)';
+  return reasons.includes('pr') ? PR_ACTIVITY_COLORS.merged : 'var(--color-brand)';
 }

@@ -443,7 +443,7 @@ export default function WorkItemDetailDialog({
         target="_blank"
         rel="noopener noreferrer"
         className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-        style={{ color: 'var(--primary)' }}
+        style={{ color: 'var(--color-brand)' }}
       >
         DevOps <ExternalLink size={14} />
       </a>

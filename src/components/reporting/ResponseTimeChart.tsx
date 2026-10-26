@@ -33,8 +33,8 @@ export function ResponseTimeChart({ data }: ResponseTimeChartProps) {
       <AreaChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="responseTimeGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#22c55e" stopOpacity={0.2} />
-            <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+            <stop offset="5%" stopColor="var(--color-brand)" stopOpacity={0.2} />
+            <stop offset="95%" stopColor="var(--color-brand)" stopOpacity={0} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -70,7 +70,7 @@ export function ResponseTimeChart({ data }: ResponseTimeChartProps) {
         <Area
           type="monotone"
           dataKey="avgHours"
-          stroke="#22c55e"
+          stroke="var(--color-brand)"
           strokeWidth={2}
           fill="url(#responseTimeGradient)"
         />
