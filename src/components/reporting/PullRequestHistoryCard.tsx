@@ -89,7 +89,7 @@ export function PullRequestHistoryCard() {
                 <>
                   <span style={{ color: '#3b82f6' }}>{totals.opened} opened</span>
                   {' · '}
-                  <span style={{ color: '#22c55e' }}>{totals.merged} merged</span>
+                  <span style={{ color: 'var(--color-success)' }}>{totals.merged} merged</span>
                   {sourceFilter === 'devops' && ', Azure DevOps only'}
                   {sourceFilter === 'github' && ', GitHub only'}
                 </>
@@ -112,8 +112,9 @@ export function PullRequestHistoryCard() {
                   onClick={() => setRange(days)}
                   className="rounded-md px-2 py-1 text-xs font-medium transition-colors"
                   style={{
-                    backgroundColor: range === days ? 'var(--primary)' : 'transparent',
-                    color: range === days ? 'var(--background)' : 'var(--text-secondary)',
+                    backgroundColor: range === days ? 'var(--color-brand)' : 'transparent',
+                    color:
+                      range === days ? 'var(--color-brand-foreground)' : 'var(--text-secondary)',
                   }}
                 >
                   {days}d
