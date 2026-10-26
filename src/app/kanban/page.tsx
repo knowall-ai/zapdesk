@@ -24,6 +24,8 @@ import type { PullRequestLoadState } from '@/components/standup/ActivitySummaryB
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import { useDevOpsApi } from '@/hooks';
 import { useSourceFilter } from '@/components/providers/SourceProvider';
+import SourceLegend from '@/components/common/SourceLegend';
+import { sourceKindOf, type SourceKind } from '@/lib/source-colors';
 import { readScrollTop, sessionPositionStorage, writeScrollTop } from '@/lib/kanban-position';
 import { ticketToWorkItem } from '@/lib/devops';
 import { debugLog } from '@/lib/debug';
@@ -121,6 +123,27 @@ function regroupByPerson(data: StandupData): GroupData[] {
         items: colMap.get(def.name) || [],
       })),
     }));
+}
+
+/**
+ * Which sources have at least one card on the board.
+ *
+ * Read off the cards rather than guessed from the source filter -- the filter
+ * can ask for both while only one has any items, and a legend for a colour
+ * nobody can see is noise (#465). A module-level function rather than inline
+ * work in a `useMemo`, which the React Compiler cannot preserve.
+ */
+function sourceKindsOnBoard(data: StandupData | null): SourceKind[] {
+  const kinds = new Set<SourceKind>();
+  for (const project of data?.projects ?? []) {
+    for (const column of project.columns) {
+      for (const item of column.items) {
+        kinds.add(sourceKindOf(item));
+        if (kinds.size === 2) return [...kinds];
+      }
+    }
+  }
+  return [...kinds];
 }
 
 /** Route entry for the Kanban board; Suspense is required because the board reads search params. */
@@ -698,6 +721,8 @@ function StandupPageContent() {
     [standupData, projectFilter]
   );
 
+  const sourcesOnBoard = useMemo<SourceKind[]>(() => sourceKindsOnBoard(boardData), [boardData]);
+
   const groups: GroupData[] = useMemo(() => {
     const standupData = boardData;
     if (!standupData) return [];
@@ -851,6 +876,7 @@ function StandupPageContent() {
                   year: 'numeric',
                 })}
               </p>
+              <SourceLegend sources={sourcesOnBoard} className="mt-2" />
             </div>
 
             <div className="flex flex-wrap items-center gap-3 md:ml-auto">

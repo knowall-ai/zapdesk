@@ -22,6 +22,8 @@ import { ensureActiveState } from '@/types';
 import type { GroupByOption } from './WorkItemBoard';
 import { debugLog, debugWarn } from '@/lib/debug';
 import { gitHubColumnFor, isGitHubItem } from '@/lib/github-kanban';
+import SourceLegend from '@/components/common/SourceLegend';
+import { sourceKindOf, type SourceKind } from '@/lib/source-colors';
 
 // KanbanBoard can work with either Ticket[] or WorkItem[]
 // WorkItem uses 'state' while Ticket uses 'devOpsState' for the state name
@@ -405,9 +407,27 @@ export default function KanbanBoard({
 
   const boardContent = hasSwimLanes ? swimLaneContent : columnsContent;
 
+  // Which sources the board is actually showing, read off the cards it
+  // renders. In swim lanes those come from `groupedItems`, which the board
+  // above may have built from a different set than `items` -- reading
+  // `sourceItems` there can show a legend the cards contradict. The legend is
+  // only worth the space once there are two to tell apart (#465).
+  const renderedItems: readonly { source?: string }[] = hasSwimLanes
+    ? Object.values(groupedItems).flat()
+    : sourceItems;
+  const sourcesOnBoard: SourceKind[] = [
+    ...new Set(renderedItems.map((item) => sourceKindOf(item))),
+  ];
+  const legend = <SourceLegend sources={sourcesOnBoard} className="mb-2 px-1" />;
+
   // ReadOnly mode: just render columns without drag-and-drop
   if (readOnly) {
-    return <div className="kanban-board">{boardContent}</div>;
+    return (
+      <div className="kanban-board">
+        {legend}
+        {boardContent}
+      </div>
+    );
   }
 
   // Interactive mode: wrap with DndContext for drag-and-drop
@@ -418,6 +438,8 @@ export default function KanbanBoard({
           Updating...
         </div>
       )}
+
+      {legend}
 
       <DndContext
         sensors={sensors}
