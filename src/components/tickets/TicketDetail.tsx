@@ -258,6 +258,10 @@ export default function TicketDetail({
   const [titleDraft, setTitleDraft] = useState('');
   const [isSavingTitle, setIsSavingTitle] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const editTitleButtonRef = useRef<HTMLButtonElement>(null);
+  // Set only by an explicit exit -- Escape, or a save that went through -- so
+  // the first render of a ticket cannot move focus to the pencil.
+  const returnFocusToEditTitle = useRef(false);
   const [isSavingDescription, setIsSavingDescription] = useState(false);
   const mentionNames = useMentionableUsers();
   const descriptionRef = useRef<HTMLDivElement>(null);
@@ -552,6 +556,7 @@ export default function TicketDetail({
   };
 
   const handleCancelEditTitle = () => {
+    returnFocusToEditTitle.current = true;
     setIsEditingTitle(false);
     setTitleDraft('');
   };
@@ -561,6 +566,7 @@ export default function TicketDetail({
     setIsSavingTitle(true);
     try {
       await onTitleChange(titleDraftTrimmed);
+      returnFocusToEditTitle.current = true;
       setIsEditingTitle(false);
       setTitleDraft('');
     } catch (error) {
@@ -582,11 +588,17 @@ export default function TicketDetail({
   };
 
   // Focus and select on opening, so the common case -- replacing a subject
-  // that says nothing -- is one gesture rather than three.
+  // that says nothing -- is one gesture rather than three. On closing, focus
+  // goes back to the control that opened it: the input it was on has gone, and
+  // leaving focus on the body drops a keyboard reader at the top of the page.
   useEffect(() => {
-    if (!isEditingTitle) return;
-    titleInputRef.current?.focus();
-    titleInputRef.current?.select();
+    if (isEditingTitle) {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    } else if (returnFocusToEditTitle.current) {
+      returnFocusToEditTitle.current = false;
+      editTitleButtonRef.current?.focus();
+    }
   }, [isEditingTitle]);
 
   // Description editing handlers
@@ -890,6 +902,7 @@ export default function TicketDetail({
                 {onTitleChange && (
                   <button
                     type="button"
+                    ref={editTitleButtonRef}
                     onClick={handleEditTitle}
                     className="shrink-0 rounded p-1.5 transition-colors hover:bg-[var(--surface-hover)]"
                     style={{ color: 'var(--text-muted)' }}

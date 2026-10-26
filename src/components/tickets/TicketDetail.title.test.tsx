@@ -160,6 +160,35 @@ describe('TicketDetail title editing', () => {
     expect((saveButton() as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('puts focus back on the Edit control after Escape', () => {
+    // The input the reader was on has gone. Leaving focus on the body drops a
+    // keyboard reader back at the top of the page.
+    show(async () => {});
+    const pencil = screen.getByRole('button', { name: 'Edit title' });
+    fireEvent.click(pencil);
+    fireEvent.keyDown(input(), { key: 'Escape' });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit title' }));
+  });
+
+  it('puts focus back on the Edit control after a save', async () => {
+    const onTitleChange = vi.fn(async () => {});
+    show(onTitleChange);
+    openEditor();
+    fireEvent.change(input(), { target: { value: 'Cannot print' } });
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(onTitleChange).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit title' }))
+    );
+  });
+
+  it('leaves focus alone on first render', () => {
+    // Guards the obvious wrong fix: an effect that fires whenever the editor
+    // is closed would grab focus the moment a ticket is opened.
+    show(async () => {});
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it('stays open when the save fails, so the typing is not lost', async () => {
     const onTitleChange = vi.fn(async () => {
       throw new Error('DevOps said no');
