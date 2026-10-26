@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService, claimsEmailOrigin } from '@/lib/devops';
-import { isEmailTicket, extractRequesterEmail, sendAgentReply } from '@/lib/email';
+import {
+  isEmailTicket,
+  extractRequesterEmail,
+  sendAgentReply,
+  sendInternalNoteNotification,
+} from '@/lib/email';
+import { supportTeamRecipients } from '@/lib/support-team';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -155,6 +161,34 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     await devopsService.addComment(project.name, ticketId, commentText);
+
+    // An internal note is kept from the customer, which until now meant it
+    // reached nobody at all: a handover written on the ticket sat unread until
+    // somebody happened to open it (7767). The author is dropped from the
+    // list, since they know what they just wrote.
+    if (isInternal) {
+      // Best-effort, and guarded: the note is already on the ticket, so
+      // nothing here may turn a write that succeeded into a failed request.
+      try {
+        const recipients = supportTeamRecipients([session.user?.email]);
+        if (recipients.length > 0) {
+          const subject = workItem.fields?.['System.Title'] || 'Ticket';
+          sendInternalNoteNotification({
+            ticketId,
+            ticketSubject: String(subject),
+            authorName: session.user?.name || 'A colleague',
+            noteHtml: comment,
+            recipients: recipients.join(', '),
+          }).catch(() => {});
+        } else {
+          console.log(
+            `[Notify] SUPPORT_TEAM_NOTIFY_EMAIL not set — nobody told about the internal note on ticket #${ticketId}`
+          );
+        }
+      } catch (err) {
+        console.error(`[Notify] Internal note email failed for ticket #${ticketId}:`, err);
+      }
+    }
 
     if (isEmail) {
       const requesterEmail = extractRequesterEmail(tags);

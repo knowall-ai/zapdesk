@@ -221,6 +221,38 @@ export function customerReplyNotificationTemplate(opts: {
 }
 
 /**
+ * Tells the support team someone has left an internal note (7767).
+ *
+ * An internal note is the one kind of comment that reaches nobody: it is
+ * deliberately kept from the customer, and until now that meant it was kept
+ * from the rest of the team as well, so a handover written on the ticket sat
+ * unread until somebody happened to open it.
+ *
+ * A team email, and it carries no reply affordance beyond the link: a reply
+ * to this would go to the mailbox, not onto the ticket.
+ */
+export function internalNoteNotificationTemplate(opts: {
+  ticketId: number;
+  ticketSubject: string;
+  authorName: string;
+  noteHtml: string;
+}): string {
+  const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
+  return layoutWrapper(`
+    <p class="meta">Internal note on ticket <strong>#${opts.ticketId}</strong></p>
+    <p class="meta"><strong>Subject:</strong> ${escapeText(opts.ticketSubject)}</p>
+    <p class="meta"><strong>From:</strong> ${escapeText(opts.authorName)}</p>
+    <div class="content">
+      ${opts.noteHtml}
+    </div>
+    <p class="meta"><em>The customer cannot see this note. Reply on the ticket, not to this email.</em></p>
+    <p style="text-align: center; margin-top: 24px;">
+      <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
+    </p>
+  `);
+}
+
+/**
  * Tells the support team a new ticket has arrived by email (#485). A team
  * email, so it keeps its link into ZapDesk.
  */

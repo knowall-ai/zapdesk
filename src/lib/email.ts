@@ -22,6 +22,7 @@ import {
   ticketUpdatedTemplate,
   customerReplyNotificationTemplate,
   newTicketNotificationTemplate,
+  internalNoteNotificationTemplate,
   layoutWrapper,
   type HistoryEntry,
   type TicketFieldChange,
@@ -686,6 +687,41 @@ export async function sendCustomerReplyNotification(
  * `recipients` is one address or several separated by commas or semicolons.
  * Errors are logged and swallowed: the ticket already exists either way.
  */
+/**
+ * Tells the support team about an internal note (7767).
+ *
+ * `recipients` is one address or several. The note itself is quoted, because
+ * the point of telling somebody is that they can judge whether it needs them
+ * without opening the ticket first. Errors are logged and swallowed: the note
+ * is on the ticket either way.
+ */
+export async function sendInternalNoteNotification(opts: {
+  ticketId: number;
+  ticketSubject: string;
+  authorName: string;
+  noteHtml: string;
+  recipients: string;
+}): Promise<void> {
+  if (!isEmailConfigured()) return;
+  try {
+    const html = internalNoteNotificationTemplate(opts);
+    await sendViaGraph({
+      to: opts.recipients,
+      subject: `[ZapDesk #${opts.ticketId}] Internal note — "${opts.ticketSubject}"`,
+      html,
+      messageId: generateMessageId(opts.ticketId, 'team-internal-note'),
+    });
+    console.log(
+      `[Email] Internal note notification sent for ticket #${opts.ticketId} to ${opts.recipients}`
+    );
+  } catch (error) {
+    console.error(
+      `[Email] Failed to send internal note notification for ticket #${opts.ticketId}:`,
+      error
+    );
+  }
+}
+
 export async function sendNewTicketNotification(opts: {
   ticketId: number;
   ticketSubject: string;

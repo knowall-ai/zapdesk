@@ -159,8 +159,12 @@ export default function TicketDetail({
     setExitHref(exitFullViewHref(ticket.id));
   }, [ticket.id]);
   const leaveFullView = () => {
+    // Only the recorded origin counts as somewhere to go back to. This used to
+    // fall back to `router.back()` whenever the browser had any history, which
+    // a ticket opened from an email always does: following the link signs the
+    // reader in, and the sign-in redirects leave entries behind, so "back"
+    // returned to an auth page rather than the list (7771).
     if (exitHref) router.push(exitHref);
-    else if (window.history.length > 1) router.back();
     else router.push(isTicket ? '/tickets' : '/kanban');
   };
   const [isSubmitting, setIsSubmitting] = useState(false);
