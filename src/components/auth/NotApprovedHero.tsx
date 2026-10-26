@@ -35,7 +35,7 @@ export default function NotApprovedHero({
       {/* The big visual: ZapDesk's own product shot (from og-image.png), across the top on
           phones and as a large card bleeding off the right edge on desktop */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute top-[18%] right-[-10%] hidden h-[60%] w-[70%] rounded-full bg-[#22c55e]/15 blur-[120px] lg:block" />
+        <div className="bg-brand/15 absolute top-[18%] right-[-10%] hidden h-[60%] w-[70%] rounded-full blur-[120px] lg:block" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/assets/not-approved-hero.png"
@@ -51,14 +51,14 @@ export default function NotApprovedHero({
         <div className="flex items-center gap-2.5">
           <ZapDeskIcon size={32} />
           <span className="text-lg font-semibold tracking-tight">
-            <span className="text-[#22c55e]">Zap</span>Desk
+            <span className="text-brand">Zap</span>Desk
           </span>
         </div>
       </header>
 
       <section className="flex flex-1 items-end px-6 pt-[40vh] pb-12 lg:items-center lg:px-16 lg:pt-0 lg:pb-16">
         <div className="max-w-xl">
-          <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-[#22c55e]/40 bg-[#22c55e]/10 px-3 py-1 text-xs font-medium tracking-wide text-[#4ade80] uppercase">
+          <p className="border-brand/40 bg-brand/10 text-brand-hover mb-4 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium tracking-wide uppercase">
             Awaiting approval
           </p>
           <h1 className="text-4xl leading-[1.05] font-bold tracking-tight sm:text-5xl lg:text-6xl">
@@ -73,7 +73,7 @@ export default function NotApprovedHero({
           <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-4">
             <a
               href={mailto}
-              className="btn-primary inline-flex items-center gap-2 px-6! py-3! text-base shadow-lg shadow-[#22c55e]/20"
+              className="btn-primary shadow-brand/20 inline-flex items-center gap-2 px-6! py-3! text-base shadow-lg"
             >
               <Mail size={18} aria-hidden />
               Request access
@@ -82,7 +82,7 @@ export default function NotApprovedHero({
               Or email us at{' '}
               <a
                 href={`mailto:${ACCESS_REQUEST_EMAIL}`}
-                className="font-semibold text-white underline underline-offset-4 hover:text-[#4ade80]"
+                className="hover:text-brand-hover font-semibold text-white underline underline-offset-4"
               >
                 {ACCESS_REQUEST_EMAIL}
               </a>
