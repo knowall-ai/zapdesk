@@ -434,7 +434,7 @@ export default function KanbanGroupSection({
   }, [syncFromProps]);
 
   return (
-    <div className="card overflow-hidden">
+    <div className="card kanban-group">
       {/* Header. The summary sits beside the expand button, not inside it,
           because it holds a button of its own. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pr-4 transition-colors hover:bg-white/5">
