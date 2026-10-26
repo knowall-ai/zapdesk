@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { parseWorkItemId } from '@/lib/work-item-id';
 import { AzureDevOpsService } from '@/lib/devops';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -14,9 +15,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id } = await params;
-    const ticketId = parseInt(id, 10);
+    const ticketId = parseWorkItemId(id);
 
-    if (isNaN(ticketId)) {
+    if (ticketId === null) {
       return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
     }
 
