@@ -35,65 +35,86 @@ async function getProfileExtension(
   return (await response.json()) as GraphExtension;
 }
 
+/** The custom properties stored on an extension, without Graph's own metadata. */
+function storedFields(extension: GraphExtension): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(extension)) {
+    if (key.startsWith('@') || key === 'id' || key === 'extensionName') continue;
+    fields[key] = value;
+  }
+  return fields;
+}
+
 /**
  * Write fields to the user's ZapDesk profile extension, creating it if needed.
  *
- * Graph merges a PATCH into an open extension, so the fields not named here
- * are kept: saving a GitHub username leaves the Lightning address alone, and
- * the other way round. A null value clears a field.
+ * A PATCH on an open extension replaces all of its custom properties rather
+ * than merging them, so saving only the GitHub username wiped the Lightning
+ * address, and the other way round (#552). The stored extension is read first
+ * and the whole set written back, so the fields not named here are kept. A
+ * null value clears only that field.
+ *
+ * If the read fails, nothing is written: writing without it would drop
+ * whatever is stored.
  */
 async function updateProfileExtension(
   graphToken: string,
   userId: string,
   fields: ProfileFields
 ): Promise<boolean> {
-  const updateResponse = await fetch(
-    `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/extensions/${EXTENSION_NAME}`,
-    {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${graphToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(fields),
-    }
-  );
+  const current = await getProfileExtension(graphToken, userId);
 
-  if (updateResponse.ok) {
-    return true;
-  }
-
-  if (updateResponse.status === 404) {
-    // Nothing stored yet, so there is nothing to clear
-    if (Object.values(fields).every((value) => value === null)) return true;
-
-    const createResponse = await fetch(
-      `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/extensions`,
+  if (current) {
+    const updateResponse = await fetch(
+      `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/extensions/${EXTENSION_NAME}`,
       {
-        method: 'POST',
+        method: 'PATCH',
         headers: {
           Authorization: `Bearer ${graphToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           '@odata.type': 'microsoft.graph.openTypeExtension',
-          extensionName: EXTENSION_NAME,
+          ...storedFields(current),
           ...fields,
         }),
       }
     );
 
-    if (createResponse.ok) {
+    if (updateResponse.ok) {
       return true;
     }
 
-    const error = await createResponse.json().catch(() => null);
-    console.error('Failed to create profile extension:', createResponse.status, error);
+    const error = await updateResponse.json().catch(() => null);
+    console.error('Failed to update profile extension:', updateResponse.status, error);
     return false;
   }
 
-  const error = await updateResponse.json().catch(() => null);
-  console.error('Failed to update profile extension:', updateResponse.status, error);
+  // Nothing stored yet, so there is nothing to clear
+  if (Object.values(fields).every((value) => value === null)) return true;
+
+  const createResponse = await fetch(
+    `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/extensions`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${graphToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        '@odata.type': 'microsoft.graph.openTypeExtension',
+        extensionName: EXTENSION_NAME,
+        ...fields,
+      }),
+    }
+  );
+
+  if (createResponse.ok) {
+    return true;
+  }
+
+  const error = await createResponse.json().catch(() => null);
+  console.error('Failed to create profile extension:', createResponse.status, error);
   return false;
 }
 
