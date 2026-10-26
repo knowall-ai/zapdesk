@@ -1,12 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requestDevOpsOrg } from '@/lib/devops-org';
 import { calculateSLAStatusForTickets, sortByUrgency, getSLASummary } from '@/lib/sla';
 import { TICKET_WORK_ITEM_TYPES } from '@/types';
 import type { SLAStatusResponse } from '@/types';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -14,12 +15,15 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken, requestDevOpsOrg(request));
     // Restrict to the same work item types the Tickets view shows
     // (Task, Enhancement, Issue, Bug, Risk, Question) so Epics/Features/
     // User Stories tagged "ticket" don't inflate the SLA-breached count
     // on the Home page. (issue #408)
-    const tickets = await devopsService.getAllTickets(true, TICKET_WORK_ITEM_TYPES);
+    const { tickets, failedProjects } = await devopsService.getAllTickets(
+      true,
+      TICKET_WORK_ITEM_TYPES
+    );
 
     // Calculate SLA status for all active tickets
     const now = new Date();
@@ -39,6 +43,9 @@ export async function GET() {
     const response: SLAStatusResponse = {
       summary,
       tickets: atRiskTickets,
+      // Without this, a project that failed to load reads as "all on track"
+      // (#509). Present only when something failed.
+      ...(failedProjects.length > 0 ? { failedProjects } : {}),
     };
 
     return NextResponse.json(response);

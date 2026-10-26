@@ -19,14 +19,17 @@ import { useDroppable } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { ChevronDown, ChevronRight, Info } from 'lucide-react';
 import StandupKanbanCard from './StandupKanbanCard';
+import ActivitySummaryBar, { type PullRequestLoadState } from './ActivitySummaryBar';
 import { getColumnIcon, getColumnColor } from './columnConfig';
+import { highlightedFirst } from '@/lib/highlight-order';
 import {
   canTypeEnterColumn,
   resolveStateForColumn,
   type AllowedStates,
 } from '@/lib/kanban-columns';
 import { formatLastUpdated, summarizeGroup } from '@/lib/kanban-summary';
-import type { StandupColumn, StandupWorkItem } from '@/types';
+import type { GroupActivitySummary, HighlightReason } from '@/lib/activity-summary';
+import type { PullRequestActivity, StandupColumn, StandupWorkItem } from '@/types';
 import { debugLog, debugWarn } from '@/lib/debug';
 import {
   readExpandedGroups,
@@ -48,6 +51,7 @@ function DroppableColumn({
   isBlocked = false,
   blockedReason,
   isFocused = false,
+  highlights,
   onItemClick,
 }: {
   name: string;
@@ -59,11 +63,17 @@ function DroppableColumn({
   blockedReason?: string;
   /** The board is narrowed to this state (a KPI tile is pressed); mark the column. */
   isFocused?: boolean;
+  /** While highlighting: the cards to light up, and why. Everything else is dimmed. */
+  highlights?: Map<number, HighlightReason[]>;
   onItemClick?: (item: StandupWorkItem) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: name, disabled: isBlocked });
   const color = getColumnColor(name, category);
   const isDoneColumn = category === 'Completed';
+  // Highlighted cards first while highlighting is on (#503). One array for both
+  // the rendered list and the SortableContext below: if those two disagree, a
+  // drag lands on the wrong card.
+  const ordered = useMemo(() => highlightedFirst(items, highlights), [items, highlights]);
 
   return (
     <div
@@ -96,12 +106,14 @@ function DroppableColumn({
         ref={setNodeRef}
         className={`kanban-column-content ${isOver ? 'kanban-column-over' : ''}`}
       >
-        <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-          {items.map((item) => (
+        <SortableContext items={ordered.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+          {ordered.map((item) => (
             <StandupKanbanCard
               key={item.id}
               item={item}
               isDragging={activeId === item.id}
+              highlight={highlights?.get(item.id)}
+              dimmed={highlights !== undefined && !highlights.has(item.id)}
               onClick={onItemClick}
             />
           ))}
@@ -115,6 +127,15 @@ function DroppableColumn({
       </div>
     </div>
   );
+}
+
+/** The group's last-24-hours activity, shown in its header. */
+export interface GroupActivity {
+  summary: GroupActivitySummary;
+  /** Start of the window, epoch ms. */
+  since: number;
+  pullRequests: PullRequestActivity[];
+  pullRequestState: PullRequestLoadState;
 }
 
 interface KanbanGroupSectionProps {
@@ -136,6 +157,7 @@ interface KanbanGroupSectionProps {
   /** `project` is the card's own project; passing it on saves the server a search. */
   onStateChange?: (itemId: number, targetState: string, project?: string) => Promise<void>;
   onItemClick?: (item: StandupWorkItem) => void;
+  activity?: GroupActivity;
 }
 
 export default function KanbanGroupSection({
@@ -146,6 +168,7 @@ export default function KanbanGroupSection({
   allowedStatesByProjectType,
   onStateChange,
   onItemClick,
+  activity,
 }: KanbanGroupSectionProps) {
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
   const summary = useMemo(() => summarizeGroup(columns), [columns]);
@@ -168,6 +191,21 @@ export default function KanbanGroupSection({
       writeGroupExpanded(sessionPositionStorage(), positionScope, groupName, next);
     }
   };
+  // On by default (#498), so cards with activity stand out straight away.
+  const [highlighting, setHighlighting] = useState(true);
+  // A group with no activity has nothing to light up, so nothing is dimmed.
+  const hasHighlights = (activity?.summary.highlights.size ?? 0) > 0;
+  const highlightOn = highlighting && hasHighlights;
+  /**
+   * Switch this group's highlight off or on. Highlighting a collapsed group
+   * opens it, or the button would do nothing visible.
+   */
+  const toggleHighlight = () => {
+    const next = !highlightOn;
+    setHighlighting(next);
+    if (next && !expanded) toggleExpanded();
+  };
+  const highlights = highlightOn ? activity?.summary.highlights : undefined;
   const [activeId, setActiveId] = useState<number | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -396,55 +434,71 @@ export default function KanbanGroupSection({
   }, [syncFromProps]);
 
   return (
-    <div className="card kanban-group">
-      {/* Header */}
-      <button
-        onClick={toggleExpanded}
-        aria-expanded={expanded}
-        className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 p-4 text-left transition-colors hover:bg-white/5"
-      >
-        <span style={{ color: 'var(--text-muted)' }}>
-          {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-        </span>
-
-        <h3 className="flex-1 text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-          {groupName}
-        </h3>
-
-        {/* What is inside, readable without opening the group (#321). */}
-        {totalItems > 0 && (
-          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {summary.counts.map((count) => (
-              <span
-                key={count.name}
-                className="flex items-center gap-1 text-xs font-medium"
-                style={{ color: getColumnColor(count.name, count.category) }}
-              >
-                {getColumnIcon(count.name, count.category, 12)}
-                {/* The name is written out: Resolved and Closed share an icon,
-                    and a tooltip is no help on a touch screen. */}
-                <span style={{ color: 'var(--text-muted)' }}>{count.name}</span>
-                <span style={{ color: 'var(--text-secondary)' }}>{count.count}</span>
-              </span>
-            ))}
-            {summary.lastUpdated && (
-              <span
-                className="text-xs"
-                style={{ color: 'var(--text-muted)' }}
-                title={summary.lastUpdated.toLocaleString('en-GB')}
-              >
-                {formatLastUpdated(summary.lastUpdated)}
-              </span>
-            )}
+    <div className="card overflow-hidden">
+      {/* Header. The summary sits beside the expand button, not inside it,
+          because it holds a button of its own. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pr-4 transition-colors hover:bg-white/5">
+        <button
+          onClick={toggleExpanded}
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2 p-4 text-left"
+        >
+          <span style={{ color: 'var(--text-muted)' }}>
+            {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
           </span>
-        )}
 
-        {totalItems === 0 && (
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            No items
-          </span>
+          <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {groupName}
+          </h3>
+
+          {/* What is inside, readable without opening the group (#321). */}
+          {totalItems > 0 && (
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {summary.counts.map((count) => (
+                <span
+                  key={count.name}
+                  className="flex items-center gap-1 text-xs font-medium"
+                  style={{ color: getColumnColor(count.name, count.category) }}
+                >
+                  {getColumnIcon(count.name, count.category, 12)}
+                  {/* The name is written out: Resolved and Closed share an icon,
+                      and a tooltip is no help on a touch screen. */}
+                  <span style={{ color: 'var(--text-muted)' }}>{count.name}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>{count.count}</span>
+                </span>
+              ))}
+              {summary.lastUpdated && (
+                <span
+                  className="text-xs"
+                  style={{ color: 'var(--text-muted)' }}
+                  title={summary.lastUpdated.toLocaleString('en-GB')}
+                >
+                  {formatLastUpdated(summary.lastUpdated)}
+                </span>
+              )}
+            </span>
+          )}
+
+          {totalItems === 0 && (
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              No items
+            </span>
+          )}
+        </button>
+
+        {activity && (
+          <div className="pb-3 pl-4 md:pb-0 md:pl-0">
+            <ActivitySummaryBar
+              summary={activity.summary}
+              since={activity.since}
+              pullRequests={activity.pullRequests}
+              pullRequestState={activity.pullRequestState}
+              highlighted={highlightOn}
+              onToggleHighlight={toggleHighlight}
+            />
+          </div>
         )}
-      </button>
+      </div>
 
       {/* Kanban board */}
       {expanded && totalItems > 0 && (
@@ -475,6 +529,7 @@ export default function KanbanGroupSection({
                     activeId={activeId}
                     isBlocked={isBlocked}
                     isFocused={focusedColumn === col.name}
+                    highlights={highlights}
                     blockedReason={
                       isBlocked && activeItem
                         ? `${activeItem.workItemType} work items have no "${col.name}" state`

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { format, subDays, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { Calendar, Download, Plus, Loader2, RefreshCw } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
@@ -13,15 +14,35 @@ import type { MonthlyCheckpointStats, DevOpsProject, Ticket } from '@/types';
 
 type DatePreset = 'last30' | 'thisMonth' | 'lastMonth' | 'custom';
 
+/**
+ * The checkpoint report: pick a project, a period and optionally one customer
+ * (#7385), then read the KPIs, trends and tickets, or export them as a PDF.
+ */
 function MonthlyCheckpointContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { get: devOpsGet, hasOrganization } = useDevOpsApi();
+  const { get: devOpsGet, hasOrganization, selectedOrganization } = useDevOpsApi();
   const printRef = useRef<HTMLDivElement>(null);
 
   const [projects, setProjects] = useState<DevOpsProject[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
+  // '' is every customer. Cleared when the project or the organisation changes,
+  // as customers belong to a project (#7385).
+  const [selectedCustomer, setSelectedCustomer] = useState<string>('');
+
+  // A customer key means nothing in another organisation or project, and the
+  // API rejects one it does not know, so changing either clears it -- whether
+  // the change came from the selectors or the URL. Done while rendering rather
+  // than in an effect: an effect would let the report fetch run once with the
+  // old key before the reset landed.
+  const orgName = selectedOrganization?.accountName ?? null;
+  const customerScope = `${orgName ?? ''}|${selectedProject}`;
+  const [customerScopeSeen, setCustomerScopeSeen] = useState(customerScope);
+  if (customerScopeSeen !== customerScope) {
+    setCustomerScopeSeen(customerScope);
+    setSelectedCustomer('');
+  }
   const [datePreset, setDatePreset] = useState<DatePreset>('last30');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -69,6 +90,7 @@ function MonthlyCheckpointContent() {
     }
   }, [searchParams]);
 
+  /** Load the projects for the selector, sorted by name. */
   const fetchProjects = useCallback(async () => {
     if (!hasOrganization) return;
     setIsLoadingProjects(true);
@@ -87,8 +109,24 @@ function MonthlyCheckpointContent() {
     }
   }, [devOpsGet, hasOrganization]);
 
+  // Only the latest request may update the report. Without this, a slow answer
+  // for an earlier project, period or customer could land last and be shown
+  // under the newer selection.
+  const statsSeqRef = useRef(0);
+
+  // Which organisation and project the report on screen belongs to. The
+  // customer list comes from that report, so until the new project's report
+  // arrives the old list must not be offered: a customer picked from it would
+  // be sent to a project that has never had them, and rejected.
+  const [statsFor, setStatsFor] = useState<string | null>(null);
+  const selectionKey = `${orgName ?? ''}|${selectedProject}`;
+  const customerOptions = statsFor === selectionKey ? (stats?.customers ?? []) : [];
+
+  /** Load the report for the current project, period and customer. */
   const fetchStats = useCallback(async () => {
     if (!hasOrganization) return;
+    const seq = ++statsSeqRef.current;
+    const isCurrent = () => seq === statsSeqRef.current;
     setIsLoading(true);
     setError(null);
     try {
@@ -97,11 +135,14 @@ function MonthlyCheckpointContent() {
         startDate,
         endDate,
       });
+      if (selectedCustomer) params.set('customer', selectedCustomer);
 
       const response = await devOpsGet(`/api/devops/monthly-checkpoint?${params}`);
+      if (!isCurrent()) return;
       if (!response.ok) throw new Error('Failed to fetch checkpoint data');
 
       const data: MonthlyCheckpointStats = await response.json();
+      if (!isCurrent()) return;
 
       // Convert date strings to Date objects for tickets
       data.tickets = data.tickets.map((t: Ticket) => ({
@@ -111,27 +152,32 @@ function MonthlyCheckpointContent() {
       }));
 
       setStats(data);
+      setStatsFor(`${orgName ?? ''}|${selectedProject}`);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err instanceof Error ? err.message : 'Failed to load data');
       console.error('Failed to fetch stats:', err);
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
-  }, [selectedProject, startDate, endDate, devOpsGet, hasOrganization]);
+  }, [selectedProject, selectedCustomer, startDate, endDate, devOpsGet, hasOrganization, orgName]);
 
   // Fetch projects
+  // Keyed on a stable flag, not the session object NextAuth replaces on every
+  // window focus -- that refetched everything on each tab switch (#7391).
+  const isSignedIn = !!session?.accessToken;
   useEffect(() => {
-    if (session?.accessToken) {
+    if (isSignedIn) {
       fetchProjects();
     }
-  }, [session, fetchProjects]);
+  }, [isSignedIn, fetchProjects]);
 
   // Fetch stats when project or dates change
   useEffect(() => {
-    if (selectedProject && startDate && endDate && session?.accessToken) {
+    if (selectedProject && startDate && endDate && isSignedIn) {
       fetchStats();
     }
-  }, [selectedProject, startDate, endDate, session, fetchStats]);
+  }, [selectedProject, startDate, endDate, isSignedIn, fetchStats]);
 
   const handleExportPDF = () => {
     // Use browser's print functionality with print-specific styles
@@ -156,7 +202,7 @@ function MonthlyCheckpointContent() {
   }
 
   if (status === 'unauthenticated') {
-    router.push('/login');
+    router.push(loginHref());
     return null;
   }
 
@@ -194,7 +240,11 @@ function MonthlyCheckpointContent() {
               <button
                 onClick={handleExportPDF}
                 className="btn-primary flex items-center gap-2"
-                disabled={!stats}
+                // Only when the page is showing a report for the current
+                // selection: while one loads the page shows a spinner, and
+                // after a failed load it shows the error, under a header that
+                // already names the new selection.
+                disabled={!stats || isLoading || !!error}
               >
                 <Download size={16} />
                 Export PDF
@@ -223,7 +273,10 @@ function MonthlyCheckpointContent() {
               ) : (
                 <select
                   value={selectedProject}
-                  onChange={(e) => setSelectedProject(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedProject(e.target.value);
+                    setSelectedCustomer('');
+                  }}
                   className="input min-w-[200px]"
                 >
                   <option value="">Select a project...</option>
@@ -235,6 +288,33 @@ function MonthlyCheckpointContent() {
                 </select>
               )}
             </div>
+
+            {/* Customer filter (#7385) */}
+            {selectedProject && (
+              <div>
+                <label
+                  className="mb-1 block text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Customer
+                </label>
+                <select
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                  className="input min-w-[200px]"
+                  // Kept usable while a customer is chosen, so "All customers"
+                  // can always be picked to get back to the full report.
+                  disabled={isLoading || (customerOptions.length === 0 && !selectedCustomer)}
+                >
+                  <option value="">All customers</option>
+                  {customerOptions.map((customer) => (
+                    <option key={customer.key} value={customer.key}>
+                      {customer.displayName} ({customer.ticketCount})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Date preset */}
             <div>
@@ -324,6 +404,13 @@ function MonthlyCheckpointContent() {
             <p style={{ color: 'var(--text-secondary)' }}>
               <strong>Project:</strong> {selectedProject}
             </p>
+            {selectedCustomer && (
+              <p style={{ color: 'var(--text-secondary)' }}>
+                <strong>Customer:</strong>{' '}
+                {stats?.customers?.find((c) => c.key === selectedCustomer)?.displayName ??
+                  selectedCustomer}
+              </p>
+            )}
             <p style={{ color: 'var(--text-secondary)' }}>
               <strong>Period:</strong> {startDate && format(new Date(startDate), 'dd MMM yyyy')} -{' '}
               {endDate && format(new Date(endDate), 'dd MMM yyyy')}
@@ -437,6 +524,7 @@ function MonthlyCheckpointContent() {
   );
 }
 
+/** Route entry; Suspense is required because the content reads search params. */
 export default function MonthlyCheckpointPage() {
   return (
     <Suspense

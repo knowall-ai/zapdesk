@@ -2,6 +2,8 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
+import { takeOpenRequest } from '@/lib/full-view';
 import {
   Suspense,
   useEffect,
@@ -17,14 +19,34 @@ import { RefreshCw, FolderOpen, User, Radio } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { StandupSummaryCards, KanbanGroupSection } from '@/components/standup';
+import type { GroupActivity } from '@/components/standup/KanbanGroupSection';
+import type { PullRequestLoadState } from '@/components/standup/ActivitySummaryBar';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import { useDevOpsApi } from '@/hooks';
+import { useSourceFilter } from '@/components/providers/SourceProvider';
+import SourceLegend from '@/components/common/SourceLegend';
+import { sourceKindOf, type SourceKind } from '@/lib/source-colors';
 import { readScrollTop, sessionPositionStorage, writeScrollTop } from '@/lib/kanban-position';
 import { ticketToWorkItem } from '@/lib/devops';
 import { debugLog } from '@/lib/debug';
 import { groupsWithColumn } from '@/lib/kanban-summary';
+import { canonicalProject, filterStandupByProject } from '@/lib/kanban-project';
 import { createBoardCache } from '@/lib/standup-board-cache';
-import type { StandupData, StandupColumn, StandupWorkItem, Ticket } from '@/types';
+import {
+  activityWindowStart,
+  pullRequestsForGroup,
+  assigneeEmails,
+  summariseGroupActivity,
+} from '@/lib/activity-summary';
+import type {
+  PullRequestActivityResponse,
+  SourceFilter,
+  StandupData,
+  StandupColumn,
+  StandupWorkItem,
+  Ticket,
+  EffortHoursUpdate,
+} from '@/types';
 
 type GroupBy = 'project' | 'person';
 
@@ -42,15 +64,28 @@ const standupCache = createBoardCache<StandupData>(STANDUP_CACHE_TTL_MS);
 const LIVE_UPDATE_INTERVAL_MS = STANDUP_CACHE_TTL_MS;
 const LIVE_UPDATE_STORAGE_KEY = 'zapdesk:kanban:liveUpdate';
 
-function cacheKey(organization: string, currentSprintOnly: boolean): string {
-  return `${organization}::${currentSprintOnly ? 'sprint' : 'all'}`;
+// Pull request activity for the 24-hour summary. It fans out across every
+// project and repository, so it's held longer than the board: live-update
+// ticks reuse it and only refetch once it's this old.
+const PR_ACTIVITY_CACHE_TTL_MS = 2 * 60 * 1000;
+const prActivityCache = createBoardCache<PullRequestActivityResponse>(PR_ACTIVITY_CACHE_TTL_MS);
+
+function cacheKey(organization: string, currentSprintOnly: boolean, sources: SourceFilter): string {
+  return `${organization}::${currentSprintOnly ? 'sprint' : 'all'}::${sources}`;
 }
 
 /** Build /kanban URL with the given params */
-function buildKanbanUrl(groupBy: GroupBy, sprint: boolean, column: string | null = null): string {
+function buildKanbanUrl(
+  groupBy: GroupBy,
+  sprint: boolean,
+  project?: string | null,
+  column: string | null = null
+): string {
   const params = new URLSearchParams();
   if (groupBy !== 'project') params.set('groupBy', groupBy);
   if (sprint) params.set('sprint', 'true');
+  // One project's board (#7377), e.g. a support board.
+  if (project) params.set('project', project);
   if (column) params.set('column', column);
   const qs = params.toString();
   return `/kanban${qs ? `?${qs}` : ''}`;
@@ -97,6 +132,28 @@ function regroupByPerson(data: StandupData): GroupData[] {
     }));
 }
 
+/**
+ * Which sources have at least one card on the board.
+ *
+ * Read off the cards rather than guessed from the source filter -- the filter
+ * can ask for both while only one has any items, and a legend for a colour
+ * nobody can see is noise (#465). A module-level function rather than inline
+ * work in a `useMemo`, which the React Compiler cannot preserve.
+ */
+function sourceKindsOnBoard(data: StandupData | null): SourceKind[] {
+  const kinds = new Set<SourceKind>();
+  for (const project of data?.projects ?? []) {
+    for (const column of project.columns) {
+      for (const item of column.items) {
+        kinds.add(sourceKindOf(item));
+        if (kinds.size === 2) return [...kinds];
+      }
+    }
+  }
+  return [...kinds];
+}
+
+/** Route entry for the Kanban board; Suspense is required because the board reads search params. */
 export default function StandupPage() {
   return (
     <Suspense
@@ -111,6 +168,7 @@ export default function StandupPage() {
   );
 }
 
+/** The Kanban board: work items grouped by project or person, with pull request activity. */
 function StandupPageContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -126,11 +184,20 @@ function StandupPageContent() {
   const groupBy: GroupBy = (searchParams.get('groupBy') as GroupBy) || 'project';
   const currentSprintOnly = searchParams.get('sprint') === 'true';
   // The state the board is narrowed to by a pressed KPI tile (#320). In the URL
-  // with the other two, so the narrowed board can be linked to and survives a
+  // with the others, so the narrowed board can be linked to and survives a
   // reload. Checked against the board's real columns below, before use.
   const columnParam = searchParams.get('column');
+  // Only this project's items, when chosen (#7377).
+  const requestedProject = searchParams.get('project');
+  // Azure DevOps, GitHub or both, from the header toggle (#447)
+  const { sourceFilter, sourceReady } = useSourceFilter();
 
   const [standupData, setStandupData] = useState<StandupData | null>(null);
+  // When the board on screen was loaded; the 24-hour window ends here.
+  const [boardLoadedAt, setBoardLoadedAt] = useState(0);
+  const [prActivity, setPrActivity] = useState<PullRequestActivityResponse | null>(null);
+  const [prState, setPrState] = useState<PullRequestLoadState>('loading');
+  const prFetchSeqRef = useRef(0);
   // The cache key of the board currently on screen, readable from inside
   // `fetchStandupData` without putting `standupData` in its dependency list —
   // which would rebuild the callback on every poll and re-subscribe the
@@ -186,7 +253,7 @@ function StandupPageContent() {
       }
 
       const organization = selectedOrganization.accountName;
-      const key = cacheKey(organization, currentSprintOnly);
+      const key = cacheKey(organization, currentSprintOnly, sourceFilter);
       // A work item was just changed. Any request already in flight read the
       // board before that, so it must not answer for this refresh (#366).
       if (afterChange) standupCache.invalidate(organization);
@@ -200,6 +267,7 @@ function StandupPageContent() {
         if (cached) {
           loadedKeyRef.current = key;
           setStandupData(cached);
+          setBoardLoadedAt(Date.now());
           setLoading(false);
           setRefreshing(false);
           setError(null);
@@ -225,6 +293,9 @@ function StandupPageContent() {
           if (currentSprintOnly) {
             params.set('currentSprintOnly', 'true');
           }
+          if (sourceFilter !== 'both') {
+            params.set('sources', sourceFilter);
+          }
           const queryString = params.toString();
           const url = `/api/devops/standup${queryString ? `?${queryString}` : ''}`;
           const response = await devOpsGet(url);
@@ -238,6 +309,14 @@ function StandupPageContent() {
         if (superseded || !isCurrent()) return;
         loadedKeyRef.current = key;
         setStandupData(data);
+        setBoardLoadedAt(Date.now());
+        if (data.failedGitHubRepos?.length) {
+          // Fixed id, so a repository that keeps failing does not stack a
+          // message on every live-update tick.
+          toast.warning(`Could not load GitHub issues from ${data.failedGitHubRepos.join(', ')}`, {
+            id: 'kanban-github-failed',
+          });
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to load standup data';
         // `error` swaps the whole board out for the error screen, which is
@@ -272,14 +351,67 @@ function StandupPageContent() {
       selectedOrganization?.accountName,
       devOpsGet,
       currentSprintOnly,
+      sourceFilter,
     ]
   );
 
+  // Pull requests from Azure DevOps and GitHub (#483), following the header
+  // toggle. A failure leaves the board alone and just marks the PR counts
+  // unavailable.
+  const fetchPrActivity = useCallback(
+    async (forceRefresh = false) => {
+      if (!session?.accessToken || !hasOrganization || !selectedOrganization?.accountName) return;
+      const mySeq = ++prFetchSeqRef.current;
+      const isCurrent = () => mySeq === prFetchSeqRef.current;
+
+      const organization = selectedOrganization.accountName;
+      // Cached per toggle setting: each asks for different pull requests.
+      const cacheKey = `${organization}|${sourceFilter}`;
+      if (!forceRefresh) {
+        const cached = prActivityCache.getFresh(cacheKey);
+        if (cached) {
+          setPrActivity(cached);
+          setPrState('ready');
+          return;
+        }
+      }
+
+      try {
+        const { data } = await prActivityCache.load(cacheKey, organization, async () => {
+          const since = activityWindowStart(new Date()).toISOString();
+          const sources = sourceFilter === 'both' ? '' : `&sources=${sourceFilter}`;
+          const response = await devOpsGet(
+            `/api/devops/pr-activity?since=${encodeURIComponent(since)}${sources}`
+          );
+          if (!response.ok) throw new Error('Failed to fetch pull request activity');
+          return (await response.json()) as PullRequestActivityResponse;
+        });
+        if (!isCurrent()) return;
+        setPrActivity(data);
+        setPrState('ready');
+      } catch (err) {
+        if (!isCurrent()) return;
+        console.error('Failed to load pull request activity:', err);
+        setPrState('error');
+      }
+    },
+    [
+      session?.accessToken,
+      hasOrganization,
+      selectedOrganization?.accountName,
+      devOpsGet,
+      sourceFilter,
+    ]
+  );
+
+  // Wait until the source toggle is known, so the board loads once with the
+  // right sources instead of DevOps first and then everything again.
   useEffect(() => {
-    if (session?.accessToken && hasOrganization) {
+    if (session?.accessToken && hasOrganization && sourceReady) {
       fetchStandupData();
+      fetchPrActivity();
     }
-  }, [session?.accessToken, hasOrganization, fetchStandupData]);
+  }, [session?.accessToken, hasOrganization, sourceReady, fetchStandupData, fetchPrActivity]);
 
   // Live update: while the tab is visible, run a poll on the cache TTL
   // cadence. When the tab is hidden the interval is cleared so no timer
@@ -294,8 +426,10 @@ function StandupPageContent() {
     // No need to re-check the toggle in here: this effect only runs while
     // `liveUpdate` is true and its cleanup tears the timer down the moment
     // it flips, so reaching this point already means live update is on.
+    // Pull requests are left to their own, longer cache.
     const tick = () => {
       fetchStandupData(true, true);
+      fetchPrActivity();
     };
 
     const startInterval = () => {
@@ -313,7 +447,7 @@ function StandupPageContent() {
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        fetchStandupData(true, true);
+        tick();
         startInterval();
       } else {
         stopInterval();
@@ -329,7 +463,7 @@ function StandupPageContent() {
       stopInterval();
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [liveUpdate, fetchStandupData]);
+  }, [liveUpdate, fetchStandupData, fetchPrActivity]);
 
   // Persist the toggle so it carries across page reloads. Skipped until
   // after the restore effect has hydrated the value, so we don't briefly
@@ -378,36 +512,64 @@ function StandupPageContent() {
   // Fetch the full Ticket on card click and open the detail dialog.
   // Uses a monotonic seq id so out-of-order responses from rapid clicks
   // can't overwrite the dialog with a stale ticket.
+  const currentOrgRef = useRef(selectedOrganization?.accountName);
+  useEffect(() => {
+    currentOrgRef.current = selectedOrganization?.accountName;
+  }, [selectedOrganization]);
+
+  // A ticket of the old organisation must not stay open after a switch: its
+  // edits would be sent with the new organisation's header.
+  const [dialogOrg, setDialogOrg] = useState(selectedOrganization?.accountName);
+  if (dialogOrg !== selectedOrganization?.accountName) {
+    setDialogOrg(selectedOrganization?.accountName);
+    setSelectedTicket(null);
+    setIsLoadingTicket(false);
+  }
+
   const handleItemClick = useCallback(
     async (item: StandupWorkItem) => {
       const mySeq = ++ticketFetchSeqRef.current;
+      const requestedOrg = selectedOrganization?.accountName;
+      // Superseded by a newer click, or by an organisation switch.
+      const isStale = () =>
+        mySeq !== ticketFetchSeqRef.current || currentOrgRef.current !== requestedOrg;
       setIsLoadingTicket(true);
       try {
         const response = await devOpsGet(`/api/devops/tickets/${item.id}`);
-        if (mySeq !== ticketFetchSeqRef.current) return; // a newer click superseded us
+        if (isStale()) return;
         if (!response.ok) {
           throw new Error('Failed to fetch ticket');
         }
         const data = (await response.json()) as {
           ticket: Ticket & { createdAt: string; updatedAt: string };
         };
-        if (mySeq !== ticketFetchSeqRef.current) return;
+        if (isStale()) return;
         setSelectedTicket({
           ...data.ticket,
           createdAt: new Date(data.ticket.createdAt),
           updatedAt: new Date(data.ticket.updatedAt),
         });
       } catch (err) {
-        if (mySeq !== ticketFetchSeqRef.current) return;
+        if (isStale()) return;
         console.error('Failed to load ticket for dialog:', err);
       } finally {
-        if (mySeq === ticketFetchSeqRef.current) {
+        if (!isStale()) {
           setIsLoadingTicket(false);
         }
       }
     },
-    [devOpsGet]
+    [devOpsGet, selectedOrganization?.accountName]
   );
+
+  // Coming back from a ticket's full view: reopen its quick view (#7727).
+  const openRequestRef = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (openRequestRef.current === undefined) openRequestRef.current = takeOpenRequest();
+    const wanted = openRequestRef.current;
+    if (!wanted || !hasOrganization) return;
+    openRequestRef.current = null;
+    handleItemClick({ id: wanted } as StandupWorkItem);
+  }, [hasOrganization, handleItemClick]);
 
   // Dialog state-change: reuse existing kanban state-change logic, then
   // mirror the new state on selectedTicket so the dialog UI updates.
@@ -458,6 +620,22 @@ function StandupPageContent() {
         toast.success(assigneeId ? 'Assignee updated' : 'Assignee cleared');
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to update assignee');
+        throw err;
+      }
+    },
+    [patchTicket, selectedTicket]
+  );
+
+  // Effort hours (#7728). Through patchTicket like the other fields, so the
+  // open dialog takes the saved values and the board's cards refresh.
+  const handleDialogEffortChange = useCallback(
+    async (workItemId: number, hours: EffortHoursUpdate) => {
+      const project = selectedTicket?.id === workItemId ? selectedTicket.project : undefined;
+      try {
+        await patchTicket(workItemId, { ...hours, project });
+        toast.success('Hours updated');
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to update hours');
         throw err;
       }
     },
@@ -539,7 +717,25 @@ function StandupPageContent() {
     [devOpsPatch, selectedTicket, fetchStandupData]
   );
 
+  const projectNames = useMemo(
+    () =>
+      (standupData?.projects ?? []).map((p) => p.projectName).sort((a, b) => a.localeCompare(b)),
+    [standupData]
+  );
+  // The project as the board names it, so ?project=internal and the picker agree.
+  const projectFilter = useMemo(
+    () => canonicalProject(requestedProject, projectNames),
+    [requestedProject, projectNames]
+  );
+  const boardData = useMemo(
+    () => filterStandupByProject(standupData, projectFilter),
+    [standupData, projectFilter]
+  );
+
+  const sourcesOnBoard = useMemo<SourceKind[]>(() => sourceKindsOnBoard(boardData), [boardData]);
+
   const groups: GroupData[] = useMemo(() => {
+    const standupData = boardData;
     if (!standupData) return [];
 
     if (groupBy === 'person') {
@@ -550,7 +746,42 @@ function StandupPageContent() {
       groupName: p.projectName,
       columns: p.columns,
     }));
-  }, [standupData, groupBy]);
+  }, [boardData, groupBy]);
+
+  // Each group's last-24-working-hours summary, keyed by group name.
+  const groupActivity = useMemo(() => {
+    const map = new Map<string, GroupActivity>();
+    if (!boardLoadedAt) return map;
+    const since = activityWindowStart(new Date(boardLoadedAt)).getTime();
+    const allPullRequests = (prActivity?.pullRequests ?? []).filter(
+      (pr) => !projectFilter || pr.project.toLowerCase() === projectFilter.toLowerCase()
+    );
+    // A project whose pull requests couldn't be read makes its own group's
+    // count unknown, and every person's too: anyone may have worked there.
+    const failedProjects = new Set(
+      (prActivity?.failedProjects ?? []).filter(
+        // Another project's failure says nothing about the chosen one.
+        (name) => !projectFilter || name.toLowerCase() === projectFilter.toLowerCase()
+      )
+    );
+    const incomplete = (groupName: string) =>
+      groupBy === 'project' ? failedProjects.has(groupName) : failedProjects.size > 0;
+    for (const group of groups) {
+      const pullRequests = pullRequestsForGroup(
+        allPullRequests,
+        groupBy,
+        group.groupName,
+        groupBy === 'person' ? assigneeEmails(group.columns) : undefined
+      );
+      map.set(group.groupName, {
+        summary: summariseGroupActivity(group.columns, pullRequests, since),
+        since,
+        pullRequests,
+        pullRequestState: prState === 'ready' && incomplete(group.groupName) ? 'error' : prState,
+      });
+    }
+    return map;
+  }, [groups, groupBy, prActivity, prState, boardLoadedAt, projectFilter]);
 
   // A column name from the URL counts only if the board has that column.
   const focusedColumn =
@@ -563,14 +794,16 @@ function StandupPageContent() {
     (columnName: string) => {
       // Pressing the pressed tile again shows every group.
       const next = columnName === focusedColumn ? null : columnName;
-      router.replace(buildKanbanUrl(groupBy, currentSprintOnly, next), { scroll: false });
+      router.replace(buildKanbanUrl(groupBy, currentSprintOnly, projectFilter, next), {
+        scroll: false,
+      });
     },
-    [router, groupBy, currentSprintOnly, focusedColumn]
+    [router, groupBy, currentSprintOnly, projectFilter, focusedColumn]
   );
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 
@@ -579,10 +812,11 @@ function StandupPageContent() {
   // remembered by each group; this is the scroll position of the board.
   const organizationName = selectedOrganization?.accountName ?? '';
   const groupScope = `${organizationName}:${groupBy}`;
-  // The board narrowed to one state keeps a position of its own. Narrowing
-  // shortens the board, which clamps the scroll position; sharing one record
-  // would lose where the user was on the whole board when they went back.
-  const scrollScope = `${groupScope}:${currentSprintOnly ? 'sprint' : 'all'}:${focusedColumn ?? ''}`;
+  // A board narrowed to one state, or to one project, keeps a position of its
+  // own. Narrowing shortens the board, which clamps the scroll position;
+  // sharing one record would lose where the user was on the whole board when
+  // they went back.
+  const scrollScope = `${groupScope}:${currentSprintOnly ? 'sprint' : 'all'}:${projectFilter ?? '*'}:${focusedColumn ?? ''}`;
   const boardRef = useRef<HTMLDivElement>(null);
   // The scope whose position has been put back. The saved position is applied
   // each time a board comes on screen (first load, or after the loading
@@ -634,8 +868,45 @@ function StandupPageContent() {
               <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
                 Kanban Board
               </h1>
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                All projects &middot;{' '}
+              <p
+                className="flex flex-wrap items-center gap-1 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <label htmlFor="kanban-project" className="sr-only">
+                  Project
+                </label>
+                <select
+                  id="kanban-project"
+                  value={projectFilter ?? ''}
+                  onChange={(e) =>
+                    router.replace(
+                      buildKanbanUrl(
+                        groupBy,
+                        currentSprintOnly,
+                        e.target.value || null,
+                        columnParam
+                      ),
+                      {
+                        scroll: false,
+                      }
+                    )
+                  }
+                  className="rounded border bg-transparent px-1 py-0.5 text-sm"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+                  title="Show one project's items only"
+                >
+                  <option value="">All projects</option>
+                  {projectFilter &&
+                    !projectNames.some((n) => n.toLowerCase() === projectFilter.toLowerCase()) && (
+                      <option value={projectFilter}>{projectFilter}</option>
+                    )}
+                  {projectNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                &middot;{' '}
                 {new Date().toLocaleDateString('en-GB', {
                   weekday: 'long',
                   day: 'numeric',
@@ -643,13 +914,14 @@ function StandupPageContent() {
                   year: 'numeric',
                 })}
               </p>
+              <SourceLegend sources={sourcesOnBoard} className="mt-2" />
             </div>
 
             <div className="flex flex-wrap items-center gap-3 md:ml-auto">
               {/* Group By toggle */}
               <div className="flex rounded-md border" style={{ borderColor: 'var(--border)' }}>
                 <Link
-                  href={buildKanbanUrl('project', currentSprintOnly, columnParam)}
+                  href={buildKanbanUrl('project', currentSprintOnly, projectFilter, columnParam)}
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'project'
@@ -662,7 +934,7 @@ function StandupPageContent() {
                   Project
                 </Link>
                 <Link
-                  href={buildKanbanUrl('person', currentSprintOnly, columnParam)}
+                  href={buildKanbanUrl('person', currentSprintOnly, projectFilter, columnParam)}
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'person'
@@ -685,9 +957,12 @@ function StandupPageContent() {
                   type="checkbox"
                   checked={currentSprintOnly}
                   onChange={(e) =>
-                    router.replace(buildKanbanUrl(groupBy, e.target.checked, columnParam), {
-                      scroll: false,
-                    })
+                    router.replace(
+                      buildKanbanUrl(groupBy, e.target.checked, projectFilter, columnParam),
+                      {
+                        scroll: false,
+                      }
+                    )
                   }
                   className="accent-[var(--primary)]"
                 />
@@ -722,7 +997,10 @@ function StandupPageContent() {
 
               {/* Manual refresh */}
               <button
-                onClick={() => fetchStandupData(true, true)}
+                onClick={() => {
+                  fetchStandupData(true, true);
+                  fetchPrActivity(true);
+                }}
                 disabled={refreshing}
                 className="rounded-md p-2 transition-colors hover:bg-white/10"
                 style={{ color: refreshing ? 'var(--text-muted)' : 'var(--text-secondary)' }}
@@ -760,7 +1038,7 @@ function StandupPageContent() {
             <div className="space-y-6">
               <StandupSummaryCards
                 columns={standupData.columns}
-                summary={standupData.summary}
+                summary={(boardData ?? standupData).summary}
                 activeColumn={focusedColumn}
                 onColumnClick={handleColumnClick}
               />
@@ -801,6 +1079,7 @@ function StandupPageContent() {
                     allowedStatesByProjectType={standupData.allowedStatesByProjectType}
                     onStateChange={handleStateChange}
                     onItemClick={handleItemClick}
+                    activity={groupActivity.get(group.groupName)}
                   />
                 ))
               ) : (
@@ -827,12 +1106,14 @@ function StandupPageContent() {
 
         {/* Detail dialog (issue #368) */}
         <WorkItemDetailDialog
+          supportsReturn
           workItem={selectedTicket ? ticketToWorkItem(selectedTicket) : null}
           isOpen={!!selectedTicket}
           onClose={() => setSelectedTicket(null)}
           onStateChange={handleDialogStateChange}
           onAssigneeChange={handleDialogAssigneeChange}
           onPriorityChange={handleDialogPriorityChange}
+          onEffortChange={handleDialogEffortChange}
           onTypeChange={handleDialogTypeChange}
           onTagsChange={handleDialogTagsChange}
           onUpdate={handleDialogUpdate}

@@ -19,15 +19,28 @@ import {
   Layers,
   Minus,
   Zap,
+  Github,
+  SquareKanban,
+  ExternalLink,
+  Columns3,
+  Check,
 } from 'lucide-react';
 import type { Ticket, WorkItem, WorkItemType } from '@/types';
 import { TICKET_WORK_ITEM_TYPES } from '@/types';
 import { toast } from 'sonner';
 import { useClickOutside } from '@/hooks/useClickOutside';
+import {
+  canHideColumn,
+  resetColumns,
+  setColumnHidden,
+  useHiddenColumns,
+  visibleColumns,
+} from '@/lib/list-columns';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import KanbanBoard from './KanbanBoard';
+import { restoreBoardView, saveBoardView } from '@/lib/full-view';
 
 // The states only feed the Statuses filter, so give up rather than hang
 const STATES_FETCH_TIMEOUT_MS = 15_000;
@@ -37,6 +50,7 @@ export type ColumnId =
   | 'checkbox'
   | 'id'
   | 'type'
+  | 'source'
   | 'status'
   | 'subject'
   | 'project'
@@ -67,6 +81,17 @@ export const TICKET_COLUMNS: ColumnConfig[] = [
   { id: 'assignee', label: 'Assignee', sortField: 'assignee' },
 ];
 
+// Ticket columns with a Source column, for lists that mix Azure DevOps work
+// items with GitHub issues (#447).
+export const TICKET_COLUMNS_WITH_SOURCE: ColumnConfig[] = TICKET_COLUMNS.flatMap((column) =>
+  column.id === 'type' ? [column, { id: 'source' as const, label: 'Source' }] : [column]
+);
+
+/** GitHub issues are read-only here: no selection, bulk actions, drag or tips. */
+function isGitHubItem(item: { source?: string }): boolean {
+  return item.source === 'github';
+}
+
 // Columns for work items view (Feature Explorer)
 export const WORKITEM_COLUMNS: ColumnConfig[] = [
   { id: 'checkbox', label: '', width: 'w-10' },
@@ -89,6 +114,11 @@ interface WorkItemBoardProps {
   hideTicketsOnlyToggle?: boolean; // Hide the "Tickets only" toggle
   readOnlyKanban?: boolean; // Disable drag-and-drop in Kanban view
   columns?: ColumnConfig[];
+  /**
+   * Which saved column choice the list uses (#7397). Defaults to "workitems"
+   * for the work items columns and "tickets" otherwise.
+   */
+  columnsKey?: string;
   groupBy?: GroupByOption;
   availableGroupBy?: GroupByOption[]; // Which groupBy options to show in the toggle
   compact?: boolean;
@@ -123,6 +153,60 @@ interface Filters {
   assignee: string[];
   requester: string[];
   type: string[];
+}
+
+const EMPTY_FILTERS: Filters = { status: [], priority: [], assignee: [], requester: [], type: [] };
+
+const SORT_FIELDS: readonly SortField[] = [
+  'id',
+  'type',
+  'status',
+  'subject',
+  'requester',
+  'requested',
+  'priority',
+  'updated',
+  'assignee',
+  'project',
+];
+const GROUP_BY_OPTIONS: readonly GroupByOption[] = ['none', 'assignee', 'userStory'];
+
+/** The board's own controls, kept across a trip to a ticket's full view (#7727). */
+interface BoardView {
+  sortField: SortField;
+  sortDirection: SortDirection;
+  groupBy: GroupByOption;
+  viewMode: 'list' | 'kanban';
+  ticketsOnly: boolean;
+  searchQuery: string;
+  filters: Partial<Filters>;
+}
+
+/**
+ * Saved controls, with anything unrecognised dropped. They come from storage,
+ * so an old or hand-edited value must not reach the board's state.
+ */
+function validBoardView(saved: Partial<BoardView> | null): Partial<BoardView> | null {
+  if (!saved) return null;
+  const filters: Partial<Filters> = {};
+  if (saved.filters && typeof saved.filters === 'object') {
+    for (const key of Object.keys(EMPTY_FILTERS) as (keyof Filters)[]) {
+      const value = (saved.filters as Record<string, unknown>)[key];
+      if (Array.isArray(value) && value.every((v) => typeof v === 'string')) filters[key] = value;
+    }
+  }
+  return {
+    sortField: SORT_FIELDS.includes(saved.sortField as SortField) ? saved.sortField : undefined,
+    sortDirection:
+      saved.sortDirection === 'asc' || saved.sortDirection === 'desc'
+        ? saved.sortDirection
+        : undefined,
+    groupBy: GROUP_BY_OPTIONS.includes(saved.groupBy as GroupByOption) ? saved.groupBy : undefined,
+    viewMode: saved.viewMode === 'list' || saved.viewMode === 'kanban' ? saved.viewMode : undefined,
+    ticketsOnly: typeof saved.ticketsOnly === 'boolean' ? saved.ticketsOnly : undefined,
+    searchQuery: typeof saved.searchQuery === 'string' ? saved.searchQuery : undefined,
+    filters,
+  };
 }
 
 interface GroupedItems {
@@ -258,6 +342,7 @@ export default function WorkItemBoard({
   hideTicketsOnlyToggle = false,
   readOnlyKanban = false,
   columns = TICKET_COLUMNS,
+  columnsKey,
   groupBy: initialGroupBy = 'assignee',
   availableGroupBy,
   compact = false,
@@ -272,22 +357,43 @@ export default function WorkItemBoard({
   project,
   organization,
 }: WorkItemBoardProps) {
-  const [sortField, setSortField] = useState<SortField>('updated');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  // Coming back from a ticket's full view: start from the controls the board
+  // had when the ticket was opened, not the defaults (#7727).
+  const [restored] = useState(() => validBoardView(restoreBoardView<BoardView>()));
+  const [sortField, setSortField] = useState<SortField>(restored?.sortField ?? 'updated');
+  const [sortDirection, setSortDirection] = useState<SortDirection>(
+    restored?.sortDirection ?? 'desc'
+  );
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
-  const [groupBy, setGroupBy] = useState<GroupByOption>(initialGroupBy);
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>(defaultViewMode);
-  const [ticketsOnly, setTicketsOnly] = useState(defaultTicketsOnly);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filters, setFilters] = useState<Filters>({
-    status: [],
-    priority: [],
-    assignee: [],
-    requester: [],
-    type: [],
-  });
+  const [groupBy, setGroupBy] = useState<GroupByOption>(restored?.groupBy ?? initialGroupBy);
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>(
+    restored?.viewMode ?? defaultViewMode
+  );
+  const [ticketsOnly, setTicketsOnly] = useState(restored?.ticketsOnly ?? defaultTicketsOnly);
+  const [searchQuery, setSearchQuery] = useState(restored?.searchQuery ?? '');
+  const [filters, setFilters] = useState<Filters>(() => ({
+    ...EMPTY_FILTERS,
+    ...restored?.filters,
+  }));
+
+  useEffect(() => {
+    saveBoardView({
+      sortField,
+      sortDirection,
+      groupBy,
+      viewMode,
+      ticketsOnly,
+      searchQuery,
+      filters,
+    });
+  }, [sortField, sortDirection, groupBy, viewMode, ticketsOnly, searchQuery, filters]);
   const [showBulkMenu, setShowBulkMenu] = useState(false);
   const [showGroupByMenu, setShowGroupByMenu] = useState(false);
+  const [showColumnsMenu, setShowColumnsMenu] = useState(false);
+  const columnsMenuRef = useClickOutside<HTMLDivElement>(
+    () => setShowColumnsMenu(false),
+    showColumnsMenu
+  );
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const { refresh: refreshCounts } = useTicketCounts();
   const bulkMenuRef = useRef<HTMLDivElement>(null);
@@ -568,8 +674,10 @@ export default function WorkItemBoard({
   const filteredItems = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return items.filter((item) => {
-      // Tickets only filter - check for "ticket" tag (case-insensitive)
-      if (ticketsOnly) {
+      // Tickets only filter - check for "ticket" tag (case-insensitive). The tag
+      // is a DevOps convention; a GitHub issue is listed because its repository
+      // is mapped to the project.
+      if (ticketsOnly && !isGitHubItem(item)) {
         const hasTicketTag = item.tags?.some((tag) => tag.toLowerCase() === 'ticket');
         if (!hasTicketTag) return false;
       }
@@ -577,7 +685,9 @@ export default function WorkItemBoard({
       if (query) {
         const matchesSearch =
           item.title.toLowerCase().includes(query) ||
-          item.id.toString().includes(query) ||
+          (isGitHubItem(item)
+            ? item.sourceRef?.toLowerCase().includes(query)
+            : item.id.toString().includes(query)) ||
           item.assignee?.displayName?.toLowerCase().includes(query) ||
           item.requester?.displayName?.toLowerCase().includes(query) ||
           item.state.toLowerCase().includes(query) ||
@@ -613,13 +723,16 @@ export default function WorkItemBoard({
   const bulkSelectableItems = useMemo(
     () =>
       filteredItems.filter(
-        (item) => !item.workItemType || TICKET_WORK_ITEM_TYPES.includes(item.workItemType)
+        (item) =>
+          !isGitHubItem(item) &&
+          (!item.workItemType || TICKET_WORK_ITEM_TYPES.includes(item.workItemType))
       ),
     [filteredItems]
   );
 
   const toggleItemSelection = (itemId: number) => {
     const item = filteredItems.find((i) => i.id === itemId);
+    if (item && isGitHubItem(item)) return;
     // Prevent selection of non-ticket types (Epic, Feature, User Story)
     if (item?.workItemType && !TICKET_WORK_ITEM_TYPES.includes(item.workItemType)) return;
 
@@ -728,9 +841,18 @@ export default function WorkItemBoard({
     return { 'All Items': displayItems };
   }, [sortedItems, groupBy]);
 
+  // The columns offered, minus those this person hid (#7397).
+  const listKey = columnsKey ?? (columns === WORKITEM_COLUMNS ? 'workitems' : 'tickets');
+  const hiddenColumns = useHiddenColumns(listKey);
+  const shownColumns = useMemo(
+    () => visibleColumns(columns, hiddenColumns),
+    [columns, hiddenColumns]
+  );
+  const choosableColumns = columns.filter((c) => c.label && canHideColumn(c.id));
+
   // Check which columns are visible
-  const hasColumn = (id: ColumnId) => columns.some((c) => c.id === id);
-  const columnCount = columns.length;
+  const hasColumn = (id: ColumnId) => shownColumns.some((c) => c.id === id);
+  const columnCount = shownColumns.length;
 
   const cellPadding = compact ? 'px-3 py-2' : 'px-4 py-3';
 
@@ -963,6 +1085,75 @@ export default function WorkItemBoard({
                     </div>
                   )}
 
+                  {/* Column picker (#7397) */}
+                  {viewMode === 'list' && choosableColumns.length > 0 && (
+                    <div className="relative" ref={columnsMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => setShowColumnsMenu(!showColumnsMenu)}
+                        className="input flex items-center gap-1.5 text-sm"
+                        style={{
+                          color:
+                            shownColumns.length < columns.length
+                              ? 'var(--text-primary)'
+                              : 'var(--text-muted)',
+                        }}
+                        aria-expanded={showColumnsMenu}
+                        aria-haspopup="true"
+                        title="Choose the columns to show"
+                      >
+                        <Columns3 size={14} />
+                        Columns
+                        <ChevronDown size={14} />
+                      </button>
+                      {showColumnsMenu && (
+                        <div
+                          className="absolute top-full right-0 z-50 mt-1 min-w-44 rounded-lg border py-1 shadow-lg"
+                          style={{
+                            backgroundColor: 'var(--surface)',
+                            borderColor: 'var(--border)',
+                          }}
+                        >
+                          {choosableColumns.map((column) => {
+                            const shown = !hiddenColumns.has(column.id);
+                            return (
+                              <button
+                                key={column.id}
+                                type="button"
+                                role="menuitemcheckbox"
+                                aria-checked={shown}
+                                onClick={() => setColumnHidden(listKey, column.id, shown)}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                                style={{ color: 'var(--text-primary)' }}
+                              >
+                                <span
+                                  className="flex h-4 w-4 items-center justify-center rounded border"
+                                  style={{
+                                    borderColor: shown ? 'var(--primary)' : 'var(--border-light)',
+                                    backgroundColor: shown ? 'var(--primary)' : 'transparent',
+                                  }}
+                                >
+                                  {shown && <Check size={12} color="white" />}
+                                </span>
+                                {column.label}
+                              </button>
+                            );
+                          })}
+                          {shownColumns.length < columns.length && (
+                            <button
+                              type="button"
+                              onClick={() => resetColumns(listKey)}
+                              className="mt-1 w-full border-t px-3 py-2 text-left text-xs transition-colors hover:bg-[var(--surface-hover)]"
+                              style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+                            >
+                              Show all columns
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* View toggle */}
                   {!hideViewToggle && (
                     <div className="flex items-center gap-1 rounded-lg bg-[var(--surface)] p-1">
@@ -1036,7 +1227,7 @@ export default function WorkItemBoard({
                     />
                   </th>
                 )}
-                {columns
+                {shownColumns
                   .filter((col) => col.id !== 'checkbox')
                   .map((col) => (
                     <th
@@ -1097,8 +1288,12 @@ export default function WorkItemBoard({
                             checked={selectedItems.has(item.id)}
                             onChange={() => toggleItemSelection(item.id)}
                             disabled={
-                              !!item.workItemType &&
-                              !TICKET_WORK_ITEM_TYPES.includes(item.workItemType)
+                              isGitHubItem(item) ||
+                              (!!item.workItemType &&
+                                !TICKET_WORK_ITEM_TYPES.includes(item.workItemType))
+                            }
+                            title={
+                              isGitHubItem(item) ? 'GitHub issues are read-only here' : undefined
                             }
                             className="rounded disabled:opacity-30"
                           />
@@ -1136,6 +1331,20 @@ export default function WorkItemBoard({
                           })()}
                         </td>
                       )}
+                      {hasColumn('source') && (
+                        <td className={cellPadding}>
+                          <span
+                            className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-medium"
+                            style={{
+                              backgroundColor: 'var(--surface-hover)',
+                              color: 'var(--text-secondary)',
+                            }}
+                          >
+                            {isGitHubItem(item) ? <Github size={12} /> : <SquareKanban size={12} />}
+                            {isGitHubItem(item) ? 'GitHub' : 'DevOps'}
+                          </span>
+                        </td>
+                      )}
                       {hasColumn('status') && (
                         <td className={cellPadding}>
                           <StatusBadge status={item.state} />
@@ -1143,10 +1352,39 @@ export default function WorkItemBoard({
                       )}
                       {hasColumn('subject') && (
                         <td className={`${cellPadding} max-w-xs`}>
-                          {onWorkItemClick ? (
+                          {isGitHubItem(item) && item.sourceUrl ? (
+                            <>
+                              <a
+                                href={item.sourceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="line-clamp-2 text-sm hover:underline"
+                                title={item.title + ' (opens on GitHub)'}
+                                style={{ color: 'var(--text-primary)' }}
+                              >
+                                {item.title}
+                                <ExternalLink
+                                  size={12}
+                                  className="ml-1 inline-block align-baseline"
+                                  style={{ color: 'var(--text-muted)' }}
+                                  aria-hidden="true"
+                                />
+                              </a>
+                              {item.sourceRef && (
+                                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                  {item.sourceRef}
+                                </span>
+                              )}
+                            </>
+                          ) : onWorkItemClick ? (
+                            // The `font: inherit` this had overrode text-sm, so
+                            // subjects were larger than every other column, and
+                            // line-clamp does not apply to a button itself, so
+                            // long subjects ran to many lines (#7392). The
+                            // clamp now sits on an inner span.
                             <button
                               onClick={() => onWorkItemClick(item)}
-                              className="line-clamp-2 text-sm hover:underline"
+                              className="text-left text-sm hover:underline"
                               title={item.title}
                               style={{
                                 color: 'var(--text-primary)',
@@ -1154,11 +1392,10 @@ export default function WorkItemBoard({
                                 background: 'none',
                                 border: 'none',
                                 padding: 0,
-                                font: 'inherit',
-                                textAlign: 'left',
+                                fontFamily: 'inherit',
                               }}
                             >
-                              {item.title}
+                              <span className="line-clamp-2">{item.title}</span>
                             </button>
                           ) : (
                             <Link
@@ -1177,7 +1414,9 @@ export default function WorkItemBoard({
                           <Link
                             href={`/projects/${item.organization?.id || ''}`}
                             className="text-sm hover:underline"
-                            style={{ color: 'var(--primary)' }}
+                            // Same colour as the other text columns; brand green
+                            // singled the project out for no reason (#7392).
+                            style={{ color: 'var(--text-secondary)' }}
                           >
                             {item.project || '-'}
                           </Link>
@@ -1259,7 +1498,7 @@ export default function WorkItemBoard({
                                 Unassigned
                               </span>
                             )}
-                            {onZapClick && (
+                            {onZapClick && !isGitHubItem(item) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();

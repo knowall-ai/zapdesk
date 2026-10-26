@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     }
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
-    const tickets = await devopsService.getAllTickets();
+    const { tickets, failedProjects } = await devopsService.getAllTickets();
     const currentUserEmail = session.user?.email?.toLowerCase();
 
     const today = new Date();
@@ -48,7 +48,13 @@ export async function GET(request: NextRequest) {
       }).length,
     };
 
-    return NextResponse.json(counts);
+    // A project that failed contributes no tickets, so every count below is
+    // short by an unknown amount. Said plainly rather than left to look like
+    // a quiet week (#509).
+    return NextResponse.json({
+      ...counts,
+      ...(failedProjects.length > 0 ? { failedProjects } : {}),
+    });
   } catch (error) {
     console.error('Error fetching ticket counts:', error);
     return NextResponse.json({ error: 'Failed to fetch ticket counts' }, { status: 500 });

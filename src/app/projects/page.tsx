@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
@@ -18,6 +19,7 @@ interface ProjectWithSLA extends Organization {
   epicCount?: number;
 }
 
+/** All Azure DevOps projects in the selected organisation. */
 export default function ProjectsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -27,7 +29,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 
@@ -87,15 +89,17 @@ export default function ProjectsPage() {
             Projects
           </h1>
           <p style={{ color: 'var(--text-secondary)' }}>Browse and manage your projects.</p>
-          <a
-            href="https://dev.azure.com/KnowAll/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-1 flex items-center gap-1 text-sm"
-            style={{ color: 'var(--primary)' }}
-          >
-            See all projects in Azure DevOps <ExternalLink size={12} />
-          </a>
+          {selectedOrganization && (
+            <a
+              href={`https://dev.azure.com/${encodeURIComponent(selectedOrganization.accountName)}/`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 flex items-center gap-1 text-sm"
+              style={{ color: 'var(--primary)' }}
+            >
+              See all projects in Azure DevOps <ExternalLink size={12} />
+            </a>
+          )}
         </div>
 
         {/* Count */}

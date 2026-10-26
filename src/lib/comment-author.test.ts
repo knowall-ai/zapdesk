@@ -90,7 +90,7 @@ describe('getWorkItemComments uses it', () => {
       )
     );
 
-    const comments = await new AzureDevOpsService('token').getWorkItemComments('Proj', 1);
+    const comments = await new AzureDevOpsService('token', 'acme').getWorkItemComments('Proj', 1);
     expect(comments[0].author.displayName).toBe('Ada Lovelace');
     expect(comments[1].author.displayName).toBe('Ticket Creator');
   });

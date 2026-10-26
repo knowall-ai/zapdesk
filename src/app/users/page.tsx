@@ -2,20 +2,31 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { useEffect, useRef, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { Avatar, LoadingSpinner } from '@/components/common';
+import FailedProjectsNotice from '@/components/common/FailedProjectsNotice';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { Search, Plus, Upload, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import type { Customer } from '@/types';
+import { emailDomainsOf, matchesDomain } from '@/lib/user-domains';
 
+/** How long to wait for the users list before giving up. */
+const USERS_TIMEOUT_MS = 15_000;
+
+/** Users of the selected organisation. */
 export default function UsersPage() {
   const { data: session, status } = useSession();
+  // Stable across NextAuth's refetch on window focus, unlike the session
+  // object, so switching tabs does not reload the page (#7391).
+  const isSignedIn = !!session?.accessToken;
   const router = useRouter();
-  const { selectedOrganization } = useOrganization();
+  const { selectedOrganization, isLoading: organizationsLoading } = useOrganization();
   const [users, setUsers] = useState<Customer[]>([]);
+  const [failedProjects, setFailedProjects] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [domainFilter, setDomainFilter] = useState<string>('all');
@@ -25,39 +36,64 @@ export default function UsersPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 
+  const org = selectedOrganization?.accountName;
+
   useEffect(() => {
-    if (session?.accessToken) {
-      fetchUsers();
-    }
-  }, [session]);
-
-  const fetchUsers = async () => {
-    try {
-      const response = await fetch('/api/devops/users');
-      if (response.ok) {
-        const data = await response.json();
-        setUsers(
-          data.users.map((c: Customer & { lastUpdated?: string }) => ({
-            ...c,
-            lastUpdated: c.lastUpdated ? new Date(c.lastUpdated) : undefined,
-          }))
-        );
-      }
-    } catch (error) {
-      console.error('Failed to fetch users:', error);
-    } finally {
+    if (!isSignedIn || organizationsLoading) return;
+    if (!org) {
+      // Discovery finished without an organization: show the empty list
+      setUsers([]);
       setLoading(false);
+      return;
     }
-  };
+    // A new organization starts empty, so its people are never mixed with the
+    // last one's; a superseded request is cancelled and its answer ignored
+    let current = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), USERS_TIMEOUT_MS);
+    setUsers([]);
+    setFailedProjects([]);
+    setLoading(true);
 
-  // Get unique email domains for filter dropdown
-  const emailDomains = Array.from(
-    new Set(users.map((user) => user.email.split('@')[1]).filter(Boolean))
-  ).sort();
+    (async () => {
+      try {
+        const response = await fetch('/api/devops/users', {
+          headers: { 'x-devops-org': org },
+          signal: controller.signal,
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (!current) return;
+          setUsers(
+            data.users.map((c: Customer & { lastUpdated?: string }) => ({
+              ...c,
+              lastUpdated: c.lastUpdated ? new Date(c.lastUpdated) : undefined,
+            }))
+          );
+          setFailedProjects(data.failedProjects ?? []);
+        }
+      } catch (error) {
+        if (current) console.error('Failed to fetch users:', error);
+      } finally {
+        clearTimeout(timeout);
+        if (current) setLoading(false);
+      }
+    })();
+
+    return () => {
+      current = false;
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [isSignedIn, org, organizationsLoading]);
+
+  // Lower-cased and de-duplicated in one place with the matching below, so the
+  // dropdown and the filter cannot disagree about a domain (#159).
+  const emailDomains = emailDomainsOf(users);
 
   // Get unique access levels for filter dropdown
   const accessLevels = Array.from(
@@ -68,9 +104,9 @@ export default function UsersPage() {
     const matchesSearch =
       user.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.email.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesDomain = domainFilter === 'all' || user.email.endsWith(`@${domainFilter}`);
+    const matchesSelectedDomain = matchesDomain(user.email, domainFilter);
     const matchesAccessLevel = accessLevelFilter === 'all' || user.license === accessLevelFilter;
-    return matchesSearch && matchesDomain && matchesAccessLevel;
+    return matchesSearch && matchesSelectedDomain && matchesAccessLevel;
   });
 
   // Each click restarts the countdown instead of stacking timers. Without
@@ -150,15 +186,17 @@ export default function UsersPage() {
             <p style={{ color: 'var(--text-secondary)' }}>
               Search and manage your users all in one place.
             </p>
-            <a
-              href="https://dev.azure.com/KnowAll/_settings/users"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1 flex items-center gap-1 text-sm"
-              style={{ color: 'var(--primary)' }}
-            >
-              See users in Azure DevOps <ExternalLink size={12} />
-            </a>
+            {orgUsersUrl && (
+              <a
+                href={orgUsersUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 flex items-center gap-1 text-sm"
+                style={{ color: 'var(--primary)' }}
+              >
+                See users in Azure DevOps <ExternalLink size={12} />
+              </a>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -172,6 +210,10 @@ export default function UsersPage() {
             </button>
           </div>
         </div>
+
+        {/* A project that failed to load contributes no requesters, so the list
+            is short without looking short (#516). */}
+        <FailedProjectsNotice projects={failedProjects} subject="These users" className="mb-4" />
 
         {/* Search and filters */}
         <div className="mb-6 flex flex-wrap items-center gap-4">

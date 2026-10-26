@@ -1,24 +1,22 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { AzureDevOpsService } from '@/lib/devops';
+import { AzureDevOpsService, parseEmailDomainsFromDescription } from '@/lib/devops';
+import { parseSLAFromDescription } from '@/lib/sla';
+import { requestDevOpsOrg } from '@/lib/devops-org';
 import type { Organization } from '@/types';
 
-// Domain mappings for organizations
-const DOMAIN_MAP: Record<string, string> = {
-  'Cairn Homes': 'cairnhomes.com',
-  Medite: 'medite.com',
-  KnowAll: 'knowall.ai',
-};
+// A project's email domain and SLA level come from its description in Azure
+// DevOps ("Email: example.com", "SLA: Gold"), the same lines email routing and
+// the SLA reports read, so no customer has to be named in this code (#457).
 
-// Tag mappings for organizations (SLA levels)
-const TAG_MAP: Record<string, string[]> = {
-  'Cairn Homes': ['gold'],
-  Medite: ['silver'],
-  KnowAll: [],
-};
+/** The SLA level named in a project description, as the lower-case tag the UI reads. */
+function slaTags(description?: string): string[] {
+  const level = parseSLAFromDescription(description || '');
+  return level ? [level.toLowerCase()] : [];
+}
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -26,17 +24,23 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken, requestDevOpsOrg(request));
     const projects = await devopsService.getProjects();
 
     const organizations: Organization[] = projects.map(
-      (project: { id: string; name: string; lastUpdateTime?: string; revision?: number }) => ({
+      (project: {
+        id: string;
+        name: string;
+        description?: string;
+        lastUpdateTime?: string;
+        revision?: number;
+      }) => ({
         id: project.id,
         name: project.name,
-        domain: DOMAIN_MAP[project.name] || undefined,
+        domain: parseEmailDomainsFromDescription(project.description || '')[0],
         devOpsProject: project.name,
-        devOpsOrg: 'KnowAll',
-        tags: TAG_MAP[project.name] || [],
+        devOpsOrg: devopsService.organizationName,
+        tags: slaTags(project.description),
         createdAt: project.lastUpdateTime ? new Date(project.lastUpdateTime) : new Date(),
         updatedAt: project.lastUpdateTime ? new Date(project.lastUpdateTime) : new Date(),
       })

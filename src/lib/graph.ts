@@ -1,6 +1,7 @@
 /**
  * Microsoft Graph API Service
- * Handles user profile extensions for storing Lightning Addresses
+ * Handles user profile extensions for storing Lightning Addresses and GitHub
+ * usernames
  * Uses application permissions (client credentials flow)
  */
 
@@ -9,8 +10,112 @@ const EXTENSION_NAME = 'zapdesk.knowall.ai';
 
 interface GraphExtension {
   '@odata.type': string;
-  extensionName: string;
-  lightningAddress: string;
+  extensionName?: string;
+  id?: string;
+  lightningAddress?: string | null;
+  githubUsername?: string | null;
+}
+
+/** The fields ZapDesk keeps in the user's profile extension. */
+type ProfileFields = Partial<Pick<GraphExtension, 'lightningAddress' | 'githubUsername'>>;
+
+/** Read the user's ZapDesk profile extension, or null when it does not exist yet. */
+async function getProfileExtension(
+  graphToken: string,
+  userId: string
+): Promise<GraphExtension | null> {
+  const response = await fetch(
+    `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/extensions/${EXTENSION_NAME}`,
+    { headers: { Authorization: `Bearer ${graphToken}` } }
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`Graph returned ${response.status} reading the profile extension`);
+  }
+  return (await response.json()) as GraphExtension;
+}
+
+/** The custom properties stored on an extension, without Graph's own metadata. */
+function storedFields(extension: GraphExtension): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(extension)) {
+    if (key.startsWith('@') || key === 'id' || key === 'extensionName') continue;
+    fields[key] = value;
+  }
+  return fields;
+}
+
+/**
+ * Write fields to the user's ZapDesk profile extension, creating it if needed.
+ *
+ * A PATCH on an open extension replaces all of its custom properties rather
+ * than merging them, so saving only the GitHub username wiped the Lightning
+ * address, and the other way round (#552). The stored extension is read first
+ * and the whole set written back, so the fields not named here are kept. A
+ * null value clears only that field.
+ *
+ * If the read fails, nothing is written: writing without it would drop
+ * whatever is stored.
+ */
+async function updateProfileExtension(
+  graphToken: string,
+  userId: string,
+  fields: ProfileFields
+): Promise<boolean> {
+  const current = await getProfileExtension(graphToken, userId);
+
+  if (current) {
+    const updateResponse = await fetch(
+      `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/extensions/${EXTENSION_NAME}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${graphToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          '@odata.type': 'microsoft.graph.openTypeExtension',
+          ...storedFields(current),
+          ...fields,
+        }),
+      }
+    );
+
+    if (updateResponse.ok) {
+      return true;
+    }
+
+    const error = await updateResponse.json().catch(() => null);
+    console.error('Failed to update profile extension:', updateResponse.status, error);
+    return false;
+  }
+
+  // Nothing stored yet, so there is nothing to clear
+  if (Object.values(fields).every((value) => value === null)) return true;
+
+  const createResponse = await fetch(
+    `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/extensions`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${graphToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        '@odata.type': 'microsoft.graph.openTypeExtension',
+        extensionName: EXTENSION_NAME,
+        ...fields,
+      }),
+    }
+  );
+
+  if (createResponse.ok) {
+    return true;
+  }
+
+  const error = await createResponse.json().catch(() => null);
+  console.error('Failed to create profile extension:', createResponse.status, error);
+  return false;
 }
 
 /**
@@ -21,28 +126,8 @@ export async function getLightningAddress(
   userId: string
 ): Promise<string | null> {
   try {
-    const response = await fetch(
-      `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/extensions/${EXTENSION_NAME}`,
-      {
-        headers: {
-          Authorization: `Bearer ${graphToken}`,
-        },
-      }
-    );
-
-    if (response.status === 404) {
-      // Extension doesn't exist yet
-      return null;
-    }
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error('Failed to get Lightning Address:', error);
-      return null;
-    }
-
-    const data = (await response.json()) as GraphExtension;
-    return data.lightningAddress || null;
+    const data = await getProfileExtension(graphToken, userId);
+    return data?.lightningAddress || null;
   } catch (error) {
     console.error('Error getting Lightning Address:', error);
     return null;
@@ -58,55 +143,7 @@ export async function saveLightningAddress(
   lightningAddress: string
 ): Promise<boolean> {
   try {
-    // First, try to update existing extension
-    const updateResponse = await fetch(
-      `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/extensions/${EXTENSION_NAME}`,
-      {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${graphToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          lightningAddress,
-        }),
-      }
-    );
-
-    if (updateResponse.ok) {
-      return true;
-    }
-
-    // If extension doesn't exist (404), create it
-    if (updateResponse.status === 404) {
-      const createResponse = await fetch(
-        `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/extensions`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${graphToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            '@odata.type': 'microsoft.graph.openTypeExtension',
-            extensionName: EXTENSION_NAME,
-            lightningAddress,
-          }),
-        }
-      );
-
-      if (createResponse.ok) {
-        return true;
-      }
-
-      const error = await createResponse.json();
-      console.error('Failed to create Lightning Address extension:', error);
-      return false;
-    }
-
-    const error = await updateResponse.json();
-    console.error('Failed to update Lightning Address:', error);
-    return false;
+    return await updateProfileExtension(graphToken, userId, { lightningAddress });
   } catch (error) {
     console.error('Error saving Lightning Address:', error);
     return false;
@@ -180,23 +217,138 @@ export async function getUserLocaleSettings(
 }
 
 /**
- * Delete the Lightning Address extension from a user's profile
+ * Remove the Lightning Address from a user's profile.
+ *
+ * Only the field is cleared: the same extension holds the GitHub username,
+ * which must survive.
  */
 export async function deleteLightningAddress(graphToken: string, userId: string): Promise<boolean> {
   try {
-    const response = await fetch(
-      `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/extensions/${EXTENSION_NAME}`,
-      {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${graphToken}`,
-        },
-      }
-    );
-
-    return response.ok || response.status === 404;
+    return await updateProfileExtension(graphToken, userId, { lightningAddress: null });
   } catch (error) {
     console.error('Error deleting Lightning Address:', error);
     return false;
   }
+}
+
+/**
+ * Get the GitHub username a user saved on their Microsoft profile (#455)
+ */
+export async function getGitHubUsername(
+  graphToken: string,
+  userId: string
+): Promise<string | null> {
+  try {
+    const data = await getProfileExtension(graphToken, userId);
+    return data?.githubUsername || null;
+  } catch (error) {
+    console.error('Error getting GitHub username:', error);
+    return null;
+  }
+}
+
+/**
+ * Save the user's GitHub username to their Microsoft profile, or clear it with null
+ */
+export async function saveGitHubUsername(
+  graphToken: string,
+  userId: string,
+  githubUsername: string | null
+): Promise<boolean> {
+  try {
+    return await updateProfileExtension(graphToken, userId, { githubUsername });
+  } catch (error) {
+    console.error('Error saving GitHub username:', error);
+    return false;
+  }
+}
+
+/** A person in the tenant who has saved a GitHub username on their profile. */
+export interface LinkedGitHubAccount {
+  /** The GitHub username as saved. */
+  login: string;
+  /** Entra object id. */
+  userId: string;
+  displayName: string;
+  /** Mail address, else the user principal name. */
+  email: string;
+  userPrincipalName: string;
+}
+
+/** Ceiling on pages of users read when collecting GitHub usernames (100 users each). */
+const MAX_USER_PAGES = 50;
+
+interface GraphUserWithExtensions {
+  id: string;
+  displayName?: string | null;
+  mail?: string | null;
+  userPrincipalName?: string | null;
+  extensions?: GraphExtension[];
+}
+
+/** Thrown when the tenant has more users than are read, and the caller needs them all. */
+export class IncompleteUserListError extends Error {
+  constructor() {
+    super(`More than ${MAX_USER_PAGES * 100} users in the tenant; not all were read`);
+    this.name = 'IncompleteUserListError';
+  }
+}
+
+/**
+ * Every user in the tenant who has saved a GitHub username.
+ *
+ * Open extensions cannot be filtered on, so this reads the users with their
+ * extensions and keeps the ones that have a username. Throws when Graph
+ * refuses, so the caller can tell "nobody has linked" from "could not read".
+ *
+ * Past `MAX_USER_PAGES` pages the rest of the tenant is not read. That is
+ * fine for showing people, so it only warns; with `requireComplete`, for a
+ * check that must see everyone, it throws `IncompleteUserListError` instead.
+ */
+export async function listLinkedGitHubAccounts(
+  graphToken: string,
+  { requireComplete = false }: { requireComplete?: boolean } = {}
+): Promise<LinkedGitHubAccount[]> {
+  const accounts: LinkedGitHubAccount[] = [];
+  let url: string | null =
+    `${GRAPH_BASE_URL}/users?$select=id,displayName,mail,userPrincipalName&$expand=extensions&$top=100`;
+
+  for (let page = 0; url && page < MAX_USER_PAGES; page++) {
+    const response: Response = await fetch(url, {
+      headers: { Authorization: `Bearer ${graphToken}` },
+    });
+    if (!response.ok) {
+      throw new Error(`Graph returned ${response.status} listing users`);
+    }
+    const data = (await response.json()) as {
+      value?: GraphUserWithExtensions[];
+      '@odata.nextLink'?: string;
+    };
+
+    for (const user of data.value ?? []) {
+      const extension = user.extensions?.find(
+        (ext) => (ext.extensionName ?? ext.id)?.toLowerCase() === EXTENSION_NAME
+      );
+      const login = extension?.githubUsername?.trim();
+      if (!login) continue;
+      const userPrincipalName = user.userPrincipalName ?? '';
+      accounts.push({
+        login,
+        userId: user.id,
+        displayName: user.displayName || userPrincipalName || login,
+        email: user.mail || userPrincipalName,
+        userPrincipalName,
+      });
+    }
+
+    url = data['@odata.nextLink'] ?? null;
+    if (url && page === MAX_USER_PAGES - 1) {
+      if (requireComplete) throw new IncompleteUserListError();
+      console.warn(
+        `[GitHub] More than ${MAX_USER_PAGES * 100} users in the tenant; GitHub usernames of the rest are not read.`
+      );
+    }
+  }
+
+  return accounts;
 }

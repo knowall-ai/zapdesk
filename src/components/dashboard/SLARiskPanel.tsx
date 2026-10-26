@@ -5,29 +5,35 @@ import Link from 'next/link';
 import { AlertTriangle, Clock, CheckCircle, ExternalLink } from 'lucide-react';
 import type { SLAStatusResponse, TicketSLAStatus } from '@/types';
 import { formatTimeRemaining } from '@/lib/sla';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
+import FailedProjectsNotice from '@/components/common/FailedProjectsNotice';
 
 interface SLARiskPanelProps {
   accessToken?: string;
 }
 
 export function SLARiskPanel({ accessToken }: SLARiskPanelProps) {
+  const { selectedOrganization } = useOrganization();
+  const org = selectedOrganization?.accountName;
   const [data, setData] = useState<SLAStatusResponse | null>(null);
   const [loading, setLoading] = useState(!!accessToken);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (accessToken) {
-      fetchSLAStatus();
-    } else {
+    if (accessToken && org) {
+      fetchSLAStatus(org);
+    } else if (!accessToken) {
       setLoading(false);
     }
-  }, [accessToken]);
+  }, [accessToken, org]);
 
-  const fetchSLAStatus = async () => {
+  const fetchSLAStatus = async (organization: string) => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('/api/devops/sla-status');
+      const response = await fetch('/api/devops/sla-status', {
+        headers: { 'x-devops-org': organization },
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch SLA status');
       }
@@ -76,11 +82,12 @@ export function SLARiskPanel({ accessToken }: SLARiskPanelProps) {
     );
   }
 
-  const { summary, tickets } = data || {
+  const { summary, tickets, failedProjects } = data || {
     summary: { breached: 0, atRisk: 0, onTrack: 0 },
     tickets: [],
   };
   const hasRiskTickets = tickets.length > 0;
+  const someProjectsFailed = !!failedProjects && failedProjects.length > 0;
 
   return (
     <div className="card">
@@ -110,6 +117,8 @@ export function SLARiskPanel({ accessToken }: SLARiskPanelProps) {
         </div>
       </div>
 
+      <FailedProjectsNotice projects={failedProjects} subject="SLA counts" className="mx-4 mb-4" />
+
       {/* At-Risk Tickets List */}
       {hasRiskTickets ? (
         <div className="border-t px-4 pb-4" style={{ borderColor: 'var(--border)' }}>
@@ -132,7 +141,9 @@ export function SLARiskPanel({ accessToken }: SLARiskPanelProps) {
             </Link>
           )}
         </div>
-      ) : (
+      ) : someProjectsFailed ? null : (
+        // "All on track" only when every project was read: a failed project
+        // contributes no tickets, so would otherwise read as nothing at risk.
         <div className="border-t p-4 text-center" style={{ borderColor: 'var(--border)' }}>
           <CheckCircle
             size={32}

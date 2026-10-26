@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { Pencil, Check, X, Loader2, Download } from 'lucide-react';
+import { Pencil, Check, X, Loader2 } from 'lucide-react';
 import type { WorkItem, TicketComment, Attachment } from '@/types';
 import {
   getTemplateConfig,
@@ -12,10 +12,9 @@ import {
 import { hasTicketTag } from '@/lib/tags';
 import { htmlToPlainText } from '@/lib/sanitize-html';
 import UserHtml from '@/components/common/UserHtml';
-import { attachmentDownloadUrl } from '@/lib/attachment-utils';
-import FileIcon from '@/components/common/FileIcon';
 import Avatar from '../common/Avatar';
 import CommentSection from './CommentSection';
+import AttachmentList from './AttachmentList';
 import ZapDialog from './ZapDialog';
 
 interface WorkItemDetailContentProps {
@@ -24,7 +23,7 @@ interface WorkItemDetailContentProps {
   /** Files attached to the work item. Absent and empty render the same. */
   attachments?: Attachment[];
   isLoadingComments?: boolean;
-  onAddComment?: (comment: string) => Promise<void>;
+  onAddComment?: (comment: string, isInternal?: boolean) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onUpdate?: (updates: {
     title?: string;
@@ -331,7 +330,7 @@ export default function WorkItemDetailContent({
   };
 
   return (
-    <div className="flex-1 overflow-auto p-4">
+    <div className="min-w-0 flex-1 overflow-auto p-4">
       {/* Title with edit controls */}
       <div className="mb-4 flex items-start gap-2">
         {isEditing ? (
@@ -394,8 +393,8 @@ export default function WorkItemDetailContent({
               image={workItem.requester.avatarUrl}
               size="md"
             />
-            <div className="flex-1">
-              <div className="mb-2 flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
                 <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
                   {workItem.requester.displayName}
                 </span>
@@ -474,23 +473,7 @@ export default function WorkItemDetailContent({
           <h3 className="mb-3 text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
             Attachments ({attachments.length})
           </h3>
-          <div className="space-y-1">
-            {attachments.map((attachment) => (
-              <a
-                key={attachment.id}
-                href={attachmentDownloadUrl(attachment)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                style={{ color: 'var(--text-secondary)' }}
-                title={`Download ${attachment.fileName}`}
-              >
-                <FileIcon contentType={attachment.contentType} />
-                <span className="flex-1 truncate">{attachment.fileName}</span>
-                <Download size={12} style={{ color: 'var(--text-muted)' }} />
-              </a>
-            ))}
-          </div>
+          <AttachmentList attachments={attachments} />
         </div>
       )}
       {/* Comments */}

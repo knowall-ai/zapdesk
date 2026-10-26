@@ -140,9 +140,18 @@ export function ensureActiveState(states: WorkItemState[]): WorkItemState[] {
   return [activeState, ...states];
 }
 
+/** Where a ticket lives. Absent on a ticket or work item means Azure DevOps. */
+export type WorkSource = 'devops' | 'github';
+/** Which sources the header toggle shows. */
+export type SourceFilter = 'both' | WorkSource;
+
 export interface Ticket {
   id: number;
   workItemId: number;
+  source?: WorkSource;
+  // For a GitHub issue: its page on GitHub, and "owner/repo#123"
+  sourceUrl?: string;
+  sourceRef?: string;
   title: string;
   description: string;
   reproSteps?: string;
@@ -185,13 +194,23 @@ export interface TicketComment {
 }
 
 // Attachment types for tickets and comments
+/**
+ * A change to a work item's effort hours (#7728). Only the fields being
+ * changed are present: some work item types have only one of the two.
+ */
+export interface EffortHoursUpdate {
+  completedWork?: number;
+  remainingWork?: number;
+}
+
 export interface Attachment {
   id: string;
   fileName: string;
   url: string;
   contentType: string;
   size: number;
-  createdAt: Date;
+  /** When it was attached. Absent when DevOps records no date for it. */
+  createdAt?: Date;
   createdBy?: User;
 }
 
@@ -237,6 +256,9 @@ export interface TicketCounts {
   createdToday: number;
   pending: number;
   recentlySolved: number;
+  /** Projects whose tickets could not be read, so every count is short (#509).
+   * Present only when something failed. */
+  failedProjects?: string[];
 }
 
 export interface WorkItemUpdate {
@@ -287,6 +309,22 @@ export interface DevOpsWorkItem {
   url: string;
   _links?: {
     html?: { href: string };
+  };
+  /** Present when fetched with `$expand=all` or `relations`. */
+  relations?: DevOpsWorkItemRelation[];
+}
+
+/** A link from a work item: a parent, a child, an attached file... */
+export interface DevOpsWorkItemRelation {
+  rel: string;
+  url: string;
+  attributes?: {
+    name?: string;
+    comment?: string;
+    contentType?: string;
+    length?: number;
+    authorizedDate?: string;
+    resourceCreatedDate?: string;
   };
 }
 
@@ -379,6 +417,8 @@ export interface SLAStatusResponse {
     onTrack: number;
   };
   tickets: TicketSLAStatus[];
+  /** Projects whose tickets could not be read (#509). Present only when something failed. */
+  failedProjects?: string[];
 }
 
 // Monthly Checkpoint Dashboard Types
@@ -412,30 +452,97 @@ export interface MonthlyCheckpointStats {
   };
   trends: TicketTrendPoint[];
   tickets: Ticket[];
+  /** Everyone who raised a ticket in the project, for the customer filter (#7385). */
+  customers: CheckpointCustomer[];
+}
+
+export interface CheckpointCustomer {
+  /** Requester email, lower-cased; the value the `customer` filter takes. */
+  key: string;
+  displayName: string;
+  ticketCount: number;
 }
 
 export type TicketType = 'Bug' | 'Feature';
 
-// Team member with performance metrics
+/**
+ * Where a team member sits against the workload thresholds.
+ *
+ * Worked out by `calculateMemberStatus` in `src/lib/team-metrics.ts` from
+ * `pendingTickets` and `ticketsAssigned`. A member is in the most serious
+ * band either count puts them in:
+ *
+ * - `Needs Attention`: more than 5 pending, or more than 15 assigned.
+ * - `Behind`: more than 2 pending, or more than 10 assigned.
+ * - `On Track`: anything else.
+ *
+ * "More than" is strict, so a member exactly on a threshold is in the calmer
+ * band. The numbers are defaults; each can be changed per deployment with the
+ * `TEAM_THRESHOLD_*` environment variables.
+ */
 export type TeamMemberStatus = 'On Track' | 'Behind' | 'Needs Attention';
 
+/**
+ * A team member with their ticket workload, as returned by `/api/devops/team`.
+ *
+ * Only users whose email is on the signed-in user's own domain are included.
+ * The counts cover tickets created or updated in the period the caller asked
+ * for (`?days=`), or all tickets when none is given.
+ */
 export interface TeamMember extends User {
+  /** Free-text description of what the person does, for display. Not a permission role. */
   role?: string;
+  /** Workload band. See `TeamMemberStatus` for the thresholds. */
   status: TeamMemberStatus;
+  /** Unsolved tickets assigned to the member: status New, Open, In Progress or Pending. */
   ticketsAssigned: number;
+  /** Tickets assigned to the member that are Resolved or Closed. */
   ticketsResolved: number;
+  /** Of `ticketsResolved`, those resolved in the last 7 days. */
   weeklyResolutions: number;
-  weeklyTrend?: string; // "+N" or "-N" compared to previous week
+  /**
+   * `weeklyResolutions` compared with the 7 days before, as a signed number
+   * in a string: `"+3"` or `"-2"`. Absent when the two counts are equal.
+   * Both counts see only the tickets the `?days=` filter let through, so
+   * with a short period the earlier week can be incomplete.
+   */
+  weeklyTrend?: string;
+  /**
+   * An estimate from workload, not a measurement: `"< 2 hours"`,
+   * `"2-4 hours"` or `"> 4 hours"`, by how many tickets are assigned.
+   * ZapDesk does not record first-response times yet (#179).
+   */
   avgResponseTime: string;
+  /**
+   * Mean time from creation to resolution of the member's resolved tickets
+   * that have a resolution date (`resolvedAt`); those without one are left
+   * out. Given in the largest unit that fits: `"< 1h"`, `"5h"`, `"2d"` or `"3w"`.
+   * `"-"` when there is nothing to average.
+   */
   avgResolutionTime: string;
+  /** Of `ticketsAssigned`, those with status Pending. */
   pendingTickets: number;
 }
 
-// Team summary statistics
+/**
+ * Totals for the whole team, as returned by `/api/devops/team`.
+ *
+ * The ticket counts are taken over every ticket, whatever period the member
+ * figures were asked for.
+ */
 export interface TeamStats {
+  /** Number of team members listed. */
   totalMembers: number;
+  /** Tickets with status New or Open. */
   openTickets: number;
+  /** Tickets with status In Progress. */
   inProgressTickets: number;
+  /**
+   * Tickets the team should look at: New or Open with no assignee, or Open,
+   * In Progress or Pending and last updated more than 3 days ago (strictly
+   * before the cutoff). This counts tickets; it is not the number of members
+   * whose status is `Needs Attention`.
+   */
   needsAttention: number;
 }
 
@@ -526,6 +633,9 @@ export interface WorkItem {
   resolvedReason?: string;
   // Customer's response on a Question work item (Custom.CustomerResponse)
   customerResponse?: string;
+  source?: WorkSource;
+  sourceUrl?: string;
+  sourceRef?: string;
   // Optional ticket-specific fields (populated when item is a ticket)
   requester?: Customer;
   organization?: Organization;
@@ -571,6 +681,43 @@ export interface StandupWorkItem {
   tags: string[];
   iterationPath?: string;
   remainingWork?: number;
+  // Set for a GitHub issue shown as a read-only card (#447)
+  source?: WorkSource;
+  sourceUrl?: string;
+  sourceRef?: string;
+}
+
+/** What happened to a pull request inside the activity window. */
+export type PullRequestActivityKind = 'created' | 'updated' | 'merged';
+
+/** A pull request with activity in the Kanban board's 24-hour summary window. */
+export interface PullRequestActivity {
+  id: number;
+  title: string;
+  project: string;
+  repository: string;
+  url: string;
+  author: User;
+  createdAt: string;
+  closedAt?: string;
+  /**
+   * Everything that happened in the window. `created` and `merged` can both
+   * hold; `updated` (new commits pushed) only counts for a pull request opened
+   * before the window and still open.
+   */
+  activity: PullRequestActivityKind[];
+  /** Work items the pull request links to. */
+  workItemIds: number[];
+  /** Where it lives; Azure DevOps when absent (#483). */
+  source?: WorkSource;
+}
+
+export interface PullRequestActivityResponse {
+  /** Start of the window, ISO 8601. */
+  since: string;
+  pullRequests: PullRequestActivity[];
+  /** Projects whose pull requests could not be read. */
+  failedProjects?: string[];
 }
 
 /** A column definition pulled from DevOps state configuration */
@@ -608,6 +755,8 @@ export interface StandupData {
    * server decide — total discovery failure is a 500, not an omission here.
    */
   allowedStatesByProjectType?: Record<string, Record<string, string[]>>;
+  /** GitHub repositories whose issues could not be read; the board is shown without them. */
+  failedGitHubRepos?: string[];
   summary: {
     columnCounts: Record<string, number>;
     projectCount: number;

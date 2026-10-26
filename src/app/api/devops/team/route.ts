@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requestDevOpsOrg } from '@/lib/devops-org';
 import type { TeamMember, TeamStats, TicketStatus } from '@/types';
 import {
   calculateAvgResolutionTime,
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
     const userEmail = session.user?.email || '';
     const internalDomain = userEmail.includes('@') ? userEmail.split('@')[1].toLowerCase() : '';
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken, requestDevOpsOrg(request));
 
     // Get all users from the organization
     const orgUsers = await devopsService.getOrganizationUsers();
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
     const ticketsOnly = request.nextUrl.searchParams.get('ticketsOnly') !== 'false';
 
     // Get all tickets to calculate metrics
-    const allTickets = await devopsService.getAllTickets(ticketsOnly);
+    const { tickets: allTickets, failedProjects } = await devopsService.getAllTickets(ticketsOnly);
 
     // Filter tickets by time period if specified
     const tickets = cutoffDate
@@ -179,7 +180,13 @@ export async function GET(request: NextRequest) {
       needsAttention: calculateNeedsAttention(allTickets),
     };
 
-    return NextResponse.json({ members: teamMembers, stats });
+    return NextResponse.json({
+      members: teamMembers,
+      stats,
+      // Every per-person count above is short by whatever these projects
+      // hold, which reads as someone having done less work (#516).
+      ...(failedProjects.length > 0 ? { failedProjects } : {}),
+    });
   } catch (error) {
     console.error('Error fetching team data:', error);
     return NextResponse.json({ error: 'Failed to fetch team data' }, { status: 500 });

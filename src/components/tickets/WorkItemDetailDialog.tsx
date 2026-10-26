@@ -4,12 +4,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { ExternalLink, ChevronDown, Loader2, Maximize2, Trash2 } from 'lucide-react';
-import type { WorkItem, TicketComment, Attachment } from '@/types';
+import type { WorkItem, TicketComment, Attachment, EffortHoursUpdate } from '@/types';
 import StatusBadge from '../common/StatusBadge';
 import TicketDialogShell from './TicketDialogShell';
 import { useWorkItemActions } from '@/hooks/useWorkItemActions';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import { hasTicketTag } from '@/lib/tags';
+import { fullViewHref } from '@/lib/full-view';
 import WorkItemDetailContent from './WorkItemDetailContent';
 import WorkItemDetailSidebar from './WorkItemDetailSidebar';
 import TypeChangeRequiredFields from './TypeChangeRequiredFields';
@@ -19,6 +20,13 @@ interface WorkItemDetailDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onDeleted?: (workItemId: number) => void;
+  /**
+   * The host reopens this dialog when someone leaves the full view it opened
+   * (it calls takeOpenRequest). Only then does Full View record where it was
+   * opened from; elsewhere "Exit full view" would lead to a page that
+   * ignores the request (#7727).
+   */
+  supportsReturn?: boolean;
   onStateChange?: (workItemId: number, state: string) => Promise<void>;
   onAssigneeChange?: (workItemId: number, assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (workItemId: number, priority: number) => Promise<void>;
@@ -28,6 +36,12 @@ interface WorkItemDetailDialogProps {
     additionalFields?: Record<string, string>
   ) => Promise<void>;
   onTagsChange?: (workItemId: number, tags: string[]) => Promise<void>;
+  /**
+   * Save effort hours (#7728). Like the other editable fields, the host does
+   * the saving, so it can update or refresh the collection it owns. Without
+   * it the hours are read-only.
+   */
+  onEffortChange?: (workItemId: number, hours: EffortHoursUpdate) => Promise<void>;
   onUpdate?: (
     workItemId: number,
     updates: { title?: string; description?: string; resolution?: string; mitigation?: string }
@@ -37,16 +51,22 @@ interface WorkItemDetailDialogProps {
 /** Stable reference, so deriving an empty list does not re-render on every pass. */
 const EMPTY_ATTACHMENTS: Attachment[] = [];
 
+/**
+ * Quick view of a ticket or work item, opened from a list or board: its
+ * fields, comments and attachments, with links to its full view and to DevOps.
+ */
 export default function WorkItemDetailDialog({
   workItem,
   isOpen,
   onClose,
   onDeleted,
+  supportsReturn = false,
   onStateChange,
   onAssigneeChange,
   onPriorityChange,
   onTypeChange,
   onTagsChange,
+  onEffortChange,
   onUpdate,
 }: WorkItemDetailDialogProps) {
   const router = useRouter();
@@ -210,8 +230,9 @@ export default function WorkItemDetailDialog({
           const data = await response.json().catch(() => ({}));
           throw new Error(data.error || 'Failed to add comment');
         }
-        await fetchComments();
-        toast.success('Comment added');
+        // Refresh files too: a reply can carry attachments now.
+        await Promise.all([fetchComments(), fetchAttachments()]);
+        toast.success(isInternal ? 'Internal note added' : 'Comment added');
       } catch (error) {
         // Re-throw so CommentSection keeps the unsent text in the input
         // instead of clearing it on a silent failure.
@@ -220,7 +241,7 @@ export default function WorkItemDetailDialog({
         throw error;
       }
     },
-    [workItem, fetchComments, fetchDevOps, hasOrganization]
+    [workItem, fetchComments, fetchAttachments, fetchDevOps, hasOrganization]
   );
 
   const handleZapSent = useCallback(
@@ -403,7 +424,11 @@ export default function WorkItemDetailDialog({
           // so the sidebar doesn't highlight Tickets (issue #372). Default
           // to ticket routing when tags aren't loaded yet.
           const isTicket = workItem.tags ? hasTicketTag(workItem.tags) : true;
-          router.push(`${isTicket ? '/tickets' : '/workitems'}/${workItem.id}`);
+          router.push(
+            supportsReturn
+              ? fullViewHref(workItem.id, isTicket)
+              : `${isTicket ? '/tickets' : '/workitems'}/${workItem.id}`
+          );
           onClose();
         }}
         className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
@@ -444,6 +469,11 @@ export default function WorkItemDetailDialog({
       </h3>
       <WorkItemDetailSidebar
         workItem={workItem}
+        onEffortChange={
+          onEffortChange && workItem.source !== 'github'
+            ? (hours: EffortHoursUpdate) => onEffortChange(workItem.id, hours)
+            : undefined
+        }
         actions={actions}
         showAreaPath
         showEffortHours
@@ -466,6 +496,7 @@ export default function WorkItemDetailDialog({
         headerLeft={headerLeft}
         headerRight={headerRight}
         sidebar={sidebar}
+        label={`${workItem.title} (#${workItem.id})`}
       >
         <WorkItemDetailContent
           workItem={workItem}

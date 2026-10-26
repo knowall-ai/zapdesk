@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner, StatusBadge } from '@/components/common';
@@ -12,6 +13,7 @@ import type { Organization, SLALevel, Epic } from '@/types';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { htmlToPlainText } from '@/lib/sanitize-html';
 import { templateSupportIssueUrl } from '@/lib/github';
+import GitHubConnectionCard from '@/components/projects/GitHubConnectionCard';
 
 interface ProjectWithSLA extends Organization {
   sla?: SLALevel;
@@ -42,7 +44,7 @@ export default function ProjectDetailPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 
@@ -441,6 +443,12 @@ export default function ProjectDetailPage() {
             </div>
           </div>
         </div>
+
+        {selectedOrganization?.accountName && (
+          <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <GitHubConnectionCard org={selectedOrganization.accountName} projectId={project.id} />
+          </div>
+        )}
       </div>
     </MainLayout>
   );

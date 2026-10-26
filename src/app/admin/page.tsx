@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { loginHref } from '@/lib/login-redirect';
 import { useCallback, useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner, AzureDevOpsIcon } from '@/components/common';
@@ -41,8 +42,12 @@ interface EmailConfig {
   };
 }
 
+/** Admin settings for the organisation, including the email configuration. */
 export default function AdminPage() {
   const { data: session, status } = useSession();
+  // Stable across NextAuth's refetch on window focus, unlike the session
+  // object, so switching tabs does not reload the page (#7391).
+  const isSignedIn = !!session?.accessToken;
   const router = useRouter();
 
   const [emailConfig, setEmailConfig] = useState<EmailConfig | null>(null);
@@ -89,13 +94,13 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 
   useEffect(() => {
-    if (session) fetchEmailConfig();
-  }, [session, fetchEmailConfig]);
+    if (isSignedIn) fetchEmailConfig();
+  }, [isSignedIn, fetchEmailConfig]);
 
   if (status === 'loading') {
     return (

@@ -4,7 +4,9 @@ import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService, workItemToTicket, setStateCategoryCache } from '@/lib/devops';
 import { TICKET_WORK_ITEM_TYPES } from '@/types';
-import type { Ticket, TicketStatus } from '@/types';
+import { filterTicketsByView } from '@/lib/ticket-views';
+import { sendAssignmentNotification, sendNewTicketNotification } from '@/lib/email';
+import { supportTeamRecipients } from '@/lib/support-team';
 
 // TTL cache for state categories (avoids refetching on every request)
 let stateCategoryCacheData: {
@@ -85,6 +87,22 @@ async function fetchAndCacheStateCategories(accessToken: string, organization: s
   }
 }
 
+/**
+ * Create a ticket (or, with `asTicket: false`, an internal work item).
+ *
+ * Body: `project` and `title` are required; `description`, `priority`,
+ * `priorityFieldRef`, `assignee`, `tags`, `workItemType`, `iterationPath`,
+ * `areaPath`, `additionalFields` and `parentId` are optional and validated
+ * before reaching DevOps. The organisation comes from the `x-devops-org`
+ * header and must be one the caller can access.
+ *
+ * When the new ticket has an assignee, they are emailed that it is theirs
+ * (#7374), on the same terms as a reassignment: not for self-assignment, never
+ * to the polled mailbox, and without delaying or failing the creation.
+ *
+ * Returns `{ ticket, success: true }`; 400 for a missing field or bad tags,
+ * 401 without a session, 403 for an inaccessible organisation, 500 otherwise.
+ */
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -219,6 +237,51 @@ export async function POST(request: NextRequest) {
 
     const ticket = workItemToTicket(workItem);
 
+    // A ticket created already assigned is as much an assignment as one
+    // reassigned later, but only the later path emailed anyone (#7374).
+    // Fire-and-forget; the self-assignment and polled-mailbox guards live in
+    // sendAssignmentNotification.
+    const assigneeEmail = ticket.assignee?.email;
+    if (assignee && assigneeEmail) {
+      sendAssignmentNotification({
+        ticketId: ticket.id,
+        subject: ticket.title,
+        assigneeEmail,
+        assignedByName: session.user?.name || 'A colleague',
+        assignedByEmail: session.user?.email ?? undefined,
+      }).catch(() => {});
+    }
+
+    // Tell the support team, as the email path already did (#485). A ticket
+    // raised in the app told nobody at all unless it happened to be assigned,
+    // and then only the one person -- so an unassigned ticket raised here sat
+    // silently until somebody happened to look at the board (#7369).
+    //
+    // The person who raised it is excluded: they know. So is the assignee,
+    // who is getting the assignment email just above and does not need two
+    // messages about the same ticket.
+    //
+    // Only tickets. The Kanban board posts `asTicket: false` to raise an
+    // internal work item, which carries no 'ticket' tag and is deliberately
+    // outside the Tickets screen and SLA tracking -- so announcing one to the
+    // whole support team as a new ticket would be wrong twice over, and #523
+    // asks for tickets.
+    const teamRecipients = tagAsTicket
+      ? supportTeamRecipients([session.user?.email, assigneeEmail])
+      : [];
+    if (teamRecipients.length > 0) {
+      // Fire-and-forget: the ticket exists, and a failed notification must not
+      // turn a successful creation into an error.
+      sendNewTicketNotification({
+        ticketId: ticket.id,
+        ticketSubject: ticket.title,
+        requesterEmail: session.user?.email ?? 'someone in ZapDesk',
+        project: ticket.organization?.name ?? '',
+        messageHtml: ticket.description ?? '',
+        recipients: teamRecipients.join(', '),
+      }).catch(() => {});
+    }
+
     return NextResponse.json({ ticket, success: true });
   } catch (error) {
     console.error('Error creating ticket:', error);
@@ -260,61 +323,23 @@ export async function GET(request: NextRequest) {
     await fetchAndCacheStateCategories(session.accessToken, organization);
 
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
-    const tickets = await devopsService.getAllTickets(ticketsOnly, TICKET_WORK_ITEM_TYPES);
+    const { tickets, failedProjects } = await devopsService.getAllTickets(
+      ticketsOnly,
+      TICKET_WORK_ITEM_TYPES
+    );
 
     // Filter tickets based on view
     const filteredTickets = filterTicketsByView(tickets, view, session.user?.email);
 
+    // Named only when something failed, so a healthy response keeps its shape
+    // and callers can treat the key's presence as "this list is incomplete".
     return NextResponse.json({
       tickets: filteredTickets,
       total: filteredTickets.length,
+      ...(failedProjects.length > 0 ? { failedProjects } : {}),
     });
   } catch (error) {
     console.error('Error fetching tickets:', error);
     return NextResponse.json({ error: 'Failed to fetch tickets' }, { status: 500 });
-  }
-}
-
-function filterTicketsByView(tickets: Ticket[], view: string, userEmail?: string | null): Ticket[] {
-  const activeStatuses: TicketStatus[] = ['New', 'Open', 'In Progress'];
-  const currentUserEmail = userEmail?.toLowerCase();
-
-  switch (view) {
-    case 'your-active':
-    case 'your-unsolved':
-      return tickets.filter(
-        (t) =>
-          activeStatuses.includes(t.status) && t.assignee?.email?.toLowerCase() === currentUserEmail
-      );
-
-    case 'unassigned':
-      return tickets.filter((t) => !t.assignee && activeStatuses.includes(t.status));
-
-    case 'all-active':
-    case 'all-unsolved':
-      return tickets.filter((t) => activeStatuses.includes(t.status));
-
-    case 'recently-updated':
-      const weekAgo = new Date();
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      return tickets.filter((t) => t.updatedAt >= weekAgo);
-
-    case 'created-today':
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return tickets.filter((t) => t.createdAt >= today);
-
-    case 'pending':
-      return tickets.filter((t) => t.status === 'Pending');
-
-    case 'recently-solved':
-      const weekAgoSolved = new Date();
-      weekAgoSolved.setDate(weekAgoSolved.getDate() - 7);
-      return tickets.filter(
-        (t) => (t.status === 'Resolved' || t.status === 'Closed') && t.updatedAt >= weekAgoSolved
-      );
-
-    default:
-      return tickets;
   }
 }

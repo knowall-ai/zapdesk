@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { User } from '@/types';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
 
 /**
  * Display names of everyone who can be `@mentioned`.
@@ -13,24 +14,27 @@ import type { User } from '@/types';
  *
  * Cached at module scope rather than per component. A ticket page renders a
  * comment list and an editor, and every dialog mounts more of both — each of
- * which would otherwise fetch the same rarely-changing roster.
+ * which would otherwise fetch the same rarely-changing roster. Each Azure
+ * DevOps organization has its own roster, so the cache is per organization.
  */
-let cache: string[] | null = null;
-let inFlight: Promise<string[]> | null = null;
+const cache = new Map<string, string[]>();
+const inFlight = new Map<string, Promise<string[]>>();
 
-async function loadNames(): Promise<string[]> {
-  if (cache) return cache;
-  if (inFlight) return inFlight;
+async function loadNames(org: string): Promise<string[]> {
+  const cached = cache.get(org);
+  if (cached) return cached;
+  const pending = inFlight.get(org);
+  if (pending) return pending;
 
-  inFlight = (async () => {
+  const request = (async () => {
     try {
-      const response = await fetch('/api/devops/users');
+      const response = await fetch('/api/devops/users', { headers: { 'x-devops-org': org } });
       if (!response.ok) throw new Error(`Failed to fetch users: ${response.status}`);
       const data = await response.json();
       const names = ((data.users ?? []) as User[])
         .map((u) => u.displayName)
         .filter((n): n is string => Boolean(n && n.trim()));
-      cache = names;
+      cache.set(org, names);
       return names;
     } catch (error) {
       // Never break rendering over this. Without the list, mentions fall back
@@ -38,24 +42,28 @@ async function loadNames(): Promise<string[]> {
       console.error('Failed to fetch mentionable users:', error);
       return [];
     } finally {
-      inFlight = null;
+      inFlight.delete(org);
     }
   })();
-  return inFlight;
+  inFlight.set(org, request);
+  return request;
 }
 
 export function useMentionableUsers(): string[] {
-  const [names, setNames] = useState<string[]>(() => cache ?? []);
+  const { selectedOrganization } = useOrganization();
+  const org = selectedOrganization?.accountName;
+  const [names, setNames] = useState<string[]>(() => (org && cache.get(org)) || []);
 
   useEffect(() => {
+    if (!org) return;
     let active = true;
-    loadNames().then((loaded) => {
+    loadNames(org).then((loaded) => {
       if (active) setNames(loaded);
     });
     return () => {
       active = false;
     };
-  }, []);
+  }, [org]);
 
   return names;
 }

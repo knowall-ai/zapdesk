@@ -4,14 +4,16 @@ import { signIn, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
+import { currentCallbackUrl } from '@/lib/login-redirect';
 
+/** Sign-in page. After signing in, people return to the page they were sent here from (`callbackUrl`, same-site paths only), or the home page (#7723). */
 export default function LoginPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
   useEffect(() => {
     if (session) {
-      router.push('/');
+      router.push(currentCallbackUrl());
     }
   }, [session, router]);
 
@@ -60,7 +62,7 @@ export default function LoginPage() {
 
         {/* Sign in button */}
         <button
-          onClick={() => signIn('azure-ad', { callbackUrl: '/' })}
+          onClick={() => signIn('azure-ad', { callbackUrl: currentCallbackUrl() })}
           className="flex w-full items-center justify-center gap-3 rounded-lg px-4 py-3 font-medium transition-colors"
           style={{
             backgroundColor: 'var(--surface-hover)',
@@ -83,6 +85,12 @@ export default function LoginPage() {
           <p className="text-center text-xs" style={{ color: 'var(--text-muted)' }}>
             ZapDesk connects to Azure DevOps to display work items tagged as tickets. You&apos;ll
             only see tickets from projects you have access to.
+          </p>
+          <p className="mt-3 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
+            Can&apos;t sign in? Your organisation may need to install ZapDesk first.{' '}
+            <a href="/install" className="hover:underline" style={{ color: 'var(--primary)' }}>
+              Install for my organisation
+            </a>
           </p>
         </div>
 

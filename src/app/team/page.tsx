@@ -2,7 +2,8 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import React, { useCallback, useEffect, useState } from 'react';
+import { loginHref } from '@/lib/login-redirect';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner, Avatar } from '@/components/common';
 import {
@@ -18,15 +19,19 @@ import {
 import { ActivityCalendar, type Activity as CalendarActivity } from 'react-activity-calendar';
 import { Tooltip } from 'react-tooltip';
 import type { TeamMember, TeamStats } from '@/types';
+import { useOrganization } from '@/components/providers/OrganizationProvider';
+import FailedProjectsNotice from '@/components/common/FailedProjectsNotice';
 
 interface TeamData {
   members: TeamMember[];
   stats: TeamStats;
+  failedProjects?: string[];
 }
 
 interface ActivityData {
   activities: CalendarActivity[];
   totalActivities: number;
+  failedProjects?: string[];
 }
 
 type SortColumn =
@@ -38,8 +43,11 @@ type SortColumn =
   | 'avgResolution';
 type SortDirection = 'asc' | 'desc';
 
+/** The team's workload and recent activity. */
 export default function TeamPage() {
   const { data: session, status } = useSession();
+  const { selectedOrganization } = useOrganization();
+  const org = selectedOrganization?.accountName;
   const router = useRouter();
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [activityData, setActivityData] = useState<ActivityData | null>(null);
@@ -62,11 +70,18 @@ export default function TeamPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.push(loginHref());
     }
   }, [status, router]);
 
+  // Only the latest request of each kind may update the page: a slower one
+  // for an organization or filter no longer selected is ignored
+  const teamRequest = useRef(0);
+  const activityRequest = useRef(0);
+
   const fetchTeamData = useCallback(async () => {
+    const request = ++teamRequest.current;
+    const isCurrent = () => request === teamRequest.current;
     setLoading(true);
     setError(null);
     try {
@@ -77,47 +92,77 @@ export default function TeamPage() {
       if (timePeriod) {
         params.set('days', String(timePeriod));
       }
-      const response = await fetch(`/api/devops/team?${params.toString()}`);
+      const response = await fetch(`/api/devops/team?${params.toString()}`, {
+        headers: { 'x-devops-org': org || '' },
+      });
       if (response.ok) {
         const data = await response.json();
-        setTeamData(data);
+        if (isCurrent()) setTeamData(data);
       } else {
         const errorData = await response.json().catch(() => ({}));
-        setError(errorData.error || 'Failed to load team data');
+        if (isCurrent()) {
+          // The error renders beside the stat cards, not instead of them, so
+          // leaving the old figures there would show them under the message
+          // saying they could not be loaded.
+          setTeamData(null);
+          setError(errorData.error || 'Failed to load team data');
+        }
       }
     } catch (err) {
       console.error('Failed to fetch team data:', err);
-      setError('Unable to connect to the server. Please try again.');
+      if (isCurrent()) {
+        setTeamData(null);
+        setError('Unable to connect to the server. Please try again.');
+      }
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [ticketsOnly, timePeriod]);
+  }, [ticketsOnly, timePeriod, org]);
+
+  // Drop the previous organisation's answers the moment the organisation
+  // changes. Both fetches only ever write on success, so without this the old
+  // org's figures stay on screen while the new ones load -- and stay for good
+  // if the new request fails, naming a project that belongs to a different
+  // organisation entirely. Raised by CodeRabbit on #520.
+  useEffect(() => {
+    setTeamData(null);
+    setActivityData(null);
+  }, [org]);
 
   const fetchActivityData = useCallback(async () => {
+    const request = ++activityRequest.current;
+    const isCurrent = () => request === activityRequest.current;
     setActivityLoading(true);
     try {
       const params = new URLSearchParams();
       if (!ticketsOnly) {
         params.set('ticketsOnly', 'false');
       }
-      const response = await fetch(`/api/devops/team-activity?${params.toString()}`);
+      const response = await fetch(`/api/devops/team-activity?${params.toString()}`, {
+        headers: { 'x-devops-org': org || '' },
+      });
       if (response.ok) {
         const data = await response.json();
-        setActivityData(data);
+        if (isCurrent()) setActivityData(data);
+      } else if (isCurrent()) {
+        // No error state is rendered for the calendar, so a failure used to
+        // leave the previous answer in place, failed-project names included.
+        setActivityData(null);
       }
     } catch (err) {
       console.error('Failed to fetch activity data:', err);
+      if (isCurrent()) setActivityData(null);
     } finally {
-      setActivityLoading(false);
+      if (isCurrent()) setActivityLoading(false);
     }
-  }, [ticketsOnly]);
+  }, [ticketsOnly, org]);
 
   useEffect(() => {
-    if (session?.accessToken) {
+    if (session?.accessToken && org) {
       fetchTeamData();
       fetchActivityData();
     }
-  }, [session?.accessToken, fetchTeamData, fetchActivityData]);
+  }, [session?.accessToken, org, fetchTeamData, fetchActivityData]);
 
   // Pre-calculate max values once for workload distribution (must be before conditional returns)
   const maxAssigned = React.useMemo(() => {
@@ -270,6 +315,19 @@ export default function TeamPage() {
             </button>
           </div>
         </div>
+
+        {/* Every count below is short by whatever a failed project holds, which
+            reads as someone having done less work than they did (#516). */}
+        <FailedProjectsNotice
+          projects={[
+            ...new Set([
+              ...(teamData?.failedProjects ?? []),
+              ...(activityData?.failedProjects ?? []),
+            ]),
+          ]}
+          subject="These figures"
+          className="mb-4"
+        />
 
         {/* Stats cards */}
         <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">

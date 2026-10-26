@@ -8,9 +8,14 @@
  */
 
 import { getProjectFromEmail } from '@/lib/devops';
+import { devOpsOrgOrDefault } from './devops-org';
+import { supportTeamRecipients } from '@/lib/support-team';
 import {
+  isOwnSender,
   isPolledMailbox,
+  parseAddressList,
   sendCustomerReplyNotification,
+  sendNewTicketNotification,
   sendTicketConfirmation,
 } from '@/lib/email';
 import {
@@ -72,6 +77,7 @@ export interface IngestableEmail {
 export type IngestResult =
   | { success: true; action: 'ticket_created'; ticketId: number; project: string }
   | { success: true; action: 'comment_added'; ticketId: number }
+  | { success: true; action: 'ignored'; reason: string }
   | { success: false; status: number; error: string };
 
 interface UploadedAttachment {
@@ -89,6 +95,15 @@ export async function ingestEmail(email: IngestableEmail): Promise<IngestResult>
   const senderEmail = extractEmail(email.from);
   if (!senderEmail) {
     return { success: false, status: 400, error: 'Invalid sender email' };
+  }
+
+  // ZapDesk's own notifications can come back in when a team list that
+  // includes the support mailbox receives them. Read as a customer reply, each
+  // would add a comment and notify the same list again, on every poll. Counted
+  // as handled so the poller marks it read and moves on.
+  if (isOwnSender(senderEmail)) {
+    console.log('[Ingest] Ignoring mail sent by ZapDesk itself');
+    return { success: true, action: 'ignored', reason: 'sent by ZapDesk' };
   }
 
   const pat = process.env.AZURE_DEVOPS_PAT;
@@ -163,6 +178,7 @@ async function handleNewTicket(
 
   // Fire-and-forget — never block ticket creation on email send.
   sendTicketConfirmation(ticketId, email.subject, senderEmail).catch(() => {});
+  notifyTeamOfNewTicket(ticketId, email.subject, senderEmail, projectName, description);
 
   return { success: true, action: 'ticket_created', ticketId, project: projectName };
 }
@@ -295,17 +311,54 @@ export function renderForNotification(storedHtml: string): string {
  * notification into an outage of the whole app.
  */
 function supportTeamFallback(): string | null {
-  const group = (process.env.SUPPORT_TEAM_NOTIFY_EMAIL || '').trim();
-  if (!group) return null;
-  if (isPolledMailbox(group)) {
-    console.error(
-      `[Notify] SUPPORT_TEAM_NOTIFY_EMAIL (${group}) is the mailbox ZapDesk polls — ignoring it, because notifying it would loop.`
-    );
-    return null;
-  }
-  return group;
+  // One address or several (#485): a group, a distribution list, or people.
+  // Shared with the in-app create path, which has the same rules (#7369).
+  const team = supportTeamRecipients([]);
+  return team.length > 0 ? team.join(', ') : null;
 }
 
+/**
+ * Tell the support team a ticket has just arrived by email (#485).
+ *
+ * Goes to everyone in SUPPORT_TEAM_NOTIFY_EMAIL, except the polled mailbox (it
+ * would loop) and the customer who raised it. Skipped when nobody is left.
+ * Fire-and-forget: the ticket is already created.
+ */
+function notifyTeamOfNewTicket(
+  ticketId: number,
+  subject: string,
+  senderEmail: string,
+  projectName: string,
+  descriptionHtml: string
+): void {
+  const requester = senderEmail.trim().toLowerCase();
+  const recipients = parseAddressList(supportTeamFallback() ?? '').filter(
+    (address) => address.toLowerCase() !== requester
+  );
+  if (recipients.length === 0) {
+    console.log(
+      `[Notify] SUPPORT_TEAM_NOTIFY_EMAIL not set — nobody told about new ticket #${ticketId}`
+    );
+    return;
+  }
+  sendNewTicketNotification({
+    ticketId,
+    ticketSubject: subject,
+    requesterEmail: senderEmail,
+    project: projectName,
+    messageHtml: renderForNotification(descriptionHtml),
+    recipients: recipients.join(', '),
+  }).catch(() => {});
+}
+
+/**
+ * Tell the ticket's assignee, or the team fallback address, that the customer
+ * replied by email.
+ *
+ * Skipped when nobody is configured to receive it, and never sent to the
+ * polled mailbox (it would loop) or to the customer themself (#7722).
+ * Fire-and-forget: a failed send must not cost the reply being stored.
+ */
 function notifyAgentOfReply(
   workItem: WorkItemFieldsResponse | null | undefined,
   ticketId: number,
@@ -328,7 +381,19 @@ function notifyAgentOfReply(
       `[Notify] Ticket #${ticketId} is assigned to ${assignedEmail}, the mailbox ZapDesk polls — notifying it would loop, so falling back to the team address.`
     );
   }
-  const recipient = assignee ?? supportTeamFallback() ?? '';
+  const requester = senderEmail.trim().toLowerCase();
+  const team = parseAddressList(supportTeamFallback() ?? '')
+    .filter((address) => address.toLowerCase() !== requester)
+    .join(', ');
+  const recipient = assignee ?? team;
+  // Never tell the customer that the customer replied (#7722). It happens
+  // when the ticket is assigned to the requester's own address.
+  if (recipient && recipient.trim().toLowerCase() === senderEmail.trim().toLowerCase()) {
+    console.log(
+      `[Notify] Ticket #${ticketId} is assigned to its requester — not echoing their reply back.`
+    );
+    return;
+  }
   if (!recipient) {
     console.log(
       `[Notify] No agent assigned and SUPPORT_TEAM_NOTIFY_EMAIL not set — skipping notification for ticket #${ticketId}`
@@ -347,7 +412,7 @@ class AzureDevOpsServiceWithPAT {
 
   constructor(encodedPat: string, organization?: string) {
     this.encodedPat = encodedPat;
-    this.organization = organization || process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+    this.organization = devOpsOrgOrDefault(organization);
   }
 
   private get baseUrl(): string {

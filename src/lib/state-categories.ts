@@ -49,14 +49,36 @@ const CATEGORY_PREFERENCE: Record<TicketStatus, string[]> = {
  * progress" would resolve to the same state, which is not what the user
  * asked for.
  */
+/**
+ * State names that mean "waiting on somebody else", normalised.
+ *
+ * Exported because the reverse mapping has to agree with this one. ZapDesk
+ * wrote `Pending` as the DevOps state `Blocked` and then read `Blocked` back
+ * as `In Progress`, because reading went by category alone and Blocked and
+ * Active share the InProgress category. Setting a ticket to Pending and
+ * reloading showed In Progress, the Pending count was always zero, and the
+ * Pending view was always empty.
+ */
+export const PENDING_STATE_HINTS: readonly string[] = ['blocked', 'pending', 'onhold', 'waiting'];
+
 const NAME_HINTS: Record<TicketStatus, string[]> = {
   New: ['new', 'proposed', 'todo', 'toDo'],
   Open: ['active', 'doing', 'inprogress', 'committed', 'open'],
   'In Progress': ['inprogress', 'doing', 'active', 'committed'],
-  Pending: ['blocked', 'pending', 'onhold', 'waiting'],
+  Pending: [...PENDING_STATE_HINTS],
   Resolved: ['resolved', 'done', 'fixed'],
   Closed: ['closed', 'done', 'completed'],
 };
+
+/**
+ * Whether a DevOps state name means the ticket is waiting on somebody else.
+ *
+ * The other half of the round trip: this is what turns `Blocked` back into
+ * `Pending` on the way in, using the same names that put it there.
+ */
+export function isPendingStateName(state: string): boolean {
+  return PENDING_STATE_HINTS.includes(normalizeStateName(state));
+}
 
 /** The categories a status is willing to land in. Exported for callers that report failures. */
 export function categoriesForStatus(status: TicketStatus): string[] {

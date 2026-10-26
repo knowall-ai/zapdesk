@@ -4,6 +4,10 @@ import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import { normalizeStateName } from '@/lib/kanban-columns';
+import { getGitHubTickets } from '@/lib/github-issues';
+import { gitHubAvailable, gitHubSourceFor, type GitHubSource } from '@/lib/github-source';
+import { gitHubPeopleFor } from '@/lib/github-people';
+import { addGitHubTicketsToStandup } from '@/lib/github-kanban';
 import type {
   StandupData,
   StandupWorkItem,
@@ -282,6 +286,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const dateParam = searchParams.get('date');
     const currentSprintOnly = searchParams.get('currentSprintOnly') === 'true';
+    // Which sources the header toggle asked for (#447). Anything else is "both".
+    const sources = searchParams.get('sources');
+    const includeDevOps = sources !== 'github';
+    const includeGitHub = sources !== 'devops';
     const targetDate = dateParam ? new Date(dateParam + 'T12:00:00Z') : new Date();
 
     // Step 1: Fetch state categories dynamically from DevOps (cached + deduped)
@@ -298,12 +306,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Step 2: Fetch work items using dynamic state lists
-    const { items } = await devopsService.getStandupData(
-      targetDate,
-      stateCategories,
-      categoriesByProjectType,
-      discoveryComplete
-    );
+    const { items } = includeDevOps
+      ? await devopsService.getStandupData(
+          targetDate,
+          stateCategories,
+          categoriesByProjectType,
+          discoveryComplete
+        )
+      : { items: [] as DevOpsWorkItem[] };
 
     // Step 2b: If currentSprintOnly, fetch current iterations and filter
     let currentIterations: Map<string, string> | null = null;
@@ -382,7 +392,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Build project data sorted alphabetically
-    const projects = Array.from(projectMap.entries())
+    const devOpsProjects = Array.from(projectMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([projectName, colMap]) => ({
         projectName,
@@ -394,6 +404,44 @@ export async function GET(request: NextRequest) {
           })
         ),
       }));
+
+    // Step 5: Add GitHub issues as read-only cards, each on the board of the
+    // project its repository is mapped to (#447). They have no iteration, so
+    // the sprint filter leaves them in, as it does a DevOps item whose sprint
+    // cannot be determined. GitHub being unreachable must not take the DevOps
+    // board down with it.
+    let projects = devOpsProjects;
+    let failedGitHubRepos: string[] = [];
+    if (includeGitHub && gitHubAvailable()) {
+      let gitHubConfig: GitHubSource | null = null;
+      try {
+        const visibleProjects = await devopsService.getProjects();
+        gitHubConfig = await gitHubSourceFor(organization, visibleProjects, session.accessToken);
+        if (!gitHubConfig) throw new Error('GitHub is not configured');
+        // Mapped and linked GitHub accounts take their DevOps name, so grouping
+        // by person puts a person's issues with their DevOps work.
+        const { devOpsUsers, linkedAccounts } = await gitHubPeopleFor(
+          organization,
+          gitHubConfig,
+          () => devopsService.getOrganizationUsers(),
+          session.tenantId
+        );
+        const gitHub = await getGitHubTickets(
+          visibleProjects,
+          organization,
+          gitHubConfig,
+          devOpsUsers,
+          linkedAccounts
+        );
+        projects = addGitHubTicketsToStandup(devOpsProjects, displayColumns, gitHub.tickets);
+        failedGitHubRepos = [...gitHubConfig.failed, ...gitHub.failedRepos];
+      } catch (error) {
+        console.error('Error adding GitHub issues to the standup board:', error);
+        failedGitHubRepos = gitHubConfig
+          ? Object.values(gitHubConfig.projectRepos).flat()
+          : ['GitHub'];
+      }
+    }
 
     // Build summary counts per column
     const columnCounts: Record<string, number> = {};
@@ -411,6 +459,7 @@ export async function GET(request: NextRequest) {
       // Lets the board disable drop targets a card's type can't enter, instead
       // of letting DevOps reject the PATCH and snapping the card back (#391).
       allowedStatesByProjectType: statesByProjectType,
+      ...(failedGitHubRepos.length > 0 ? { failedGitHubRepos } : {}),
       summary: {
         columnCounts,
         projectCount: projects.length,

@@ -16,11 +16,11 @@ import {
   Zap,
   Info,
   X,
-  Download,
   Plus,
   Tag,
   Trash2,
   Lock,
+  Minimize2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMentionableUsers } from '@/hooks/useMentionableUsers';
@@ -33,6 +33,7 @@ import type {
   WorkItemType,
   WorkItemUpdate,
   Attachment,
+  EffortHoursUpdate,
 } from '@/types';
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { ensureActiveState } from '@/types';
@@ -43,16 +44,20 @@ import {
   validateFile,
   rewriteAttachmentUrls,
   buildAttachmentProxyUrl,
-  attachmentDownloadUrl,
+  attachedFilesHtml,
 } from '@/lib/attachment-utils';
 import { hasTicketTag } from '@/lib/tags';
+import { exitFullViewHref } from '@/lib/full-view';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
 import SLABadge from '../common/SLABadge';
+import SlaPausedNote from '../common/SlaPausedNote';
 import MentionInput from '../common/MentionInput';
 import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
+import AttachmentList from './AttachmentList';
+import EffortHoursField from './EffortHoursField';
 import TicketHistory from './TicketHistory';
 import TypeChangeRequiredFields from './TypeChangeRequiredFields';
 import type { RequiredField } from '@/hooks/useWorkItemActions';
@@ -64,6 +69,7 @@ import {
 import { useClickOutside } from '@/hooks';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import { assigneeIdentity } from '@/lib/assignee';
+import { newestFirst } from '@/lib/comment-order';
 
 type DetailTab = 'details' | 'history';
 
@@ -81,6 +87,7 @@ interface TicketDetailProps {
   onDescriptionChange?: (description: string) => Promise<void>;
   onResolutionChange?: (resolution: string) => Promise<void>;
   onMitigationChange?: (mitigation: string) => Promise<void>;
+  onEffortChange?: (hours: EffortHoursUpdate) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onRefreshTicket?: () => Promise<void>;
   // Move to DevOps Recycle Bin. Caller is responsible for navigation/refresh
@@ -118,6 +125,7 @@ export default function TicketDetail({
   onDescriptionChange,
   onResolutionChange,
   onMitigationChange,
+  onEffortChange,
   onUploadAttachment,
   onRefreshTicket,
   onDelete,
@@ -142,6 +150,19 @@ export default function TicketDetail({
   // worse. The mitigation is making the internal state unmistakable, not
   // pretending the trade does not exist.
   const [isInternalNote, setIsInternalNote] = useState(false);
+
+  // Where "Exit full view" returns to: the list or board this was opened from,
+  // with the ticket's quick view open again (#7727). Read after mount, as the
+  // address is not available while rendering on the server.
+  const [exitHref, setExitHref] = useState<string | null>(null);
+  useEffect(() => {
+    setExitHref(exitFullViewHref(ticket.id));
+  }, [ticket.id]);
+  const leaveFullView = () => {
+    if (exitHref) router.push(exitHref);
+    else if (window.history.length > 1) router.back();
+    else router.push(isTicket ? '/tickets' : '/kanban');
+  };
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isZapDialogOpen, setIsZapDialogOpen] = useState(false);
   const [isDetailsSidebarOpen, setIsDetailsSidebarOpen] = useState(false);
@@ -279,6 +300,9 @@ export default function TicketDetail({
 
   // Attachment state
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  // Uploaded, but the reply naming them not yet posted. Kept until it is, so
+  // a failed send can be retried without dropping the files from the reply.
+  const [uploadedFiles, setUploadedFiles] = useState<Attachment[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -314,7 +338,7 @@ export default function TicketDetail({
   const fetchAvailableStates = async () => {
     setIsLoadingStates(true);
     try {
-      const response = await fetch('/api/devops/workitem-states');
+      const response = await devOpsGet('/api/devops/workitem-states');
       if (response.ok) {
         const data = await response.json();
         // Use shared utility to ensure "Active" state exists
@@ -681,25 +705,32 @@ export default function TicketDetail({
   };
 
   const handleSubmitWithAttachments = async () => {
-    if (!newComment.trim() && pendingFiles.length === 0) return;
+    if (!newComment.trim() && pendingFiles.length === 0 && uploadedFiles.length === 0) return;
 
     setIsSubmitting(true);
     setUploadError(null);
 
     try {
-      // Upload all pending files first
+      // Upload all pending files first. Each moves from pending to uploaded as
+      // it lands, so a retry neither re-uploads nor forgets it.
+      const uploaded = [...uploadedFiles];
       if (onUploadAttachment && pendingFiles.length > 0) {
         setIsUploadingFiles(true);
         for (const file of pendingFiles) {
-          await onUploadAttachment(file);
+          uploaded.push(await onUploadAttachment(file));
+          setUploadedFiles([...uploaded]);
+          setPendingFiles((prev) => prev.filter((f) => f !== file));
         }
         setIsUploadingFiles(false);
-        setPendingFiles([]);
       }
 
-      // Then add comment if there is one
-      if (newComment.trim() && onAddComment) {
-        await onAddComment(newComment, isInternalNote);
+      // Then the comment, naming the files. Uploaded on their own they were
+      // only linked to the work item, so the reply email never carried them
+      // and the customer did not get them (#7376).
+      const body = [newComment.trim(), attachedFilesHtml(uploaded)].filter(Boolean).join('\n');
+      if (body && onAddComment) {
+        await onAddComment(body, isInternalNote);
+        setUploadedFiles([]);
         setNewComment('');
         setIsInternalNote(false);
       }
@@ -725,10 +756,11 @@ export default function TicketDetail({
           <div className="mb-3 flex items-center gap-4">
             <button
               type="button"
-              onClick={() => (window.history.length > 1 ? router.back() : router.push('/tickets'))}
+              onClick={leaveFullView}
               className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
               style={{ color: 'var(--text-muted)' }}
-              aria-label="Go back"
+              aria-label={exitHref ? 'Exit full view' : 'Go back'}
+              title={exitHref ? 'Exit full view' : 'Go back'}
             >
               <ArrowLeft size={20} />
             </button>
@@ -746,6 +778,18 @@ export default function TicketDetail({
               Details
             </button>
             {/* Zap button moved to comment area */}
+            {exitHref && (
+              <button
+                type="button"
+                onClick={leaveFullView}
+                className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}
+                title="Back to where you opened this ticket"
+              >
+                <Minimize2 size={14} />
+                <span className="hidden sm:inline">Exit full view</span>
+              </button>
+            )}
             <a
               href={ticket.devOpsUrl}
               target="_blank"
@@ -883,7 +927,7 @@ export default function TicketDetail({
 
         {/* Tab content */}
         {activeTab === 'details' ? (
-          <div className="flex-1 space-y-4 overflow-auto p-4">
+          <div className="min-w-0 flex-1 space-y-4 overflow-auto p-4">
             {/* Description */}
             <div className="card p-4">
               <div className="mb-2 flex items-center justify-between">
@@ -1186,31 +1230,7 @@ export default function TicketDetail({
                   <Paperclip size={12} />
                   <span>Attachments ({ticket.attachments.length})</span>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {ticket.attachments.map((attachment) => (
-                    <a
-                      key={attachment.id}
-                      href={attachmentDownloadUrl(attachment)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                      style={{
-                        backgroundColor: 'var(--surface)',
-                        color: 'var(--text-secondary)',
-                      }}
-                      title={`Download ${attachment.fileName}`}
-                    >
-                      <FileIcon contentType={attachment.contentType} />
-                      <span className="max-w-[150px] truncate">{attachment.fileName}</span>
-                      {attachment.size > 0 && (
-                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          ({formatFileSize(attachment.size)})
-                        </span>
-                      )}
-                      <Download size={12} style={{ color: 'var(--text-muted)' }} />
-                    </a>
-                  ))}
-                </div>
+                <AttachmentList attachments={ticket.attachments} />
               </div>
             )}
 
@@ -1224,7 +1244,7 @@ export default function TicketDetail({
               </h3>
               {comments.length > 0 ? (
                 <div className="space-y-4">
-                  {comments.map((comment) => (
+                  {newestFirst(comments).map((comment) => (
                     <div
                       key={comment.id}
                       className={`rounded-md p-3 ${comment.isInternal ? 'border-l-4' : ''}`}
@@ -1239,8 +1259,8 @@ export default function TicketDetail({
                           image={comment.author.avatarUrl}
                           size="md"
                         />
-                        <div className="flex-1">
-                          <div className="mb-2 flex items-center gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-2 flex flex-wrap items-center gap-2">
                             <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
                               {comment.author.displayName}
                             </span>
@@ -1279,7 +1299,7 @@ export default function TicketDetail({
             </div>
           </div>
         ) : (
-          <div className="flex-1 overflow-auto p-4">
+          <div className="min-w-0 flex-1 overflow-auto p-4">
             <TicketHistory updates={history} loading={historyLoading} />
           </div>
         )}
@@ -1369,8 +1389,25 @@ export default function TicketDetail({
           )}
 
           {/* Pending files */}
-          {pendingFiles.length > 0 && (
+          {(pendingFiles.length > 0 || uploadedFiles.length > 0) && (
             <div className="mb-3 flex flex-wrap gap-2">
+              {uploadedFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className="flex items-center gap-2 rounded-md px-2 py-1 text-sm"
+                  style={{
+                    backgroundColor: 'var(--surface-hover)',
+                    color: 'var(--text-secondary)',
+                  }}
+                  title="Uploaded; it is named in this reply when the reply is sent"
+                >
+                  <FileIcon contentType={file.contentType} />
+                  <span className="max-w-[150px] truncate">{file.fileName}</span>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    (uploaded)
+                  </span>
+                </div>
+              ))}
               {pendingFiles.map((file, index) => (
                 <div
                   key={`${file.name}-${index}`}
@@ -1437,7 +1474,10 @@ export default function TicketDetail({
               )}
               <button
                 onClick={handleSubmitWithAttachments}
-                disabled={(!newComment.trim() && pendingFiles.length === 0) || isSubmitting}
+                disabled={
+                  (!newComment.trim() && pendingFiles.length === 0 && uploadedFiles.length === 0) ||
+                  isSubmitting
+                }
                 className="btn-primary flex items-center gap-1 py-1.5 text-sm"
               >
                 {isUploadingFiles ? (
@@ -1681,6 +1721,11 @@ export default function TicketDetail({
                   SLA Status
                 </label>
                 <SLABadge slaInfo={ticket.slaInfo} variant="full" showLevel />
+                {/* The badge above counts wall-clock time from creation, which
+                    includes any stretch where the ticket was nobody's to move.
+                    The history is already loaded on this screen, so the time
+                    that should not have counted can be stated exactly (7386). */}
+                <SlaPausedNote updates={history} createdAt={ticket.createdAt} />
               </div>
             )}
 
@@ -1867,25 +1912,24 @@ export default function TicketDetail({
                 >
                   Attachments ({ticket.attachments.length})
                 </label>
-                <div className="space-y-1">
-                  {ticket.attachments.map((attachment) => (
-                    <a
-                      key={attachment.id}
-                      href={attachmentDownloadUrl(attachment)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                      style={{ color: 'var(--text-secondary)' }}
-                      title={`Download ${attachment.fileName}`}
-                    >
-                      <FileIcon contentType={attachment.contentType} />
-                      <span className="flex-1 truncate">{attachment.fileName}</span>
-                      <Download size={12} style={{ color: 'var(--text-muted)' }} />
-                    </a>
-                  ))}
-                </div>
+                <AttachmentList attachments={ticket.attachments} />
               </div>
             )}
+
+            {/* Time spent and remaining, editable here as in the dialog (#7728) */}
+            <div>
+              <label
+                className="mb-1 block text-xs uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Effort Tracking (hours)
+              </label>
+              <EffortHoursField
+                completedWork={ticket.completedWork}
+                remainingWork={ticket.remainingWork}
+                onSave={onEffortChange}
+              />
+            </div>
 
             {/* Dates */}
             <div>

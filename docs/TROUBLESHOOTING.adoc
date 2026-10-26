@@ -23,8 +23,20 @@
 |**Comments not saving**
 |User may not have write permission in Azure DevOps. Check the work item is not locked. Verify session hasn't expired.
 
+|**Customers cannot see files attached to a reply**
+|Files are emailed only with a *public reply* on a ticket that arrived by email, never with an internal note. A reply's files must total about 2.25 MB or less: the limit is 3 MB once encoded for email, and encoding adds about a third. Files over it are listed in the email as not included, and stay on the ticket.
+
 |**Email webhook not creating tickets**
 |Verify EMAIL_WEBHOOK_SECRET header matches. Check sender domain has project mapping. Review server logs for error details.
+
+|**A customer's reply in the comments repeats the whole earlier email**
+|Replies are stored as the new message only since the fix for #7720: the quoted ZapDesk email below it is cut. Comments stored before that keep their quote. If a reply still shows the quote, the mail client marked it in a way ZapDesk does not recognise yet; the quote must contain ZapDesk's own email (its logo, a ticket link, or the support address) to be cut.
+
+|**The support team gets no email when a new ticket arrives**
+|Set `SUPPORT_TEAM_NOTIFY_EMAIL` to the team's address, or to several addresses separated by commas or semicolons, and restart. It must not be the mailbox ZapDesk polls (`MAIL_POLL_MAILBOX`): that address is skipped, because mail sent to it would be read back in. Only tickets created from email send this; replies on an existing ticket send "New customer reply" instead. The server log shows `[Email] New ticket notification sent for ticket #N` when one is sent, or `SUPPORT_TEAM_NOTIFY_EMAIL not set` when it was skipped.
+
+|**No email when a ticket is assigned to me**
+|ZapDesk emails the assignee when a ticket is created already assigned, or reassigned in ZapDesk. It sends nothing when you assign a ticket to yourself, when the change is made directly in Azure DevOps, or when the assignee is the mailbox ZapDesk polls. Outbound mail also needs `MAIL_FROM`, plus app credentials: either the dedicated `MAIL_CLIENT_ID`, `MAIL_CLIENT_SECRET` and `MAIL_TENANT_ID`, or, when those are unset, the main sign-in app's `AZURE_AD_CLIENT_ID`, `AZURE_AD_CLIENT_SECRET` and `AZURE_AD_TENANT_ID`. The server log shows `[Email] Assignment of #N notified to ...` when one is sent.
 
 |**Blank page after login**
 |Check browser console for JavaScript errors. Verify all environment variables are set. Clear browser cache and cookies.
@@ -76,6 +88,72 @@
 
 |**A card dragged on the Kanban board goes back to its old column**
 |If a message appears, it gives the reason Azure DevOps refused the move, usually a workflow rule on that work item type. A column that turns grey while you drag is one the card's type has no state for (hover it for the reason). With no message at all on a version before the fix for issue #366, a board refresh arrived during the drag: drop the card again, or turn *Live update* off while moving several cards.
+
+|**The Kanban board's 24h summary shows "PRs: unavailable", or more than 24 hours on a Monday**
+|The summary covers the last 24 _working_ hours: weekend time doesn't count, so on a Monday it reaches back to the same time on Friday (the label then reads *Since Fri 10:23*). Bank holidays still count as working days. "Unavailable" means the pull request lookup failed. The server log shows `Failed to fetch pull request activity` with the project and the Azure DevOps response. The signed-in user needs *Code (Read)* access to the project's repositories. GitHub pull requests are counted too, from the repositories mapped to each project; a GitHub failure logs `Failed to read pull requests from owner/repo` and marks those projects unavailable. The token or GitHub App needs *Pull requests: read-only*.
+
+|**My GitHub pull requests don't count under my name on the Kanban board**
+|A GitHub pull request is counted for its author's DevOps person when their GitHub username is saved on their profile, or listed in `GITHUB_USER_MAP`; otherwise it shows under the GitHub username. Its repository must be mapped to a project you can see (`GITHUB_PROJECT_REPOS` or the ZapDesk GitHub App), and the GitHub token or App needs *Pull requests: read-only*. Names match without regard to case, or by email address.
+
+|**The 24h summary counts merged pull requests but *Highlight* lights up no cards for them**
+|A card is highlighted for a pull request only when the pull request is linked to the work item (the *Work items* panel on the pull request in Azure DevOps, or `AB#123` in a GitHub pull request's title or description), and the work item is on that group's board. Under *Person* grouping, a pull request is counted for its author, and its linked items may be assigned to someone else.
+
+|**The Both / DevOps / GitHub toggle is missing from the header**
+|GitHub issues are not configured. Either set up the ZapDesk GitHub App (`GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` and `GITHUB_APP_PRIVATE_KEY`), or set both `GITHUB_TOKEN` and `GITHUB_PROJECT_REPOS`, in the App Service configuration and restart. Check the server log for `[GitHub] GITHUB_PROJECT_REPOS` warnings: the value must be a JSON object such as `{"Project": ["owner/repo"]}`.
+
+|**The toggle is there but no GitHub issues are listed**
+|With the ZapDesk GitHub App, the project must be connected: its project page shows the GitHub organisation, and *Choose repositories on GitHub* lists the repositories the App may read. With `GITHUB_PROJECT_REPOS`, the project name must match an Azure DevOps project in the selected organization that you can see (case does not matter). Only open issues and closed issues updated in the last seven days are listed.
+
+|**The same person is listed twice, under their name and under a GitHub username**
+|The GitHub account is not linked to the person. They can save their GitHub username in the *GitHub* card on their *Profile* page. For someone outside the tenant, add the username to `GITHUB_USER_MAP` in the App Service configuration instead, as `{"github-username": "DevOps Display Name"}`, and restart; the name must be the person's display name in Azure DevOps. Check the server log for `[GitHub] GITHUB_USER_MAP` warnings.
+
+|**A GitHub username saved on the profile has no effect**
+|Another server may still have the old list: allow up to ten minutes. If it never applies, the server log shows `[GitHub] Could not read the GitHub usernames saved on profiles`: the app registration needs the Microsoft Graph application permission `User.ReadWrite.All` with admin consent. A person is matched to an Azure DevOps user by email address, then by display name.
+
+|**"GitHub username … is already linked to another person"**
+|Someone else saved that username on their profile. If it is wrongly theirs, they can remove it from their *Profile* page; an admin can override it with a `GITHUB_USER_MAP` entry.
+
+|**"Could not check whether this GitHub username is already linked"**
+|Before saving, ZapDesk reads every user in the tenant to make sure no one else has linked the username, and refuses the save if it cannot. The server log has the reason: a Graph error means the app registration lacks the Microsoft Graph application permission `User.ReadWrite.All` (with admin consent); `IncompleteUserListError` means the tenant has more than 5,000 users, more than the check reads. Use `GITHUB_USER_MAP` for that person instead.
+
+|**/install says "This ZapDesk serves one organisation"**
+|`AZURE_AD_MULTI_TENANT` is not `true`, or `AZURE_AD_CLIENT_ID` is not set. Set both in the App Service configuration and restart; the app registration must also be multi-tenant.
+
+|**/install says "ZapDesk could not be installed" with `AADSTS50011`**
+|The callback is not a redirect URI of the app registration. Add `https://<your ZapDesk URL>/api/install/callback` as a *Web* redirect URI.
+
+|**/install says "That install link has expired"**
+|The admin took more than ten minutes on Microsoft's page, or finished in another browser. Start again from `/install` in the same browser.
+
+|**Someone from another organisation gets `AADSTS50020` or `AADSTS700016` at sign-in**
+|The app registration is still single-tenant. Set *Supported account types* to multitenant. Their admin must also have installed ZapDesk from `/install`.
+
+|**"No Azure DevOps organization selected. Choose one, or set AZURE_DEVOPS_ORG."**
+|ZapDesk has no built-in organization. Pick one in the organization selector in the header. For server-side work that has no user (email ingest, routing and SLA lookups), set `AZURE_DEVOPS_ORG` in the App Service configuration and restart.
+
+|**Mail from a customer's domain is not routed to their project**
+|Add an `Email: example.com` line to the project's description in Azure DevOps. There are no built-in domains. The routing map refreshes every five minutes, and needs both `AZURE_DEVOPS_PAT` and `AZURE_DEVOPS_ORG`.
+
+|**No GitHub card on the project page**
+|The ZapDesk GitHub App is not set up on this server. Set `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` and `GITHUB_APP_PRIVATE_KEY`, and restart.
+
+|**The project page says "Someone who can edit this project … can connect GitHub"**
+|Only people with *Edit project-level information* on the project in Azure DevOps (Project Administrators, by default) can connect or disconnect GitHub.
+
+|**After installing the App: "GitHub was not connected: you need to be able to edit this project …"**
+|Either Azure DevOps refused the change (you cannot edit the project), or the GitHub user who authorised the App cannot see that installation. The server log says which. The App must have *Request user authorization (OAuth) during installation* ticked.
+
+|**After installing the App: "That GitHub link has expired"**
+|The link is valid for 30 minutes and only for the person who clicked *Connect GitHub*. Click it again.
+
+|**The project is connected but no GitHub issues show**
+|Check the App was given the repositories on GitHub (*Choose repositories on GitHub* on the project page). Changes to the repository list take up to five minutes to show.
+
+|**The GitHub card is missing from the Profile page**
+|It appears only when GitHub issues are configured (`GITHUB_TOKEN` and `GITHUB_PROJECT_REPOS`).
+
+|**"Could not load GitHub issues from owner/repo"** (or **from owner/***)
+|For `owner/*`: the owner must be a GitHub organization, not a personal account, and the token must be allowed to read it. Otherwise: the token cannot read that repository. Check the repository name, that the token has read-only *Issues* access to it, and that it has not expired. The server log has the status GitHub returned: 404 means not found or no access, 401 an invalid token, 403 or 429 the rate limit.
 |===
 
 == Debugging Tips
@@ -123,5 +201,5 @@ curl -u ":YOUR_PAT" "https://dev.azure.com/KnowAll/_apis/projects?api-version=7.
 == Getting Help
 
 * Check GitHub Issues: https://github.com/knowall-ai/zapdesk/issues
-* Contact Support: support@knowall.ai
+* Contact Support: see the support channel listed on https://www.knowall.ai
 * Azure DevOps Status: https://status.dev.azure.com/

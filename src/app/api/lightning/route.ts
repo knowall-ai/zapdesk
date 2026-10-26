@@ -13,7 +13,7 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const graphToken = await getGraphToken();
+  const graphToken = await getGraphToken(session.tenantId);
   if (!graphToken) {
     return NextResponse.json({ error: 'Failed to get Graph token' }, { status: 500 });
   }
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Lightning address is required' }, { status: 400 });
   }
 
-  const graphToken = await getGraphToken();
+  const graphToken = await getGraphToken(session.tenantId);
   if (!graphToken) {
     return NextResponse.json({ error: 'Failed to get Graph token' }, { status: 500 });
   }
@@ -68,7 +68,7 @@ export async function DELETE() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const graphToken = await getGraphToken();
+  const graphToken = await getGraphToken(session.tenantId);
   if (!graphToken) {
     return NextResponse.json({ error: 'Failed to get Graph token' }, { status: 500 });
   }

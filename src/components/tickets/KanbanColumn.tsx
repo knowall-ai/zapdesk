@@ -3,6 +3,7 @@
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import KanbanCard from './KanbanCard';
+import { isGitHubItem } from '@/lib/github-kanban';
 import type { Ticket, WorkItem, WorkItemType } from '@/types';
 
 // KanbanColumn can work with either Ticket[] or WorkItem[]
@@ -48,7 +49,8 @@ export default function KanbanColumn({
         item={item}
         isDragging={activeId === item.id}
         hasUnrecognizedState={itemsWithUnrecognizedState?.has(item.id)}
-        readOnly={readOnly}
+        // A GitHub issue can never be dragged: a drop writes to Azure DevOps.
+        readOnly={readOnly || isGitHubItem(item)}
         typeInfo={itemType && typeInfoMap ? typeInfoMap.get(itemType) : undefined}
         onItemClick={onItemClick}
         onZapClick={onZapClick}

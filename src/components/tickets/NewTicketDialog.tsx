@@ -10,6 +10,7 @@ import type { DevOpsProject, User, WorkItemType, ClassificationNode } from '@/ty
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { formatFileSize, validateFile } from '@/lib/attachment-utils';
 import { buildIdentityString, getDisplayNameFromIdentity } from '@/lib/identity';
+import { keptTicketType } from '@/lib/ticket-type';
 import { FileIcon } from '@/components/common';
 
 interface PriorityOption {
@@ -68,7 +69,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
   // work item, not a customer ticket: no auto "ticket" tag, no SLA, hidden
   // from the Tickets screen (issue #372).
   const isKanbanContext = pathname?.startsWith('/kanban') ?? false;
-  const { get, post, hasOrganization } = useDevOpsApi();
+  const { get, post, fetchDevOps, hasOrganization } = useDevOpsApi();
   const [projects, setProjects] = useState<DevOpsProject[]>([]);
   const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const [workItemTypes, setWorkItemTypes] = useState<WorkItemType[]>([]);
@@ -113,7 +114,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
     foundBy: '',
     assignee: '',
     tags: '',
-    workItemType: 'Task',
+    workItemType: '',
     iterationPath: '',
     areaPath: '',
   });
@@ -170,11 +171,8 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         const data = await response.json();
         const types = data.types || [];
         setWorkItemTypes(types);
-        // Set default to Task if available, otherwise first type
-        if (types.length > 0) {
-          const taskType = types.find((t: WorkItemType) => t.name === 'Task');
-          setForm((prev) => ({ ...prev, workItemType: taskType?.name || types[0].name }));
-        }
+        // No default type: the person raising it chooses (#7379).
+        setForm((prev) => ({ ...prev, workItemType: keptTicketType(prev.workItemType, types) }));
       } catch (err) {
         console.error('Failed to fetch work item types:', err);
         setWorkItemTypes([]);
@@ -314,7 +312,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
         foundBy: '',
         assignee: '',
         tags: '',
-        workItemType: 'Task',
+        workItemType: '',
         iterationPath: '',
         areaPath: '',
       });
@@ -588,7 +586,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
           const formData = new FormData();
           formData.append('file', file);
 
-          const uploadResponse = await fetch(`/api/devops/tickets/${ticketId}/attachments`, {
+          const uploadResponse = await fetchDevOps(`/api/devops/tickets/${ticketId}/attachments`, {
             method: 'POST',
             body: formData,
           });
@@ -846,6 +844,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                   type="submit"
                   disabled={
                     isSubmitting ||
+                    isLoadingTypes ||
                     !form.project ||
                     !form.title.trim() ||
                     !form.workItemType ||
@@ -950,15 +949,12 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     className="input w-full"
                     disabled={!form.project || workItemTypes.length === 0}
                   >
-                    {workItemTypes.length === 0 ? (
-                      <option value="Task">Task</option>
-                    ) : (
-                      workItemTypes.map((type) => (
-                        <option key={type.name} value={type.name}>
-                          {type.name}
-                        </option>
-                      ))
-                    )}
+                    <option value="">Select type...</option>
+                    {workItemTypes.map((type) => (
+                      <option key={type.name} value={type.name}>
+                        {type.name}
+                      </option>
+                    ))}
                   </select>
                 )}
               </div>

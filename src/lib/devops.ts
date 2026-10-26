@@ -6,6 +6,7 @@ function escapeWiql(value: string): string {
 }
 import type {
   DevOpsWorkItem,
+  DevOpsWorkItemRelation,
   DevOpsProject,
   Ticket,
   TicketStatus,
@@ -23,6 +24,8 @@ import type {
   EpicType,
   TreemapNode,
   ClassificationNode,
+  PullRequestActivity,
+  PullRequestActivityKind,
 } from '@/types';
 import { parseSLAFromDescription, calculateTicketSLA, DEFAULT_SLA_LEVEL } from './sla';
 import { debugLog } from './debug';
@@ -36,8 +39,9 @@ import {
   getTemplateConfig,
 } from '@/config/process-templates';
 
-const DEVOPS_ORG = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
-const DEVOPS_BASE_URL = `https://dev.azure.com/${DEVOPS_ORG}`;
+import { configuredDevOpsOrg, devOpsOrgOrDefault } from './devops-org';
+import { ticketFieldsToRequest } from './work-item-fields';
+import { isPendingStateName } from './state-categories';
 
 /**
  * Read the resolution value from a work item, checking all possible field names
@@ -88,6 +92,18 @@ let stateCategoryCache: Record<string, string> = {};
 
 // Cache for project list per organization (avoids redundant fetches)
 const projectListCache: Map<string, { data: DevOpsProject[]; timestamp: number }> = new Map();
+
+/**
+ * A short, stable name for whoever holds a token, so per-user caches never
+ * hand one person's results to another. Web Crypto, as this module also
+ * reaches the browser.
+ */
+async function tokenIdentity(accessToken: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(accessToken));
+  return Array.from(new Uint8Array(digest).slice(0, 8), (b) =>
+    b.toString(16).padStart(2, '0')
+  ).join('');
+}
 const PROJECT_CACHE_TTL_MS = 30 * 1000; // 30 seconds
 
 // Cache for current iterations per organization
@@ -96,6 +112,17 @@ const currentIterationsCache: Map<string, { data: Map<string, string>; timestamp
 const currentIterationsInFlight: Map<string, Promise<Map<string, string>>> = new Map();
 const CURRENT_ITERATIONS_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+/**
+ * Field names each organization defines, so no request names one it does not
+ * have. Keyed by organization rather than by token: a field definition belongs
+ * to the organization and is the same for everyone who can read it. Only
+ * successful lookups are cached, so one user's permission failure cannot leave
+ * everybody else on the reduced field list.
+ */
+const fieldNameCache: Map<string, { data: Set<string>; timestamp: number }> = new Map();
+const fieldNameInFlight: Map<string, Promise<Set<string> | null>> = new Map();
+const FIELD_NAME_TTL_MS = 60 * 60 * 1000; // 1 hour; process customisation is rare
+
 // Set the state category cache (called from API routes after fetching states)
 export function setStateCategoryCache(stateCategories: Record<string, string>) {
   stateCategoryCache = stateCategories;
@@ -103,6 +130,12 @@ export function setStateCategoryCache(stateCategories: Record<string, string>) {
 
 // Map Azure DevOps state to Zendesk-like status using cached categories
 function mapStateToStatus(state: string): TicketStatus {
+  // Checked before the category, because Blocked and Active share the
+  // InProgress category and the category alone cannot tell them apart. Going
+  // by category made every blocked ticket read as In Progress -- including the
+  // ones ZapDesk itself had set to Pending, since writing Pending writes the
+  // Blocked state (the mapping from #297, in state-categories.ts).
+  if (isPendingStateName(state)) return 'Pending';
   const category = stateCategoryCache[state];
   if (category) {
     return mapCategoryToStatus(category);
@@ -326,6 +359,12 @@ export function ticketToWorkItem(ticket: Ticket): WorkItem {
 }
 
 // Convert DevOps work item to Ticket
+/** The web page of a work item, or '' when the organization is not known. */
+function workItemWebUrl(org: string | null | undefined, project: string, id: number): string {
+  if (!org) return '';
+  return `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_workitems/edit/${id}`;
+}
+
 export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organization): Ticket {
   const fields = workItem.fields;
   return {
@@ -355,7 +394,11 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     updatedAt: new Date(fields['System.ChangedDate']),
     devOpsUrl:
       workItem._links?.html?.href ||
-      `${DEVOPS_BASE_URL}/${fields['System.TeamProject']}/_workitems/edit/${workItem.id}`,
+      workItemWebUrl(
+        organization?.devOpsOrg || configuredDevOpsOrg(),
+        fields['System.TeamProject'],
+        workItem.id
+      ),
     project: fields['System.TeamProject'],
     // Effort hours. Left undefined when the field isn't set on the work item so
     // callers can tell "not tracked" from "tracked as zero"; the UI renders
@@ -444,37 +487,64 @@ export function isRemovedForEveryType(
 }
 
 /**
- * Split the board's state names between its two WIQL queries.
+ * When a work item revision was made.
  *
- * `closedStates` go to the query limited to the last 7 days; `openStates` go
- * to the 90-day query. Only Completed states belong in the short window.
- * Resolved means the work is done but not yet verified, so the item still needs
- * attention and must stay on the board however long it sits there. It used to
- * share the 7-day window with Closed, which made resolved items disappear
- * (#436).
+ * Not the update's `revisedDate`: in the updates API that is when the revision
+ * was *superseded*, so it is the time of the next change, and for the latest
+ * revision it is the 9999-01-01 sentinel. History showed every entry one
+ * change late and the newest as "01 Jan 9999" (#233). The revision's own
+ * `System.ChangedDate` is the time it was made. `revisedDate` is only a
+ * fallback, and never the sentinel; an empty string means "unknown".
+ */
+export function revisionTimestamp(update: {
+  revisedDate?: string;
+  fields?: Record<string, { oldValue?: unknown; newValue?: unknown }>;
+}): string {
+  const changedDate = update.fields?.['System.ChangedDate']?.newValue;
+  if (typeof changedDate === 'string' && changedDate) return changedDate;
+  const revised = update.revisedDate;
+  if (revised && !revised.startsWith('9999-')) return revised;
+  return '';
+}
+
+/**
+ * Split the board's state names between its three WIQL queries.
+ *
+ * `closedStates` go to the query limited to the last 7 days, `openStates` to
+ * the 90-day query, and `resolvedStates` to a query with no date floor at all.
+ *
+ * Only Completed states belong in the short window. Resolved means the work is
+ * done but not yet verified, so the item still needs attention and must stay on
+ * the board however long it sits there. It used to share the 7-day window with
+ * Closed, which made resolved items disappear the moment they were resolved
+ * (#436); moving it to the 90-day window only postponed that, and 84 items
+ * resolved as far back as February had already fallen out of it (#518). A state
+ * whose purpose is to hold work pending somebody's decision cannot be trimmed
+ * by age — the oldest item in it is the one most in need of being seen. The
+ * 90-day floor stays for the genuinely open states, where an untouched item
+ * really is stale and the board really is a daily stand-up tool.
  *
  * As with the Removed filter, the flat map is lossy when two types use one
  * state name in different categories. Putting a name in the 7-day window hides
  * older items of every type that uses it, so a name goes there only when every
  * type that defines it agrees it is Completed. When discovery was partial, an
  * undiscovered type may use the name differently, so nothing is known to be
- * agreed and every name goes to the 90-day query. Either way the closed items
- * that query brings in are trimmed per item by `isOutsideClosedWindow`.
+ * agreed and every name goes to the 90-day query -- which means that while
+ * discovery is partial, Resolved items older than 90 days are hidden again.
+ * That is the #518 symptom returning, and it is accepted deliberately: the
+ * alternative is to trust a name is Resolved on the word of the types that did
+ * load, and a name wrongly left unwindowed would drag an entire project's
+ * closed history onto the board. Hiding the old resolved items is recoverable
+ * once discovery succeeds; the other way round is not.
+ * The closed items that query brings in are trimmed per item by
+ * `isOutsideClosedWindow`.
  */
 export function partitionStandupStates(
   stateCategories: Record<string, string>,
   removedOnly: Set<string>,
   categoriesByProjectType?: Record<string, Record<string, Record<string, string>>>,
   discoveryComplete = true
-): { closedStates: string[]; openStates: string[] } {
-  const hasPerType = Object.keys(categoriesByProjectType ?? {}).length > 0;
-  if (hasPerType && !discoveryComplete) {
-    return {
-      closedStates: [],
-      openStates: Object.keys(stateCategories).filter((state) => !removedOnly.has(state)),
-    };
-  }
-
+): { closedStates: string[]; openStates: string[]; resolvedStates: string[] } {
   const categoriesSeen = new Map<string, Set<string>>();
   for (const byType of Object.values(categoriesByProjectType ?? {})) {
     for (const byState of Object.values(byType)) {
@@ -486,20 +556,31 @@ export function partitionStandupStates(
     }
   }
 
+  // Agreement among the types that define a name. Partial discovery means an
+  // undiscovered type may use the name differently, so nothing counts as
+  // agreed and every name falls through to the branch that fetches most.
+  const hasPerType = Object.keys(categoriesByProjectType ?? {}).length > 0;
+  const agreedOn = (state: string, category: string, want: string): boolean => {
+    if (hasPerType && !discoveryComplete) return false;
+    const seen = categoriesSeen.get(state);
+    if (!seen || seen.size === 0) return category === want;
+    // A Removed category alongside the one we want doesn't disqualify the name:
+    // the Removed items are filtered out per item anyway.
+    return [...seen].every((c) => c === want || c === 'Removed') && seen.has(want);
+  };
+
   const closedStates: string[] = [];
   const openStates: string[] = [];
+  const resolvedStates: string[] = [];
   for (const [state, category] of Object.entries(stateCategories)) {
     if (removedOnly.has(state)) continue;
-    const seen = categoriesSeen.get(state);
-    // A Removed category alongside Completed doesn't make the name open: the
-    // Removed items are filtered out per item anyway.
-    const isClosed =
-      seen && seen.size > 0
-        ? [...seen].every((c) => c === 'Completed' || c === 'Removed') && seen.has('Completed')
-        : category === 'Completed';
-    (isClosed ? closedStates : openStates).push(state);
+    // Resolved is tested first: a name every type calls Resolved must not be
+    // windowed, and it can never also be agreed Completed.
+    if (agreedOn(state, category, 'Resolved')) resolvedStates.push(state);
+    else if (agreedOn(state, category, 'Completed')) closedStates.push(state);
+    else openStates.push(state);
   }
-  return { closedStates, openStates };
+  return { closedStates, openStates, resolvedStates };
 }
 
 /** Whether this item's state is Removed *for this item's own project and type*. */
@@ -584,9 +665,36 @@ export class AzureDevOpsService {
   private accessToken: string;
   private organization: string;
 
-  constructor(accessToken: string, organization: string = DEVOPS_ORG) {
+  /**
+   * `organization` is the one the user selected (`x-devops-org`). Without it
+   * the server default `AZURE_DEVOPS_ORG` is used; with neither this throws
+   * `MissingDevOpsOrgError` rather than guessing.
+   */
+  constructor(accessToken: string, organization?: string | null) {
     this.accessToken = accessToken;
-    this.organization = organization;
+    this.organization = devOpsOrgOrDefault(organization);
+  }
+
+  /**
+   * SLA level per project, from the descriptions of this organization's
+   * projects ("SLA: Gold"), so any organization's settings apply, not only
+   * the server default's.
+   */
+  private async projectSLAMap(projects: DevOpsProject[]): Promise<Record<string, SLALevel>> {
+    const map: Record<string, SLALevel> =
+      this.organization.toLowerCase() === (configuredDevOpsOrg() || '').toLowerCase()
+        ? { ...(await getProjectSLAMap()) }
+        : {};
+    for (const project of projects) {
+      const level = parseSLAFromDescription(project.description || '');
+      if (level) map[project.name] = level;
+    }
+    return map;
+  }
+
+  /** The Azure DevOps organization this service talks to. */
+  get organizationName(): string {
+    return this.organization;
   }
 
   private get baseUrl(): string {
@@ -600,10 +708,12 @@ export class AzureDevOpsService {
     };
   }
 
-  // Get all projects the user has access to (cached for 30s per org)
+  // Get all projects the user has access to (cached for 30s per org and user)
   async getProjects(): Promise<DevOpsProject[]> {
-    const cached = projectListCache.get(this.organization);
-    if (cached && Date.now() - cached.timestamp < PROJECT_CACHE_TTL_MS) {
+    const key = `${this.organization.toLowerCase()}/${await tokenIdentity(this.accessToken)}`;
+    const now = Date.now();
+    const cached = projectListCache.get(key);
+    if (cached && now - cached.timestamp < PROJECT_CACHE_TTL_MS) {
       return cached.data;
     }
 
@@ -617,8 +727,66 @@ export class AzureDevOpsService {
 
     const data = await response.json();
     const projects: DevOpsProject[] = data.value;
-    projectListCache.set(this.organization, { data: projects, timestamp: Date.now() });
+    // Tokens are refreshed hourly, so drop entries nobody can hit again
+    for (const [entry, value] of projectListCache) {
+      if (now - value.timestamp >= PROJECT_CACHE_TTL_MS) projectListCache.delete(entry);
+    }
+    projectListCache.set(key, { data: projects, timestamp: now });
     return projects;
+  }
+
+  /**
+   * The field names this organization defines, or `null` when they could not be
+   * read.
+   *
+   * One organization-level call covers every project. `null` is deliberately
+   * distinct from an empty set: it means "unknown", and the caller then asks
+   * only for the fields every process is guaranteed to have, rather than
+   * assuming nothing exists.
+   */
+  private async availableFieldNames(): Promise<Set<string> | null> {
+    const key = this.organization.toLowerCase();
+    const now = Date.now();
+    const cached = fieldNameCache.get(key);
+    if (cached && now - cached.timestamp < FIELD_NAME_TTL_MS) return cached.data;
+
+    const inFlight = fieldNameInFlight.get(key);
+    if (inFlight) return inFlight;
+
+    const request = (async (): Promise<Set<string> | null> => {
+      try {
+        // Bounded like the other organisation-level lookups: this sits on the
+        // critical path of every ticket read, so a request that never settles
+        // would hang the list. A timeout lands in the catch below and falls
+        // back to the core fields, which is the point of the fallback.
+        const response = await fetch(`${this.baseUrl}/_apis/wit/fields?api-version=7.0`, {
+          headers: this.headers,
+          signal: AbortSignal.timeout(ORG_LOOKUP_TIMEOUT_MS),
+        });
+        if (!response.ok) {
+          console.error(
+            `Failed to read field names for ${this.organization}: ${response.statusText}`
+          );
+          return null;
+        }
+        const data = await response.json();
+        const names = new Set<string>(
+          ((data.value ?? []) as { referenceName?: string }[])
+            .map((field) => field.referenceName)
+            .filter((name): name is string => Boolean(name))
+        );
+        fieldNameCache.set(key, { data: names, timestamp: Date.now() });
+        return names;
+      } catch (error) {
+        console.error(`Failed to read field names for ${this.organization}:`, error);
+        return null;
+      } finally {
+        fieldNameInFlight.delete(key);
+      }
+    })();
+
+    fieldNameInFlight.set(key, request);
+    return request;
   }
 
   // Get the process template name for a project
@@ -763,30 +931,13 @@ export class AzureDevOpsService {
     const batchSize = 200;
     const allWorkItems: DevOpsWorkItem[] = [];
 
+    // Only fields this organization defines: naming an absent one fails the
+    // whole batch with 400 TF51535, losing every ticket in it (see
+    // work-item-fields.ts).
+    const fields = ticketFieldsToRequest(await this.availableFieldNames()).join(',');
+
     for (let i = 0; i < workItemIds.length; i += batchSize) {
       const batch = workItemIds.slice(i, i + batchSize);
-      const fields = [
-        'System.Title',
-        'System.Description',
-        'System.State',
-        'System.CreatedDate',
-        'System.ChangedDate',
-        'System.CreatedBy',
-        'System.AssignedTo',
-        'System.Tags',
-        'Microsoft.VSTS.Common.Priority',
-        'System.TeamProject',
-        'System.WorkItemType',
-        'System.AreaPath',
-        'Microsoft.VSTS.Common.ResolvedReason',
-        'Microsoft.VSTS.Common.Resolution',
-        'Microsoft.VSTS.TCM.ReproSteps',
-        'Microsoft.VSTS.TCM.SystemInfo',
-        'Custom.CustomerResponse',
-        'Microsoft.VSTS.Scheduling.CompletedWork',
-        'Microsoft.VSTS.Scheduling.RemainingWork',
-        'Microsoft.VSTS.Scheduling.OriginalEstimate',
-      ].join(',');
       const workItemsResponse = await fetch(
         `${this.baseUrl}/_apis/wit/workitems?ids=${batch.join(',')}&fields=${fields}&api-version=7.0`,
         { headers: this.headers }
@@ -801,6 +952,31 @@ export class AzureDevOpsService {
     }
 
     return allWorkItems;
+  }
+
+  /**
+   * The title a work item was created with, from its first revision, or null
+   * when it cannot be read.
+   *
+   * Customer emails thread by subject, so the update notification keeps using
+   * the title the conversation started under however often it changes (#7724).
+   */
+  async getOriginalTitle(projectName: string, workItemId: number): Promise<string | null> {
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/revisions?$top=1&api-version=7.0`,
+        // A stalled lookup times out and falls back like any other failure.
+        { headers: this.headers, signal: AbortSignal.timeout(ORG_LOOKUP_TIMEOUT_MS) }
+      );
+      if (!response.ok) return null;
+      const data = (await response.json()) as {
+        value?: Array<{ fields?: { 'System.Title'?: unknown } }>;
+      };
+      const title = data.value?.[0]?.fields?.['System.Title'];
+      return typeof title === 'string' && title.trim() ? title : null;
+    } catch {
+      return null;
+    }
   }
 
   // Get a single work item by ID
@@ -994,7 +1170,7 @@ export class AzureDevOpsService {
               email: update.revisedBy.uniqueName,
               avatarUrl: update.revisedBy.imageUrl,
             },
-            revisedDate: update.revisedDate,
+            revisedDate: revisionTimestamp(update),
             fields,
           };
         }
@@ -1666,9 +1842,28 @@ export class AzureDevOpsService {
       resolution?: string;
       mitigation?: string;
       workItemType?: string;
+      completedWork?: number;
+      remainingWork?: number;
     }
   ): Promise<DevOpsWorkItem> {
     const patchDocument: Array<{ op: string; path: string; value: string | number | null }> = [];
+
+    // Time spent and remaining (#7728). 'add' sets the field whether or not it
+    // already has a value.
+    if (updates.completedWork !== undefined) {
+      patchDocument.push({
+        op: 'add',
+        path: '/fields/Microsoft.VSTS.Scheduling.CompletedWork',
+        value: updates.completedWork,
+      });
+    }
+    if (updates.remainingWork !== undefined) {
+      patchDocument.push({
+        op: 'add',
+        path: '/fields/Microsoft.VSTS.Scheduling.RemainingWork',
+        value: updates.remainingWork,
+      });
+    }
 
     if (updates.tags !== undefined) {
       patchDocument.push({
@@ -1909,67 +2104,64 @@ export class AzureDevOpsService {
       throw new Error(`Failed to fetch work item relations: ${response.statusText}`);
     }
 
-    const workItem = await response.json();
-    const attachments: Attachment[] = [];
-
-    // Filter relations for AttachedFile type
-    for (const relation of workItem.relations || []) {
-      if (relation.rel === 'AttachedFile') {
-        // Extract attachment ID from URL
-        const attachmentUrl = relation.url;
-        const idMatch = attachmentUrl.match(/attachments\/([a-f0-9-]+)/i);
-        const id = idMatch ? idMatch[1] : attachmentUrl;
-
-        // Parse filename from attributes or URL
-        const fileName =
-          relation.attributes?.name ||
-          relation.attributes?.comment ||
-          attachmentUrl.split('/').pop()?.split('?')[0] ||
-          'attachment';
-
-        attachments.push({
-          id,
-          fileName,
-          url: attachmentUrl,
-          contentType: relation.attributes?.contentType || 'application/octet-stream',
-          size: relation.attributes?.length || 0,
-          createdAt: new Date(relation.attributes?.resourceCreatedDate || Date.now()),
-        });
-      }
-    }
-
-    return attachments;
+    return attachmentsFromRelations(await response.json());
   }
 
   /**
-   * Find which project a work item belongs to by checking all accessible projects.
-   * Returns the project and the work item, or null if not found.
+   * Find which project a work item belongs to.
+   *
+   * One organisation-level request answers this. Trying each project in turn
+   * cost a round trip per project, and the ticket page did it on every load,
+   * which is most of why tickets took so long to open (#7387). The per-project
+   * search remains as a fallback, run in parallel, for when the organisation
+   * endpoint itself fails.
    */
   async findProjectForWorkItem(
     workItemId: number
   ): Promise<{ project: DevOpsProject; workItem: DevOpsWorkItem } | null> {
     const projects = await this.getProjects();
 
-    for (const project of projects) {
-      try {
-        const workItem = await this.getWorkItem(project.name, workItemId);
-        if (workItem) {
-          return { project, workItem };
-        }
-      } catch {
-        // Work item not in this project, continue
-        continue;
-      }
+    try {
+      const workItem = await this.getWorkItemByIdOrgLevel(workItemId);
+      if (!workItem) return null;
+      const projectName = String(workItem.fields?.['System.TeamProject'] ?? '');
+      const project =
+        projects.find((p) => p.name.toLowerCase() === projectName.toLowerCase()) ??
+        ({ id: projectName, name: projectName } as DevOpsProject);
+      return { project, workItem };
+    } catch (error) {
+      console.warn(`Org-level lookup of #${workItemId} failed, searching projects:`, error);
     }
 
-    return null;
+    const found = await Promise.all(
+      projects.map(async (project) => {
+        try {
+          const workItem = await this.getWorkItem(project.name, workItemId);
+          return workItem ? { project, workItem } : null;
+        } catch {
+          return null;
+        }
+      })
+    );
+    return found.find((entry) => entry !== null) ?? null;
   }
 
-  // Get all tickets from all accessible projects (fetches in parallel)
-  // Set ticketsOnly=false to get all work items (not just those tagged as "ticket")
-  async getAllTickets(ticketsOnly: boolean = true, allowedTypes?: string[]): Promise<Ticket[]> {
+  /**
+   * Tickets from every accessible project, fetched in parallel, with the names
+   * of any projects whose fetch failed.
+   *
+   * The failures are returned rather than only logged. A project that rejects
+   * contributes no tickets, so without this the list is quietly short and reads
+   * as "nothing open" instead of "some could not be loaded" (#509).
+   *
+   * Set `ticketsOnly` false for all work items, not only those tagged "ticket".
+   */
+  async getAllTickets(
+    ticketsOnly: boolean = true,
+    allowedTypes?: string[]
+  ): Promise<{ tickets: Ticket[]; failedProjects: string[] }> {
     const projects = await this.getProjects();
-    const slaMap = await getProjectSLAMap();
+    const slaMap = await this.projectSLAMap(projects);
 
     const results = await Promise.allSettled(
       projects.map(async (project) => {
@@ -2039,16 +2231,24 @@ export class AzureDevOpsService {
     );
 
     const allTickets: Ticket[] = [];
+    const failedProjects: string[] = [];
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
       if (result.status === 'fulfilled') {
         allTickets.push(...result.value);
       } else {
+        // Named rather than only logged: a project that fails contributes no
+        // tickets, and a shorter list reads as "nothing open" rather than
+        // "some could not be loaded" (#509). That silence hid #501.
+        failedProjects.push(projects[i].name);
         console.error(`Failed to fetch tickets from ${projects[i].name}:`, result.reason);
       }
     }
 
-    return allTickets.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    return {
+      tickets: allTickets.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()),
+      failedProjects,
+    };
   }
 
   // Get all users from the organization (from User Entitlements API)
@@ -2688,7 +2888,7 @@ export class AzureDevOpsService {
       features: [],
       devOpsUrl:
         wi._links?.html?.href ||
-        `${DEVOPS_BASE_URL}/${fields['System.TeamProject']}/_workitems/edit/${wi.id}`,
+        workItemWebUrl(this.organization, fields['System.TeamProject'], wi.id),
       tags,
     };
   }
@@ -2715,7 +2915,7 @@ export class AzureDevOpsService {
       workItems: [],
       devOpsUrl:
         wi._links?.html?.href ||
-        `${DEVOPS_BASE_URL}/${fields['System.TeamProject']}/_workitems/edit/${wi.id}`,
+        workItemWebUrl(this.organization, fields['System.TeamProject'], wi.id),
       tags:
         fields['System.Tags']
           ?.split(';')
@@ -2747,7 +2947,7 @@ export class AzureDevOpsService {
       assignee: identityToUser(fields['System.AssignedTo']),
       devOpsUrl:
         wi._links?.html?.href ||
-        `${DEVOPS_BASE_URL}/${fields['System.TeamProject']}/_workitems/edit/${wi.id}`,
+        workItemWebUrl(this.organization, fields['System.TeamProject'], wi.id),
       tags:
         fields['System.Tags']
           ?.split(';')
@@ -2886,24 +3086,30 @@ export class AzureDevOpsService {
       discoveryComplete
     );
 
-    // Resolved states are fetched with the active ones, not in the 7-day
-    // window: a resolved item still awaits verification (#436).
-    const { closedStates: doneStates, openStates: activeStates } = partitionStandupStates(
+    // Resolved states get a query of their own with no date floor: a resolved
+    // item awaits verification, so it stays until somebody closes it (#436,
+    // #518).
+    const {
+      closedStates: doneStates,
+      openStates: activeStates,
+      resolvedStates,
+    } = partitionStandupStates(
       stateCategories,
       removedOnly,
       categoriesByProjectType,
       discoveryComplete
     );
 
-    // Either list can be empty, for example when no state name is Completed
+    // Any list can be empty, for example when no state name is Completed
     // for every type. Each query runs only when it has states to match.
-    if (doneStates.length === 0 && activeStates.length === 0) {
+    if (doneStates.length === 0 && activeStates.length === 0 && resolvedStates.length === 0) {
       return { items: [] };
     }
 
     const escapeState = (s: string) => s.replace(/'/g, "''");
     const doneStatesList = doneStates.map((s) => `'${escapeState(s)}'`).join(', ');
     const activeStatesList = activeStates.map((s) => `'${escapeState(s)}'`).join(', ');
+    const resolvedStatesList = resolvedStates.map((s) => `'${escapeState(s)}'`).join(', ');
 
     // Only show actionable work item types (exclude Epic, Feature, User Story)
     const allowedTypes = ['Task', 'Bug', 'Enhancement', 'Question', 'Issue', 'Risk'];
@@ -2951,6 +3157,20 @@ export class AzureDevOpsService {
       `,
     };
 
+    // Query 3: Resolved items, with no date floor. These are waiting on a
+    // person, so age is a reason to show them rather than to hide them (#518).
+    // Unbounded by design: the column is a work queue, and one long enough to
+    // strain this query is itself the thing the board needs to make visible.
+    const resolvedQuery = {
+      query: `
+        SELECT ${fields}
+        FROM WorkItems
+        WHERE [System.State] IN (${resolvedStatesList})
+          AND [System.WorkItemType] IN (${allowedTypesList})
+        ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
+      `,
+    };
+
     // Execute the WIQL queries in parallel at org level
     const runQuery = async (query: { query: string }, label: string): Promise<number[]> => {
       const response = await fetch(`${this.baseUrl}/_apis/wit/wiql?api-version=7.0`, {
@@ -2965,26 +3185,33 @@ export class AzureDevOpsService {
       return data.workItems?.map((wi: { id: number }) => wi.id) || [];
     };
 
-    const [doneIds, activeIds] = await Promise.all([
+    const [doneIds, activeIds, resolvedIds] = await Promise.all([
       doneStates.length > 0 ? runQuery(doneQuery, 'done') : Promise.resolve([]),
       activeStates.length > 0 ? runQuery(activeQuery, 'active') : Promise.resolve([]),
+      resolvedStates.length > 0 ? runQuery(resolvedQuery, 'resolved') : Promise.resolve([]),
     ]);
 
     // Combine IDs and batch-fetch in one pass — saves a round-trip when the
     // total fits in a single 200-item batch (the common case).
-    const items = await this.fetchWorkItemBatch([...doneIds, ...activeIds]);
-    const activeIdSet = new Set(activeIds);
+    const items = await this.fetchWorkItemBatch([...doneIds, ...activeIds, ...resolvedIds]);
+    // The 90-day query can carry an item that is Completed for its own type,
+    // so its ids are checked against the 7-day window below. The resolved
+    // query's ids cannot be — a name only reaches it when every type agrees it
+    // is Resolved — so including them is belt and braces, there to stay
+    // correct if that rule is ever loosened rather than to catch anything
+    // today. No test covers it, because nothing can reach it.
+    const unwindowedIds = new Set([...activeIds, ...resolvedIds]);
 
     // The precise half of the Removed filter. Here each item carries its own
     // project and type, so the ambiguous state names the query let through can
     // finally be judged correctly (#277). The same goes for closed items the
-    // 90-day query let through: they keep only the 7-day window (#436).
+    // other queries let through: they keep only the 7-day window (#436).
     return {
       items: items.filter(
         (item) =>
           !isRemovedItem(item, stateCategories, categoriesByProjectType) &&
           !(
-            activeIdSet.has(item.id) &&
+            unwindowedIds.has(item.id) &&
             isOutsideClosedWindow(item, sevenDaysAgoStr, nextDayStr, categoriesByProjectType)
           )
       ),
@@ -3143,6 +3370,177 @@ export class AzureDevOpsService {
     );
   }
 
+  // Pull requests with activity since `since`, across every project: opened,
+  // merged, or pushed to. Each carries the work items it links, so the Kanban
+  // board can highlight them. A project that can't be read is reported rather
+  // than failing the lot.
+  async getPullRequestActivity(
+    since: Date
+  ): Promise<{ pullRequests: PullRequestActivity[]; failedProjects: string[] }> {
+    const projects = await this.getProjects();
+    const results = await Promise.allSettled(
+      projects.map((project) => this.getProjectPullRequestActivity(project.name, since))
+    );
+
+    const pullRequests: PullRequestActivity[] = [];
+    const failedProjects: string[] = [];
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') {
+        pullRequests.push(...result.value);
+      } else {
+        console.error(
+          `Failed to fetch pull request activity for ${projects[i].name}:`,
+          result.reason
+        );
+        failedProjects.push(projects[i].name);
+      }
+    });
+
+    pullRequests.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return { pullRequests, failedProjects };
+  }
+
+  private async getProjectPullRequestActivity(
+    projectName: string,
+    since: Date
+  ): Promise<PullRequestActivity[]> {
+    const sinceIso = since.toISOString();
+    const [created, merged, active] = await Promise.all([
+      this.listPullRequests(projectName, {
+        status: 'all',
+        queryTimeRangeType: 'created',
+        minTime: sinceIso,
+      }),
+      this.listPullRequests(projectName, {
+        status: 'completed',
+        queryTimeRangeType: 'closed',
+        minTime: sinceIso,
+      }),
+      this.listPullRequests(projectName, { status: 'active' }),
+    ]);
+
+    const byId = new Map<number, { pr: RawPullRequest; activity: Set<PullRequestActivityKind> }>();
+    const record = (pr: RawPullRequest, kind: PullRequestActivityKind) => {
+      const entry = byId.get(pr.pullRequestId) ?? { pr, activity: new Set() };
+      entry.activity.add(kind);
+      byId.set(pr.pullRequestId, entry);
+    };
+
+    // The time filters are re-checked here: they're only honoured from
+    // api-version 7.1, and an older server would silently return everything.
+    for (const pr of created) {
+      if (new Date(pr.creationDate) >= since) record(pr, 'created');
+    }
+    for (const pr of merged) {
+      if (pr.closedDate && new Date(pr.closedDate) >= since) record(pr, 'merged');
+    }
+
+    // "Updated" means new commits pushed to a pull request opened before the
+    // window. The list API has no last-changed date, so read each one's
+    // iterations — a push is a new iteration. Newest first, capped, so a
+    // backlog of stale pull requests can't fan out without limit. The API
+    // doesn't promise an order, so sort before capping.
+    const openedEarlier = active
+      .filter((pr) => new Date(pr.creationDate) < since)
+      .sort((a, b) => b.creationDate.localeCompare(a.creationDate))
+      .slice(0, MAX_PULL_REQUESTS_TO_CHECK);
+    await forEachInBatches(openedEarlier, PULL_REQUEST_BATCH_SIZE, async (pr) => {
+      const lastPush = await this.getLatestIterationDate(
+        projectName,
+        pr.repository.id,
+        pr.pullRequestId
+      );
+      if (lastPush && lastPush >= since) record(pr, 'updated');
+    });
+
+    const entries = Array.from(byId.values());
+    const workItemIds = new Map<number, number[]>();
+    await forEachInBatches(entries, PULL_REQUEST_BATCH_SIZE, async ({ pr }) => {
+      workItemIds.set(
+        pr.pullRequestId,
+        await this.getPullRequestWorkItemIds(projectName, pr.repository.id, pr.pullRequestId)
+      );
+    });
+
+    return entries.map(({ pr, activity }) => ({
+      id: pr.pullRequestId,
+      title: pr.title,
+      project: pr.repository.project?.name ?? projectName,
+      repository: pr.repository.name,
+      url: `${this.baseUrl}/${encodeURIComponent(projectName)}/_git/${encodeURIComponent(pr.repository.name)}/pullrequest/${pr.pullRequestId}`,
+      author: {
+        id: pr.createdBy.id,
+        displayName: pr.createdBy.displayName,
+        email: pr.createdBy.uniqueName ?? '',
+        avatarUrl: pr.createdBy.imageUrl,
+      },
+      createdAt: pr.creationDate,
+      closedAt: pr.closedDate,
+      activity: (['created', 'updated', 'merged'] as const).filter((kind) => activity.has(kind)),
+      workItemIds: workItemIds.get(pr.pullRequestId) ?? [],
+    }));
+  }
+
+  private async listPullRequests(
+    projectName: string,
+    criteria: Record<string, string>
+  ): Promise<RawPullRequest[]> {
+    const url = new URL(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/git/pullrequests`
+    );
+    url.searchParams.set('api-version', '7.1');
+    url.searchParams.set('$top', '500');
+    for (const [key, value] of Object.entries(criteria)) {
+      url.searchParams.set(`searchCriteria.${key}`, value);
+    }
+
+    const response = await fetch(url.toString(), { headers: this.headers });
+    if (!response.ok) {
+      throw new Error(`Failed to list pull requests: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    return (data.value || []) as RawPullRequest[];
+  }
+
+  // When the pull request last had commits pushed, or null if unknown.
+  private async getLatestIterationDate(
+    projectName: string,
+    repositoryId: string,
+    pullRequestId: number
+  ): Promise<Date | null> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/git/repositories/${repositoryId}/pullRequests/${pullRequestId}/iterations?api-version=7.1`,
+      { headers: this.headers }
+    );
+    if (!response.ok) return null;
+    const data = await response.json();
+    const iterations = (data.value || []) as { createdDate?: string; updatedDate?: string }[];
+    let latest: Date | null = null;
+    for (const iteration of iterations) {
+      const stamp = iteration.updatedDate ?? iteration.createdDate;
+      if (!stamp) continue;
+      const date = new Date(stamp);
+      if (!latest || date > latest) latest = date;
+    }
+    return latest;
+  }
+
+  private async getPullRequestWorkItemIds(
+    projectName: string,
+    repositoryId: string,
+    pullRequestId: number
+  ): Promise<number[]> {
+    const response = await fetch(
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/git/repositories/${repositoryId}/pullRequests/${pullRequestId}/workitems?api-version=7.1`,
+      { headers: this.headers }
+    );
+    if (!response.ok) return [];
+    const data = await response.json();
+    return ((data.value || []) as { id: string }[])
+      .map((ref) => Number(ref.id))
+      .filter((id) => Number.isInteger(id));
+  }
+
   // Get all Git activity (commits + PRs) across all projects
   // Uses sequential project processing to avoid overwhelming the Azure DevOps API
   async getGitActivity(
@@ -3203,6 +3601,31 @@ export class AzureDevOpsService {
   }
 }
 
+// Pull request activity for the Kanban board's 24-hour summary.
+const MAX_PULL_REQUESTS_TO_CHECK = 100;
+const PULL_REQUEST_BATCH_SIZE = 10;
+
+interface RawPullRequest {
+  pullRequestId: number;
+  title: string;
+  status: string;
+  creationDate: string;
+  closedDate?: string;
+  createdBy: { id: string; displayName: string; uniqueName?: string; imageUrl?: string };
+  repository: { id: string; name: string; project?: { name: string } };
+}
+
+/** Run `fn` over `items`, at most `size` at a time. */
+async function forEachInBatches<T>(
+  items: T[],
+  size: number,
+  fn: (item: T) => Promise<void>
+): Promise<void> {
+  for (let i = 0; i < items.length; i += size) {
+    await Promise.all(items.slice(i, i + size).map(fn));
+  }
+}
+
 // Email routing: Maps email domains to DevOps projects
 // Reads from project descriptions in format: "Email: domain1.com, domain2.com"
 // Falls back to hardcoded defaults if DevOps query fails
@@ -3215,17 +3638,9 @@ interface DomainMapCache {
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 let domainMapCache: DomainMapCache | null = null;
 
-// Fallback mapping if DevOps query fails
-const FALLBACK_DOMAIN_MAP: Record<string, string> = {
-  'cairnhomes.com': 'Cairn Homes',
-  'medite.com': 'Medite',
-  'medite.ie': 'Medite',
-  'knowall.ai': 'KnowAll',
-};
-
 // Parse project description for email domains
 // Expected format in description: "Email: domain1.com, domain2.com" or "Email domains: ..."
-function parseEmailDomainsFromDescription(description: string): string[] {
+export function parseEmailDomainsFromDescription(description: string): string[] {
   if (!description) return [];
 
   // Match patterns like "Email: domain.com" or "Email domains: domain1.com, domain2.com"
@@ -3241,16 +3656,16 @@ function parseEmailDomainsFromDescription(description: string): string[] {
 // Fetch domain map from DevOps project descriptions
 async function fetchDomainMapFromDevOps(): Promise<Record<string, string>> {
   const pat = process.env.AZURE_DEVOPS_PAT;
-  const org = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+  const org = configuredDevOpsOrg();
 
-  if (!pat) {
-    console.warn('AZURE_DEVOPS_PAT not set, using fallback domain map');
-    return FALLBACK_DOMAIN_MAP;
+  if (!pat || !org) {
+    console.warn('AZURE_DEVOPS_PAT or AZURE_DEVOPS_ORG not set; no email domains are mapped');
+    return {};
   }
 
   try {
     const response = await fetch(
-      `https://dev.azure.com/${org}/_apis/projects?api-version=7.0&$expand=description`,
+      `https://dev.azure.com/${encodeURIComponent(org)}/_apis/projects?api-version=7.0&$expand=description`,
       {
         headers: {
           Authorization: `Basic ${Buffer.from(':' + pat).toString('base64')}`,
@@ -3273,16 +3688,16 @@ async function fetchDomainMapFromDevOps(): Promise<Record<string, string>> {
       }
     }
 
-    // If no domains found in any project, use fallback
     if (Object.keys(domainMap).length === 0) {
-      console.warn('No email domains found in DevOps project descriptions, using fallback');
-      return FALLBACK_DOMAIN_MAP;
+      console.warn(
+        'No email domains found in DevOps project descriptions; add "Email: example.com" to a project to route its mail'
+      );
     }
 
     return domainMap;
   } catch (error) {
     console.error('Failed to fetch domain map from DevOps:', error);
-    return FALLBACK_DOMAIN_MAP;
+    return {};
   }
 }
 
@@ -3329,16 +3744,16 @@ let slaMapCache: SLAMapCache | null = null;
 // Projects without SLA configured will use DEFAULT_SLA_LEVEL (Bronze)
 async function fetchSLAMapFromDevOps(): Promise<Record<string, SLALevel>> {
   const pat = process.env.AZURE_DEVOPS_PAT;
-  const org = process.env.AZURE_DEVOPS_ORG || 'KnowAll';
+  const org = configuredDevOpsOrg();
 
-  if (!pat) {
-    console.warn('AZURE_DEVOPS_PAT not set, SLA levels will use defaults');
+  if (!pat || !org) {
+    console.warn('AZURE_DEVOPS_PAT or AZURE_DEVOPS_ORG not set, SLA levels will use defaults');
     return {};
   }
 
   try {
     const response = await fetch(
-      `https://dev.azure.com/${org}/_apis/projects?api-version=7.0&$expand=description`,
+      `https://dev.azure.com/${encodeURIComponent(org)}/_apis/projects?api-version=7.0&$expand=description`,
       {
         headers: {
           Authorization: `Basic ${Buffer.from(':' + pat).toString('base64')}`,
@@ -3390,4 +3805,58 @@ export async function getSLALevelForProject(projectName: string): Promise<SLALev
 // Clear SLA cache (useful for testing or when project descriptions change)
 export function clearSLAMapCache(): void {
   slaMapCache = null;
+}
+
+/**
+ * Files attached to a work item, read from its relations.
+ *
+ * Exported so a caller that already holds the work item (fetched with
+ * `$expand=all` or `relations`) need not fetch it again.
+ */
+export function attachmentsFromRelations(workItem: {
+  relations?: DevOpsWorkItemRelation[];
+}): Attachment[] {
+  const attachments: Attachment[] = [];
+
+  // Filter relations for AttachedFile type
+  for (const relation of workItem.relations || []) {
+    if (relation.rel === 'AttachedFile') {
+      // Extract attachment ID from URL
+      const attachmentUrl = relation.url;
+      const idMatch = attachmentUrl.match(/attachments\/([a-f0-9-]+)/i);
+      const id = idMatch ? idMatch[1] : attachmentUrl;
+
+      // Parse filename from attributes or URL
+      const fileName =
+        relation.attributes?.name ||
+        relation.attributes?.comment ||
+        attachmentUrl.split('/').pop()?.split('?')[0] ||
+        'attachment';
+
+      attachments.push({
+        id,
+        fileName,
+        url: attachmentUrl,
+        contentType: relation.attributes?.contentType || 'application/octet-stream',
+        size: relation.attributes?.length || 0,
+        // When it was attached to this work item, which is when it was sent;
+        // the upload time is the fallback (#7726). With neither it is left
+        // unknown: "now" would make an old file look new and move on refresh.
+        // Each parsed on its own, so an unreadable attach date still falls
+        // back to a readable upload date.
+        createdAt:
+          dateOrUndefined(relation.attributes?.authorizedDate) ??
+          dateOrUndefined(relation.attributes?.resourceCreatedDate),
+      });
+    }
+  }
+
+  return attachments;
+}
+
+/** A date from a DevOps attribute, or undefined when it is missing or unparseable. */
+function dateOrUndefined(value: string | undefined): Date | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }

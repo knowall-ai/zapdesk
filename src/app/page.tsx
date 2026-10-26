@@ -19,6 +19,7 @@ import {
   PlusCircle,
 } from 'lucide-react';
 import Link from 'next/link';
+import FailedProjectsNotice from '@/components/common/FailedProjectsNotice';
 
 interface DashboardStats {
   totalTickets: number;
@@ -27,6 +28,7 @@ interface DashboardStats {
   resolvedToday: number;
   createdToday: number;
   avgResponseTime: string;
+  failedProjects?: string[];
   customerSatisfaction: number;
 }
 
@@ -169,6 +171,8 @@ export default function HomePage() {
             Here&apos;s what&apos;s happening with your support tickets today.
           </p>
         </div>
+
+        <FailedProjectsNotice projects={stats.failedProjects} className="mb-4" />
 
         {/* Stats cards */}
         <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">

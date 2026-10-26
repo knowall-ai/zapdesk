@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService } from '@/lib/devops';
+import { requestDevOpsOrg } from '@/lib/devops-org';
 import { MAX_ATTACHMENT_SIZE, ALLOWED_ATTACHMENT_TYPES } from '@/types';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken, requestDevOpsOrg(request));
     const result = await devopsService.findProjectForWorkItem(ticketId);
 
     if (!result) {
@@ -82,7 +83,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const devopsService = new AzureDevOpsService(session.accessToken);
+    const devopsService = new AzureDevOpsService(session.accessToken, requestDevOpsOrg(request));
     const found = await devopsService.findProjectForWorkItem(ticketId);
 
     if (!found) {

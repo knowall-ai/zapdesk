@@ -7,16 +7,24 @@
  * the main app credentials when the dedicated ones are not set.
  */
 
-import { inlineProxyImages, type OutboundAttachment } from './email-attachments';
+import {
+  attachLinkedFiles,
+  finaliseLinkedFiles,
+  inlineProxyImages,
+  type OutboundAttachment,
+} from './email-attachments';
 import { escapeHtml } from './email-clean';
 import {
   assignmentNotificationTemplate,
   ticketConfirmationTemplate,
   agentReplyTemplate,
   statusChangeTemplate,
+  ticketUpdatedTemplate,
   customerReplyNotificationTemplate,
+  newTicketNotificationTemplate,
   layoutWrapper,
   type HistoryEntry,
+  type TicketFieldChange,
 } from './email-templates';
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
@@ -151,6 +159,28 @@ export function isPolledMailbox(address: string): boolean {
   return polled !== '' && address.trim().toLowerCase() === polled;
 }
 
+/**
+ * Mail from ZapDesk itself: the address it sends as (MAIL_FROM) or the mailbox
+ * it polls. Such mail only reaches the polled mailbox through a list or a
+ * forward -- a team list that includes the support mailbox, say -- and must not
+ * be read back in as a customer message.
+ */
+export function isOwnSender(address: string): boolean {
+  const own = (process.env.MAIL_FROM || '').trim().toLowerCase();
+  return isPolledMailbox(address) || (own !== '' && address.trim().toLowerCase() === own);
+}
+
+/**
+ * The addresses in a setting that may hold one or several, separated by commas
+ * or semicolons (#485). Blanks are dropped; order is kept.
+ */
+export function parseAddressList(value: string | undefined): string[] {
+  return (value || '')
+    .split(/[;,]/)
+    .map((address) => address.trim())
+    .filter(Boolean);
+}
+
 export function extractRequesterEmail(tags: string | string[]): string | null {
   const tagList = Array.isArray(tags) ? tags : tags.split(';').map((t) => t.trim());
   for (const tag of tagList) {
@@ -189,6 +219,7 @@ function threadedSubject(ticketId: number, subject: string): string {
 // ---------------------------------------------------------------------------
 
 interface GraphSendMailOptions {
+  /** One address, or several separated by commas or semicolons. */
   to: string;
   /** Blind copies. Blind so an internal address is never shown to a customer. */
   bcc?: string[];
@@ -229,7 +260,7 @@ async function sendViaGraph(options: GraphSendMailOptions): Promise<void> {
     subject: options.subject,
     body: { contentType: 'HTML', content: options.html },
     from: { emailAddress: { address: from, name: MAIL_FROM_NAME() } },
-    toRecipients: [{ emailAddress: { address: options.to } }],
+    toRecipients: parseAddressList(options.to).map((address) => ({ emailAddress: { address } })),
   };
 
   if (options.bcc?.length) {
@@ -398,14 +429,31 @@ function copyRecipients(assigneeEmail: string | undefined, requesterEmail: strin
 export async function fetchInlineAttachments(
   wanted: OutboundAttachment[],
   fetchImpl: typeof fetch = fetch
-): Promise<{ attachments: GraphFileAttachment[]; skipped: string[] }> {
+): Promise<{
+  attachments: GraphFileAttachment[];
+  /** Names of the files left off, for the note under the reply. */
+  skipped: string[];
+  /** Attachment ids of the same files, to label them "not included". */
+  skippedIds: string[];
+}> {
   const pat = process.env.AZURE_DEVOPS_PAT;
   const defaultOrg = process.env.AZURE_DEVOPS_ORG;
-  if (!pat || !defaultOrg || wanted.length === 0) return { attachments: [], skipped: [] };
+  if (wanted.length === 0) return { attachments: [], skipped: [], skippedIds: [] };
+  if (!pat || !defaultOrg) {
+    // Nothing can be fetched, so every file is reported as left off rather
+    // than silently missing -- and never labelled "(attached)".
+    console.error('[Email] AZURE_DEVOPS_PAT or AZURE_DEVOPS_ORG unset; files not attached.');
+    return {
+      attachments: [],
+      skipped: wanted.map((item) => item.fileName),
+      skippedIds: wanted.map((item) => item.id),
+    };
+  }
 
   const auth = `Basic ${Buffer.from(`:${pat}`).toString('base64')}`;
   const collected: GraphFileAttachment[] = [];
   const skipped: string[] = [];
+  const skippedIds: string[] = [];
   let total = 0;
 
   for (const item of wanted) {
@@ -417,6 +465,7 @@ export async function fetchInlineAttachments(
       if (!response.ok) {
         console.error(`[Email] Attachment ${item.id} could not be read (${response.status}).`);
         skipped.push(item.fileName);
+        skippedIds.push(item.id);
         continue;
       }
 
@@ -424,24 +473,26 @@ export async function fetchInlineAttachments(
       if (total + contentBytes.length > MAX_ATTACHMENT_BASE64_BYTES) {
         console.error(`[Email] Attachment ${item.fileName} skipped: message size limit.`);
         skipped.push(item.fileName);
+        skippedIds.push(item.id);
         continue;
       }
       total += contentBytes.length;
 
+      const inline = item.inline !== false;
       collected.push({
         name: item.fileName,
         contentType: response.headers.get('content-type') || 'application/octet-stream',
         contentBytes,
-        contentId: item.contentId,
-        isInline: true,
+        ...(inline ? { contentId: item.contentId, isInline: true } : {}),
       });
     } catch (error) {
       console.error(`[Email] Attachment ${item.id} could not be read:`, error);
       skipped.push(item.fileName);
+      skippedIds.push(item.id);
     }
   }
 
-  return { attachments: collected, skipped };
+  return { attachments: collected, skipped, skippedIds };
 }
 
 /**
@@ -455,9 +506,10 @@ export async function fetchInlineAttachments(
 function withSkippedNote(html: string, skipped: string[]): string {
   if (skipped.length === 0) return html;
   const names = skipped.map((n) => escapeHtml(n)).join(', ');
-  const label = skipped.length === 1 ? 'image' : 'images';
+  const label = skipped.length === 1 ? 'file' : 'files';
+  // No "open the ticket": customers have no ZapDesk account (#7371).
   return `${html}
-<p style="color: #71717a; font-size: 13px;"><em>${skipped.length} ${label} could not be included (${names}). Open the ticket to view ${skipped.length === 1 ? 'it' : 'them'}.</em></p>`;
+<p style="color: #71717a; font-size: 13px;"><em>${skipped.length} ${label} could not be included (${names}). Reply to this email if you need ${skipped.length === 1 ? 'it' : 'them'}.</em></p>`;
 }
 
 export async function sendAgentReply(
@@ -485,11 +537,17 @@ export async function sendAgentReply(
     // session can fetch. Sent as-is the customer gets a broken image where the
     // screenshot should be, so the bytes travel with the message instead.
     const inlined = inlineProxyImages(replyHtml);
-    const { attachments, skipped } = await fetchInlineAttachments(inlined.attachments);
+    // Files attached with the paperclip are linked, not drawn; they go on the
+    // message as ordinary attachments (#7376).
+    const linked = attachLinkedFiles(inlined.html, inlined.attachments);
+    const { attachments, skipped, skippedIds } = await fetchInlineAttachments([
+      ...inlined.attachments,
+      ...linked.attachments,
+    ]);
     const html = agentReplyTemplate({
       ticketId,
       agentName,
-      replyContent: withSkippedNote(inlined.html, skipped),
+      replyContent: withSkippedNote(finaliseLinkedFiles(linked.html, skippedIds), skipped),
       history,
     });
     await sendViaGraph({
@@ -544,6 +602,45 @@ export async function sendStatusChangeNotification(
 }
 
 /**
+ * Tell the customer their ticket's title or priority changed (#7724).
+ *
+ * Sent in the customer's existing thread: ZapDesk threads mail by the
+ * `[ZapDesk #N]` subject. `titles.thread` is the title the customer already
+ * knows, used for the mail subject so a title change does not start a new
+ * conversation; `titles.current` is the title now, shown in the body.
+ */
+export async function sendTicketUpdateNotification(
+  ticketId: number,
+  titles: {
+    /** The title the customer's thread is under, for the mail subject. */
+    thread: string;
+    /** The ticket's title now, shown in the body. */
+    current: string;
+  },
+  requesterEmail: string,
+  changes: TicketFieldChange[]
+): Promise<void> {
+  if (!isEmailConfigured() || changes.length === 0) return;
+  if (isPolledMailbox(requesterEmail)) return;
+  try {
+    await sendViaGraph({
+      to: requesterEmail,
+      subject: threadedSubject(ticketId, `Re: ${titles.thread}`),
+      html: ticketUpdatedTemplate({
+        ticketId,
+        subject: titles.current,
+        requesterName: nameFromEmail(requesterEmail),
+        changes,
+      }),
+      messageId: generateMessageId(ticketId),
+    });
+    console.log(`[Email] Update notification sent for ticket #${ticketId} to ${requesterEmail}`);
+  } catch (error) {
+    console.error(`[Email] Failed to send update notification for ticket #${ticketId}:`, error);
+  }
+}
+
+/**
  * Notify the assigned agent (or fallback team) that a customer replied to a
  * ticket via email. Sent on a fresh thread — no In-Reply-To pointing at the
  * customer's email — so the internal conversation stays separate from the
@@ -577,6 +674,41 @@ export async function sendCustomerReplyNotification(
   } catch (error) {
     console.error(
       `[Email] Failed to send customer reply notification for ticket #${ticketId}:`,
+      error
+    );
+  }
+}
+
+/**
+ * Tell the support team a ticket has just arrived by email (#485), so it does
+ * not wait until someone happens to open ZapDesk.
+ *
+ * `recipients` is one address or several separated by commas or semicolons.
+ * Errors are logged and swallowed: the ticket already exists either way.
+ */
+export async function sendNewTicketNotification(opts: {
+  ticketId: number;
+  ticketSubject: string;
+  requesterEmail: string;
+  project: string;
+  messageHtml: string;
+  recipients: string;
+}): Promise<void> {
+  if (!isEmailConfigured()) return;
+  try {
+    const html = newTicketNotificationTemplate(opts);
+    await sendViaGraph({
+      to: opts.recipients,
+      subject: `[ZapDesk #${opts.ticketId}] New ticket — "${opts.ticketSubject}"`,
+      html,
+      messageId: generateMessageId(opts.ticketId, 'team-new-ticket'),
+    });
+    console.log(
+      `[Email] New ticket notification sent for ticket #${opts.ticketId} to ${opts.recipients}`
+    );
+  } catch (error) {
+    console.error(
+      `[Email] Failed to send new ticket notification for ticket #${opts.ticketId}:`,
       error
     );
   }

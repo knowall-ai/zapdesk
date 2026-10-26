@@ -51,11 +51,13 @@ function extractFileName(queryString: string): string | null {
 export function buildAttachmentProxyUrl(
   attachmentId: string,
   fileName?: string | null,
-  org?: string | null
+  org?: string | null,
+  download = false
 ): string {
   const params = new URLSearchParams();
   if (fileName) params.set('fileName', fileName);
   if (org) params.set('org', org);
+  if (download) params.set('download', '1');
   const query = params.toString();
   return `/api/devops/attachments/${attachmentId}${query ? `?${query}` : ''}`;
 }
@@ -82,7 +84,36 @@ export function attachmentDownloadUrl(attachment: {
 }): string {
   if (!attachment.id) return attachment.url ?? '';
   const org = attachment.url ? /dev\.azure\.com\/([^/]+)/.exec(attachment.url)?.[1] : undefined;
-  return buildAttachmentProxyUrl(attachment.id, attachment.fileName, org);
+  // Saved, not opened: opening went to a new tab, and returning to ZapDesk
+  // reloaded the ticket under the user (#7719).
+  return buildAttachmentProxyUrl(attachment.id, attachment.fileName, org, true);
+}
+
+function escapeAttr(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+/**
+ * Link to a file attached to a reply, as written into the comment.
+ *
+ * Opened inline (no `download`) so agents can preview it in the browser.
+ * Outbound email turns the link into a real attachment for the customer,
+ * who cannot sign in to ZapDesk (#7376).
+ */
+export function attachmentLinkHtml(attachment: { url?: string; fileName: string }): string {
+  const id = attachment.url?.match(/attachments\/([a-f0-9-]+)/i)?.[1];
+  const org = attachment.url?.match(/dev\.azure\.com\/([^/]+)/)?.[1] ?? null;
+  const href = id ? buildAttachmentProxyUrl(id, attachment.fileName, org) : attachment.url || '#';
+  // `&amp;` is the form the email attachment code expects between parameters.
+  const safeHref = href.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  return `<a href="${safeHref}">${escapeAttr(attachment.fileName)}</a>`;
+}
+
+/** The block appended to a reply listing the files attached to it. */
+export function attachedFilesHtml(attachments: { url?: string; fileName: string }[]): string {
+  if (attachments.length === 0) return '';
+  const items = attachments.map((a) => `<li>${attachmentLinkHtml(a)}</li>`).join('');
+  return `<p><strong>Attachments:</strong></p><ul>${items}</ul>`;
 }
 
 export function rewriteAttachmentUrls(html: string | null | undefined): string {

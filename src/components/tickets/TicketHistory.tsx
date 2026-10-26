@@ -1,6 +1,6 @@
 'use client';
 
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 import { GitCommitHorizontal, Loader2 } from 'lucide-react';
 import type { WorkItemUpdate } from '@/types';
 import Avatar from '../common/Avatar';
@@ -95,7 +95,7 @@ export default function TicketHistory({ updates, loading }: TicketHistoryProps) 
             </div>
 
             {/* Content */}
-            <div className="flex-1 pb-4">
+            <div className="min-w-0 flex-1 pb-4">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 <Avatar
                   name={update.revisedBy.displayName}
@@ -105,9 +105,11 @@ export default function TicketHistory({ updates, loading }: TicketHistoryProps) 
                 <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
                   {update.revisedBy.displayName}
                 </span>
-                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  {format(new Date(update.revisedDate), 'dd MMM yyyy, HH:mm')}
-                </span>
+                {isValid(new Date(update.revisedDate)) && (
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {format(new Date(update.revisedDate), 'dd MMM yyyy, HH:mm')}
+                  </span>
+                )}
               </div>
 
               {isCreation && fieldEntries.length === 0 ? (
@@ -127,7 +129,7 @@ export default function TicketHistory({ updates, loading }: TicketHistoryProps) 
                         >
                           Set <span style={{ color: 'var(--text-primary)' }}>{label}</span> to{' '}
                           <span
-                            className="inline-block rounded px-1.5 py-0.5 text-xs"
+                            className="inline-block max-w-full rounded px-1.5 py-0.5 text-xs [overflow-wrap:anywhere]"
                             style={{
                               backgroundColor: 'var(--surface-hover)',
                               color: 'var(--text-primary)',
@@ -142,7 +144,7 @@ export default function TicketHistory({ updates, loading }: TicketHistoryProps) 
                       <p key={field} className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                         Changed <span style={{ color: 'var(--text-primary)' }}>{label}</span> from{' '}
                         <span
-                          className="inline-block rounded px-1.5 py-0.5 text-xs line-through"
+                          className="inline-block max-w-full rounded px-1.5 py-0.5 text-xs [overflow-wrap:anywhere] line-through"
                           style={{
                             backgroundColor: 'var(--surface-hover)',
                             color: 'var(--text-muted)',
@@ -152,7 +154,7 @@ export default function TicketHistory({ updates, loading }: TicketHistoryProps) 
                         </span>{' '}
                         to{' '}
                         <span
-                          className="inline-block rounded px-1.5 py-0.5 text-xs"
+                          className="inline-block max-w-full rounded px-1.5 py-0.5 text-xs [overflow-wrap:anywhere]"
                           style={{
                             backgroundColor: 'var(--surface-hover)',
                             color: 'var(--text-primary)',
