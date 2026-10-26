@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { loginHref } from '@/lib/login-redirect';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MainLayout } from '@/components/layout';
+import { PullRequestHistoryCard } from '@/components/reporting';
 import { LoadingSpinner, Avatar } from '@/components/common';
 import {
   Users2,
@@ -424,6 +425,9 @@ export default function TeamPage() {
             )}
           </div>
         </div>
+
+        {/* Pull Requests - follows the DevOps / GitHub toggle */}
+        <PullRequestHistoryCard />
 
         {/* Team Members Table */}
         <div className="card">
