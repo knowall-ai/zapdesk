@@ -3,14 +3,16 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
 import { isEmailTicket, extractRequesterEmail, sendStatusChangeNotification } from '@/lib/email';
+import {
+  MAX_WORK_ITEM_ID,
+  MAX_PROJECT_LENGTH,
+  MAX_STATE_LENGTH,
+  validateJsonObject,
+  rejectUnknownKeys,
+  validateRequiredString,
+  validateOptionalString,
+} from '@/lib/devops-request-validation';
 import { debugLog } from '@/lib/debug';
-
-/** Azure DevOps work item ids are positive int32 values. */
-const MAX_WORK_ITEM_ID = 2_147_483_647;
-/** Generous bound on a process-template state name. */
-const MAX_STATE_LENGTH = 128;
-/** Azure DevOps caps project names at 64 characters. */
-const MAX_PROJECT_LENGTH = 64;
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -37,43 +39,36 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     } catch {
       return NextResponse.json({ error: 'Request body must be JSON' }, { status: 400 });
     }
-    if (typeof rawBody !== 'object' || rawBody === null || Array.isArray(rawBody)) {
-      return NextResponse.json({ error: 'Request body must be a JSON object' }, { status: 400 });
+
+    const bodyResult = validateJsonObject(rawBody);
+    if (!bodyResult.ok) {
+      return NextResponse.json({ error: bodyResult.error }, { status: bodyResult.status });
     }
 
-    const { state, project, ...unknownKeys } = rawBody as Record<string, unknown>;
-
-    // Say what was ignored rather than dropping it silently — a caller sending
-    // a key we do not honour should learn that, not assume it took effect.
-    const unknown = Object.keys(unknownKeys);
-    if (unknown.length > 0) {
-      return NextResponse.json(
-        { error: `Unexpected field(s) in request body: ${unknown.join(', ')}` },
-        { status: 400 }
-      );
+    const keysResult = rejectUnknownKeys(bodyResult.data, ['state', 'project']);
+    if (!keysResult.ok) {
+      return NextResponse.json({ error: keysResult.error }, { status: keysResult.status });
     }
 
-    if (typeof state !== 'string' || state.trim().length === 0) {
-      return NextResponse.json({ error: 'State is required' }, { status: 400 });
+    const { state: rawState, project: rawProject } = bodyResult.data;
+
+    const stateResult = validateRequiredString(rawState, 'state', MAX_STATE_LENGTH);
+    if (!stateResult.ok) {
+      return NextResponse.json({ error: stateResult.error }, { status: stateResult.status });
     }
-    if (state.length > MAX_STATE_LENGTH) {
-      return NextResponse.json({ error: 'State is too long' }, { status: 400 });
-    }
+    const state = stateResult.data;
 
     // `project` is an optional hint that skips the cross-project scan. A blank
     // value is treated as absent rather than rejected: callers read it off a
     // work item whose project can legitimately be empty, and the scan below is
     // a correct fallback for exactly that case.
-    if (project !== undefined && typeof project !== 'string') {
-      return NextResponse.json({ error: 'project must be a string' }, { status: 400 });
+    const projectHint =
+      typeof rawProject === 'string' && rawProject.trim() === '' ? undefined : rawProject;
+    const projectResult = validateOptionalString(projectHint, 'project', MAX_PROJECT_LENGTH);
+    if (!projectResult.ok) {
+      return NextResponse.json({ error: projectResult.error }, { status: projectResult.status });
     }
-    // Trim before use: the value goes into the DevOps URL, and " Team A "
-    // and "Team A" are not the same project identifier upstream.
-    const trimmedProject = typeof project === 'string' ? project.trim() : '';
-    if (trimmedProject.length > MAX_PROJECT_LENGTH) {
-      return NextResponse.json({ error: 'project is too long' }, { status: 400 });
-    }
-    const projectHint = trimmedProject || undefined;
+    const project = projectResult.data;
 
     const organization = request.headers.get('x-devops-org') || undefined;
     const devopsService = new AzureDevOpsService(session.accessToken, organization);
@@ -81,22 +76,22 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     debugLog('[state PATCH] incoming', {
       ticketId,
       state,
-      project: projectHint,
+      project,
       organization,
     });
 
     // If project is provided in the body, use it directly
-    if (projectHint) {
+    if (project) {
       // Snapshot old state first so the email shows the transition.
       let oldState: string | undefined;
       try {
-        const existing = await devopsService.getWorkItem(projectHint, ticketId);
+        const existing = await devopsService.getWorkItem(project, ticketId);
         oldState = existing?.fields?.['System.State'];
       } catch {
         // Continue without old state — the transition message will say "Unknown".
       }
 
-      const updatedWorkItem = await devopsService.updateTicketState(projectHint, ticketId, state);
+      const updatedWorkItem = await devopsService.updateTicketState(project, ticketId, state);
       notifyStateChange(updatedWorkItem, ticketId, oldState || 'Unknown', state);
       const ticket = workItemToTicket(updatedWorkItem);
       return NextResponse.json({ ticket });
