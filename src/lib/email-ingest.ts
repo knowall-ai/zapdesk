@@ -280,7 +280,16 @@ function withoutStyleAttributes(html: string): string {
  * treatment of inbound markup — and the input here is already sanitised.
  */
 export function renderForNotification(storedHtml: string): string {
-  const plain = withoutStyleAttributes(storedHtml);
+  // The stored description opens with the sender's address, and every
+  // notification template states who it is from in its own header -- so the
+  // first email about a ticket showed "From:" twice, once from the template
+  // and once from the body quoted underneath it (7765). Only a leading one is
+  // removed: a "From:" further down belongs to a quoted message and is the
+  // reader's only clue whose it is.
+  const plain = withoutStyleAttributes(storedHtml).replace(
+    /^\s*<p>\s*<strong>\s*From:\s*<\/strong>[^<]*<\/p>\s*(<hr\s*\/?>)?\s*/i,
+    ''
+  );
   let removed = 0;
   const withoutImages = plain.replace(/<img\b[^>]*>/gi, () => {
     removed += 1;

@@ -146,6 +146,26 @@ describe('buildAppendixHtml', () => {
 });
 
 describe('renderForNotification', () => {
+  it('drops the From line the template states itself', () => {
+    // The stored description opens with the sender, and the notification
+    // template has its own From header -- so the team's first email about a
+    // ticket showed the address twice (7765).
+    const stored = '<p><strong>From:</strong> rowan@example.test</p><hr/><p>Printer is dead.</p>';
+    const out = renderForNotification(stored);
+    expect(out).not.toContain('From:');
+    expect(out).toContain('Printer is dead.');
+  });
+
+  it('keeps a From further down, which belongs to a quoted message', () => {
+    // Inside a forward it is the only clue whose message it was.
+    const stored = '<p>See below.</p><p><strong>From:</strong> someone@example.test</p>';
+    expect(renderForNotification(stored)).toContain('From:');
+  });
+
+  it('leaves a body that never had one alone', () => {
+    expect(renderForNotification('<p>Just text.</p>')).toBe('<p>Just text.</p>');
+  });
+
   // renderEmailBodyHtml strips script, svg, iframe and javascript: hrefs, but
   // keeps style attributes -- and a style can still carry a javascript: url.
   // The ticket view survives that because it re-sanitises through DOMPurify;
