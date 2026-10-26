@@ -1,5 +1,6 @@
 'use client';
 
+import { BRAND_COLORS } from '@/lib/brand';
 import {
   AreaChart,
   Area,
@@ -19,7 +20,8 @@ interface PullRequestChartProps {
 }
 
 const OPENED = '#3b82f6';
-const MERGED = '#22c55e';
+// Merged is a status (success), not the brand: the theme's success colour (src/lib/brand.ts)
+const MERGED = BRAND_COLORS.success;
 
 /**
  * Pull requests opened and merged over time on the Team page, as two
