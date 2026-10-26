@@ -24,6 +24,15 @@ function graph(linked: Array<{ upn: string; login: string }>) {
       });
     }
     if (init?.method === 'PATCH') return new Response(null, { status: 204 });
+    // The person's own extension, already holding a Lightning address that a
+    // GitHub save must keep (#552).
+    if (input.includes('/extensions/zapdesk.knowall.ai')) {
+      return Response.json({
+        id: 'zapdesk.knowall.ai',
+        extensionName: 'zapdesk.knowall.ai',
+        lightningAddress: 'dana@getalby.example',
+      });
+    }
     return new Response('{}', { status: 404 });
   });
 }
@@ -57,7 +66,11 @@ describe('POST /api/profile/github', () => {
     const { status, body } = await post('https://github.com/dana-dev');
     expect(status).toBe(200);
     expect(body.githubUsername).toBe('dana-dev');
-    expect(JSON.parse(String(patches()[0][1]?.body))).toEqual({ githubUsername: 'dana-dev' });
+    expect(JSON.parse(String(patches()[0][1]?.body))).toEqual({
+      '@odata.type': 'microsoft.graph.openTypeExtension',
+      lightningAddress: 'dana@getalby.example',
+      githubUsername: 'dana-dev',
+    });
   });
 
   it('refuses something that is not a username', async () => {
