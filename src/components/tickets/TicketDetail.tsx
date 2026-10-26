@@ -540,7 +540,10 @@ export default function TicketDetail({
   // says nothing, and the title is what every list, board and email shows.
   const titleDraftTrimmed = titleDraft.trim();
   const titleIssue = titleProblem(titleDraft);
-  const titleUnchanged = titleDraftTrimmed === ticket.title;
+  // Both sides trimmed: a stored title with padding -- anything saved before
+  // the route started trimming -- would otherwise look edited on opening, and
+  // offer to save a change nobody made.
+  const titleUnchanged = titleDraftTrimmed === ticket.title.trim();
   const canSaveTitle = titleIssue === null && !titleUnchanged;
 
   const handleEditTitle = () => {
@@ -874,7 +877,7 @@ export default function TicketDetail({
                     style={{ color: titleIssue ? 'var(--priority-urgent)' : 'var(--text-muted)' }}
                   >
                     {titleIssue ??
-                      `Unchanged — edit the title to save it. ${ticket.title.length}/${MAX_TITLE_LENGTH} characters.`}
+                      `Unchanged — edit the title to save it. ${titleDraftTrimmed.length}/${MAX_TITLE_LENGTH} characters.`}
                   </p>
                 )}
               </div>

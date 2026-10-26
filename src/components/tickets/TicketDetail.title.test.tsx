@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import type { Ticket } from '@/types';
+import { MAX_TITLE_LENGTH } from '@/lib/ticket-title';
 
 /**
  * Renaming a ticket from the ticket screen (7772). Customers often raise a
@@ -59,8 +60,14 @@ const ticket = (overrides: Partial<Ticket> = {}): Ticket =>
     ...overrides,
   }) as unknown as Ticket;
 
-const show = (onTitleChange?: (title: string) => Promise<void>) =>
-  render(<TicketDetail ticket={ticket()} comments={[]} onTitleChange={onTitleChange} />);
+const show = (onTitleChange?: (title: string) => Promise<void>, title?: string) =>
+  render(
+    <TicketDetail
+      ticket={title === undefined ? ticket() : ticket({ title })}
+      comments={[]}
+      onTitleChange={onTitleChange}
+    />
+  );
 
 const openEditor = () => fireEvent.click(screen.getByRole('button', { name: 'Edit title' }));
 const input = () => screen.getByRole('textbox', { name: 'Ticket title' });
@@ -133,13 +140,22 @@ describe('TicketDetail title editing', () => {
   it('refuses a title longer than DevOps accepts, saying the limit', () => {
     show(async () => {});
     openEditor();
-    fireEvent.change(input(), { target: { value: 'x'.repeat(256) } });
+    fireEvent.change(input(), { target: { value: 'x'.repeat(MAX_TITLE_LENGTH + 1) } });
     expect((saveButton() as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText(/255 characters or fewer/)).toBeDefined();
+    expect(screen.getByText(new RegExp(`${MAX_TITLE_LENGTH} characters or fewer`))).toBeDefined();
   });
 
   it('will not save a title nobody changed', () => {
     show(async () => {});
+    openEditor();
+    expect((saveButton() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('treats a stored title with padding as unchanged', () => {
+    // Titles saved before the route trimmed them still carry it. Comparing the
+    // draft against the untrimmed stored value offers to save an edit nobody
+    // made, the moment the editor opens.
+    show(async () => {}, '  FW: question  ');
     openEditor();
     expect((saveButton() as HTMLButtonElement).disabled).toBe(true);
   });

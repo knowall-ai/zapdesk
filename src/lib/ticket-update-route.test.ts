@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
+import { MAX_TITLE_LENGTH } from './ticket-title';
 
 // Route-level coverage for PATCH /api/devops/tickets/[id]: input validation
 // and the customer's title/priority email (#7724). DevOps is mocked at the
@@ -127,9 +128,12 @@ describe('PATCH /api/devops/tickets/[id]', () => {
   });
 
   it('rejects a title longer than DevOps accepts, saying what the limit is', async () => {
-    const { status, body } = await patch({ project: 'Internal', title: 'x'.repeat(256) });
+    const { status, body } = await patch({
+      project: 'Internal',
+      title: 'x'.repeat(MAX_TITLE_LENGTH + 1),
+    });
     expect(status).toBe(400);
-    expect(body.error).toContain('255');
+    expect(body.error).toContain(String(MAX_TITLE_LENGTH));
     expect(updateTicketFields).not.toHaveBeenCalled();
   });
 
