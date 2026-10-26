@@ -17,6 +17,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   if (!session?.user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  // Approved organisations only (src/lib/tenant-approval.ts)
+  if (session.tenantApproved === false) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const { id: userId } = await params;
 
