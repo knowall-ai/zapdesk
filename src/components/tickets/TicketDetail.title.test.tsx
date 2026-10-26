@@ -116,6 +116,30 @@ describe('TicketDetail title editing', () => {
     await waitFor(() => expect(onTitleChange).toHaveBeenCalledWith('Cannot print'));
   });
 
+  it('ignores Enter while an input method is composing', () => {
+    // An IME uses Enter to accept the candidate it is offering. Saving then
+    // commits half a title and closes the editor under the person typing.
+    const onTitleChange = vi.fn(async () => {});
+    show(onTitleChange);
+    openEditor();
+    fireEvent.change(input(), { target: { value: 'プリンタ' } });
+    fireEvent.keyDown(input(), { key: 'Enter', isComposing: true });
+
+    expect(onTitleChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox', { name: 'Ticket title' })).toBeDefined();
+  });
+
+  it('saves on the Enter that follows, once composition has ended', async () => {
+    const onTitleChange = vi.fn(async () => {});
+    show(onTitleChange);
+    openEditor();
+    fireEvent.change(input(), { target: { value: 'プリンタが動かない' } });
+    fireEvent.keyDown(input(), { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(input(), { key: 'Enter' });
+
+    await waitFor(() => expect(onTitleChange).toHaveBeenCalledWith('プリンタが動かない'));
+  });
+
   it('abandons the edit on Escape without saving', () => {
     const onTitleChange = vi.fn(async () => {});
     show(onTitleChange);
