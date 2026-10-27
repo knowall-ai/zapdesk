@@ -138,10 +138,11 @@ const shots = [
       if ((await button.count()) && (await button.getAttribute('aria-checked')) !== 'true') {
         await button.click();
       }
+      // Not swallowed: a suppressed timeout here saves a picture of the
+      // loading state and calls it a success. Let it fail this shot.
       await page
         .locator('text=Loading pull requests…')
-        .waitFor({ state: 'hidden', timeout: 60000 })
-        .catch(() => {});
+        .waitFor({ state: 'hidden', timeout: 60000 });
       await heading.evaluate((el) => el.scrollIntoView({ block: 'start' }));
       await page.evaluate(() => window.scrollBy(0, -24));
     },
@@ -172,12 +173,14 @@ const shots = [
  * can reach and quietly falls back to the first of those when it cannot. So a
  * run by somebody without access to the demo organization does not fail -- it
  * photographs a real one instead, and these images go into a public
- * repository. Checked against the API the provider itself reads, so there is
- * no race with the fallback being written.
+ * repository. Checked against `/api/devops/accounts`, which is the endpoint
+ * the provider itself reads and the only one carrying `accountName`;
+ * `/api/devops/organizations` returns projects. Reading the response rather
+ * than localStorage avoids racing the fallback write.
  */
 async function confirmOrganization(page) {
   const waitForOrgs = page.waitForResponse(
-    (response) => response.url().includes('/api/devops/organizations') && response.status() === 200,
+    (response) => response.url().includes('/api/devops/accounts') && response.status() === 200,
     { timeout: 30000 }
   );
 
