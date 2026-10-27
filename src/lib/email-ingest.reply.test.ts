@@ -86,6 +86,32 @@ describe('merge point: a customer reply still notifies the assigned agent', () =
     expect(args[4]).toContain('Still broken.');
   });
 
+  // A reply to the team's internal-note email must not become a public
+  // comment, or the next agent reply quotes it to the customer.
+  it('keeps a reply to an internal-note email internal', async () => {
+    const res = await ingestEmail({
+      from: 'sam@example.test',
+      subject: 'RE: [ZapDesk #7145] Internal note — "Printer on fire"',
+      body: 'Agreed, the invoice is wrong.',
+    });
+    expect(res).toMatchObject({ success: true, action: 'comment_added' });
+
+    const commentCall = seen.find((c) => (c.init?.method ?? '').toUpperCase() === 'PATCH');
+    const ops = JSON.parse(String(commentCall?.init?.body)) as Array<{ value: unknown }>;
+    const { isInternalNote } = await import('./devops');
+    expect(ops.some((op) => isInternalNote(String(op.value)))).toBe(true);
+  });
+
+  it('leaves an ordinary reply public', async () => {
+    await ingestEmail({
+      from: 'cust@example.com',
+      subject: 'Re: [ZapDesk #7145] Printer on fire',
+      body: 'Still broken.',
+    });
+    const commentCall = seen.find((c) => (c.init?.method ?? '').toUpperCase() === 'PATCH');
+    expect(String(commentCall?.init?.body)).not.toContain('[Internal Note]');
+  });
+
   it('keeps the DevOps attachment URL in the ticket but out of the email', async () => {
     const res = await ingestEmail({
       from: 'cust@example.com',

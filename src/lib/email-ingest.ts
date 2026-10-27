@@ -28,6 +28,14 @@ import {
 const TICKET_REF_REGEX = /\[ZapDesk #(\d+)\]/;
 
 /**
+ * True for a reply to the support team's internal-note email, whose subject
+ * reads `[ZapDesk #N] Internal note — "…"` (see `sendInternalNoteNotification`).
+ */
+export function isInternalNoteReply(subject: string): boolean {
+  return /\[ZapDesk #\d+\]\s*Internal note\b/i.test(subject);
+}
+
+/**
  * Deadline on every DevOps call made while ingesting an email.
  *
  * Ingestion runs unattended off the poller, so a request that never returns
@@ -211,7 +219,12 @@ async function handleThreadReply(
       failures,
       splicedInlineCids(renderedBody, uploaded)
     );
-    const commentHtml = `
+    // A teammate answering the internal-note email sends a reply that carries
+    // the ticket reference like any other. Stored as a public comment, it
+    // would be quoted to the customer with the next agent reply, so it is
+    // kept internal, as the note it answers was.
+    const marker = isInternalNoteReply(email.subject) ? '[Internal Note] ' : '';
+    const commentHtml = `${marker}
 <div style="font-family: sans-serif;">
   <p><strong>Email reply from:</strong> ${escapeHtml(senderEmail)}</p>
   <hr/>
@@ -279,10 +292,40 @@ function withoutStyleAttributes(html: string): string {
  * Regex, not a parser, to match the rest of this module's best-effort
  * treatment of inbound markup — and the input here is already sanitised.
  */
-export function renderForNotification(storedHtml: string): string {
-  const plain = withoutStyleAttributes(storedHtml);
+export function renderForNotification(
+  storedHtml: string,
+  { stripSenderHeader = false }: { stripSenderHeader?: boolean } = {}
+): string {
+  // `storedDescriptionHtml` opens a new ticket's description with the sender's
+  // address, and every notification template states who it is from in its own
+  // header -- so the team's first email about a ticket showed "From:" twice
+  // (7765). That paragraph is ZapDesk's own, so only the caller that knows it
+  // is there asks for it to be removed.
+  //
+  // Off by default, and off for replies. A reply that opens with "From:" is a
+  // message the customer forwarded, and that header is the reader's only clue
+  // whose it was -- removing it would delete the sender's own words.
+  //
+  // The wrapper is matched with the paragraph and put back: anchoring on the
+  // paragraph alone matched nothing a real stored description looks like.
+  const plain = stripSenderHeader
+    ? withoutStyleAttributes(storedHtml).replace(
+        /^(\s*<div\b[^>]*>)?\s*<p>\s*<strong>\s*From:\s*<\/strong>[^<]*<\/p>\s*(<hr\s*\/?>)?\s*/i,
+        (_match, wrapper?: string) => wrapper ?? ''
+      )
+    : withoutStyleAttributes(storedHtml);
+  // Attachment links point at the DevOps attachment API, which answers 401
+  // without a signed-in session. In the app that is fine; in an email it is a
+  // link that refuses the reader, so the filename stays as plain text and the
+  // template's ticket button is the way in. Cloud attachments keep their
+  // links -- those are the sender's own shareable URLs.
+  const unlinked = plain.replace(
+    /<a\b[^>]*href="[^"]*\/_apis\/wit\/attachments\/[^"]*"[^>]*>([\s\S]*?)<\/a>/gi,
+    '$1'
+  );
+
   let removed = 0;
-  const withoutImages = plain.replace(/<img\b[^>]*>/gi, () => {
+  const withoutImages = unlinked.replace(/<img\b[^>]*>/gi, () => {
     removed += 1;
     return '';
   });
@@ -346,7 +389,8 @@ function notifyTeamOfNewTicket(
     ticketSubject: subject,
     requesterEmail: senderEmail,
     project: projectName,
-    messageHtml: renderForNotification(descriptionHtml),
+    // The only body ZapDesk wrote the "From:" line into.
+    messageHtml: renderForNotification(descriptionHtml, { stripSenderHeader: true }),
     recipients: recipients.join(', '),
   }).catch(() => {});
 }
@@ -804,6 +848,23 @@ export function buildAppendixHtml(
     parts.push(`<p><strong>Inline images:</strong></p><ul>${items}</ul>`);
   }
 
+  // Files that uploaded cleanly and are not shown in the body. Without this
+  // the message carries no sign of them at all: they land in the work item's
+  // attachment panel, so a customer who does not say what they sent leaves
+  // the reader to notice the panel changed (7768). A spreadsheet or a PDF is
+  // exactly the case -- unlike a screenshot, it cannot be spliced into the
+  // body, so nothing about the message looked any different.
+  const files = uploaded.filter((u) => !u.isInline);
+  if (files.length) {
+    const items = files
+      .map(
+        (u) =>
+          `<li><a href="${escapeHtml(u.url)}" rel="noopener noreferrer">${escapeHtml(u.filename)}</a></li>`
+      )
+      .join('');
+    parts.push(`<p><strong>Attachments:</strong></p><ul>${items}</ul>`);
+  }
+
   if (referenceLinks.length) {
     const items = referenceLinks
       .map(
@@ -868,12 +929,28 @@ function formatEmailBody(
     failures,
     splicedInlineCids(renderedBody, uploaded)
   );
+  return storedDescriptionHtml(
+    senderEmail,
+    `${renderedBody}
+  ${appendix}`
+  );
+}
+
+/**
+ * The wrapper every stored email description is written in: who it is from, a
+ * rule, then the message.
+ *
+ * Exported so `renderForNotification` and its tests work against the shape
+ * this actually produces. The two were written apart, and the strip of the
+ * sender paragraph (7765) was anchored at the start of the content -- where
+ * the opening `<div>` sits, so it never matched a real description.
+ */
+export function storedDescriptionHtml(senderEmail: string, body: string): string {
   return `
 <div style="font-family: sans-serif;">
   <p><strong>From:</strong> ${escapeHtml(senderEmail)}</p>
   <hr/>
-  ${renderedBody}
-  ${appendix}
+  ${body}
 </div>
   `.trim();
 }

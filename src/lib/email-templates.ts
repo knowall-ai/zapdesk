@@ -55,12 +55,31 @@ const KNOWALL_LOGO_URL = process.env.KNOWALL_LOGO_URL || '';
  */
 export type EmailAudience = 'customer' | 'team';
 
+/** Options for the shared layout. */
+export interface LayoutOptions {
+  /**
+   * Whether the footer invites a reply by email. True for anything the reply
+   * would land on correctly -- which is most mail, since a reply to the
+   * polled mailbox becomes a comment on the ticket.
+   *
+   * False where that is the wrong thing to do. An internal note is the case:
+   * a reply to it is ingested as an ordinary *public* comment, so the footer
+   * was inviting the reader to put a note meant for the team in front of the
+   * customer -- while the body of the same email told them not to.
+   */
+  replyByEmail?: boolean;
+}
+
 /**
  * The shared card layout around every ZapDesk email: logo header, the given
  * content, and the footer. For a `'customer'` audience the logo is not a link
  * into ZapDesk, which customers cannot sign in to (#7371).
  */
-export function layoutWrapper(content: string, audience: EmailAudience = 'team'): string {
+export function layoutWrapper(
+  content: string,
+  audience: EmailAudience = 'team',
+  { replyByEmail = true }: LayoutOptions = {}
+): string {
   const logo = `<img src="${ZAPDESK_LOGO_URL}" width="240" height="60" alt="${APP_NAME}" style="border: 0;" />`;
   return `
 <!DOCTYPE html>
@@ -107,7 +126,11 @@ export function layoutWrapper(content: string, audience: EmailAudience = 'team')
           : ''
       }
       <p style="margin: 4px 0;">Powered by <a href="${KNOWALL_URL}">KnowAll AI</a></p>
-      <p style="margin: 4px 0;">Please reply to this email to update your ticket.</p>
+      ${
+        replyByEmail
+          ? `<p style="margin: 4px 0;">Please reply to this email to update your ticket.</p>`
+          : ''
+      }
     </div>
   </div>
 </body>
@@ -220,6 +243,44 @@ export function customerReplyNotificationTemplate(opts: {
       <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
     </p>
   `);
+}
+
+/**
+ * Tells the support team someone has left an internal note (7767).
+ *
+ * An internal note is the one kind of comment that reaches nobody: it is
+ * deliberately kept from the customer, and until now that meant it was kept
+ * from the rest of the team as well, so a handover written on the ticket sat
+ * unread until somebody happened to open it.
+ *
+ * A team email, and it carries no reply affordance beyond the link -- the
+ * footer's standard reply invitation is turned off here. A reply to this is
+ * ingested as a public comment, which would hand the customer the one note
+ * written to be kept from them.
+ */
+export function internalNoteNotificationTemplate(opts: {
+  ticketId: number;
+  ticketSubject: string;
+  authorName: string;
+  noteHtml: string;
+}): string {
+  const ticketUrl = `${APP_URL}/tickets/${opts.ticketId}`;
+  return layoutWrapper(
+    `
+    <p class="meta">Internal note on ticket <strong>#${opts.ticketId}</strong></p>
+    <p class="meta"><strong>Subject:</strong> ${escapeText(opts.ticketSubject)}</p>
+    <p class="meta"><strong>From:</strong> ${escapeText(opts.authorName)}</p>
+    <div class="content">
+      ${opts.noteHtml}
+    </div>
+    <p class="meta"><em>The customer cannot see this note. Reply on the ticket, not to this email.</em></p>
+    <p style="text-align: center; margin-top: 24px;">
+      <a href="${ticketUrl}" class="btn">View Ticket #${opts.ticketId}</a>
+    </p>
+  `,
+    'team',
+    { replyByEmail: false }
+  );
 }
 
 /**

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   exitFullViewHref,
   fullViewHref,
+  reachedByInAppNavigation,
   restoreBoardView,
   saveBoardView,
   takeOpenRequest,
@@ -106,5 +107,32 @@ describe('full view round trip (#7727)', () => {
     saveBoardView({ searchQuery: 'printer' });
     goTo('/tickets?view=all-unsolved&open=7');
     expect(restoreBoardView()).toBeNull();
+  });
+});
+
+describe('reachedByInAppNavigation (7771)', () => {
+  const navigatedTo = (first: string, now: string) => {
+    vi.stubGlobal('window', { location: new URL(now) });
+    vi.stubGlobal('performance', {
+      getEntriesByType: (type: string) => (type === 'navigation' ? [{ name: first }] : []),
+    });
+  };
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('is true once the user has moved on from the page the tab loaded', () => {
+    navigatedTo('https://zapdesk.test/', 'https://zapdesk.test/tickets/7');
+    expect(reachedByInAppNavigation()).toBe(true);
+  });
+
+  it('is false for a ticket opened straight from an email link', () => {
+    // The sign-in redirects end on the ticket, so it is the page the tab loaded.
+    navigatedTo('https://zapdesk.test/tickets/7', 'https://zapdesk.test/tickets/7');
+    expect(reachedByInAppNavigation()).toBe(false);
+  });
+
+  it('is false when the browser keeps no navigation entry', () => {
+    vi.stubGlobal('window', { location: new URL('https://zapdesk.test/tickets/7') });
+    vi.stubGlobal('performance', { getEntriesByType: () => [] });
+    expect(reachedByInAppNavigation()).toBe(false);
   });
 });
