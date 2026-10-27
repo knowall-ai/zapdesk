@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
-import { getGitHubTickets } from '@/lib/github-issues';
+import { getGitHubTickets, isGitHubSupportTicket } from '@/lib/github-issues';
 import { gitHubAvailable, gitHubSourceFor } from '@/lib/github-source';
 import { gitHubPeopleFor } from '@/lib/github-people';
 import { filterTicketsByView } from '@/lib/ticket-views';
@@ -14,6 +14,10 @@ import { filterTicketsByView } from '@/lib/ticket-views';
  * The issues are read with the server's token, so access is decided here: a
  * user only gets issues mapped to DevOps projects they can see in the selected
  * organization.
+ *
+ * Only issues labelled `ticket` are returned (#568), matching the `ticket`
+ * tag DevOps work items need to appear here. `GITHUB_TICKET_LABEL` changes
+ * which label that is.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -64,11 +68,16 @@ export async function GET(request: NextRequest) {
 
     const failedRepos = [...config.failed, ...failedReads];
 
+    // Only support tickets reach the Tickets views (#568). The Kanban boards
+    // read their issues through /api/devops/standup, which is left alone, so
+    // development issues stay on the boards and off this list.
+    const supportTickets = tickets.filter(isGitHubSupportTicket);
+
     const view = request.nextUrl.searchParams.get('view') || 'all-unsolved';
     // GitHub has no Removed state, and the shared filter returns everything for
     // a view it does not know.
     const filtered =
-      view === 'removed' ? [] : filterTicketsByView(tickets, view, session.user?.email);
+      view === 'removed' ? [] : filterTicketsByView(supportTickets, view, session.user?.email);
 
     return NextResponse.json({
       configured: true,
