@@ -41,7 +41,7 @@ import {
 
 import { configuredDevOpsOrg, devOpsOrgOrDefault } from './devops-org';
 import { ticketFieldsToRequest } from './work-item-fields';
-import { isPendingStateName } from './state-categories';
+import { isPendingStateName, statusNamedByState } from './state-categories';
 
 /**
  * Read the resolution value from a work item, checking all possible field names
@@ -136,6 +136,14 @@ function mapStateToStatus(state: string): TicketStatus {
   // ones ZapDesk itself had set to Pending, since writing Pending writes the
   // Blocked state (the mapping from #297, in state-categories.ts).
   if (isPendingStateName(state)) return 'Pending';
+
+  // A state that is itself one of ZapDesk's statuses is read as that status,
+  // whatever category DevOps files it under. On the Support Ticket template
+  // (#569) that is every state -- and Open and In Progress are both
+  // InProgress, so by category alone one of them always became the other.
+  const named = statusNamedByState(state);
+  if (named) return named;
+
   const category = stateCategoryCache[state];
   if (category) {
     return mapCategoryToStatus(category);
@@ -355,6 +363,11 @@ export function ticketToWorkItem(ticket: Ticket): WorkItem {
     customerResponse: ticket.customerResponse,
     requester: ticket.requester,
     organization: ticket.organization,
+    // Where the item came from, so the dialog knows to talk to GitHub rather
+    // than to DevOps about it (#566).
+    source: ticket.source,
+    sourceUrl: ticket.sourceUrl,
+    sourceRef: ticket.sourceRef,
   };
 }
 

@@ -85,10 +85,7 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             {features.map((feature) => (
               <div key={feature.title} className="card p-6">
-                <div
-                  className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg"
-                  style={{ backgroundColor: 'rgba(34, 197, 94, 0.15)', color: 'var(--primary)' }}
-                >
+                <div className="bg-brand/15 text-brand mb-4 flex h-12 w-12 items-center justify-center rounded-lg">
                   {feature.icon}
                 </div>
                 <h3 className="mb-2 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -113,7 +110,7 @@ export default function LandingPage() {
                 className="mb-4 text-2xl font-bold sm:text-3xl"
                 style={{ color: 'var(--text-primary)' }}
               >
-                Open Source by <span style={{ color: 'var(--primary)' }}>KnowAll.ai</span>
+                Open Source by <span style={{ color: 'var(--color-brand)' }}>KnowAll.ai</span>
               </h2>
               <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>
                 ZapDesk provides a seamless experience for managing support tickets against Azure
@@ -122,7 +119,7 @@ export default function LandingPage() {
               <div className="space-y-3">
                 {benefits.map((benefit) => (
                   <div key={benefit} className="flex items-center gap-3">
-                    <CheckCircle size={20} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                    <CheckCircle size={20} style={{ color: 'var(--color-brand)', flexShrink: 0 }} />
                     <span style={{ color: 'var(--text-primary)' }}>{benefit}</span>
                   </div>
                 ))}
@@ -173,7 +170,7 @@ export default function LandingPage() {
               target="_blank"
               rel="noopener noreferrer"
               className="font-semibold hover:underline"
-              style={{ color: 'var(--primary)' }}
+              style={{ color: 'var(--color-brand)' }}
             >
               KnowAll.ai
             </a>

@@ -30,7 +30,7 @@ function getColorFromName(name: string): string {
     '#f97316',
     '#f59e0b',
     '#84cc16',
-    '#22c55e',
+    '#16a34a',
     '#14b8a6',
     '#06b6d4',
     '#3b82f6',

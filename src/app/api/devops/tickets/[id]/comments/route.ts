@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { parseWorkItemId } from '@/lib/work-item-id';
 import { AzureDevOpsService, claimsEmailOrigin } from '@/lib/devops';
-import { isEmailTicket, extractRequesterEmail, sendAgentReply } from '@/lib/email';
+import {
+  isEmailTicket,
+  extractRequesterEmail,
+  sendAgentReply,
+  sendInternalNoteNotification,
+} from '@/lib/email';
+import { supportTeamRecipients } from '@/lib/support-team';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -20,9 +27,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id } = await params;
-    const ticketId = parseInt(id, 10);
+    const ticketId = parseWorkItemId(id);
 
-    if (isNaN(ticketId)) {
+    if (ticketId === null) {
       return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
     }
 
@@ -44,7 +51,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 /**
  * Add a comment to a ticket. `isInternal: true` stores it as an internal note,
- * which is never emailed.
+ * which is never emailed to the customer -- it is emailed to the configured
+ * support team, so a handover written on a ticket is seen without somebody
+ * having to open it (7767).
  *
  * A public reply on a ticket that arrived by email is also emailed to the
  * requester, quoting the earlier public conversation -- without the
@@ -64,9 +73,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id } = await params;
-    const ticketId = parseInt(id, 10);
+    const ticketId = parseWorkItemId(id);
 
-    if (isNaN(ticketId)) {
+    if (ticketId === null) {
       return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
     }
 
@@ -155,6 +164,34 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     await devopsService.addComment(project.name, ticketId, commentText);
+
+    // An internal note is kept from the customer, which until now meant it
+    // reached nobody at all: a handover written on the ticket sat unread until
+    // somebody happened to open it (7767). The author is dropped from the
+    // list, since they know what they just wrote.
+    if (isInternal) {
+      // Best-effort, and guarded: the note is already on the ticket, so
+      // nothing here may turn a write that succeeded into a failed request.
+      try {
+        const recipients = supportTeamRecipients([session.user?.email]);
+        if (recipients.length > 0) {
+          const subject = workItem.fields?.['System.Title'] || 'Ticket';
+          sendInternalNoteNotification({
+            ticketId,
+            ticketSubject: String(subject),
+            authorName: session.user?.name || 'A colleague',
+            noteHtml: comment,
+            recipients: recipients.join(', '),
+          }).catch(() => {});
+        } else {
+          console.log(
+            `[Notify] SUPPORT_TEAM_NOTIFY_EMAIL not set — nobody told about the internal note on ticket #${ticketId}`
+          );
+        }
+      } catch (err) {
+        console.error(`[Notify] Internal note email failed for ticket #${ticketId}:`, err);
+      }
+    }
 
     if (isEmail) {
       const requesterEmail = extractRequesterEmail(tags);

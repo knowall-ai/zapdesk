@@ -819,7 +819,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                   onClick={() => fileInputRef.current?.click()}
                   className="flex items-center gap-1 rounded p-2 text-sm transition-colors hover:bg-[var(--surface-hover)]"
                   style={{
-                    color: pendingFiles.length > 0 ? 'var(--primary)' : 'var(--text-muted)',
+                    color: pendingFiles.length > 0 ? 'var(--color-brand)' : 'var(--text-muted)',
                     cursor: 'pointer',
                   }}
                   title="Attach files"
@@ -969,7 +969,7 @@ export default function NewTicketDialog({ isOpen, onClose }: NewTicketDialogProp
                     type="button"
                     onClick={handleTakeIt}
                     className="text-xs hover:underline"
-                    style={{ color: 'var(--primary)', cursor: 'pointer' }}
+                    style={{ color: 'var(--color-brand)', cursor: 'pointer' }}
                     disabled={!form.project || filteredMembers.length === 0}
                   >
                     take it

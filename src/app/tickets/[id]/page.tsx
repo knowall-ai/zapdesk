@@ -314,6 +314,27 @@ export default function TicketDetailPage() {
     }
   };
 
+  const handleTitleChange = async (title: string) => {
+    if (!ticket) return;
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ title, project: ticket.project }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to update title');
+      }
+      await fetchTicket();
+      toast.success('Title updated');
+    } catch (error) {
+      console.error('Failed to update title:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update title');
+      throw error;
+    }
+  };
+
   const handleTagsChange = async (tags: string[]) => {
     if (!ticket) return;
     try {
@@ -471,6 +492,7 @@ export default function TicketDetailPage() {
         onTypeChange={handleTypeChange}
         onTagsChange={handleTagsChange}
         onDescriptionChange={handleDescriptionChange}
+        onTitleChange={handleTitleChange}
         onResolutionChange={handleResolutionChange}
         onMitigationChange={handleMitigationChange}
         onEffortChange={handleEffortChange}

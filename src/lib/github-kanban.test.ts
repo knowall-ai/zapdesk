@@ -70,8 +70,23 @@ describe('isGitHubItem', () => {
 });
 
 describe('gitHubColumnFor', () => {
-  it('puts an open issue in the first Proposed column', () => {
-    expect(gitHubColumnFor('Open', COLUMNS)).toBe('New');
+  it('puts an untriaged issue in the first Proposed column', () => {
+    expect(gitHubColumnFor('New', COLUMNS)).toBe('New');
+  });
+
+  it('puts a column of the same name before the category (#567)', () => {
+    // A board with a Pending column should show a pending issue there, even
+    // though DevOps files that column under InProgress with the others.
+    expect(gitHubColumnFor('Blocked', COLUMNS)).toBe('Blocked');
+    expect(gitHubColumnFor('Resolved', COLUMNS)).toBe('Resolved');
+  });
+
+  it('places the statuses GitHub state alone cannot express', () => {
+    // Before the GitHub process template every open issue landed in the first
+    // column, whatever had happened to it since.
+    expect(gitHubColumnFor('Open', COLUMNS)).toBe('Active');
+    expect(gitHubColumnFor('In Progress', COLUMNS)).toBe('Active');
+    expect(gitHubColumnFor('Pending', COLUMNS)).toBe('Active');
   });
 
   it('puts a closed issue in the Closed column', () => {
@@ -110,7 +125,7 @@ describe('gitHubTicketToStandupItem', () => {
       id: -1001,
       title: 'Button is misaligned',
       state: 'Open',
-      stateCategory: 'Proposed',
+      stateCategory: 'InProgress',
       workItemType: 'Issue',
       project: 'Widgets',
       source: 'github',
@@ -141,9 +156,10 @@ describe('addGitHubTicketsToStandup', () => {
     expect(addGitHubTicketsToStandup(projects, COLUMNS, [])).toBe(projects);
   });
 
-  it('adds open issues after the DevOps cards in the first column, and closed ones to Closed', () => {
+  it('adds issues after the DevOps cards in their own column', () => {
     const projects = [board('Widgets', { New: [devOpsCard(1, 'Widgets')] })];
     const merged = addGitHubTicketsToStandup(projects, COLUMNS, [
+      issue({ id: -1000, status: 'New', devOpsState: 'New' }),
       issue(),
       issue({ id: -1002, status: 'Closed', devOpsState: 'Closed' }),
     ]);
@@ -152,9 +168,9 @@ describe('addGitHubTicketsToStandup', () => {
       merged[0].columns.map((c) => [c.name, c.items.map((i) => i.id)])
     );
     expect(columns).toEqual({
-      New: [1, -1001],
+      New: [1, -1000],
       'To Do': [],
-      Active: [],
+      Active: [-1001],
       Blocked: [],
       Resolved: [],
       Closed: [-1002],
@@ -173,6 +189,8 @@ describe('addGitHubTicketsToStandup', () => {
 
     expect(merged.map((p) => p.projectName)).toEqual(['Anvils', 'Widgets']);
     expect(merged[0].columns.map((c) => c.name)).toEqual(COLUMNS.map((c) => c.name));
-    expect(merged[0].columns[0].items.map((i) => i.id)).toEqual([-1001]);
+    expect(merged[0].columns.find((c) => c.name === 'Active')?.items.map((i) => i.id)).toEqual([
+      -1001,
+    ]);
   });
 });

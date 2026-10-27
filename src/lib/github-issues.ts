@@ -10,6 +10,7 @@
  */
 
 import type { DevOpsProject, Organization, Ticket, User } from '@/types';
+import { gitHubStatusFor } from './github-process';
 
 const GITHUB_API_URL = 'https://api.github.com';
 const GITHUB_TIMEOUT_MS = 15_000;
@@ -75,10 +76,12 @@ export function isOrgWildcard(entry: string): boolean {
   return ORG_WILDCARD_PATTERN.test(entry);
 }
 
-interface GitHubUser {
+export interface GitHubUser {
   id: number;
   login: string;
   avatar_url?: string;
+  /** Present on a single-issue read; the list endpoints leave it off. */
+  name?: string | null;
 }
 
 /** The fields of a GitHub REST issue that ZapDesk reads. */
@@ -87,6 +90,8 @@ export interface GitHubIssue {
   number: number;
   title: string;
   state: string;
+  /** `completed` or `not_planned` on a closed issue; null on an open one. */
+  state_reason?: string | null;
   html_url: string;
   user: GitHubUser | null;
   assignee?: GitHubUser | null;
@@ -395,10 +400,20 @@ export function gitHubIssueToTicket(
   organization?: Organization,
   people?: GitHubPeople
 ): Ticket {
-  const closed = issue.state === 'closed';
-  const state = closed ? 'Closed' : 'Open';
   const assignee = issue.assignee ?? issue.assignees?.[0] ?? undefined;
   const author = issue.user ? gitHubUserToPerson(issue.user, people) : null;
+  const labels = (issue.labels || [])
+    .map((label) => (typeof label === 'string' ? label : label.name || ''))
+    .filter(Boolean);
+
+  // The GitHub process template, rather than open -> Open and closed ->
+  // Closed: an issue can be In Progress or Pending like anything else (#567).
+  const state = gitHubStatusFor({
+    state: issue.state,
+    stateReason: issue.state_reason,
+    labels,
+    hasAssignee: Boolean(assignee),
+  });
 
   return {
     // GitHub's own id, negated: unique across repositories, and it can never
@@ -425,9 +440,7 @@ export function gitHubIssueToTicket(
     },
     assignee: assignee ? gitHubUserToPerson(assignee, people) : undefined,
     organization,
-    tags: (issue.labels || [])
-      .map((label) => (typeof label === 'string' ? label : label.name || ''))
-      .filter(Boolean),
+    tags: labels,
     createdAt: new Date(issue.created_at),
     updatedAt: new Date(issue.updated_at),
     resolvedAt: issue.closed_at ? new Date(issue.closed_at) : undefined,
@@ -596,6 +609,35 @@ async function cachedRepoIssues(
     : await fetchRepoIssues(repo, token);
   issuesCache.set(key, { issues, timestamp: Date.now() });
   return issues;
+}
+
+/**
+ * The label that marks a GitHub issue as a support ticket (#568).
+ *
+ * The Tickets tab is for support tickets, and for DevOps that has always meant
+ * the `ticket` tag. GitHub had no equivalent filter, so every open issue in
+ * every mapped repository -- feature work, bugs, tech debt -- was listed
+ * beside the real tickets, which buried them.
+ */
+export function gitHubTicketLabel(): string {
+  // Trimmed before the fallback, not after: a value of "   " is truthy, so
+  // falling back afterwards left the label as the empty string. No tag
+  // matches that, and the Tickets tab would have quietly lost every GitHub
+  // ticket rather than saying anything was wrong.
+  return (process.env.GITHUB_TICKET_LABEL?.trim() || 'ticket').toLowerCase();
+}
+
+/**
+ * Whether an issue carries that label.
+ *
+ * Filtered here rather than with `labels=` on the GitHub query. The Kanban
+ * boards need every issue, and they read the same cache: asking GitHub a
+ * second time for the labelled subset would be more requests, not fewer, and
+ * two caches that can disagree about the same repository.
+ */
+export function isGitHubSupportTicket(ticket: { tags?: readonly string[] | null }): boolean {
+  const label = gitHubTicketLabel();
+  return (ticket.tags ?? []).some((tag) => tag.trim().toLowerCase() === label);
 }
 
 export interface GitHubTicketsResult {

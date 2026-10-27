@@ -63,7 +63,12 @@ export const PENDING_STATE_HINTS: readonly string[] = ['blocked', 'pending', 'on
 
 const NAME_HINTS: Record<TicketStatus, string[]> = {
   New: ['new', 'proposed', 'todo', 'toDo'],
-  Open: ['active', 'doing', 'inprogress', 'committed', 'open'],
+  // `open` leads: a process that defines a state called Open means it, and
+  // ZapDesk writing In Progress instead would be changing what the user
+  // asked for. No development template has one -- Agile has Active, Basic
+  // has Doing, Scrum has Committed -- so this only ever decides it for a
+  // process built for support work (#569).
+  Open: ['open', 'active', 'doing', 'inprogress', 'committed'],
   'In Progress': ['inprogress', 'doing', 'active', 'committed'],
   Pending: [...PENDING_STATE_HINTS],
   Resolved: ['resolved', 'done', 'fixed'],
@@ -78,6 +83,38 @@ const NAME_HINTS: Record<TicketStatus, string[]> = {
  */
 export function isPendingStateName(state: string): boolean {
   return PENDING_STATE_HINTS.includes(normalizeStateName(state));
+}
+
+/**
+ * The statuses that are also state names, normalised.
+ *
+ * A process can define a state that *is* a ZapDesk status -- the Support
+ * Ticket template (#569) defines all of them -- and then the name is better
+ * evidence than the category. `Open` and `In Progress` are both InProgress to
+ * DevOps, so reading by category alone turned one of them into the other, and
+ * a ticket set to Open came back as In Progress.
+ *
+ * Only exact names count. A state called `Opened` or `Progressing` is a
+ * different state and goes back to the category, which is a guess this is not
+ * entitled to make on its behalf.
+ */
+const STATUS_BY_STATE_NAME: Record<string, TicketStatus> = {
+  new: 'New',
+  open: 'Open',
+  inprogress: 'In Progress',
+  pending: 'Pending',
+  resolved: 'Resolved',
+  closed: 'Closed',
+};
+
+/**
+ * The status a state names outright, or null when it names none.
+ *
+ * The reading half of a template whose states are the statuses. The writing
+ * half is `resolveStateForStatus`, which finds those same names by hint.
+ */
+export function statusNamedByState(state: string): TicketStatus | null {
+  return STATUS_BY_STATE_NAME[normalizeStateName(state)] ?? null;
 }
 
 /** The categories a status is willing to land in. Exported for callers that report failures. */

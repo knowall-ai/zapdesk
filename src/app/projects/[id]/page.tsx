@@ -123,7 +123,7 @@ export default function ProjectDetailPage() {
     return (
       <MainLayout>
         <div className="flex h-full items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--primary)' }} />
+          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--color-brand)' }} />
         </div>
       </MainLayout>
     );
@@ -228,13 +228,7 @@ export default function ProjectDetailPage() {
                     <span className="flex items-center gap-2">
                       <span>{project.processTemplate}</span>
                       {project.isTemplateSupported ? (
-                        <span
-                          className="rounded px-1.5 py-0.5 text-xs font-medium"
-                          style={{
-                            backgroundColor: 'rgba(34, 197, 94, 0.15)',
-                            color: 'var(--primary)',
-                          }}
-                        >
+                        <span className="badge-brand-subtle rounded px-1.5 py-0.5 text-xs font-medium">
                           Supported
                         </span>
                       ) : (
@@ -283,15 +277,13 @@ export default function ProjectDetailPage() {
               )}
             </div>
             {/* How to set Domain/SLA info */}
-            <div
-              className="mt-4 rounded-md p-3"
-              style={{
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                border: '1px solid rgba(34, 197, 94, 0.2)',
-              }}
-            >
+            <div className="bg-brand/10 border-brand/20 mt-4 rounded-md border p-3">
               <div className="flex items-start gap-2">
-                <Info size={16} className="mt-0.5 shrink-0" style={{ color: 'var(--primary)' }} />
+                <Info
+                  size={16}
+                  className="mt-0.5 shrink-0"
+                  style={{ color: 'var(--color-brand)' }}
+                />
                 <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                   <p className="mb-1 font-medium" style={{ color: 'var(--text-primary)' }}>
                     Setting Domain &amp; SLA
@@ -322,7 +314,7 @@ export default function ProjectDetailPage() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 text-sm"
-                style={{ color: 'var(--primary)' }}
+                style={{ color: 'var(--color-brand)' }}
               >
                 View in Azure DevOps <ExternalLink size={12} />
               </a>
@@ -333,7 +325,7 @@ export default function ProjectDetailPage() {
           <div className="card lg:col-span-2">
             <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
               <div className="flex items-center gap-2">
-                <LayoutGrid size={18} style={{ color: 'var(--primary)' }} />
+                <LayoutGrid size={18} style={{ color: 'var(--color-brand)' }} />
                 <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
                   Epics {project.isTemplateSupported && `(${epics.length})`}
                 </h2>
@@ -360,7 +352,7 @@ export default function ProjectDetailPage() {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm hover:underline"
-                    style={{ color: 'var(--primary)' }}
+                    style={{ color: 'var(--color-brand)' }}
                   >
                     Request support for a new process template &rarr;
                   </a>

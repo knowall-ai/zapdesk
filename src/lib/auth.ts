@@ -2,6 +2,7 @@
 import type { NextAuthOptions } from 'next-auth';
 import type { JWT } from 'next-auth/jwt';
 import AzureADProvider from 'next-auth/providers/azure-ad';
+import { isTenantApproved } from '@/lib/tenant-approval';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -38,6 +39,11 @@ declare module 'next-auth' {
     error?: string;
     /** The Entra tenant the user signed in from (the `tid` claim). */
     tenantId?: string;
+    /**
+     * False when that tenant is not an approved organisation: the session then
+     * has no access token, and the person only sees `/not-approved`.
+     */
+    tenantApproved?: boolean;
     user: {
       id: string;
       name?: string | null;
@@ -131,8 +137,15 @@ export const authOptions: NextAuthOptions = {
       }
     },
     async session({ session, token }) {
-      session.accessToken = token.accessToken;
-      session.refreshToken = token.refreshToken;
+      // Approved organisations only. The tokens stay out of an unapproved
+      // session, so no route can call Azure DevOps on its behalf; the proxy
+      // (src/proxy.ts) also answers its API calls with 403. Checked on every
+      // request, so approving a tenant or removing one applies at once.
+      session.tenantApproved = isTenantApproved(token.tenantId);
+      if (session.tenantApproved) {
+        session.accessToken = token.accessToken;
+        session.refreshToken = token.refreshToken;
+      }
       session.error = token.error;
       if (token.id) {
         session.user.id = token.id;

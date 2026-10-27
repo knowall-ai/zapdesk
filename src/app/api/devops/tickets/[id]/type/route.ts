@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { parseWorkItemId } from '@/lib/work-item-id';
 import { AzureDevOpsService, workItemToTicket } from '@/lib/devops';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 
@@ -13,9 +14,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     const { id } = await params;
-    const ticketId = parseInt(id, 10);
+    const ticketId = parseWorkItemId(id);
 
-    if (isNaN(ticketId)) {
+    if (ticketId === null) {
       return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
     }
 

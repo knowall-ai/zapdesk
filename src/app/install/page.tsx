@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { CheckCircle, AlertTriangle, Building2 } from 'lucide-react';
 import { isMultiTenant } from '@/lib/auth';
+import ZapDeskIcon from '@/components/common/ZapDeskIcon';
 
 /**
  * Install ZapDesk for an organisation (#457).
@@ -51,12 +52,7 @@ export default async function InstallPage({
     >
       <div className="card w-full max-w-lg p-8">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div
-            className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
-            style={{ backgroundColor: 'var(--primary)' }}
-          >
-            <span className="text-3xl font-bold text-white">⚡</span>
-          </div>
+          <ZapDeskIcon size={64} className="mb-4" />
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
             Install ZapDesk for your organisation
           </h1>
@@ -67,7 +63,7 @@ export default async function InstallPage({
             <CheckCircle
               size={40}
               className="mx-auto mb-3"
-              style={{ color: 'var(--primary)' }}
+              style={{ color: 'var(--color-brand)' }}
               aria-hidden
             />
             <h2 className="mb-2 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -127,6 +123,10 @@ export default async function InstallPage({
                 center.
               </li>
               <li>Each person still only sees the Azure DevOps projects they have access to.</li>
+              <li>
+                KnowAll approves each organisation before its people can use ZapDesk. Until then
+                they see a page asking you to get in touch.
+              </li>
             </ul>
             <a
               href="/api/install"
@@ -137,7 +137,7 @@ export default async function InstallPage({
             </a>
             <p className="mt-6 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
               Already installed?{' '}
-              <Link href="/login" style={{ color: 'var(--primary)' }}>
+              <Link href="/login" style={{ color: 'var(--color-brand)' }}>
                 Sign in
               </Link>
             </p>

@@ -43,7 +43,7 @@ export function UnsupportedTemplateWarning({
             target="_blank"
             rel="noopener noreferrer"
             className="mt-2 inline-block text-sm hover:underline"
-            style={{ color: 'var(--primary)' }}
+            style={{ color: 'var(--color-brand)' }}
           >
             Request support for this template &rarr;
           </a>

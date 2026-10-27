@@ -21,6 +21,7 @@ import {
   Trash2,
   Lock,
   Minimize2,
+  Pencil,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMentionableUsers } from '@/hooks/useMentionableUsers';
@@ -46,12 +47,13 @@ import {
   buildAttachmentProxyUrl,
   attachedFilesHtml,
 } from '@/lib/attachment-utils';
-import { hasTicketTag } from '@/lib/tags';
-import { exitFullViewHref } from '@/lib/full-view';
+import { emailFromTag, hasEmailTag, hasTicketTag, tagsAtCreation } from '@/lib/tags';
+import { exitFullViewHref, reachedByInAppNavigation } from '@/lib/full-view';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
 import SLABadge from '../common/SLABadge';
+import SlaPausedNote from '../common/SlaPausedNote';
 import MentionInput from '../common/MentionInput';
 import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
@@ -69,6 +71,7 @@ import { useClickOutside } from '@/hooks';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import { assigneeIdentity } from '@/lib/assignee';
 import { newestFirst } from '@/lib/comment-order';
+import { MAX_TITLE_LENGTH, titleProblem } from '@/lib/ticket-title';
 
 type DetailTab = 'details' | 'history';
 
@@ -84,6 +87,8 @@ interface TicketDetailProps {
   onTypeChange?: (type: string, additionalFields?: Record<string, string>) => Promise<void>;
   onTagsChange?: (tags: string[]) => Promise<void>;
   onDescriptionChange?: (description: string) => Promise<void>;
+  /** Omitted where the reader may not rename the ticket; the control is then absent. */
+  onTitleChange?: (title: string) => Promise<void>;
   onResolutionChange?: (resolution: string) => Promise<void>;
   onMitigationChange?: (mitigation: string) => Promise<void>;
   onEffortChange?: (hours: EffortHoursUpdate) => Promise<void>;
@@ -122,6 +127,7 @@ export default function TicketDetail({
   onTypeChange,
   onTagsChange,
   onDescriptionChange,
+  onTitleChange,
   onResolutionChange,
   onMitigationChange,
   onEffortChange,
@@ -154,12 +160,20 @@ export default function TicketDetail({
   // with the ticket's quick view open again (#7727). Read after mount, as the
   // address is not available while rendering on the server.
   const [exitHref, setExitHref] = useState<string | null>(null);
+  const [cameFromApp, setCameFromApp] = useState(false);
   useEffect(() => {
     setExitHref(exitFullViewHref(ticket.id));
+    setCameFromApp(reachedByInAppNavigation());
   }, [ticket.id]);
   const leaveFullView = () => {
+    // A ticket opened from an email used to go "back" to an auth page: the
+    // link signs the reader in, and the sign-in redirects leave history
+    // entries behind (7771). So the browser's history is only trusted when
+    // this page was reached by navigating inside ZapDesk -- the dashboard,
+    // reports and boards link here without recording an origin, and back
+    // must still return to them.
     if (exitHref) router.push(exitHref);
-    else if (window.history.length > 1) router.back();
+    else if (cameFromApp) router.back();
     else router.push(isTicket ? '/tickets' : '/kanban');
   };
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -249,6 +263,14 @@ export default function TicketDetail({
 
   // Description editing state
   const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const editTitleButtonRef = useRef<HTMLButtonElement>(null);
+  // Set only by an explicit exit -- Escape, or a save that went through -- so
+  // the first render of a ticket cannot move focus to the pencil.
+  const returnFocusToEditTitle = useRef(false);
   const [isSavingDescription, setIsSavingDescription] = useState(false);
   const mentionNames = useMentionableUsers();
   const descriptionRef = useRef<HTMLDivElement>(null);
@@ -527,6 +549,72 @@ export default function TicketDetail({
     }
   };
 
+  // Title editing (7772). Customers often raise a ticket with a subject that
+  // says nothing, and the title is what every list, board and email shows.
+  const titleDraftTrimmed = titleDraft.trim();
+  const titleIssue = titleProblem(titleDraft);
+  // Both sides trimmed: a stored title with padding -- anything saved before
+  // the route started trimming -- would otherwise look edited on opening, and
+  // offer to save a change nobody made.
+  const titleUnchanged = titleDraftTrimmed === ticket.title.trim();
+  const canSaveTitle = titleIssue === null && !titleUnchanged;
+
+  const handleEditTitle = () => {
+    setTitleDraft(ticket.title);
+    setIsEditingTitle(true);
+  };
+
+  const handleCancelEditTitle = () => {
+    returnFocusToEditTitle.current = true;
+    setIsEditingTitle(false);
+    setTitleDraft('');
+  };
+
+  const handleSaveTitle = async () => {
+    if (!onTitleChange || !canSaveTitle) return;
+    setIsSavingTitle(true);
+    try {
+      await onTitleChange(titleDraftTrimmed);
+      returnFocusToEditTitle.current = true;
+      setIsEditingTitle(false);
+      setTitleDraft('');
+    } catch (error) {
+      // The parent has already said so; staying in edit keeps the typing.
+      console.error('Failed to save title:', error);
+    } finally {
+      setIsSavingTitle(false);
+    }
+  };
+
+  const handleTitleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    // An input method uses Enter to accept the candidate it is offering and
+    // Escape to drop it, so a title typed in Japanese, Chinese or Korean
+    // reaches this handler mid-word. Acting then would save half a title, or
+    // close the editor and lose the draft, under the person typing it.
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void handleSaveTitle();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      handleCancelEditTitle();
+    }
+  };
+
+  // Focus and select on opening, so the common case -- replacing a subject
+  // that says nothing -- is one gesture rather than three. On closing, focus
+  // goes back to the control that opened it: the input it was on has gone, and
+  // leaving focus on the body drops a keyboard reader at the top of the page.
+  useEffect(() => {
+    if (isEditingTitle) {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    } else if (returnFocusToEditTitle.current) {
+      returnFocusToEditTitle.current = false;
+      editTitleButtonRef.current?.focus();
+    }
+  }, [isEditingTitle]);
+
   // Description editing handlers
   const handleEditDescription = () => {
     setIsEditingDescription(true);
@@ -746,6 +834,23 @@ export default function TicketDetail({
     }
   };
 
+  // Who the timeline credits with raising the ticket (7770). Read from the
+  // tags the ticket was *created* with, so editing `email-from:` afterwards
+  // cannot rewrite the author of an entry that has already happened. The live
+  // tags are the fallback only while the history has not arrived -- which is
+  // also while the timeline is not drawn.
+  const creationTags = tagsAtCreation(history);
+  const senderAtCreation = creationTags ? emailFromTag(creationTags) : undefined;
+  const requesterEmail = ticket.requester.email?.toLowerCase() ?? '';
+  // The resolved requester is read off the *current* tag, so their name only
+  // belongs to this entry while the address still matches. When it does not,
+  // the address recorded at creation is all that can honestly be shown.
+  const timelineEmailRequester = !hasEmailTag(creationTags ?? ticket.tags)
+    ? undefined
+    : senderAtCreation && senderAtCreation.toLowerCase() !== requesterEmail
+      ? { displayName: senderAtCreation }
+      : { displayName: ticket.requester.displayName, avatarUrl: ticket.requester.avatarUrl };
+
   return (
     <div className="flex h-full">
       {/* Main content */}
@@ -763,9 +868,83 @@ export default function TicketDetail({
             >
               <ArrowLeft size={20} />
             </button>
-            <h1 className="flex-1 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-              {ticket.title}
-            </h1>
+            {isEditingTitle ? (
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={titleInputRef}
+                    value={titleDraft}
+                    onChange={(event) => setTitleDraft(event.target.value)}
+                    onKeyDown={handleTitleKeyDown}
+                    disabled={isSavingTitle}
+                    aria-label="Ticket title"
+                    aria-invalid={titleIssue !== null}
+                    aria-describedby={titleIssue ? 'ticket-title-problem' : undefined}
+                    className="min-w-0 flex-1 rounded-md border px-2 py-1 text-lg font-semibold outline-none focus:ring-1"
+                    style={{
+                      color: 'var(--text-primary)',
+                      backgroundColor: 'var(--surface)',
+                      borderColor: titleIssue ? 'var(--priority-urgent)' : 'var(--border)',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCancelEditTitle}
+                    disabled={isSavingTitle}
+                    className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveTitle}
+                    disabled={!canSaveTitle || isSavingTitle}
+                    className="btn-primary flex items-center gap-1 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isSavingTitle ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      'Save'
+                    )}
+                  </button>
+                </div>
+                {/* Say why Save is off rather than leaving a dead button. */}
+                {(titleIssue || titleUnchanged) && (
+                  <p
+                    id="ticket-title-problem"
+                    className="mt-1 text-xs"
+                    style={{ color: titleIssue ? 'var(--priority-urgent)' : 'var(--text-muted)' }}
+                  >
+                    {titleIssue ??
+                      `Unchanged — edit the title to save it. ${titleDraftTrimmed.length}/${MAX_TITLE_LENGTH} characters.`}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <h1
+                className="flex min-w-0 flex-1 items-center gap-2 text-lg font-semibold"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                <span className="min-w-0 break-words">{ticket.title}</span>
+                {onTitleChange && (
+                  <button
+                    type="button"
+                    ref={editTitleButtonRef}
+                    onClick={handleEditTitle}
+                    className="shrink-0 rounded p-1.5 transition-colors hover:bg-[var(--surface-hover)]"
+                    style={{ color: 'var(--text-muted)' }}
+                    aria-label="Edit title"
+                    title="Edit title"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                )}
+              </h1>
+            )}
             {/* Mobile details button */}
             <button
               onClick={() => setIsDetailsSidebarOpen(true)}
@@ -794,7 +973,7 @@ export default function TicketDetail({
               target="_blank"
               rel="noopener noreferrer"
               className="hidden items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)] sm:flex"
-              style={{ color: 'var(--primary)' }}
+              style={{ color: 'var(--color-brand)' }}
             >
               View in DevOps <ExternalLink size={14} />
             </a>
@@ -896,14 +1075,14 @@ export default function TicketDetail({
             onClick={() => setActiveTab('details')}
             className="relative px-4 py-2.5 text-sm font-medium transition-colors"
             style={{
-              color: activeTab === 'details' ? 'var(--primary)' : 'var(--text-muted)',
+              color: activeTab === 'details' ? 'var(--color-brand)' : 'var(--text-muted)',
             }}
           >
             Details
             {activeTab === 'details' && (
               <span
                 className="absolute right-0 bottom-0 left-0 h-0.5"
-                style={{ backgroundColor: 'var(--primary)' }}
+                style={{ backgroundColor: 'var(--color-brand)' }}
               />
             )}
           </button>
@@ -911,14 +1090,14 @@ export default function TicketDetail({
             onClick={() => setActiveTab('history')}
             className="relative px-4 py-2.5 text-sm font-medium transition-colors"
             style={{
-              color: activeTab === 'history' ? 'var(--primary)' : 'var(--text-muted)',
+              color: activeTab === 'history' ? 'var(--color-brand)' : 'var(--text-muted)',
             }}
           >
             Timeline
             {activeTab === 'history' && (
               <span
                 className="absolute right-0 bottom-0 left-0 h-0.5"
-                style={{ backgroundColor: 'var(--primary)' }}
+                style={{ backgroundColor: 'var(--color-brand)' }}
               />
             )}
           </button>
@@ -967,7 +1146,7 @@ export default function TicketDetail({
                       <button
                         onClick={handleEditDescription}
                         className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                        style={{ color: 'var(--primary)' }}
+                        style={{ color: 'var(--color-brand)' }}
                       >
                         Edit
                       </button>
@@ -1060,7 +1239,7 @@ export default function TicketDetail({
                     <button
                       onClick={handleStartEditResolution}
                       className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                      style={{ color: 'var(--primary)' }}
+                      style={{ color: 'var(--color-brand)' }}
                     >
                       Edit
                     </button>
@@ -1164,7 +1343,7 @@ export default function TicketDetail({
                         <button
                           onClick={handleStartEditMitigation}
                           className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                          style={{ color: 'var(--primary)' }}
+                          style={{ color: 'var(--color-brand)' }}
                         >
                           Edit
                         </button>
@@ -1299,7 +1478,11 @@ export default function TicketDetail({
           </div>
         ) : (
           <div className="min-w-0 flex-1 overflow-auto p-4">
-            <TicketHistory updates={history} loading={historyLoading} />
+            <TicketHistory
+              updates={history}
+              loading={historyLoading}
+              emailRequester={timelineEmailRequester}
+            />
           </div>
         )}
 
@@ -1350,7 +1533,7 @@ export default function TicketDetail({
                         color: active
                           ? internal
                             ? 'var(--text-primary)'
-                            : 'var(--primary)'
+                            : 'var(--color-brand)'
                           : 'var(--text-muted)',
                       }}
                     >
@@ -1455,7 +1638,9 @@ export default function TicketDetail({
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="rounded p-2 transition-colors hover:bg-[var(--surface-hover)]"
-                style={{ color: pendingFiles.length > 0 ? 'var(--primary)' : 'var(--text-muted)' }}
+                style={{
+                  color: pendingFiles.length > 0 ? 'var(--color-brand)' : 'var(--text-muted)',
+                }}
                 title="Attach file"
                 disabled={!onUploadAttachment}
               >
@@ -1720,6 +1905,11 @@ export default function TicketDetail({
                   SLA Status
                 </label>
                 <SLABadge slaInfo={ticket.slaInfo} variant="full" showLevel />
+                {/* The badge above counts wall-clock time from creation, which
+                    includes any stretch where the ticket was nobody's to move.
+                    The history is already loaded on this screen, so the time
+                    that should not have counted can be stated exactly (7386). */}
+                <SlaPausedNote updates={history} createdAt={ticket.createdAt} />
               </div>
             )}
 
@@ -1789,7 +1979,7 @@ export default function TicketDetail({
                               style={{
                                 color:
                                   type.name === ticket.workItemType
-                                    ? 'var(--primary)'
+                                    ? 'var(--color-brand)'
                                     : 'var(--text-primary)',
                               }}
                             >
@@ -1883,7 +2073,7 @@ export default function TicketDetail({
                         onClick={() => setIsAddingTag(true)}
                         className="flex items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors hover:bg-[var(--surface-hover)]"
                         style={{
-                          color: 'var(--primary)',
+                          color: 'var(--color-brand)',
                           cursor: 'pointer',
                           border: '1px dashed var(--border)',
                         }}
