@@ -607,7 +607,11 @@ async function cachedRepoIssues(
  * beside the real tickets, which buried them.
  */
 export function gitHubTicketLabel(): string {
-  return (process.env.GITHUB_TICKET_LABEL || 'ticket').trim().toLowerCase();
+  // Trimmed before the fallback, not after: a value of "   " is truthy, so
+  // falling back afterwards left the label as the empty string. No tag
+  // matches that, and the Tickets tab would have quietly lost every GitHub
+  // ticket rather than saying anything was wrong.
+  return (process.env.GITHUB_TICKET_LABEL?.trim() || 'ticket').toLowerCase();
 }
 
 /**
