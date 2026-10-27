@@ -20,8 +20,11 @@ export interface ProcessTemplateConfig {
     // Feature type - for feature-level planning (undefined if not available)
     featureType?: string;
 
-    // Epic type - for epic-level planning
-    epicType: string;
+    // Epic type - for epic-level planning. Undefined for a source that has no
+    // such thing: GitHub's nearest equivalent is a milestone, which is not a
+    // work item type, so naming one would describe something that does not
+    // exist.
+    epicType?: string;
   };
 
   // Field mappings
@@ -56,6 +59,7 @@ import { basicConfig } from './basic';
 import { scrumConfig } from './scrum';
 import { agileConfig } from './agile';
 import { supportTicketConfig } from './support-ticket';
+import { gitHubConfig } from './github';
 
 // Registry of all supported templates
 // Key is normalized template name (lowercase, hyphens)
@@ -65,6 +69,7 @@ const templates: Record<string, ProcessTemplateConfig> = {
   scrum: scrumConfig,
   agile: agileConfig,
   'support-ticket': supportTicketConfig,
+  github: gitHubConfig,
 };
 
 // Default template for backward compatibility
