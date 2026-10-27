@@ -118,3 +118,23 @@ export function restoreBoardView<T>(): Partial<T> | null {
     return null;
   }
 }
+
+/**
+ * True when this page was reached by navigating inside ZapDesk, so the
+ * browser's previous history entry is a ZapDesk page.
+ *
+ * Client-side navigation does not load a new document, so the document's
+ * navigation entry still names the page the tab first loaded. When that is
+ * this page, it was opened directly -- a link in an email, a bookmark, a
+ * refresh -- and "back" may lead to a sign-in redirect or another site (7771).
+ */
+export function reachedByInAppNavigation(): boolean {
+  if (typeof window === 'undefined' || typeof performance === 'undefined') return false;
+  const [entry] = performance.getEntriesByType('navigation');
+  if (!entry) return false;
+  try {
+    return new URL(entry.name).pathname !== window.location.pathname;
+  } catch {
+    return false;
+  }
+}

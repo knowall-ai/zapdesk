@@ -13,7 +13,7 @@ import {
   inlineProxyImages,
   type OutboundAttachment,
 } from './email-attachments';
-import { escapeHtml } from './email-clean';
+import { escapeHtml, sanitizeEmailHtml } from './email-clean';
 import {
   assignmentNotificationTemplate,
   ticketConfirmationTemplate,
@@ -22,6 +22,7 @@ import {
   ticketUpdatedTemplate,
   customerReplyNotificationTemplate,
   newTicketNotificationTemplate,
+  internalNoteNotificationTemplate,
   layoutWrapper,
   type HistoryEntry,
   type TicketFieldChange,
@@ -536,7 +537,11 @@ export async function sendAgentReply(
     // Pasted images are stored as proxy URLs that only a signed-in ZapDesk
     // session can fetch. Sent as-is the customer gets a broken image where the
     // screenshot should be, so the bytes travel with the message instead.
-    const inlined = inlineProxyImages(replyHtml);
+    //
+    // The reply comes straight from the request body, so a direct POST can
+    // carry anything the browser's editor would have stripped. This is the
+    // one message that reaches the customer, so it is sanitised here too.
+    const inlined = inlineProxyImages(sanitizeEmailHtml(replyHtml));
     // Files attached with the paperclip are linked, not drawn; they go on the
     // message as ordinary attachments (#7376).
     const linked = attachLinkedFiles(inlined.html, inlined.attachments);
@@ -660,7 +665,9 @@ export async function sendCustomerReplyNotification(
       ticketId,
       ticketSubject,
       customerEmail,
-      replyContentHtml,
+      // Sanitised here for the same reason as the internal note above: the
+      // markup arrives from a request body, not from the editor that wrote it.
+      replyContentHtml: sanitizeEmailHtml(replyContentHtml),
     });
     await sendViaGraph({
       to: agentEmail,
@@ -686,6 +693,48 @@ export async function sendCustomerReplyNotification(
  * `recipients` is one address or several separated by commas or semicolons.
  * Errors are logged and swallowed: the ticket already exists either way.
  */
+/**
+ * Tells the support team about an internal note (7767).
+ *
+ * `recipients` is one address or several. The note itself is quoted, because
+ * the point of telling somebody is that they can judge whether it needs them
+ * without opening the ticket first. Errors are logged and swallowed: the note
+ * is on the ticket either way.
+ */
+export async function sendInternalNoteNotification(opts: {
+  ticketId: number;
+  ticketSubject: string;
+  authorName: string;
+  noteHtml: string;
+  recipients: string;
+}): Promise<void> {
+  if (!isEmailConfigured()) return;
+  try {
+    // The note is written in the browser's editor and reaches here straight
+    // from the request body, so a direct POST can carry anything: the
+    // client-side sanitiser is not in the path. `sanitizeEmailHtml` is the
+    // server-side one, and it keeps the ordinary markup a note is written in.
+    const html = internalNoteNotificationTemplate({
+      ...opts,
+      noteHtml: sanitizeEmailHtml(opts.noteHtml),
+    });
+    await sendViaGraph({
+      to: opts.recipients,
+      subject: `[ZapDesk #${opts.ticketId}] Internal note — "${opts.ticketSubject}"`,
+      html,
+      messageId: generateMessageId(opts.ticketId, 'team-internal-note'),
+    });
+    console.log(
+      `[Email] Internal note notification sent for ticket #${opts.ticketId} to ${opts.recipients}`
+    );
+  } catch (error) {
+    console.error(
+      `[Email] Failed to send internal note notification for ticket #${opts.ticketId}:`,
+      error
+    );
+  }
+}
+
 export async function sendNewTicketNotification(opts: {
   ticketId: number;
   ticketSubject: string;

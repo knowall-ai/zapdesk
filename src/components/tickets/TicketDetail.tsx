@@ -47,8 +47,8 @@ import {
   buildAttachmentProxyUrl,
   attachedFilesHtml,
 } from '@/lib/attachment-utils';
-import { hasTicketTag } from '@/lib/tags';
-import { exitFullViewHref } from '@/lib/full-view';
+import { emailFromTag, hasEmailTag, hasTicketTag, tagsAtCreation } from '@/lib/tags';
+import { exitFullViewHref, reachedByInAppNavigation } from '@/lib/full-view';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
@@ -160,12 +160,20 @@ export default function TicketDetail({
   // with the ticket's quick view open again (#7727). Read after mount, as the
   // address is not available while rendering on the server.
   const [exitHref, setExitHref] = useState<string | null>(null);
+  const [cameFromApp, setCameFromApp] = useState(false);
   useEffect(() => {
     setExitHref(exitFullViewHref(ticket.id));
+    setCameFromApp(reachedByInAppNavigation());
   }, [ticket.id]);
   const leaveFullView = () => {
+    // A ticket opened from an email used to go "back" to an auth page: the
+    // link signs the reader in, and the sign-in redirects leave history
+    // entries behind (7771). So the browser's history is only trusted when
+    // this page was reached by navigating inside ZapDesk -- the dashboard,
+    // reports and boards link here without recording an origin, and back
+    // must still return to them.
     if (exitHref) router.push(exitHref);
-    else if (window.history.length > 1) router.back();
+    else if (cameFromApp) router.back();
     else router.push(isTicket ? '/tickets' : '/kanban');
   };
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -826,6 +834,23 @@ export default function TicketDetail({
     }
   };
 
+  // Who the timeline credits with raising the ticket (7770). Read from the
+  // tags the ticket was *created* with, so editing `email-from:` afterwards
+  // cannot rewrite the author of an entry that has already happened. The live
+  // tags are the fallback only while the history has not arrived -- which is
+  // also while the timeline is not drawn.
+  const creationTags = tagsAtCreation(history);
+  const senderAtCreation = creationTags ? emailFromTag(creationTags) : undefined;
+  const requesterEmail = ticket.requester.email?.toLowerCase() ?? '';
+  // The resolved requester is read off the *current* tag, so their name only
+  // belongs to this entry while the address still matches. When it does not,
+  // the address recorded at creation is all that can honestly be shown.
+  const timelineEmailRequester = !hasEmailTag(creationTags ?? ticket.tags)
+    ? undefined
+    : senderAtCreation && senderAtCreation.toLowerCase() !== requesterEmail
+      ? { displayName: senderAtCreation }
+      : { displayName: ticket.requester.displayName, avatarUrl: ticket.requester.avatarUrl };
+
   return (
     <div className="flex h-full">
       {/* Main content */}
@@ -1453,7 +1478,11 @@ export default function TicketDetail({
           </div>
         ) : (
           <div className="min-w-0 flex-1 overflow-auto p-4">
-            <TicketHistory updates={history} loading={historyLoading} />
+            <TicketHistory
+              updates={history}
+              loading={historyLoading}
+              emailRequester={timelineEmailRequester}
+            />
           </div>
         )}
 
