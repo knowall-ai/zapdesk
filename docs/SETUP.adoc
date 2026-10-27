@@ -112,14 +112,14 @@ az appservice plan create \
 
 # Create Web App
 az webapp create \
-  --name zapdesk-knowall \
+  --name zapdesk-knowallai \
   --resource-group KnowAllAIRG \
   --plan zapdesk-plan \
   --runtime "NODE:20-lts"
 
 # Enable HTTPS only
 az webapp update \
-  --name zapdesk-knowall \
+  --name zapdesk-knowallai \
   --resource-group KnowAllAIRG \
   --https-only true
 ----
@@ -140,6 +140,13 @@ App Service only accepts traffic from Front Door, so the
   block common scanner paths and the `TRACE` method, and rate-limit to a few
   hundred requests a minute per IP. The app's own endpoints are well within
   that: the mailbox poller calls `/api/email/poll` once a minute from one IP.
++
+A policy created in the portal starts in *Detection* mode, which logs what
+the rules match and blocks nothing. That is the right place to begin: watch
+the logs until no real traffic is matched, then switch it to *Prevention*,
+or the rules above are decoration. `az network front-door waf-policy update
+--mode Prevention` does it, and the policy's overview page shows the mode it
+is in now.
 . Add the custom domain in Front Door with a managed certificate. Front Door
   gives you a `_dnsauth.zapdesk` TXT record to prove ownership; add it to DNS
   and wait for validation.
@@ -180,7 +187,7 @@ Configure these secrets in your GitHub repository for the CI/CD pipeline:
 |Secret |Description
 
 |`AZURE_WEBAPP_PUBLISH_PROFILE`
-|Azure Web App publish profile (XML). Get with: `az webapp deployment list-publishing-profiles --name zapdesk-knowall --resource-group KnowAllAIRG --xml`
+|Azure Web App publish profile (XML). Get with: `az webapp deployment list-publishing-profiles --name zapdesk-knowallai --resource-group KnowAllAIRG --xml`
 
 |`NEXTAUTH_SECRET`
 |Random 32-byte hex string. Generate with: `openssl rand -hex 32`
@@ -209,7 +216,7 @@ Configure these secrets in your GitHub repository for the CI/CD pipeline:
 ----
 # Auto-generated secrets
 az webapp deployment list-publishing-profiles \
-  --name zapdesk-knowall \
+  --name zapdesk-knowallai \
   --resource-group KnowAllAIRG \
   --xml | gh secret set AZURE_WEBAPP_PUBLISH_PROFILE
 

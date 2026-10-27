@@ -141,8 +141,14 @@ doing that, but the live KnowAll AI deployment uses neither:
 
 Whichever you pick, *run exactly one*. Each poll lists unread messages and
 only then marks them read, and the endpoint has no concurrency guard, so two
-pollers can file the same email twice. Hand over with a gap, never an
-overlap: unread mail simply waits for the next poll.
+pollers can file the same email twice.
+
+Hand over with a gap, never an overlap. Turning the old poller off does not
+stop the run already in flight -- a disabled GitHub Actions schedule lets a
+started job finish, and a poll can take up to 90 seconds -- so disable the
+old one, wait for its current run to report finished, and only then enable
+the new one. Unread mail simply waits for the next poll, so the gap costs
+nothing; the overlap costs duplicate tickets.
 
 == Email Threading
 
@@ -210,5 +216,9 @@ The new title is shown in the email's list of changes.
 |Outbound mail unconfigured, or the sender mailbox is restricted by the Application Access Policy.
 
 |Same email creates two tickets
-|`mark-as-read` failed after a successful ingest. Inspect server logs for `failed to mark … read`. The mailbox can be safely cleaned up; future polls will continue normally.
+|Either two pollers ran at once -- check that only one of the Logic App, the
+Functions timer and the GitHub Actions workflow is enabled, and that no run
+of the old one overlapped the new -- or `mark-as-read` failed after a
+successful ingest, for which the server logs carry `failed to mark … read`.
+The mailbox can be safely cleaned up; future polls will continue normally.
 |===
