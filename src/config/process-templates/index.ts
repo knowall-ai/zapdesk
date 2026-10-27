@@ -55,6 +55,7 @@ import { tMinus15Config } from './t-minus-15';
 import { basicConfig } from './basic';
 import { scrumConfig } from './scrum';
 import { agileConfig } from './agile';
+import { supportTicketConfig } from './support-ticket';
 
 // Registry of all supported templates
 // Key is normalized template name (lowercase, hyphens)
@@ -63,6 +64,7 @@ const templates: Record<string, ProcessTemplateConfig> = {
   basic: basicConfig,
   scrum: scrumConfig,
   agile: agileConfig,
+  'support-ticket': supportTicketConfig,
 };
 
 // Default template for backward compatibility
