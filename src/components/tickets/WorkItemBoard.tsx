@@ -1358,7 +1358,10 @@ export default function WorkItemBoard({
                       )}
                       {hasColumn('subject') && (
                         <td className={`${cellPadding} max-w-xs`}>
-                          {isGitHubItem(item) && item.sourceUrl ? (
+                          {isGitHubItem(item) && item.sourceUrl && !onWorkItemClick ? (
+                            // Nothing here opens a pop-up, so GitHub is still
+                            // better than nothing. With a handler the issue
+                            // opens in ZapDesk like every other row (#566).
                             <>
                               <a
                                 href={item.sourceUrl}
@@ -1402,6 +1405,17 @@ export default function WorkItemBoard({
                               }}
                             >
                               <span className="line-clamp-2">{item.title}</span>
+                              {/* A GitHub row has no work item id to show, so
+                                  the reference is how a reader tells which
+                                  repository it came from. */}
+                              {isGitHubItem(item) && item.sourceRef && (
+                                <span
+                                  className="block text-xs"
+                                  style={{ color: 'var(--text-muted)' }}
+                                >
+                                  {item.sourceRef}
+                                </span>
+                              )}
                             </button>
                           ) : (
                             <Link
