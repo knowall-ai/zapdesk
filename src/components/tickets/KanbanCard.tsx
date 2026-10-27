@@ -167,8 +167,8 @@ export default function KanbanCard({
           : item.title
       }
     >
-      {isGitHubItem(item) ? (
-        // Read-only: the card opens the issue on GitHub (#447).
+      {isGitHubItem(item) && !onItemClick ? (
+        // No pop-up on this board, so the card still opens GitHub (#447).
         <a
           href={item.sourceUrl ?? item.devOpsUrl}
           target="_blank"

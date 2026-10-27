@@ -280,7 +280,10 @@ export default function WorkItemDetailContent({
   // the comment helper should drop the "visible to customers" wording (#372).
   // Default to true when tags are missing so we don't accidentally hide ticket
   // copy from a real ticket whose details haven't fully loaded yet.
-  const isTicket = workItem.tags ? hasTicketTag(workItem.tags) : true;
+  // Everything written on a GitHub issue is public, so there is no internal
+  // note to offer there and no customer-facing wording that would be true.
+  const isTicket =
+    workItem.source === 'github' ? false : workItem.tags ? hasTicketTag(workItem.tags) : true;
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);

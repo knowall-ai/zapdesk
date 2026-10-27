@@ -14,6 +14,7 @@ import {
   useMemo,
 } from 'react';
 import { toast } from 'sonner';
+import { isGitHubItem } from '@/lib/github-kanban';
 import Link from 'next/link';
 import { RefreshCw, FolderOpen, User, Radio } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
@@ -524,10 +525,18 @@ function StandupPageContent() {
         mySeq !== ticketFetchSeqRef.current || currentOrgRef.current !== requestedOrg;
       setIsLoadingTicket(true);
       try {
-        const response = await devOpsGet(`/api/devops/tickets/${item.id}`);
+        // A GitHub issue is not in DevOps: its body, comments and status are
+        // read from GitHub, by the reference the card carries (#566).
+        const gitHubRef = isGitHubItem(item) ? item.sourceRef : undefined;
+        const response = await devOpsGet(
+          gitHubRef
+            ? `/api/github/issue?ref=${encodeURIComponent(gitHubRef)}`
+            : `/api/devops/tickets/${item.id}`
+        );
         if (isStale()) return;
         if (!response.ok) {
-          throw new Error('Failed to fetch ticket');
+          const problem = (await response.json().catch(() => ({}))) as { error?: string };
+          throw new Error(problem.error || 'Failed to fetch ticket');
         }
         const data = (await response.json()) as {
           ticket: Ticket & { createdAt: string; updatedAt: string };
@@ -541,6 +550,7 @@ function StandupPageContent() {
       } catch (err) {
         if (isStale()) return;
         console.error('Failed to load ticket for dialog:', err);
+        toast.error(err instanceof Error ? err.message : 'Failed to open that item');
       } finally {
         if (!isStale()) {
           setIsLoadingTicket(false);
@@ -566,11 +576,30 @@ function StandupPageContent() {
   // the work item.
   const handleDialogStateChange = useCallback(
     async (workItemId: number, state: string) => {
-      const project = selectedTicket?.id === workItemId ? selectedTicket.project : undefined;
-      await handleStateChange(workItemId, state, project);
+      const open = selectedTicket?.id === workItemId ? selectedTicket : undefined;
+
+      // A GitHub issue's status is written back to GitHub as a state and a
+      // label, through the GitHub process template (#566, #567).
+      if (open?.source === 'github' && open.sourceRef) {
+        const response = await devOpsPatch('/api/github/issue', {
+          ref: open.sourceRef,
+          status: state,
+        });
+        if (!response.ok) {
+          const problem = (await response.json().catch(() => ({}))) as { error?: string };
+          throw new Error(problem.error || 'Failed to update the GitHub issue');
+        }
+        setSelectedTicket((prev) =>
+          prev ? { ...prev, devOpsState: state, status: state as Ticket['status'] } : null
+        );
+        fetchStandupData(true, true, true);
+        return;
+      }
+
+      await handleStateChange(workItemId, state, open?.project);
       setSelectedTicket((prev) => (prev ? { ...prev, devOpsState: state } : null));
     },
-    [handleStateChange, selectedTicket]
+    [handleStateChange, selectedTicket, devOpsPatch, fetchStandupData]
   );
 
   // Generic PATCH helper used by the dialog's assignee/priority/tags/update handlers.
@@ -667,13 +696,34 @@ function StandupPageContent() {
       updates: { title?: string; description?: string; resolution?: string }
     ) => {
       if (!selectedTicket || selectedTicket.id !== workItemId) return;
+
+      // A GitHub issue's title is written back to GitHub. Its body is not:
+      // GitHub stores Markdown and the editor here writes HTML, so saving one
+      // as the other would mangle the issue for everyone reading it on
+      // GitHub. The description stays read-only until there is a Markdown
+      // path for it.
+      if (selectedTicket.source === 'github' && selectedTicket.sourceRef) {
+        if (updates.title === undefined) return;
+        const response = await devOpsPatch('/api/github/issue', {
+          ref: selectedTicket.sourceRef,
+          title: updates.title,
+        });
+        if (!response.ok) {
+          const problem = (await response.json().catch(() => ({}))) as { error?: string };
+          throw new Error(problem.error || 'Failed to update the GitHub issue');
+        }
+        setSelectedTicket((prev) => (prev ? { ...prev, title: updates.title! } : null));
+        fetchStandupData(true, true, true);
+        return;
+      }
+
       await patchTicket(workItemId, {
         ...updates,
         project: selectedTicket.project,
         workItemType: selectedTicket.workItemType,
       });
     },
-    [patchTicket, selectedTicket]
+    [patchTicket, selectedTicket, devOpsPatch, fetchStandupData]
   );
 
   const handleDialogTypeChange = useCallback(
