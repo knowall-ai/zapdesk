@@ -94,6 +94,30 @@ describe('getWorkItemComments uses it', () => {
     expect(comments[0].author.displayName).toBe('Ada Lovelace');
     expect(comments[1].author.displayName).toBe('Ticket Creator');
   });
+
+  it('credits a teammate who answered an internal note by email', async () => {
+    // Ingest stores that reply behind the internal-note marker, ahead of the
+    // sender header; the author must still be read from the header.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          comments: [
+            {
+              id: 1,
+              text: '[Internal Note] <div><p><strong>Email reply from:</strong> ada.lovelace@example.test</p><p>Agreed</p></div>',
+              createdDate: '2026-01-01T00:00:00Z',
+              createdBy: PAT_OWNER,
+            },
+          ],
+        })
+      )
+    );
+
+    const [comment] = await new AzureDevOpsService('token', 'acme').getWorkItemComments('Proj', 1);
+    expect(comment.isInternal).toBe(true);
+    expect(comment.author.displayName).toBe('Ada Lovelace');
+  });
 });
 
 // The author is read from the comment's own text, so a caller who can write

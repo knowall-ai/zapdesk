@@ -1092,7 +1092,9 @@ export class AzureDevOpsService {
           id: c.id,
           content: stripInternalNoteMarker(c.text),
           createdAt: new Date(c.createdDate),
-          author: commentAuthor(c.text, c.createdBy),
+          // Read past the marker: a teammate's emailed reply to an internal
+          // note carries both, and the sender header follows the marker.
+          author: commentAuthor(stripInternalNoteMarker(c.text), c.createdBy),
           isInternal: isInternalNote(c.text),
         })
       ) || []

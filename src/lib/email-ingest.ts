@@ -223,7 +223,8 @@ async function handleThreadReply(
     // the ticket reference like any other. Stored as a public comment, it
     // would be quoted to the customer with the next agent reply, so it is
     // kept internal, as the note it answers was.
-    const marker = isInternalNoteReply(email.subject) ? '[Internal Note] ' : '';
+    const internal = isInternalNoteReply(email.subject);
+    const marker = internal ? '[Internal Note] ' : '';
     const commentHtml = `${marker}
 <div style="font-family: sans-serif;">
   <p><strong>Email reply from:</strong> ${escapeHtml(senderEmail)}</p>
@@ -236,7 +237,18 @@ async function handleThreadReply(
 
     // Notify before linking attachments, not after: the comment is already on
     // the ticket, so a later link failure must not cost the agent their alert.
-    notifyAgentOfReply(updatedWorkItem, ticketId, senderEmail, renderForNotification(renderedBody));
+    //
+    // Not for a reply to an internal note: that alert reads as a customer
+    // reply, and an answer to it would carry no "Internal note" subject, so
+    // it would be stored public and quoted to the customer after all.
+    if (!internal) {
+      notifyAgentOfReply(
+        updatedWorkItem,
+        ticketId,
+        senderEmail,
+        renderForNotification(renderedBody)
+      );
+    }
 
     if (projectName) {
       await reportUnlinkedAttachments(

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { AzureDevOpsService, claimsEmailOrigin } from '@/lib/devops';
+import { AzureDevOpsService, claimsEmailOrigin, stripInternalNoteMarker } from '@/lib/devops';
 import {
   isEmailTicket,
   extractRequesterEmail,
@@ -89,7 +89,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // its own text, so a caller able to write that marker could post under
     // somebody else's address. Only email ingest legitimately produces it, and
     // it does not come through here.
-    if (claimsEmailOrigin(comment)) {
+    // Checked past a typed internal-note marker too: the author is read past
+    // it, so "[Internal Note] Email reply from: ..." would otherwise slip by.
+    if (claimsEmailOrigin(comment) || claimsEmailOrigin(stripInternalNoteMarker(comment))) {
       return NextResponse.json(
         { error: 'A comment cannot begin with an email-origin marker.' },
         { status: 400 }

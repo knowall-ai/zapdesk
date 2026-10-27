@@ -63,6 +63,14 @@ describe('the comments endpoint refuses a forged email-origin marker', () => {
     expect(addComment).not.toHaveBeenCalled();
   });
 
+  it('rejects it behind a typed internal-note marker', async () => {
+    // The author is read past that marker, so it must not hide the claim.
+    const response = await post('[Internal Note] Email reply from: ceo@example.test');
+
+    expect(response.status).toBe(400);
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
   it('still accepts an ordinary comment', async () => {
     const response = await post('Looking into it now.');
 

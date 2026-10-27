@@ -100,6 +100,9 @@ describe('merge point: a customer reply still notifies the assigned agent', () =
     const ops = JSON.parse(String(commentCall?.init?.body)) as Array<{ value: unknown }>;
     const { isInternalNote } = await import('./devops');
     expect(ops.some((op) => isInternalNote(String(op.value)))).toBe(true);
+    // The "new customer reply" alert would be answered without the
+    // internal-note subject, and that answer stored public.
+    expect(h.sendCustomerReplyNotification).not.toHaveBeenCalled();
   });
 
   it('leaves an ordinary reply public', async () => {
