@@ -21,6 +21,7 @@ import {
   Trash2,
   Lock,
   Minimize2,
+  Pencil,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMentionableUsers } from '@/hooks/useMentionableUsers';
@@ -70,6 +71,7 @@ import { useClickOutside } from '@/hooks';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import { assigneeIdentity } from '@/lib/assignee';
 import { newestFirst } from '@/lib/comment-order';
+import { MAX_TITLE_LENGTH, titleProblem } from '@/lib/ticket-title';
 
 type DetailTab = 'details' | 'history';
 
@@ -85,6 +87,8 @@ interface TicketDetailProps {
   onTypeChange?: (type: string, additionalFields?: Record<string, string>) => Promise<void>;
   onTagsChange?: (tags: string[]) => Promise<void>;
   onDescriptionChange?: (description: string) => Promise<void>;
+  /** Omitted where the reader may not rename the ticket; the control is then absent. */
+  onTitleChange?: (title: string) => Promise<void>;
   onResolutionChange?: (resolution: string) => Promise<void>;
   onMitigationChange?: (mitigation: string) => Promise<void>;
   onEffortChange?: (hours: EffortHoursUpdate) => Promise<void>;
@@ -123,6 +127,7 @@ export default function TicketDetail({
   onTypeChange,
   onTagsChange,
   onDescriptionChange,
+  onTitleChange,
   onResolutionChange,
   onMitigationChange,
   onEffortChange,
@@ -250,6 +255,14 @@ export default function TicketDetail({
 
   // Description editing state
   const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const editTitleButtonRef = useRef<HTMLButtonElement>(null);
+  // Set only by an explicit exit -- Escape, or a save that went through -- so
+  // the first render of a ticket cannot move focus to the pencil.
+  const returnFocusToEditTitle = useRef(false);
   const [isSavingDescription, setIsSavingDescription] = useState(false);
   const mentionNames = useMentionableUsers();
   const descriptionRef = useRef<HTMLDivElement>(null);
@@ -528,6 +541,72 @@ export default function TicketDetail({
     }
   };
 
+  // Title editing (7772). Customers often raise a ticket with a subject that
+  // says nothing, and the title is what every list, board and email shows.
+  const titleDraftTrimmed = titleDraft.trim();
+  const titleIssue = titleProblem(titleDraft);
+  // Both sides trimmed: a stored title with padding -- anything saved before
+  // the route started trimming -- would otherwise look edited on opening, and
+  // offer to save a change nobody made.
+  const titleUnchanged = titleDraftTrimmed === ticket.title.trim();
+  const canSaveTitle = titleIssue === null && !titleUnchanged;
+
+  const handleEditTitle = () => {
+    setTitleDraft(ticket.title);
+    setIsEditingTitle(true);
+  };
+
+  const handleCancelEditTitle = () => {
+    returnFocusToEditTitle.current = true;
+    setIsEditingTitle(false);
+    setTitleDraft('');
+  };
+
+  const handleSaveTitle = async () => {
+    if (!onTitleChange || !canSaveTitle) return;
+    setIsSavingTitle(true);
+    try {
+      await onTitleChange(titleDraftTrimmed);
+      returnFocusToEditTitle.current = true;
+      setIsEditingTitle(false);
+      setTitleDraft('');
+    } catch (error) {
+      // The parent has already said so; staying in edit keeps the typing.
+      console.error('Failed to save title:', error);
+    } finally {
+      setIsSavingTitle(false);
+    }
+  };
+
+  const handleTitleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    // An input method uses Enter to accept the candidate it is offering and
+    // Escape to drop it, so a title typed in Japanese, Chinese or Korean
+    // reaches this handler mid-word. Acting then would save half a title, or
+    // close the editor and lose the draft, under the person typing it.
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void handleSaveTitle();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      handleCancelEditTitle();
+    }
+  };
+
+  // Focus and select on opening, so the common case -- replacing a subject
+  // that says nothing -- is one gesture rather than three. On closing, focus
+  // goes back to the control that opened it: the input it was on has gone, and
+  // leaving focus on the body drops a keyboard reader at the top of the page.
+  useEffect(() => {
+    if (isEditingTitle) {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    } else if (returnFocusToEditTitle.current) {
+      returnFocusToEditTitle.current = false;
+      editTitleButtonRef.current?.focus();
+    }
+  }, [isEditingTitle]);
+
   // Description editing handlers
   const handleEditDescription = () => {
     setIsEditingDescription(true);
@@ -764,9 +843,83 @@ export default function TicketDetail({
             >
               <ArrowLeft size={20} />
             </button>
-            <h1 className="flex-1 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-              {ticket.title}
-            </h1>
+            {isEditingTitle ? (
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={titleInputRef}
+                    value={titleDraft}
+                    onChange={(event) => setTitleDraft(event.target.value)}
+                    onKeyDown={handleTitleKeyDown}
+                    disabled={isSavingTitle}
+                    aria-label="Ticket title"
+                    aria-invalid={titleIssue !== null}
+                    aria-describedby={titleIssue ? 'ticket-title-problem' : undefined}
+                    className="min-w-0 flex-1 rounded-md border px-2 py-1 text-lg font-semibold outline-none focus:ring-1"
+                    style={{
+                      color: 'var(--text-primary)',
+                      backgroundColor: 'var(--surface)',
+                      borderColor: titleIssue ? 'var(--priority-urgent)' : 'var(--border)',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCancelEditTitle}
+                    disabled={isSavingTitle}
+                    className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveTitle}
+                    disabled={!canSaveTitle || isSavingTitle}
+                    className="btn-primary flex items-center gap-1 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isSavingTitle ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      'Save'
+                    )}
+                  </button>
+                </div>
+                {/* Say why Save is off rather than leaving a dead button. */}
+                {(titleIssue || titleUnchanged) && (
+                  <p
+                    id="ticket-title-problem"
+                    className="mt-1 text-xs"
+                    style={{ color: titleIssue ? 'var(--priority-urgent)' : 'var(--text-muted)' }}
+                  >
+                    {titleIssue ??
+                      `Unchanged — edit the title to save it. ${titleDraftTrimmed.length}/${MAX_TITLE_LENGTH} characters.`}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <h1
+                className="flex min-w-0 flex-1 items-center gap-2 text-lg font-semibold"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                <span className="min-w-0 break-words">{ticket.title}</span>
+                {onTitleChange && (
+                  <button
+                    type="button"
+                    ref={editTitleButtonRef}
+                    onClick={handleEditTitle}
+                    className="shrink-0 rounded p-1.5 transition-colors hover:bg-[var(--surface-hover)]"
+                    style={{ color: 'var(--text-muted)' }}
+                    aria-label="Edit title"
+                    title="Edit title"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                )}
+              </h1>
+            )}
             {/* Mobile details button */}
             <button
               onClick={() => setIsDetailsSidebarOpen(true)}
