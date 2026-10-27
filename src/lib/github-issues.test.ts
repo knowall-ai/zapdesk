@@ -13,7 +13,9 @@ import {
   getGitHubTickets,
   gitHubIssueToTicket,
   gitHubIssuesConfig,
+  gitHubTicketLabel,
   gitHubUserToPerson,
+  isGitHubSupportTicket,
   parseProjectRepos,
   parseUserMap,
   type GitHubIssue,
@@ -730,6 +732,67 @@ describe('fetching', () => {
       const { tickets } = await getGitHubTickets([project('Internal')], 'KnowAll', config);
 
       expect(tickets).toHaveLength(1);
+    });
+  });
+
+  // The Tickets tab is for support tickets. DevOps has always needed the
+  // `ticket` tag; GitHub had no equivalent, so every development issue in
+  // every mapped repository was listed beside the real tickets (#568).
+  describe('isGitHubSupportTicket', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('keeps an issue labelled ticket', () => {
+      expect(isGitHubSupportTicket({ tags: ['bug', 'ticket'] })).toBe(true);
+    });
+
+    it('drops development issues', () => {
+      expect(isGitHubSupportTicket({ tags: ['enhancement'] })).toBe(false);
+      expect(isGitHubSupportTicket({ tags: [] })).toBe(false);
+      expect(isGitHubSupportTicket({})).toBe(false);
+    });
+
+    it('ignores the casing and padding GitHub labels are typed with', () => {
+      expect(isGitHubSupportTicket({ tags: [' Ticket '] })).toBe(true);
+    });
+
+    it('does not match a label that merely contains the word', () => {
+      expect(isGitHubSupportTicket({ tags: ['ticketing'] })).toBe(false);
+      expect(isGitHubSupportTicket({ tags: ['support-ticket'] })).toBe(false);
+    });
+
+    it('follows GITHUB_TICKET_LABEL when the repo names the label differently', () => {
+      vi.stubEnv('GITHUB_TICKET_LABEL', 'Support');
+
+      expect(gitHubTicketLabel()).toBe('support');
+      expect(isGitHubSupportTicket({ tags: ['support'] })).toBe(true);
+      expect(isGitHubSupportTicket({ tags: ['ticket'] })).toBe(false);
+    });
+
+    it('falls back to ticket when the setting is blank', () => {
+      vi.stubEnv('GITHUB_TICKET_LABEL', '');
+
+      expect(gitHubTicketLabel()).toBe('ticket');
+    });
+
+    it('selects exactly the labelled issues out of a mapped repository', () => {
+      // What the Tickets tab does with what getGitHubTickets returns.
+      const tickets = [
+        gitHubIssueToTicket(
+          issue({ id: 1, number: 101, labels: ['ticket'] }),
+          'acme/portal',
+          'Internal'
+        ),
+        gitHubIssueToTicket(
+          issue({ id: 2, number: 102, labels: ['enhancement'] }),
+          'acme/portal',
+          'Internal'
+        ),
+        gitHubIssueToTicket(issue({ id: 3, number: 103 }), 'acme/portal', 'Internal'),
+      ];
+
+      expect(tickets.filter(isGitHubSupportTicket).map((t) => t.workItemId)).toEqual([101]);
     });
   });
 });
