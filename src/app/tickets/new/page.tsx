@@ -8,6 +8,7 @@ import { ArrowLeft, Send, Loader2 } from 'lucide-react';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import { keptTicketType } from '@/lib/ticket-type';
 import type { DevOpsProject, User, WorkItemType, ClassificationNode } from '@/types';
+import { DEFAULT_PRIORITY_OPTIONS } from '@/lib/priority';
 
 interface NewTicketForm {
   project: string;
@@ -599,10 +600,11 @@ export default function NewTicketPage() {
               onChange={(e) => setForm((prev) => ({ ...prev, priority: parseInt(e.target.value) }))}
               className="input w-full"
             >
-              <option value={1}>Urgent</option>
-              <option value={2}>High</option>
-              <option value={3}>Normal</option>
-              <option value={4}>Low</option>
+              {DEFAULT_PRIORITY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
           </div>
 
