@@ -229,12 +229,21 @@ export default function AdminPage() {
                     >
                       Epic Work Item Type
                     </p>
-                    <span
-                      className="rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-xs"
-                      style={{ color: 'var(--text-secondary)' }}
-                    >
-                      {config.workItemTypes.epicType}
-                    </span>
+                    {config.workItemTypes.epicType ? (
+                      <span
+                        className="rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-xs"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        {config.workItemTypes.epicType}
+                      </span>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <XCircle size={14} className="text-red-400" />
+                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                          Not available
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Priority Field */}
