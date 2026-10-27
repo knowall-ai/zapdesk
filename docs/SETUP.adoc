@@ -134,7 +134,7 @@ App Service only accepts traffic from Front Door, so the
 . Create a Front Door profile (Standard tier) with an endpoint, an origin
   group containing the App Service, and a route for `/*` that forwards to it.
   Set the origin host header to the App Service hostname
-  (`zapdesk-knowall.azurewebsites.net`); `NEXTAUTH_URL` and `APP_URL` stay on
+  (`zapdesk-knowallai.azurewebsites.net`); `NEXTAUTH_URL` and `APP_URL` stay on
   the custom domain.
 . Attach a WAF policy to the endpoint. Custom rules are enough to start:
   block common scanner paths and the `TRACE` method, and rate-limit to a few
