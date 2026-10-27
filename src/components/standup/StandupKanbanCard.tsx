@@ -168,17 +168,33 @@ export default function StandupKanbanCard({
   );
 
   if (isGitHub) {
+    // Not draggable -- a drop writes a state, and that is still a DevOps
+    // path. But the card opens the ZapDesk pop-up like every other one
+    // (#566): an issue was the only thing on this board you had to leave the
+    // app to read. The link out lives in the pop-up's header.
     return (
       <div className="kanban-card" style={{ ...accent, ...highlightStyle }} title={item.title}>
-        <a
-          href={item.sourceUrl ?? item.devOpsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block"
-          aria-label={`Open ${item.sourceRef ?? 'issue'} on GitHub`}
-        >
-          {cardBody}
-        </a>
+        {onClick ? (
+          <button
+            type="button"
+            onClick={() => onClick(item)}
+            className="block w-full text-left"
+            aria-label={`Open ${item.sourceRef ?? 'issue'}`}
+          >
+            {cardBody}
+          </button>
+        ) : (
+          // No pop-up on this board, so GitHub is still better than nothing.
+          <a
+            href={item.sourceUrl ?? item.devOpsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block"
+            aria-label={`Open ${item.sourceRef ?? 'issue'} on GitHub`}
+          >
+            {cardBody}
+          </a>
+        )}
       </div>
     );
   }

@@ -286,14 +286,39 @@ function TicketsPageContent() {
       // Find the full ticket from our state
       const ticket = tickets.find((t) => t.id === item.id);
       if (!ticket) return;
-      // A GitHub issue has no ZapDesk detail view; its page on GitHub is the detail.
+
+      // A GitHub issue opens in the same pop-up as everything else (#566).
+      // The row carries no body and no comments, so they are read first and
+      // the pop-up opens with them rather than filling in underneath.
       if (ticket.source === 'github') {
-        if (ticket.sourceUrl) window.open(ticket.sourceUrl, '_blank', 'noopener,noreferrer');
+        if (!ticket.sourceRef || !selectedOrganization) return;
+        void (async () => {
+          try {
+            const response = await fetch(
+              `/api/github/issue?ref=${encodeURIComponent(ticket.sourceRef!)}`,
+              { headers: { 'x-devops-org': selectedOrganization.accountName } }
+            );
+            if (!response.ok) {
+              const problem = (await response.json().catch(() => ({}))) as { error?: string };
+              throw new Error(problem.error || 'Failed to open that issue');
+            }
+            const data = (await response.json()) as { ticket: Ticket };
+            setSelectedTicket({
+              ...data.ticket,
+              createdAt: new Date(data.ticket.createdAt),
+              updatedAt: new Date(data.ticket.updatedAt),
+            });
+          } catch (error) {
+            console.error('Failed to open GitHub issue:', error);
+            toast.error(error instanceof Error ? error.message : 'Failed to open that issue');
+          }
+        })();
         return;
       }
+
       setSelectedTicket(ticket);
     },
-    [tickets]
+    [tickets, selectedOrganization]
   );
 
   const handleDialogStateChange = useCallback(
