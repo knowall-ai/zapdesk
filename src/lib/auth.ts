@@ -2,6 +2,7 @@
 import type { NextAuthOptions } from 'next-auth';
 import type { JWT } from 'next-auth/jwt';
 import AzureADProvider from 'next-auth/providers/azure-ad';
+import { isTenantApproved } from '@/lib/tenant-approval';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -37,6 +38,11 @@ declare module 'next-auth' {
     error?: string;
     /** The Entra tenant the user signed in from (the `tid` claim). */
     tenantId?: string;
+    /**
+     * False when that tenant is not an approved organisation: the session then
+     * has no access token, and the person only sees `/not-approved`.
+     */
+    tenantApproved?: boolean;
     user: {
       id: string;
       name?: string | null;
@@ -130,11 +136,20 @@ export const authOptions: NextAuthOptions = {
       }
     },
     async session({ session, token }) {
-      // The refresh token stays in the encrypted JWT cookie only. The session
-      // object is served to the browser at /api/auth/session, so anything
-      // copied here is readable by any script on the page (#540). Refresh
-      // happens server-side in the jwt callback above.
-      session.accessToken = token.accessToken;
+      // Approved organisations only. The tokens stay out of an unapproved
+      // session, so no route can call Azure DevOps on its behalf; the proxy
+      // (src/proxy.ts) also answers its API calls with 403. Checked on every
+      // request, so approving a tenant or removing one applies at once.
+      //
+      // The refresh token is not among them. It stays in the encrypted JWT
+      // cookie only: the session object is served to the browser at
+      // /api/auth/session, so anything copied here is readable by any script
+      // on the page (#540). Refresh happens server-side in the jwt callback
+      // above, which is the only thing that needs it.
+      session.tenantApproved = isTenantApproved(token.tenantId);
+      if (session.tenantApproved) {
+        session.accessToken = token.accessToken;
+      }
       session.error = token.error;
       if (token.id) {
         session.user.id = token.id;

@@ -83,7 +83,7 @@ function ResolutionField({
           <button
             onClick={handleStartEdit}
             className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-            style={{ color: 'var(--primary)' }}
+            style={{ color: 'var(--color-brand)' }}
             title="Edit resolution"
           >
             Edit
@@ -212,7 +212,7 @@ function MitigationField({
                   style={{ color: 'var(--text-muted)' }}
                 />
               ) : (
-                <Check size={12} style={{ color: 'var(--primary)' }} />
+                <Check size={12} style={{ color: 'var(--color-brand)' }} />
               )}
             </button>
             <button
@@ -280,7 +280,10 @@ export default function WorkItemDetailContent({
   // the comment helper should drop the "visible to customers" wording (#372).
   // Default to true when tags are missing so we don't accidentally hide ticket
   // copy from a real ticket whose details haven't fully loaded yet.
-  const isTicket = workItem.tags ? hasTicketTag(workItem.tags) : true;
+  // Everything written on a GitHub issue is public, so there is no internal
+  // note to offer there and no customer-facing wording that would be true.
+  const isTicket =
+    workItem.source === 'github' ? false : workItem.tags ? hasTicketTag(workItem.tags) : true;
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -374,7 +377,7 @@ export default function WorkItemDetailContent({
               <button
                 onClick={handleStartEdit}
                 className="rounded-md px-3 py-1 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-                style={{ color: 'var(--primary)' }}
+                style={{ color: 'var(--color-brand)' }}
                 title="Edit title and description"
               >
                 Edit

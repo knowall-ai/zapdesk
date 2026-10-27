@@ -19,6 +19,10 @@ export async function GET() {
   if (!session?.user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  // Approved organisations only (src/lib/tenant-approval.ts)
+  if (session.tenantApproved === false) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const graphToken = await getGraphToken(session.tenantId);
   if (!graphToken) {
@@ -38,6 +42,10 @@ export async function POST(request: NextRequest) {
 
   if (!session?.user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  // Approved organisations only (src/lib/tenant-approval.ts)
+  if (session.tenantApproved === false) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const body = await request.json().catch(() => null);
@@ -102,6 +110,10 @@ export async function DELETE() {
 
   if (!session?.user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  // Approved organisations only (src/lib/tenant-approval.ts)
+  if (session.tenantApproved === false) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const graphToken = await getGraphToken(session.tenantId);

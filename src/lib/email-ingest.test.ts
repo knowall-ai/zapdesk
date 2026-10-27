@@ -1,11 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { buildAppendixHtml, renderForNotification, splicedInlineCids } from './email-ingest';
+import {
+  buildAppendixHtml,
+  renderForNotification,
+  splicedInlineCids,
+  storedDescriptionHtml,
+} from './email-ingest';
 
 const inline = (filename: string, contentId?: string) => ({
   filename,
   url: `https://devops/attachments/${filename}`,
   contentId,
   isInline: true,
+});
+
+const attached = (filename: string) => ({
+  filename,
+  url: `https://devops/attachments/${filename}`,
+  isInline: false,
 });
 
 const none = new Set<string>();
@@ -54,6 +65,30 @@ describe('buildAppendixHtml', () => {
     const uploaded = [inline('a.png', 'abc')];
     const out = buildAppendixHtml(uploaded, [], [], [], new Set(['abc']));
     expect(out).not.toContain('Inline images');
+  });
+
+  it('names an ordinary file, which the message otherwise never mentions', () => {
+    // A spreadsheet cannot be spliced into the body the way a screenshot can,
+    // so without naming it the message looks identical to one with nothing
+    // attached -- the file only appears in the attachment panel (7768).
+    const out = buildAppendixHtml([attached('costs.xlsx')], [], [], [], none);
+    expect(out).toContain('Attachments');
+    expect(out).toContain('costs.xlsx');
+  });
+
+  it('links the file, so it is reachable from the message itself', () => {
+    const out = buildAppendixHtml([attached('report.pdf')], [], [], [], none);
+    expect(out).toContain('https://devops/attachments/report.pdf');
+  });
+
+  it('does not list an image the body already shows as a file as well', () => {
+    // Otherwise a screenshot appears twice: once in the body, once as a name.
+    const out = buildAppendixHtml([inline('shot.png', 'abc')], [], [], [], new Set(['abc']));
+    expect(out).not.toContain('Attachments');
+  });
+
+  it('says nothing when there was nothing attached', () => {
+    expect(buildAppendixHtml([], [], [], [], none)).toBe('');
   });
 
   it('shows an inline image the body never spliced in', () => {
@@ -116,6 +151,68 @@ describe('buildAppendixHtml', () => {
 });
 
 describe('renderForNotification', () => {
+  it('drops the From line the template states itself', () => {
+    // The stored description opens with the sender, and the notification
+    // template has its own From header -- so the team's first email about a
+    // ticket showed the address twice (7765).
+    //
+    // Built with the real wrapper, not a hand-written approximation of it:
+    // the first attempt at this fix was anchored at the start of the content
+    // and never matched, because `storedDescriptionHtml` opens with a <div>.
+    const stored = storedDescriptionHtml('rowan@example.test', '<p>Printer is dead.</p>');
+    const out = renderForNotification(stored, { stripSenderHeader: true });
+    expect(out).not.toContain('From:');
+    expect(out).not.toContain('rowan@example.test');
+    expect(out).toContain('Printer is dead.');
+  });
+
+  it('leaves a reply alone: its From is the customer\u2019s own words', () => {
+    // Only the new-ticket description carries a From that ZapDesk wrote. A
+    // reply that opens with one is a message the customer forwarded, and that
+    // header is the reader\u2019s only clue whose it was.
+    const forwarded = '<p><strong>From:</strong> supplier@example.test</p><p>See attached.</p>';
+
+    expect(renderForNotification(forwarded)).toContain('supplier@example.test');
+  });
+
+  it('keeps the wrapper the description was stored in', () => {
+    const stored = storedDescriptionHtml('rowan@example.test', '<p>Printer is dead.</p>');
+    const out = renderForNotification(stored, { stripSenderHeader: true });
+    expect(out.startsWith('<div')).toBe(true);
+    expect(out.trimEnd().endsWith('</div>')).toBe(true);
+  });
+
+  it('unlinks attachment links, which refuse a reader with no DevOps session', () => {
+    // The href is the DevOps attachment API, which answers 401 unauthenticated:
+    // a link in an email that cannot be followed is worse than no link.
+    const stored = storedDescriptionHtml(
+      'rowan@example.test',
+      '<p><strong>Attachments:</strong></p><ul><li><a href="https://dev.azure.com/KnowAll/_apis/wit/attachments/abc?fileName=quote.pdf" rel="noopener noreferrer">quote.pdf</a></li></ul>'
+    );
+    const out = renderForNotification(stored);
+    expect(out).toContain('quote.pdf');
+    expect(out).not.toContain('_apis/wit/attachments');
+    expect(out).not.toContain('<a ');
+  });
+
+  it("keeps a cloud attachment's own link, which anyone can open", () => {
+    const stored = storedDescriptionHtml(
+      'rowan@example.test',
+      '<p><strong>Cloud attachments:</strong></p><ul><li><a href="https://example.test/share/quote.pdf">quote.pdf</a></li></ul>'
+    );
+    expect(renderForNotification(stored)).toContain('https://example.test/share/quote.pdf');
+  });
+
+  it('keeps a From further down, which belongs to a quoted message', () => {
+    // Inside a forward it is the only clue whose message it was.
+    const stored = '<p>See below.</p><p><strong>From:</strong> someone@example.test</p>';
+    expect(renderForNotification(stored, { stripSenderHeader: true })).toContain('From:');
+  });
+
+  it('leaves a body that never had one alone', () => {
+    expect(renderForNotification('<p>Just text.</p>')).toBe('<p>Just text.</p>');
+  });
+
   // renderEmailBodyHtml strips script, svg, iframe and javascript: hrefs, but
   // keeps style attributes -- and a style can still carry a javascript: url.
   // The ticket view survives that because it re-sanitises through DOMPurify;

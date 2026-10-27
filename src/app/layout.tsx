@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
+import { connection } from 'next/server';
 import { Toaster } from 'sonner';
 import SessionProvider from '@/components/providers/SessionProvider';
 import OrganizationProvider from '@/components/providers/OrganizationProvider';
 import TicketCountsProvider from '@/components/providers/TicketCountsProvider';
 import SourceProvider from '@/components/providers/SourceProvider';
 import './globals.css';
+import { BRAND_COLORS } from '@/lib/brand';
 
 const siteUrl = process.env.NEXTAUTH_URL || 'https://zapdesk.knowall.ai';
 
@@ -66,16 +68,22 @@ export const metadata: Metadata = {
     follow: true,
   },
   other: {
-    'msapplication-TileColor': '#22c55e',
+    'msapplication-TileColor': BRAND_COLORS.brand,
     'theme-color': '#0f1117',
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Render per request so Next can stamp each page's scripts with the CSP
+  // nonce from src/proxy.ts. This costs the static shells of /login and
+  // /install, but a prerendered page would carry no nonce and the strict
+  // script-src would then block its own bootstrap scripts.
+  await connection();
+
   return (
     <html lang="en" className="dark">
       <body className="antialiased">

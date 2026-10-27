@@ -12,6 +12,7 @@ import { Search, Plus, Upload, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import type { Customer } from '@/types';
+import { emailDomainsOf, matchesDomain } from '@/lib/user-domains';
 
 /** How long to wait for the users list before giving up. */
 const USERS_TIMEOUT_MS = 15_000;
@@ -90,10 +91,9 @@ export default function UsersPage() {
     };
   }, [isSignedIn, org, organizationsLoading]);
 
-  // Get unique email domains for filter dropdown
-  const emailDomains = Array.from(
-    new Set(users.map((user) => user.email.split('@')[1]).filter(Boolean))
-  ).sort();
+  // Lower-cased and de-duplicated in one place with the matching below, so the
+  // dropdown and the filter cannot disagree about a domain (#159).
+  const emailDomains = emailDomainsOf(users);
 
   // Get unique access levels for filter dropdown
   const accessLevels = Array.from(
@@ -104,9 +104,9 @@ export default function UsersPage() {
     const matchesSearch =
       user.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.email.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesDomain = domainFilter === 'all' || user.email.endsWith(`@${domainFilter}`);
+    const matchesSelectedDomain = matchesDomain(user.email, domainFilter);
     const matchesAccessLevel = accessLevelFilter === 'all' || user.license === accessLevelFilter;
-    return matchesSearch && matchesDomain && matchesAccessLevel;
+    return matchesSearch && matchesSelectedDomain && matchesAccessLevel;
   });
 
   // Each click restarts the countdown instead of stacking timers. Without
@@ -164,7 +164,7 @@ export default function UsersPage() {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline"
-                  style={{ color: 'var(--primary)' }}
+                  style={{ color: 'var(--color-brand)' }}
                 >
                   Azure DevOps
                 </a>
@@ -192,7 +192,7 @@ export default function UsersPage() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-1 flex items-center gap-1 text-sm"
-                style={{ color: 'var(--primary)' }}
+                style={{ color: 'var(--color-brand)' }}
               >
                 See users in Azure DevOps <ExternalLink size={12} />
               </a>
@@ -331,7 +331,7 @@ export default function UsersPage() {
                         <Link
                           href={`/users/${user.id}`}
                           className="font-medium hover:underline"
-                          style={{ color: 'var(--primary)' }}
+                          style={{ color: 'var(--color-brand)' }}
                         >
                           {user.displayName}
                         </Link>

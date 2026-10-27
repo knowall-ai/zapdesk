@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { currentCallbackUrl } from '@/lib/login-redirect';
+import ZapDeskIcon from '@/components/common/ZapDeskIcon';
 
 /** Sign-in page. After signing in, people return to the page they were sent here from (`callbackUrl`, same-site paths only), or the home page (#7723). */
 export default function LoginPage() {
@@ -23,7 +24,7 @@ export default function LoginPage() {
         className="flex min-h-screen items-center justify-center"
         style={{ backgroundColor: 'var(--background)' }}
       >
-        <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--primary)' }} />
+        <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--color-brand)' }} />
       </div>
     );
   }
@@ -36,13 +37,8 @@ export default function LoginPage() {
       <div className="card w-full max-w-md p-8">
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center">
-          <div
-            className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
-            style={{ backgroundColor: 'var(--primary)' }}
-          >
-            <span className="text-3xl font-bold text-white">⚡</span>
-          </div>
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--primary)' }}>
+          <ZapDeskIcon size={64} className="mb-4" />
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--color-brand)' }}>
             ZapDesk
           </h1>
           <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
@@ -88,7 +84,7 @@ export default function LoginPage() {
           </p>
           <p className="mt-3 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
             Can&apos;t sign in? Your organisation may need to install ZapDesk first.{' '}
-            <a href="/install" className="hover:underline" style={{ color: 'var(--primary)' }}>
+            <a href="/install" className="hover:underline" style={{ color: 'var(--color-brand)' }}>
               Install for my organisation
             </a>
           </p>
@@ -101,7 +97,7 @@ export default function LoginPage() {
             <a
               href="mailto:support@knowall.ai"
               className="hover:underline"
-              style={{ color: 'var(--primary)' }}
+              style={{ color: 'var(--color-brand)' }}
             >
               Contact support
             </a>

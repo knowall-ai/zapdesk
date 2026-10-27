@@ -334,7 +334,7 @@ export default function NewTicketPage() {
   if (status === 'loading') {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="animate-spin" size={32} style={{ color: 'var(--primary)' }} />
+        <Loader2 className="animate-spin" size={32} style={{ color: 'var(--color-brand)' }} />
       </div>
     );
   }
@@ -541,7 +541,7 @@ export default function NewTicketPage() {
                 type="button"
                 onClick={handleTakeIt}
                 className="text-xs hover:underline"
-                style={{ color: 'var(--primary)' }}
+                style={{ color: 'var(--color-brand)' }}
                 disabled={!form.project || teamMembers.length === 0}
               >
                 take it

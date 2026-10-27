@@ -88,7 +88,7 @@ export default function EpicDetailPage() {
     return (
       <MainLayout>
         <div className="flex h-full items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--primary)' }} />
+          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--color-brand)' }} />
         </div>
       </MainLayout>
     );
@@ -131,7 +131,7 @@ export default function EpicDetailPage() {
               <ArrowLeft size={16} />
             </Link>
             <div className="flex items-center gap-3">
-              <LayoutGrid size={20} style={{ color: 'var(--primary)' }} />
+              <LayoutGrid size={20} style={{ color: 'var(--color-brand)' }} />
               <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
                 {epic.title}
               </h1>
@@ -157,8 +157,8 @@ export default function EpicDetailPage() {
               rel="noopener noreferrer"
               className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm"
               style={{
-                backgroundColor: 'var(--primary)',
-                color: 'white',
+                backgroundColor: 'var(--color-brand)',
+                color: 'var(--color-brand-foreground)',
               }}
             >
               DevOps <ExternalLink size={14} />

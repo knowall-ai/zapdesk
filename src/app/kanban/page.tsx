@@ -14,6 +14,7 @@ import {
   useMemo,
 } from 'react';
 import { toast } from 'sonner';
+import { isGitHubItem } from '@/lib/github-kanban';
 import Link from 'next/link';
 import { RefreshCw, FolderOpen, User, Radio } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
@@ -24,9 +25,12 @@ import type { PullRequestLoadState } from '@/components/standup/ActivitySummaryB
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import { useDevOpsApi } from '@/hooks';
 import { useSourceFilter } from '@/components/providers/SourceProvider';
+import SourceLegend from '@/components/common/SourceLegend';
+import { sourceKindOf, type SourceKind } from '@/lib/source-colors';
 import { readScrollTop, sessionPositionStorage, writeScrollTop } from '@/lib/kanban-position';
 import { ticketToWorkItem } from '@/lib/devops';
 import { debugLog } from '@/lib/debug';
+import { groupsWithColumn } from '@/lib/kanban-summary';
 import { canonicalProject, filterStandupByProject } from '@/lib/kanban-project';
 import { createBoardCache } from '@/lib/standup-board-cache';
 import {
@@ -72,12 +76,18 @@ function cacheKey(organization: string, currentSprintOnly: boolean, sources: Sou
 }
 
 /** Build /kanban URL with the given params */
-function buildKanbanUrl(groupBy: GroupBy, sprint: boolean, project?: string | null): string {
+function buildKanbanUrl(
+  groupBy: GroupBy,
+  sprint: boolean,
+  project?: string | null,
+  column: string | null = null
+): string {
   const params = new URLSearchParams();
   if (groupBy !== 'project') params.set('groupBy', groupBy);
   if (sprint) params.set('sprint', 'true');
   // One project's board (#7377), e.g. a support board.
   if (project) params.set('project', project);
+  if (column) params.set('column', column);
   const qs = params.toString();
   return `/kanban${qs ? `?${qs}` : ''}`;
 }
@@ -123,6 +133,27 @@ function regroupByPerson(data: StandupData): GroupData[] {
     }));
 }
 
+/**
+ * Which sources have at least one card on the board.
+ *
+ * Read off the cards rather than guessed from the source filter -- the filter
+ * can ask for both while only one has any items, and a legend for a colour
+ * nobody can see is noise (#465). A module-level function rather than inline
+ * work in a `useMemo`, which the React Compiler cannot preserve.
+ */
+function sourceKindsOnBoard(data: StandupData | null): SourceKind[] {
+  const kinds = new Set<SourceKind>();
+  for (const project of data?.projects ?? []) {
+    for (const column of project.columns) {
+      for (const item of column.items) {
+        kinds.add(sourceKindOf(item));
+        if (kinds.size === 2) return [...kinds];
+      }
+    }
+  }
+  return [...kinds];
+}
+
 /** Route entry for the Kanban board; Suspense is required because the board reads search params. */
 export default function StandupPage() {
   return (
@@ -153,6 +184,10 @@ function StandupPageContent() {
   // Derive from URL — single source of truth
   const groupBy: GroupBy = (searchParams.get('groupBy') as GroupBy) || 'project';
   const currentSprintOnly = searchParams.get('sprint') === 'true';
+  // The state the board is narrowed to by a pressed KPI tile (#320). In the URL
+  // with the others, so the narrowed board can be linked to and survives a
+  // reload. Checked against the board's real columns below, before use.
+  const columnParam = searchParams.get('column');
   // Only this project's items, when chosen (#7377).
   const requestedProject = searchParams.get('project');
   // Azure DevOps, GitHub or both, from the header toggle (#447)
@@ -501,10 +536,18 @@ function StandupPageContent() {
         mySeq !== ticketFetchSeqRef.current || currentOrgRef.current !== requestedOrg;
       setIsLoadingTicket(true);
       try {
-        const response = await devOpsGet(`/api/devops/tickets/${item.id}`);
+        // A GitHub issue is not in DevOps: its body, comments and status are
+        // read from GitHub, by the reference the card carries (#566).
+        const gitHubRef = isGitHubItem(item) ? item.sourceRef : undefined;
+        const response = await devOpsGet(
+          gitHubRef
+            ? `/api/github/issue?ref=${encodeURIComponent(gitHubRef)}`
+            : `/api/devops/tickets/${item.id}`
+        );
         if (isStale()) return;
         if (!response.ok) {
-          throw new Error('Failed to fetch ticket');
+          const problem = (await response.json().catch(() => ({}))) as { error?: string };
+          throw new Error(problem.error || 'Failed to fetch ticket');
         }
         const data = (await response.json()) as {
           ticket: Ticket & { createdAt: string; updatedAt: string };
@@ -518,6 +561,7 @@ function StandupPageContent() {
       } catch (err) {
         if (isStale()) return;
         console.error('Failed to load ticket for dialog:', err);
+        toast.error(err instanceof Error ? err.message : 'Failed to open that item');
       } finally {
         if (!isStale()) {
           setIsLoadingTicket(false);
@@ -543,11 +587,30 @@ function StandupPageContent() {
   // the work item.
   const handleDialogStateChange = useCallback(
     async (workItemId: number, state: string) => {
-      const project = selectedTicket?.id === workItemId ? selectedTicket.project : undefined;
-      await handleStateChange(workItemId, state, project);
+      const open = selectedTicket?.id === workItemId ? selectedTicket : undefined;
+
+      // A GitHub issue's status is written back to GitHub as a state and a
+      // label, through the GitHub process template (#566, #567).
+      if (open?.source === 'github' && open.sourceRef) {
+        const response = await devOpsPatch('/api/github/issue', {
+          ref: open.sourceRef,
+          status: state,
+        });
+        if (!response.ok) {
+          const problem = (await response.json().catch(() => ({}))) as { error?: string };
+          throw new Error(problem.error || 'Failed to update the GitHub issue');
+        }
+        setSelectedTicket((prev) =>
+          prev ? { ...prev, devOpsState: state, status: state as Ticket['status'] } : null
+        );
+        fetchStandupData(true, true, true);
+        return;
+      }
+
+      await handleStateChange(workItemId, state, open?.project);
       setSelectedTicket((prev) => (prev ? { ...prev, devOpsState: state } : null));
     },
-    [handleStateChange, selectedTicket]
+    [handleStateChange, selectedTicket, devOpsPatch, fetchStandupData]
   );
 
   // Generic PATCH helper used by the dialog's assignee/priority/tags/update handlers.
@@ -644,13 +707,34 @@ function StandupPageContent() {
       updates: { title?: string; description?: string; resolution?: string }
     ) => {
       if (!selectedTicket || selectedTicket.id !== workItemId) return;
+
+      // A GitHub issue's title is written back to GitHub. Its body is not:
+      // GitHub stores Markdown and the editor here writes HTML, so saving one
+      // as the other would mangle the issue for everyone reading it on
+      // GitHub. The description stays read-only until there is a Markdown
+      // path for it.
+      if (selectedTicket.source === 'github' && selectedTicket.sourceRef) {
+        if (updates.title === undefined) return;
+        const response = await devOpsPatch('/api/github/issue', {
+          ref: selectedTicket.sourceRef,
+          title: updates.title,
+        });
+        if (!response.ok) {
+          const problem = (await response.json().catch(() => ({}))) as { error?: string };
+          throw new Error(problem.error || 'Failed to update the GitHub issue');
+        }
+        setSelectedTicket((prev) => (prev ? { ...prev, title: updates.title! } : null));
+        fetchStandupData(true, true, true);
+        return;
+      }
+
       await patchTicket(workItemId, {
         ...updates,
         project: selectedTicket.project,
         workItemType: selectedTicket.workItemType,
       });
     },
-    [patchTicket, selectedTicket]
+    [patchTicket, selectedTicket, devOpsPatch, fetchStandupData]
   );
 
   const handleDialogTypeChange = useCallback(
@@ -697,6 +781,8 @@ function StandupPageContent() {
     () => filterStandupByProject(standupData, projectFilter),
     [standupData, projectFilter]
   );
+
+  const sourcesOnBoard = useMemo<SourceKind[]>(() => sourceKindsOnBoard(boardData), [boardData]);
 
   const groups: GroupData[] = useMemo(() => {
     const standupData = boardData;
@@ -747,6 +833,24 @@ function StandupPageContent() {
     return map;
   }, [groups, groupBy, prActivity, prState, boardLoadedAt, projectFilter]);
 
+  // A column name from the URL counts only if the board has that column.
+  const focusedColumn =
+    columnParam && standupData?.columns.some((c) => c.name === columnParam) ? columnParam : null;
+  const visibleGroups = useMemo(
+    () => groupsWithColumn(groups, focusedColumn),
+    [groups, focusedColumn]
+  );
+  const handleColumnClick = useCallback(
+    (columnName: string) => {
+      // Pressing the pressed tile again shows every group.
+      const next = columnName === focusedColumn ? null : columnName;
+      router.replace(buildKanbanUrl(groupBy, currentSprintOnly, projectFilter, next), {
+        scroll: false,
+      });
+    },
+    [router, groupBy, currentSprintOnly, projectFilter, focusedColumn]
+  );
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push(loginHref());
@@ -758,7 +862,11 @@ function StandupPageContent() {
   // remembered by each group; this is the scroll position of the board.
   const organizationName = selectedOrganization?.accountName ?? '';
   const groupScope = `${organizationName}:${groupBy}`;
-  const scrollScope = `${groupScope}:${currentSprintOnly ? 'sprint' : 'all'}:${projectFilter ?? '*'}`;
+  // A board narrowed to one state, or to one project, keeps a position of its
+  // own. Narrowing shortens the board, which clamps the scroll position;
+  // sharing one record would lose where the user was on the whole board when
+  // they went back.
+  const scrollScope = `${groupScope}:${currentSprintOnly ? 'sprint' : 'all'}:${projectFilter ?? '*'}:${focusedColumn ?? ''}`;
   const boardRef = useRef<HTMLDivElement>(null);
   // The scope whose position has been put back. The saved position is applied
   // each time a board comes on screen (first load, or after the loading
@@ -822,7 +930,12 @@ function StandupPageContent() {
                   value={projectFilter ?? ''}
                   onChange={(e) =>
                     router.replace(
-                      buildKanbanUrl(groupBy, currentSprintOnly, e.target.value || null),
+                      buildKanbanUrl(
+                        groupBy,
+                        currentSprintOnly,
+                        e.target.value || null,
+                        columnParam
+                      ),
                       {
                         scroll: false,
                       }
@@ -851,17 +964,18 @@ function StandupPageContent() {
                   year: 'numeric',
                 })}
               </p>
+              <SourceLegend sources={sourcesOnBoard} className="mt-2" />
             </div>
 
             <div className="flex flex-wrap items-center gap-3 md:ml-auto">
               {/* Group By toggle */}
               <div className="flex rounded-md border" style={{ borderColor: 'var(--border)' }}>
                 <Link
-                  href={buildKanbanUrl('project', currentSprintOnly, projectFilter)}
+                  href={buildKanbanUrl('project', currentSprintOnly, projectFilter, columnParam)}
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'project'
-                      ? 'bg-[var(--primary)] text-white'
+                      ? 'bg-brand text-brand-foreground'
                       : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
                   }`}
                   style={{ borderRadius: '0.375rem 0 0 0.375rem' }}
@@ -870,11 +984,11 @@ function StandupPageContent() {
                   Project
                 </Link>
                 <Link
-                  href={buildKanbanUrl('person', currentSprintOnly, projectFilter)}
+                  href={buildKanbanUrl('person', currentSprintOnly, projectFilter, columnParam)}
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'person'
-                      ? 'bg-[var(--primary)] text-white'
+                      ? 'bg-brand text-brand-foreground'
                       : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
                   }`}
                   style={{ borderRadius: '0 0.375rem 0.375rem 0' }}
@@ -893,11 +1007,14 @@ function StandupPageContent() {
                   type="checkbox"
                   checked={currentSprintOnly}
                   onChange={(e) =>
-                    router.replace(buildKanbanUrl(groupBy, e.target.checked, projectFilter), {
-                      scroll: false,
-                    })
+                    router.replace(
+                      buildKanbanUrl(groupBy, e.target.checked, projectFilter, columnParam),
+                      {
+                        scroll: false,
+                      }
+                    )
                   }
-                  className="accent-[var(--primary)]"
+                  className="accent-brand"
                 />
                 Current Sprint
               </label>
@@ -914,7 +1031,7 @@ function StandupPageContent() {
                 onClick={() => setLiveUpdate((on) => !on)}
                 className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
                   liveUpdate
-                    ? 'border-transparent bg-[var(--primary)] text-white'
+                    ? 'bg-brand text-brand-foreground border-transparent'
                     : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
                 }`}
                 style={liveUpdate ? undefined : { borderColor: 'var(--border)' }}
@@ -962,7 +1079,10 @@ function StandupPageContent() {
               <button
                 onClick={() => fetchStandupData()}
                 className="rounded-md px-4 py-2 text-sm"
-                style={{ backgroundColor: 'var(--primary)', color: 'white' }}
+                style={{
+                  backgroundColor: 'var(--color-brand)',
+                  color: 'var(--color-brand-foreground)',
+                }}
               >
                 Retry
               </button>
@@ -972,14 +1092,42 @@ function StandupPageContent() {
               <StandupSummaryCards
                 columns={standupData.columns}
                 summary={(boardData ?? standupData).summary}
+                activeColumn={focusedColumn}
+                onColumnClick={handleColumnClick}
               />
 
-              {groups.length > 0 ? (
-                groups.map((group) => (
+              {focusedColumn && (
+                <div
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
+                  style={{ color: 'var(--text-secondary)' }}
+                  role="status"
+                >
+                  <span>
+                    Showing {visibleGroups.length} of {groups.length}{' '}
+                    {groupBy === 'person' ? 'people' : 'projects'}: those with {focusedColumn}{' '}
+                    items.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleColumnClick(focusedColumn)}
+                    className="underline"
+                    style={{ color: 'var(--color-brand)' }}
+                  >
+                    Show all
+                  </button>
+                </div>
+              )}
+
+              {visibleGroups.length > 0 ? (
+                visibleGroups.map((group) => (
                   <KanbanGroupSection
-                    key={`${groupScope}:${group.groupName}`}
+                    // The narrowed state is part of the key: a group opens
+                    // itself when the board is narrowed, and goes back to how
+                    // the user left it when the board is whole again.
+                    key={`${groupScope}:${focusedColumn ?? ''}:${group.groupName}`}
                     groupName={group.groupName}
                     positionScope={groupScope}
+                    focusedColumn={focusedColumn}
                     columns={group.columns}
                     allowedStatesByProjectType={standupData.allowedStatesByProjectType}
                     onStateChange={handleStateChange}
@@ -992,7 +1140,7 @@ function StandupPageContent() {
                   className="card p-8 text-center text-sm"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  No work items found.
+                  {focusedColumn ? `No ${focusedColumn} items.` : 'No work items found.'}
                 </div>
               )}
             </div>

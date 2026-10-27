@@ -69,7 +69,9 @@ interface SourceContextType {
 const SourceContext = createContext<SourceContextType | undefined>(undefined);
 
 export default function SourceProvider({ children }: { children: React.ReactNode }) {
-  const { status } = useSession();
+  const { status: sessionStatus, data: session } = useSession();
+  // An unapproved organisation is signed in but has no data to load
+  const status = session?.tenantApproved === false ? 'unapproved' : sessionStatus;
   const [gitHubConfigured, setGitHubConfigured] = useState(false);
   const [sourceReady, setSourceReady] = useState(false);
   const storedFilter = useSyncExternalStore(subscribe, readSourceFilter, () => 'both' as const);

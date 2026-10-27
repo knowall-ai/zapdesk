@@ -8,6 +8,21 @@ import Avatar from '../common/Avatar';
 interface TicketHistoryProps {
   updates: WorkItemUpdate[];
   loading: boolean;
+  /**
+   * Who really raised a ticket that arrived by email (7770).
+   *
+   * Ingest writes to DevOps with the service PAT, so DevOps records the
+   * account that owns it as the author of the creation -- which makes every
+   * emailed ticket look as though one person raised it. The requester is
+   * already resolved from the `email-from:` tag for the rest of the screen;
+   * passing it here keeps the timeline telling the same story.
+   *
+   * Only the creation entry is reattributed. A later revision by that same
+   * account is just as likely to be that person actually working the ticket,
+   * and relabelling their real work as the customer would be a worse lie than
+   * the one being fixed.
+   */
+  emailRequester?: { displayName: string; avatarUrl?: string };
 }
 
 // Friendly labels for Azure DevOps field reference names
@@ -40,7 +55,7 @@ function formatFieldValue(field: string, value?: string): string {
   return value;
 }
 
-export default function TicketHistory({ updates, loading }: TicketHistoryProps) {
+export default function TicketHistory({ updates, loading, emailRequester }: TicketHistoryProps) {
   if (loading) {
     return (
       <div
@@ -66,10 +81,18 @@ export default function TicketHistory({ updates, loading }: TicketHistoryProps) 
       {updates.map((update, index) => {
         const fieldEntries = Object.entries(update.fields);
         const isCreation = update.id === 1;
+        // The creation of an emailed ticket belongs to the customer, not to
+        // the account whose token wrote it (7770).
+        const viaEmail = isCreation && emailRequester !== undefined;
+        const author = viaEmail ? emailRequester : update.revisedBy;
         const isLast = index === updates.length - 1;
 
         return (
-          <div key={update.id} className="relative flex gap-3 pl-1">
+          <div
+            key={update.id}
+            data-testid={`history-entry-${update.id}`}
+            className="relative flex gap-3 pl-1"
+          >
             {/* Timeline line */}
             {!isLast && (
               <div
@@ -86,8 +109,8 @@ export default function TicketHistory({ updates, loading }: TicketHistoryProps) 
               <div
                 className="flex h-[18px] w-[18px] items-center justify-center rounded-full"
                 style={{
-                  backgroundColor: isCreation ? 'var(--primary)' : 'var(--surface-hover)',
-                  color: isCreation ? 'white' : 'var(--text-muted)',
+                  backgroundColor: isCreation ? 'var(--color-brand)' : 'var(--surface-hover)',
+                  color: isCreation ? 'var(--color-brand-foreground)' : 'var(--text-muted)',
                 }}
               >
                 <GitCommitHorizontal size={10} />
@@ -97,14 +120,15 @@ export default function TicketHistory({ updates, loading }: TicketHistoryProps) 
             {/* Content */}
             <div className="min-w-0 flex-1 pb-4">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                <Avatar
-                  name={update.revisedBy.displayName}
-                  image={update.revisedBy.avatarUrl}
-                  size="sm"
-                />
+                <Avatar name={author.displayName} image={author.avatarUrl} size="sm" />
                 <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                  {update.revisedBy.displayName}
+                  {author.displayName}
                 </span>
+                {viaEmail && (
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    by email
+                  </span>
+                )}
                 {isValid(new Date(update.revisedDate)) && (
                   <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                     {format(new Date(update.revisedDate), 'dd MMM yyyy, HH:mm')}

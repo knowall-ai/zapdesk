@@ -163,7 +163,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const getResultIcon = (type: SearchResult['type']) => {
     switch (type) {
       case 'ticket':
-        return <Ticket size={16} style={{ color: 'var(--primary)' }} />;
+        return <Ticket size={16} style={{ color: 'var(--color-brand)' }} />;
       case 'user':
         return <Users size={16} style={{ color: 'var(--status-progress)' }} />;
       case 'organization':
@@ -191,7 +191,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
         <div className="relative w-full" ref={searchContainerRef}>
           <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
             {isSearching ? (
-              <Loader2 size={18} className="animate-spin" style={{ color: 'var(--primary)' }} />
+              <Loader2 size={18} className="animate-spin" style={{ color: 'var(--color-brand)' }} />
             ) : (
               <Search size={18} style={{ color: 'var(--text-muted)' }} />
             )}

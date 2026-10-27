@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Github } from 'lucide-react';
 import { Avatar, PriorityIndicator } from '@/components/common';
 import { isGitHubItem } from '@/lib/github-kanban';
+import { sourceAccentStyle } from '@/lib/source-colors';
 import type { HighlightReason } from '@/lib/activity-summary';
 import { HIGHLIGHT_COLORS, highlightRingColor } from '@/lib/activity-colors';
 import type { StandupWorkItem } from '@/types';
@@ -30,7 +31,12 @@ const highlightLabels: Record<HighlightReason, string> = {
   pr: 'PR',
 };
 
-const typeColors: Record<string, string> = {
+/**
+ * The work item type badge colours, exported so `source-colors.test.ts` can
+ * check the source accents against the colours a card actually wears rather
+ * than against a copy of them that can drift.
+ */
+export const typeColors: Record<string, string> = {
   Bug: '#cc293d',
   Task: '#f2cb1d',
   Enhancement: '#773b93',
@@ -54,6 +60,9 @@ export default function StandupKanbanCard({
     disabled: isGitHub,
   });
 
+  // Where the card came from, down its left edge (#465).
+  const accent = sourceAccentStyle(item);
+
   const highlightStyle: CSSProperties = highlight
     ? { boxShadow: `0 0 0 2px ${highlightRingColor(highlight)}` }
     : dimmed
@@ -63,6 +72,7 @@ export default function StandupKanbanCard({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+    ...accent,
     ...highlightStyle,
   };
 
@@ -158,17 +168,33 @@ export default function StandupKanbanCard({
   );
 
   if (isGitHub) {
+    // Not draggable -- a drop writes a state, and that is still a DevOps
+    // path. But the card opens the ZapDesk pop-up like every other one
+    // (#566): an issue was the only thing on this board you had to leave the
+    // app to read. The link out lives in the pop-up's header.
     return (
-      <div className="kanban-card" style={highlightStyle} title={item.title}>
-        <a
-          href={item.sourceUrl ?? item.devOpsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block"
-          aria-label={`Open ${item.sourceRef ?? 'issue'} on GitHub`}
-        >
-          {cardBody}
-        </a>
+      <div className="kanban-card" style={{ ...accent, ...highlightStyle }} title={item.title}>
+        {onClick ? (
+          <button
+            type="button"
+            onClick={() => onClick(item)}
+            className="block w-full text-left"
+            aria-label={`Open ${item.sourceRef ?? 'issue'}`}
+          >
+            {cardBody}
+          </button>
+        ) : (
+          // No pop-up on this board, so GitHub is still better than nothing.
+          <a
+            href={item.sourceUrl ?? item.devOpsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block"
+            aria-label={`Open ${item.sourceRef ?? 'issue'} on GitHub`}
+          >
+            {cardBody}
+          </a>
+        )}
       </div>
     );
   }

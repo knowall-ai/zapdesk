@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Session } from 'next-auth';
 import type { JWT } from 'next-auth/jwt';
 import { authOptions } from './auth';
+import { KNOWALL_TENANT_ID } from './tenant-approval';
 
 /**
  * The session object is what NextAuth serves to the browser at
@@ -26,7 +27,7 @@ describe('session callback', () => {
       refreshToken: 'refresh-token',
       accessTokenExpires: Date.now() + 60_000,
       id: 'user-1',
-      tenantId: 'tenant-1',
+      tenantId: KNOWALL_TENANT_ID,
     });
 
     expect(session).not.toHaveProperty('refreshToken');
@@ -39,7 +40,7 @@ describe('session callback', () => {
       refreshToken: 'refresh-token',
       id: 'user-1',
       picture: 'https://example.test/avatar.png',
-      tenantId: 'tenant-1',
+      tenantId: KNOWALL_TENANT_ID,
       error: 'RefreshAccessTokenError',
     });
 
@@ -47,6 +48,19 @@ describe('session callback', () => {
     expect(session.error).toBe('RefreshAccessTokenError');
     expect(session.user.id).toBe('user-1');
     expect(session.user.image).toBe('https://example.test/avatar.png');
-    expect(session.tenantId).toBe('tenant-1');
+    expect(session.tenantId).toBe(KNOWALL_TENANT_ID);
+  });
+
+  it('exposes neither token when the organisation is not approved', async () => {
+    const session = await buildSession({
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      id: 'user-1',
+      tenantId: 'not-a-tenant-guid',
+    });
+
+    expect(session.tenantApproved).toBe(false);
+    expect(session.accessToken).toBeUndefined();
+    expect(JSON.stringify(session)).not.toContain('refresh-token');
   });
 });

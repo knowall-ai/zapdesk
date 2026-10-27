@@ -297,11 +297,8 @@ function ZapDialogContent({
         </div>
       ) : zapConfirmed ? (
         <div className="rounded-lg p-6 text-center" style={{ backgroundColor: 'var(--surface)' }}>
-          <div
-            className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full"
-            style={{ backgroundColor: 'rgba(34, 197, 94, 0.2)' }}
-          >
-            <Check size={32} style={{ color: 'var(--primary)' }} />
+          <div className="bg-success/20 mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full">
+            <Check size={32} className="text-success" />
           </div>
           <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
             Zap recorded!
@@ -413,7 +410,7 @@ function ZapDialogContent({
               <button
                 onClick={copyAddressToClipboard}
                 className="shrink-0 rounded p-1.5 transition-colors hover:bg-[var(--surface-hover)]"
-                style={{ color: copiedAddress ? 'var(--primary)' : 'var(--text-muted)' }}
+                style={{ color: copiedAddress ? 'var(--color-brand)' : 'var(--text-muted)' }}
                 title="Copy address"
               >
                 {copiedAddress ? <Check size={16} /> : <Copy size={16} />}
@@ -433,7 +430,7 @@ function ZapDialogContent({
                 <button
                   onClick={copyInvoiceToClipboard}
                   className="shrink-0 rounded p-1.5 transition-colors hover:bg-[var(--surface-hover)]"
-                  style={{ color: copiedInvoice ? 'var(--primary)' : 'var(--text-muted)' }}
+                  style={{ color: copiedInvoice ? 'var(--color-brand)' : 'var(--text-muted)' }}
                   title="Copy invoice"
                 >
                   {copiedInvoice ? <Check size={16} /> : <Copy size={16} />}

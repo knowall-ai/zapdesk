@@ -56,7 +56,7 @@ export default function OrganizationSwitcher() {
         style={{ color: 'var(--text-primary)' }}
         aria-label="Current organization"
       >
-        <Building2 size={16} style={{ color: 'var(--primary)' }} />
+        <Building2 size={16} style={{ color: 'var(--color-brand)' }} />
         <span className="max-w-[150px] truncate text-sm font-medium">
           {selectedOrganization?.accountName || organizations[0].accountName}
         </span>
@@ -74,7 +74,7 @@ export default function OrganizationSwitcher() {
         aria-expanded={showDropdown}
         aria-label="Switch organization"
       >
-        <Building2 size={16} style={{ color: 'var(--primary)' }} />
+        <Building2 size={16} style={{ color: 'var(--color-brand)' }} />
         <span className="max-w-[150px] truncate text-sm font-medium">
           {selectedOrganization?.accountName || 'Select Organization'}
         </span>
@@ -115,7 +115,7 @@ export default function OrganizationSwitcher() {
                 <Building2 size={14} style={{ color: 'var(--text-muted)' }} />
                 <span className="flex-1 truncate">{org.accountName}</span>
                 {selectedOrganization?.accountId === org.accountId && (
-                  <Check size={14} style={{ color: 'var(--primary)' }} />
+                  <Check size={14} style={{ color: 'var(--color-brand)' }} />
                 )}
               </button>
             ))}

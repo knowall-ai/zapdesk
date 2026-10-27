@@ -5,6 +5,7 @@ import {
   getGitHubUsername,
   listLinkedGitHubAccounts,
   saveGitHubUsername,
+  saveLightningAddress,
 } from './graph';
 
 // The ZapDesk profile extension holds both the Lightning Address and the
@@ -31,18 +32,59 @@ describe('profile extension', () => {
     vi.restoreAllMocks();
   });
 
-  it('saves the GitHub username without touching the Lightning Address', async () => {
-    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+  // What Graph returns for a user who has already saved both fields.
+  const stored = () =>
+    Response.json({
+      '@odata.context': 'https://graph.microsoft.com/v1.0/$metadata#extensions/$entity',
+      '@odata.type': '#microsoft.graph.openTypeExtension',
+      id: 'zapdesk.knowall.ai',
+      extensionName: 'zapdesk.knowall.ai',
+      lightningAddress: 'dana@getalby.example',
+      githubUsername: 'old-name',
+    });
+
+  // A PATCH replaces every custom property on an open extension, so the field
+  // not being saved has to travel in the body too, or Graph drops it (#552).
+  it('keeps the Lightning Address when saving the GitHub username', async () => {
+    fetchMock
+      .mockResolvedValueOnce(stored())
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     expect(await saveGitHubUsername('token', 'dana@example.test', 'dana-dev')).toBe(true);
 
-    expect(calls()).toEqual([
-      {
-        url: expect.stringContaining('/users/dana%40example.test/extensions/zapdesk.knowall.ai'),
-        method: 'PATCH',
-        body: { githubUsername: 'dana-dev' },
+    expect(calls()[1]).toEqual({
+      url: expect.stringContaining('/users/dana%40example.test/extensions/zapdesk.knowall.ai'),
+      method: 'PATCH',
+      body: {
+        '@odata.type': 'microsoft.graph.openTypeExtension',
+        lightningAddress: 'dana@getalby.example',
+        githubUsername: 'dana-dev',
       },
-    ]);
+    });
+  });
+
+  it('keeps the GitHub username when saving the Lightning Address', async () => {
+    fetchMock
+      .mockResolvedValueOnce(stored())
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    expect(await saveLightningAddress('token', 'dana@example.test', 'new@getalby.example')).toBe(
+      true
+    );
+
+    expect(calls()[1].body).toEqual({
+      '@odata.type': 'microsoft.graph.openTypeExtension',
+      lightningAddress: 'new@getalby.example',
+      githubUsername: 'old-name',
+    });
+  });
+
+  it('writes nothing when the stored fields cannot be read', async () => {
+    // Writing blind would replace whatever is stored with just this field.
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 503 }));
+
+    expect(await saveGitHubUsername('token', 'dana@example.test', 'dana-dev')).toBe(false);
+    expect(calls().map((c) => c.method)).toEqual(['GET']);
   });
 
   it('creates the extension the first time', async () => {
@@ -63,14 +105,23 @@ describe('profile extension', () => {
     });
   });
 
-  it('clears the Lightning Address rather than deleting the extension', async () => {
-    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+  it('clears only the Lightning Address, keeping the GitHub username', async () => {
+    fetchMock
+      .mockResolvedValueOnce(stored())
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     expect(await deleteLightningAddress('token', 'dana@example.test')).toBe(true);
 
-    expect(calls()).toEqual([
-      expect.objectContaining({ method: 'PATCH', body: { lightningAddress: null } }),
-    ]);
+    expect(calls()[1]).toEqual(
+      expect.objectContaining({
+        method: 'PATCH',
+        body: {
+          '@odata.type': 'microsoft.graph.openTypeExtension',
+          lightningAddress: null,
+          githubUsername: 'old-name',
+        },
+      })
+    );
   });
 
   it('has nothing to clear when the extension does not exist', async () => {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { parseWorkItemId } from '@/lib/work-item-id';
 import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
 import { resolveStateForStatus, categoriesForStatus } from '@/lib/state-categories';
 import type { TicketStatus } from '@/types';
@@ -15,7 +16,6 @@ const VALID_STATUSES: TicketStatus[] = [
 ];
 
 /** Azure DevOps work item ids are positive int32 values. */
-const MAX_WORK_ITEM_ID = 2_147_483_647;
 /** Azure DevOps caps project names at 64 characters. */
 const MAX_PROJECT_LENGTH = 64;
 
@@ -28,12 +28,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     const { id } = await params;
-    // parseInt alone accepts "123abc" and forwards 123.
-    if (!/^[0-9]+$/.test(id)) {
-      return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
-    }
-    const ticketId = parseInt(id, 10);
-    if (ticketId <= 0 || ticketId > MAX_WORK_ITEM_ID) {
+    const ticketId = parseWorkItemId(id);
+    if (ticketId === null) {
       return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
     }
 

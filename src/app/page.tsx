@@ -154,7 +154,7 @@ export default function HomePage() {
       title: 'Total Tickets',
       value: stats.totalTickets,
       icon: <Ticket size={24} />,
-      color: 'var(--primary)',
+      color: 'var(--color-brand)',
       href: '/tickets',
     },
   ];
@@ -226,7 +226,7 @@ export default function HomePage() {
                 className="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-[var(--surface-hover)]"
               >
                 <div className="flex items-center gap-3">
-                  <Ticket size={20} style={{ color: 'var(--primary)' }} />
+                  <Ticket size={20} style={{ color: 'var(--color-brand)' }} />
                   <span style={{ color: 'var(--text-primary)' }}>View your active tickets</span>
                 </div>
                 <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
@@ -271,11 +271,8 @@ export default function HomePage() {
         </div>
 
         {/* Info banner */}
-        <div
-          className="card flex items-center gap-4 p-4"
-          style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'var(--primary)' }}
-        >
-          <TrendingUp size={24} style={{ color: 'var(--primary)' }} />
+        <div className="card bg-brand/10 border-brand flex items-center gap-4 p-4">
+          <TrendingUp size={24} style={{ color: 'var(--color-brand)' }} />
           <div>
             <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
               Pro Tip: Use the &quot;ticket&quot; tag

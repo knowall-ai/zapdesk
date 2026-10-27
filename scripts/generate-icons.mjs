@@ -4,125 +4,93 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const publicDir = path.join(__dirname, '../public');
+const rootDir = path.join(__dirname, '..');
+const publicDir = path.join(rootDir, 'public');
 
-// Stylized D icon with arrow cutout - base 64x64 design scaled for each size
-// The D has an arrow pointing right cut into the left stroke
+// Rasterises the committed SVG icons. The SVGs are the source of truth and are
+// written by scripts/generate-logo.js; run that first after changing the mark
+// or the brand colour. This script used to carry its own inline SVG copies,
+// which still drew the old "D" glyph in the old green, so running it put a
+// mark on every PNG that no longer matched the app.
+const faviconSvg = fs.readFileSync(path.join(publicDir, 'favicon.svg'));
+const appleTouchSvg = fs.readFileSync(path.join(publicDir, 'apple-touch-icon.svg'));
 
-// Favicon SVG content (32x32)
-const faviconSvg = `<svg width="32" height="32" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="metalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4ade80" />
-      <stop offset="50%" stop-color="#22c55e" />
-      <stop offset="100%" stop-color="#16a34a" />
-    </linearGradient>
-    <linearGradient id="shineGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.3" />
-      <stop offset="50%" stop-color="#ffffff" stop-opacity="0" />
-    </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="64" height="64" rx="8" fill="url(#metalGradient)"/>
-  <rect x="0" y="0" width="64" height="64" rx="8" fill="url(#shineGradient)"/>
-  <path d="M 14 12 L 14 26 L 22 32 L 14 38 L 14 52 L 28 52 C 48 52 54 42 54 32 C 54 22 48 12 28 12 Z M 24 20 L 28 20 C 42 20 46 26 46 32 C 46 38 42 44 28 44 L 24 44 Z" fill="#ffffff" fill-rule="evenodd"/>
-</svg>`;
+async function renderPng(svg, size) {
+  return sharp(svg, { density: 1200 }).resize(size, size).png().toBuffer();
+}
 
-// Apple touch icon SVG content (180x180)
-const appleTouchSvg = `<svg width="180" height="180" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="metalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4ade80" />
-      <stop offset="50%" stop-color="#22c55e" />
-      <stop offset="100%" stop-color="#16a34a" />
-    </linearGradient>
-    <linearGradient id="shineGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.3" />
-      <stop offset="50%" stop-color="#ffffff" stop-opacity="0" />
-    </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="64" height="64" rx="8" fill="url(#metalGradient)"/>
-  <rect x="0" y="0" width="64" height="64" rx="8" fill="url(#shineGradient)"/>
-  <path d="M 14 12 L 14 26 L 22 32 L 14 38 L 14 52 L 28 52 C 48 52 54 42 54 32 C 54 22 48 12 28 12 Z M 24 20 L 28 20 C 42 20 46 26 46 32 C 46 38 42 44 28 44 L 24 44 Z" fill="#ffffff" fill-rule="evenodd"/>
-</svg>`;
-
-// Icon 192x192 for PWA
-const icon192Svg = `<svg width="192" height="192" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="metalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4ade80" />
-      <stop offset="50%" stop-color="#22c55e" />
-      <stop offset="100%" stop-color="#16a34a" />
-    </linearGradient>
-    <linearGradient id="shineGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.3" />
-      <stop offset="50%" stop-color="#ffffff" stop-opacity="0" />
-    </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="64" height="64" rx="8" fill="url(#metalGradient)"/>
-  <rect x="0" y="0" width="64" height="64" rx="8" fill="url(#shineGradient)"/>
-  <path d="M 14 12 L 14 26 L 22 32 L 14 38 L 14 52 L 28 52 C 48 52 54 42 54 32 C 54 22 48 12 28 12 Z M 24 20 L 28 20 C 42 20 46 26 46 32 C 46 38 42 44 28 44 L 24 44 Z" fill="#ffffff" fill-rule="evenodd"/>
-</svg>`;
-
-// Icon 512x512 for PWA
-const icon512Svg = `<svg width="512" height="512" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="metalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4ade80" />
-      <stop offset="50%" stop-color="#22c55e" />
-      <stop offset="100%" stop-color="#16a34a" />
-    </linearGradient>
-    <linearGradient id="shineGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.3" />
-      <stop offset="50%" stop-color="#ffffff" stop-opacity="0" />
-    </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="64" height="64" rx="8" fill="url(#metalGradient)"/>
-  <rect x="0" y="0" width="64" height="64" rx="8" fill="url(#shineGradient)"/>
-  <path d="M 14 12 L 14 26 L 22 32 L 14 38 L 14 52 L 28 52 C 48 52 54 42 54 32 C 54 22 48 12 28 12 Z M 24 20 L 28 20 C 42 20 46 26 46 32 C 46 38 42 44 28 44 L 24 44 Z" fill="#ffffff" fill-rule="evenodd"/>
-</svg>`;
-
-async function generateIcon(svg, outputPath, width, height) {
+async function generateIcon(svg, outputPath, size) {
   try {
-    await sharp(Buffer.from(svg)).resize(width, height).png().toFile(outputPath);
-    console.log(`Created ${path.basename(outputPath)}`);
+    fs.writeFileSync(outputPath, await renderPng(svg, size));
+    console.log(`Created ${path.relative(rootDir, outputPath)}`);
   } catch (err) {
     throw new Error(`Failed to generate ${path.basename(outputPath)}: ${err.message}`);
   }
 }
 
+/** A Windows .ico holding PNG-encoded images (supported since Windows Vista). */
+async function generateIco(svg, outputPath, sizes) {
+  const images = await Promise.all(sizes.map((size) => renderPng(svg, size)));
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0); // reserved
+  header.writeUInt16LE(1, 2); // type: icon
+  header.writeUInt16LE(images.length, 4);
+
+  let offset = 6 + 16 * images.length;
+  const entries = images.map((png, i) => {
+    const entry = Buffer.alloc(16);
+    const size = sizes[i];
+    entry.writeUInt8(size >= 256 ? 0 : size, 0); // width (0 means 256)
+    entry.writeUInt8(size >= 256 ? 0 : size, 1); // height
+    entry.writeUInt8(0, 2); // palette size
+    entry.writeUInt8(0, 3); // reserved
+    entry.writeUInt16LE(1, 4); // colour planes
+    entry.writeUInt16LE(32, 6); // bits per pixel
+    entry.writeUInt32LE(png.length, 8);
+    entry.writeUInt32LE(offset, 12);
+    offset += png.length;
+    return entry;
+  });
+
+  fs.writeFileSync(outputPath, Buffer.concat([header, ...entries, ...images]));
+  console.log(`Created ${path.relative(rootDir, outputPath)}`);
+}
+
 async function generateIcons() {
   console.log('Generating icons...');
 
-  // Ensure public directory exists
-  if (!fs.existsSync(publicDir)) {
-    fs.mkdirSync(publicDir, { recursive: true });
-    console.log(`Created public directory: ${publicDir}`);
-  }
+  // Favicons
+  await generateIcon(faviconSvg, path.join(publicDir, 'favicon-32x32.png'), 32);
+  await generateIcon(faviconSvg, path.join(publicDir, 'favicon-16x16.png'), 16);
+  await generateIco(faviconSvg, path.join(rootDir, 'src', 'app', 'favicon.ico'), [16, 32, 48]);
 
-  // Generate favicon PNGs
-  await generateIcon(faviconSvg, path.join(publicDir, 'favicon-32x32.png'), 32, 32);
-  await generateIcon(faviconSvg, path.join(publicDir, 'favicon-16x16.png'), 16, 16);
+  // Apple touch icon and PWA icons
+  await generateIcon(appleTouchSvg, path.join(publicDir, 'apple-touch-icon.png'), 180);
+  await generateIcon(appleTouchSvg, path.join(publicDir, 'icon-192x192.png'), 192);
+  await generateIcon(appleTouchSvg, path.join(publicDir, 'icon-512x512.png'), 512);
 
-  // Generate apple-touch-icon.png (180x180)
-  await generateIcon(appleTouchSvg, path.join(publicDir, 'apple-touch-icon.png'), 180, 180);
-
-  // Generate PWA icons
-  await generateIcon(icon192Svg, path.join(publicDir, 'icon-192x192.png'), 192, 192);
-  await generateIcon(icon512Svg, path.join(publicDir, 'icon-512x512.png'), 512, 512);
-
-  // Generate OG image PNG from SVG
+  // OG image
   const ogSvgPath = path.join(publicDir, 'og-image.svg');
   if (fs.existsSync(ogSvgPath)) {
     try {
       const ogSvg = fs.readFileSync(ogSvgPath);
       await sharp(ogSvg).resize(1200, 630).png().toFile(path.join(publicDir, 'og-image.png'));
-      console.log('Created og-image.png');
+      console.log('Created public/og-image.png');
     } catch (err) {
       throw new Error(`Failed to generate og-image.png: ${err.message}`);
     }
   } else {
     console.warn(`Warning: ${ogSvgPath} not found, skipping OG image generation`);
   }
+
+  // Email header logo: the light logo on white (email clients can't render SVG)
+  const logoLightSvg = fs.readFileSync(path.join(publicDir, 'assets', 'logo-light.svg'));
+  await sharp(logoLightSvg, { density: 288 })
+    .resize(480, 120)
+    .flatten({ background: '#ffffff' })
+    .png()
+    .toFile(path.join(publicDir, 'email', 'zapdesk-logo.png'));
+  console.log('Created public/email/zapdesk-logo.png');
 
   console.log('All icons generated successfully!');
 }

@@ -150,14 +150,14 @@ export function CheckpointTicketTable({ tickets }: CheckpointTicketTableProps) {
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={`btn-secondary flex items-center gap-2 ${hasActiveFilters ? 'ring-2' : ''}`}
-            style={hasActiveFilters ? { borderColor: 'var(--primary)' } : {}}
+            style={hasActiveFilters ? { borderColor: 'var(--color-brand)' } : {}}
           >
             <Filter size={16} />
             Filters
             {hasActiveFilters && (
               <span
                 className="h-2 w-2 rounded-full"
-                style={{ backgroundColor: 'var(--primary)' }}
+                style={{ backgroundColor: 'var(--color-brand)' }}
               ></span>
             )}
           </button>

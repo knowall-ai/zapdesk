@@ -272,7 +272,7 @@ export default function CommentSection({
                         color: active
                           ? internal
                             ? 'var(--text-primary)'
-                            : 'var(--primary)'
+                            : 'var(--color-brand)'
                           : 'var(--text-muted)',
                       }}
                     >
@@ -384,7 +384,9 @@ export default function CommentSection({
                 onClick={() => fileInputRef.current?.click()}
                 disabled={!onUploadAttachment || isSubmitting}
                 className="rounded p-2 transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-                style={{ color: pendingFiles.length > 0 ? 'var(--primary)' : 'var(--text-muted)' }}
+                style={{
+                  color: pendingFiles.length > 0 ? 'var(--color-brand)' : 'var(--text-muted)',
+                }}
                 title="Attach file"
               >
                 <Paperclip size={compact ? 14 : 18} />
