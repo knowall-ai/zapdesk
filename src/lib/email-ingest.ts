@@ -32,7 +32,9 @@ const TICKET_REF_REGEX = /\[ZapDesk #(\d+)\]/;
  * reads `[ZapDesk #N] Internal note — "…"` (see `sendInternalNoteNotification`).
  */
 export function isInternalNoteReply(subject: string): boolean {
-  return /\[ZapDesk #\d+\]\s*Internal note\b/i.test(subject);
+  // The exact template form, dash and quote included: a customer ticket can
+  // be titled "Internal note not saved", and its replies must stay public.
+  return /\[ZapDesk #\d+\]\s*Internal note\s+—\s*"/i.test(subject);
 }
 
 /**

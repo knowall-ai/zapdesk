@@ -105,6 +105,17 @@ describe('merge point: a customer reply still notifies the assigned agent', () =
     expect(h.sendCustomerReplyNotification).not.toHaveBeenCalled();
   });
 
+  it('leaves public a customer ticket whose title starts "Internal note"', async () => {
+    await ingestEmail({
+      from: 'cust@example.com',
+      subject: 'Re: [ZapDesk #7145] Internal note not saved',
+      body: 'Still not saving.',
+    });
+    const commentCall = seen.find((c) => (c.init?.method ?? '').toUpperCase() === 'PATCH');
+    expect(String(commentCall?.init?.body)).not.toContain('[Internal Note]');
+    expect(h.sendCustomerReplyNotification).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves an ordinary reply public', async () => {
     await ingestEmail({
       from: 'cust@example.com',
