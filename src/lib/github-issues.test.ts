@@ -778,6 +778,17 @@ describe('fetching', () => {
       expect(gitHubTicketLabel()).toBe('ticket');
     });
 
+    it('falls back to ticket when the setting is only whitespace', () => {
+      // "   " is truthy, so trimming after the fallback left the label empty
+      // -- and an empty label matches no tag, so the Tickets tab would have
+      // lost every GitHub ticket without saying why.
+      vi.stubEnv('GITHUB_TICKET_LABEL', '   ');
+
+      expect(gitHubTicketLabel()).toBe('ticket');
+      expect(isGitHubSupportTicket({ tags: ['ticket'] })).toBe(true);
+      expect(isGitHubSupportTicket({ tags: ['enhancement'] })).toBe(false);
+    });
+
     it('selects exactly the labelled issues out of a mapped repository', () => {
       // What the Tickets tab does with what getGitHubTickets returns.
       const tickets = [
