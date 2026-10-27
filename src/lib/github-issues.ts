@@ -598,6 +598,35 @@ async function cachedRepoIssues(
   return issues;
 }
 
+/**
+ * The label that marks a GitHub issue as a support ticket (#568).
+ *
+ * The Tickets tab is for support tickets, and for DevOps that has always meant
+ * the `ticket` tag. GitHub had no equivalent filter, so every open issue in
+ * every mapped repository -- feature work, bugs, tech debt -- was listed
+ * beside the real tickets, which buried them.
+ */
+export function gitHubTicketLabel(): string {
+  // Trimmed before the fallback, not after: a value of "   " is truthy, so
+  // falling back afterwards left the label as the empty string. No tag
+  // matches that, and the Tickets tab would have quietly lost every GitHub
+  // ticket rather than saying anything was wrong.
+  return (process.env.GITHUB_TICKET_LABEL?.trim() || 'ticket').toLowerCase();
+}
+
+/**
+ * Whether an issue carries that label.
+ *
+ * Filtered here rather than with `labels=` on the GitHub query. The Kanban
+ * boards need every issue, and they read the same cache: asking GitHub a
+ * second time for the labelled subset would be more requests, not fewer, and
+ * two caches that can disagree about the same repository.
+ */
+export function isGitHubSupportTicket(ticket: { tags?: readonly string[] | null }): boolean {
+  const label = gitHubTicketLabel();
+  return (ticket.tags ?? []).some((tag) => tag.trim().toLowerCase() === label);
+}
+
 export interface GitHubTicketsResult {
   tickets: Ticket[];
   /** Repositories that could not be read; the rest are still returned. */

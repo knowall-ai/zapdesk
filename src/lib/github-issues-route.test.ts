@@ -28,7 +28,14 @@ vi.mock('@/lib/devops', async () => {
 
 const fetchMock = vi.fn();
 
-const gitHubIssue = (id: number, state: 'open' | 'closed', repo: string) => ({
+// Labelled `ticket`, because the Tickets views only carry support tickets
+// (#568). An issue without it belongs on the Kanban board, not here.
+const gitHubIssue = (
+  id: number,
+  state: 'open' | 'closed',
+  repo: string,
+  labels: string[] = ['ticket']
+) => ({
   id,
   number: id,
   title: `Issue ${id}`,
@@ -36,7 +43,7 @@ const gitHubIssue = (id: number, state: 'open' | 'closed', repo: string) => ({
   html_url: `https://github.com/${repo}/issues/${id}`,
   user: { id: 1, login: 'dana' },
   assignees: [],
-  labels: [],
+  labels,
   created_at: '2026-10-01T09:00:00Z',
   updated_at: new Date().toISOString(),
   closed_at: state === 'closed' ? new Date().toISOString() : null,
@@ -129,6 +136,31 @@ describe('GitHub issue routes', () => {
         status: 'Open',
         project: 'Internal',
       });
+    });
+
+    it('leaves out issues that are not support tickets', async () => {
+      // The Tickets tab filled up with feature work and tech debt from every
+      // mapped repository, and the real tickets were buried (#568).
+      fetchMock.mockImplementation(async (input: string) => {
+        const url = new URL(input);
+        if (!url.pathname.startsWith('/repos/acme/portal')) return Response.json([]);
+        return Response.json(
+          url.search.includes('state=open')
+            ? [
+                gitHubIssue(1, 'open', 'acme/portal', ['ticket']),
+                gitHubIssue(2, 'open', 'acme/portal', ['enhancement']),
+                gitHubIssue(3, 'open', 'acme/portal', []),
+              ]
+            : []
+        );
+      });
+
+      const { body } = await getIssues();
+
+      expect(body.tickets.map((t: { sourceRef: string }) => t.sourceRef)).toEqual([
+        'acme/portal#1',
+      ]);
+      expect(body.total).toBe(1);
     });
 
     // The issues are read with the server's token, so this is the access check.
