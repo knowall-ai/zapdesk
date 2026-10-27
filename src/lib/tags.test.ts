@@ -70,13 +70,19 @@ describe('tagsAtCreation', () => {
     ]);
   });
 
-  it('is undefined when the history is not loaded', () => {
+  it('is undefined when the creation revision is not available', () => {
+    // The caller should fall back to the live tags; there is nothing to read.
     expect(tagsAtCreation([])).toBeUndefined();
     expect(tagsAtCreation(undefined)).toBeUndefined();
+    expect(tagsAtCreation([revision(2, 'ticket')])).toBeUndefined();
   });
 
-  it('is undefined when the work item was created with no tags', () => {
-    expect(tagsAtCreation([revision(1)])).toBeUndefined();
-    expect(tagsAtCreation([revision(1, '  ;  ')])).toBeUndefined();
+  it('is empty, not undefined, when the work item was created with no tags', () => {
+    // An answer, not an absence. Tags added afterwards were not there at
+    // creation, and falling back to the live ones would credit the creation
+    // to a sender who had not written yet.
+    expect(tagsAtCreation([revision(1)])).toEqual([]);
+    expect(tagsAtCreation([revision(1, '  ;  ')])).toEqual([]);
+    expect(hasEmailTag(tagsAtCreation([revision(1)]))).toBe(false);
   });
 });

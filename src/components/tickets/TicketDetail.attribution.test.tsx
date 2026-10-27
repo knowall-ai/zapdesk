@@ -149,6 +149,18 @@ describe('timeline attribution of an emailed ticket', () => {
     expect(creation.queryByText('by email')).toBeNull();
   });
 
+  it('does not credit a creation that had no tags to a later sender', () => {
+    // The email tags were added after the fact. The creation revision is the
+    // evidence, and it says the ticket did not arrive by email.
+    const creation = showTimeline({
+      tags: ['ticket', 'email', 'email-from:rowan@example.test'],
+      history: [revision(1, '')],
+    });
+
+    expect(creation.getByText('Service Account')).toBeDefined();
+    expect(creation.queryByText('by email')).toBeNull();
+  });
+
   it('falls back to the live tags while the history has not arrived', () => {
     render(
       <TicketDetail

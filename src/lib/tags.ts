@@ -49,18 +49,21 @@ export function emailFromTag(tags: readonly string[] | null | undefined): string
  * did arrive by email. The entry describes something that already happened,
  * so it is read from the state at the time.
  *
- * Undefined when the history is not loaded or the work item was created with
- * no tags at all.
+ * Undefined means "the creation revision is not available", and the caller
+ * should fall back to the live tags. An **empty array** means the work item
+ * was created with no tags, which is an answer rather than an absence: tags
+ * added afterwards did not exist at creation, so reading the live ones would
+ * credit the creation to a sender who was not there and label it "by email".
  */
 export function tagsAtCreation(
   updates: readonly WorkItemUpdate[] | null | undefined
 ): string[] | undefined {
   const creation = updates?.find((update) => update.id === 1);
-  const raw = creation?.fields?.['System.Tags']?.newValue;
-  if (typeof raw !== 'string') return undefined;
-  const tags = raw
+  if (!creation) return undefined;
+  const raw = creation.fields?.['System.Tags']?.newValue;
+  if (typeof raw !== 'string') return [];
+  return raw
     .split(';')
     .map((tag) => tag.trim())
     .filter(Boolean);
-  return tags.length > 0 ? tags : undefined;
 }

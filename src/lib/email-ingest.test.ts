@@ -160,15 +160,24 @@ describe('renderForNotification', () => {
     // the first attempt at this fix was anchored at the start of the content
     // and never matched, because `storedDescriptionHtml` opens with a <div>.
     const stored = storedDescriptionHtml('rowan@example.test', '<p>Printer is dead.</p>');
-    const out = renderForNotification(stored);
+    const out = renderForNotification(stored, { stripSenderHeader: true });
     expect(out).not.toContain('From:');
     expect(out).not.toContain('rowan@example.test');
     expect(out).toContain('Printer is dead.');
   });
 
+  it('leaves a reply alone: its From is the customer\u2019s own words', () => {
+    // Only the new-ticket description carries a From that ZapDesk wrote. A
+    // reply that opens with one is a message the customer forwarded, and that
+    // header is the reader\u2019s only clue whose it was.
+    const forwarded = '<p><strong>From:</strong> supplier@example.test</p><p>See attached.</p>';
+
+    expect(renderForNotification(forwarded)).toContain('supplier@example.test');
+  });
+
   it('keeps the wrapper the description was stored in', () => {
     const stored = storedDescriptionHtml('rowan@example.test', '<p>Printer is dead.</p>');
-    const out = renderForNotification(stored);
+    const out = renderForNotification(stored, { stripSenderHeader: true });
     expect(out.startsWith('<div')).toBe(true);
     expect(out.trimEnd().endsWith('</div>')).toBe(true);
   });
@@ -197,7 +206,7 @@ describe('renderForNotification', () => {
   it('keeps a From further down, which belongs to a quoted message', () => {
     // Inside a forward it is the only clue whose message it was.
     const stored = '<p>See below.</p><p><strong>From:</strong> someone@example.test</p>';
-    expect(renderForNotification(stored)).toContain('From:');
+    expect(renderForNotification(stored, { stripSenderHeader: true })).toContain('From:');
   });
 
   it('leaves a body that never had one alone', () => {
