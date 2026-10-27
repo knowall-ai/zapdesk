@@ -1111,7 +1111,7 @@ function StandupPageContent() {
                     type="button"
                     onClick={() => handleColumnClick(focusedColumn)}
                     className="underline"
-                    style={{ color: 'var(--primary)' }}
+                    style={{ color: 'var(--color-brand)' }}
                   >
                     Show all
                   </button>

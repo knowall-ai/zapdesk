@@ -69,7 +69,7 @@ export default function StandupSummaryCards({
             onClick={() => onColumnClick(col.name)}
             aria-pressed={isActive}
             title={isActive ? 'Show every group again' : `Show only groups with ${col.name} items`}
-            className="card flex items-center gap-3 p-4 text-left transition-colors hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary)]"
+            className="card flex items-center gap-3 p-4 text-left transition-colors hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-brand)]"
             style={{
               borderLeft: `3px solid ${color}`,
               // The pressed tile takes its state's colour all the way round.
