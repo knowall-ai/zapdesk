@@ -163,6 +163,52 @@ const shots = [
   },
 ];
 
+/**
+ * Refuse to capture unless the signed-in account can actually open the
+ * organization that was asked for.
+ *
+ * `addInitScript` only *requests* one: it writes the name to localStorage, and
+ * OrganizationProvider then checks it against the organizations the account
+ * can reach and quietly falls back to the first of those when it cannot. So a
+ * run by somebody without access to the demo organization does not fail -- it
+ * photographs a real one instead, and these images go into a public
+ * repository. Checked against the API the provider itself reads, so there is
+ * no race with the fallback being written.
+ */
+async function confirmOrganization(page) {
+  const waitForOrgs = page.waitForResponse(
+    (response) => response.url().includes('/api/devops/organizations') && response.status() === 200,
+    { timeout: 30000 }
+  );
+
+  await page.goto(`${baseUrl}/tickets`, { waitUntil: 'domcontentloaded' });
+  if (page.url().includes('/login')) {
+    throw new Error('Redirected to /login: sign in to ZapDesk in the debug browser first');
+  }
+
+  let available = [];
+  try {
+    const body = await (await waitForOrgs).json();
+    available = (body.organizations ?? []).map((org) => org.accountName);
+  } catch {
+    throw new Error(
+      'Could not read the organizations this account can open, so the one being ' +
+        'captured cannot be confirmed. Refusing to capture.'
+    );
+  }
+
+  if (!available.includes(organization)) {
+    throw new Error(
+      `This account cannot open the ${organization} organization` +
+        `${available.length ? ` -- it has ${available.join(', ')}` : ''}. ` +
+        'ZapDesk would quietly fall back to another one, and these screenshots ' +
+        'are committed to a public repository. Refusing to capture.'
+    );
+  }
+
+  console.log(`✓ Confirmed the ${organization} organization is the one being captured`);
+}
+
 async function captureScreenshots() {
   const selected = only.length ? shots.filter((shot) => only.includes(shot.name)) : shots;
   const unknown = only.filter((name) => !shots.some((shot) => shot.name === name));
@@ -226,6 +272,8 @@ async function captureScreenshots() {
   console.log(
     `✓ Viewport set to ${VIEWPORT.width}x${VIEWPORT.height} at ${Math.round(zoom * 100)}% zoom`
   );
+
+  await confirmOrganization(page);
 
   await mkdir(outputDir, { recursive: true });
 

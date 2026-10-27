@@ -39,15 +39,15 @@ ssh -L 3102:localhost:3102 -R 9222:localhost:9222 <dev-machine>
 
 ### Options
 
-| Option       | Environment variable | Default                 | Purpose                                                        |
-| ------------ | -------------------- | ----------------------- | -------------------------------------------------------------- |
-| `--org`      | `ZAPDESK_ORG`        | (required)              | Azure DevOps organization shown in the header switcher         |
-| `--only`     | `ZAPDESK_ONLY`       | all                     | Comma-separated shot names to capture                          |
-| `--range`    | `ZAPDESK_RANGE`      | `30`                    | Live Dashboard period in days: `7`, `30`, `90` or `365`        |
-| `--source`   | `ZAPDESK_SOURCE`     | `both`                  | Work item source switcher: `both`, `devops` or `github`        |
-| `--base-url` | `ZAPDESK_BASE_URL`   | `http://localhost:3102` | ZapDesk URL                                                    |
-| `--cdp-url`  | `CDP_URL`            | `http://localhost:9222` | Browser remote debugging URL                                   |
-| `--out`      | `ZAPDESK_OUT`        | `screenshots`           | Output folder (gitignored; copy images elsewhere to keep them) |
+| Option       | Environment variable | Default                 | Purpose                                                                                                                     |
+| ------------ | -------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `--org`      | `ZAPDESK_ORG`        | (required)              | Azure DevOps organization shown in the header switcher                                                                      |
+| `--only`     | `ZAPDESK_ONLY`       | all                     | Comma-separated shot names to capture                                                                                       |
+| `--range`    | `ZAPDESK_RANGE`      | `30`                    | Live Dashboard period in days: `7`, `30`, `90` or `365`                                                                     |
+| `--source`   | `ZAPDESK_SOURCE`     | `both`                  | Work item source switcher: `both`, `devops` or `github`                                                                     |
+| `--base-url` | `ZAPDESK_BASE_URL`   | `http://localhost:3102` | ZapDesk URL                                                                                                                 |
+| `--cdp-url`  | `CDP_URL`            | `http://localhost:9222` | Browser remote debugging URL                                                                                                |
+| `--out`      | `ZAPDESK_OUT`        | `screenshots`           | Output folder. Only the default `screenshots/` is gitignored, so a custom path is not: check `git status` before committing |
 
 The script exits non-zero if any shot fails and prints the `--only` list to retry.
 
