@@ -355,6 +355,11 @@ export function ticketToWorkItem(ticket: Ticket): WorkItem {
     customerResponse: ticket.customerResponse,
     requester: ticket.requester,
     organization: ticket.organization,
+    // Where the item came from, so the dialog knows to talk to GitHub rather
+    // than to DevOps about it (#566).
+    source: ticket.source,
+    sourceUrl: ticket.sourceUrl,
+    sourceRef: ticket.sourceRef,
   };
 }
 

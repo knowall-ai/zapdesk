@@ -76,10 +76,12 @@ export function isOrgWildcard(entry: string): boolean {
   return ORG_WILDCARD_PATTERN.test(entry);
 }
 
-interface GitHubUser {
+export interface GitHubUser {
   id: number;
   login: string;
   avatar_url?: string;
+  /** Present on a single-issue read; the list endpoints leave it off. */
+  name?: string | null;
 }
 
 /** The fields of a GitHub REST issue that ZapDesk reads. */

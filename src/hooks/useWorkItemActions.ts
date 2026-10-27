@@ -15,6 +15,15 @@ export interface RequiredField {
 interface UseWorkItemActionsOptions {
   project?: string;
   workItemType?: string;
+  /**
+   * The states to offer, when they are not a DevOps work item type's.
+   *
+   * A GitHub issue's states come from the GitHub process template (#567), not
+   * from the project: asking DevOps for them would offer `Active` or
+   * `Committed` on a card that can only take the six ZapDesk statuses, and
+   * the write would be refused after the user had already chosen one.
+   */
+  states?: WorkItemState[];
   onStateChange?: (state: string) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
@@ -75,6 +84,7 @@ export interface WorkItemActions {
 export function useWorkItemActions({
   project,
   workItemType,
+  states,
   onStateChange,
   onAssigneeChange,
   onPriorityChange,
@@ -118,6 +128,7 @@ export function useWorkItemActions({
 
   // Fetch available states when dropdown opens
   useEffect(() => {
+    if (states) return;
     if (isStateDropdownOpen && availableStates.length === 0) {
       const fetchStates = async () => {
         setIsLoadingStates(true);
@@ -142,7 +153,7 @@ export function useWorkItemActions({
       fetchStates();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isStateDropdownOpen]);
+  }, [isStateDropdownOpen, states]);
 
   // Fetch team members when assignee dropdown opens.
   // Use devOpsGet (not bare fetch) so the x-devops-org header is included —
@@ -392,7 +403,7 @@ export function useWorkItemActions({
   return {
     isStateDropdownOpen,
     setIsStateDropdownOpen,
-    availableStates,
+    availableStates: states ?? availableStates,
     isLoadingStates,
     isUpdatingState,
     handleStateSelect,

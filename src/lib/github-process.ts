@@ -1,4 +1,4 @@
-import type { TicketStatus } from '@/types';
+import type { TicketStatus, WorkItemState } from '@/types';
 import type { WorkItemStateDef } from './state-categories';
 
 /**
@@ -71,6 +71,23 @@ export const GITHUB_STATES: readonly WorkItemStateDef[] = [
   { name: 'Pending', category: 'InProgress' },
   { name: 'Resolved', category: 'Resolved' },
   { name: 'Closed', category: 'Completed' },
+];
+
+/**
+ * The same states in the shape the state dropdown wants.
+ *
+ * Offered instead of the project's DevOps states when the item is a GitHub
+ * issue: a board whose process calls its states Committed and Doing would
+ * otherwise put those in front of somebody looking at an issue that can only
+ * take these six, and the write would be refused after they had chosen.
+ */
+export const GITHUB_WORK_ITEM_STATES: readonly WorkItemState[] = [
+  { name: 'New', color: 'b2b2b2', category: 'Proposed' },
+  { name: 'Open', color: '007acc', category: 'InProgress' },
+  { name: 'In Progress', color: '007acc', category: 'InProgress' },
+  { name: 'Pending', color: 'f5a623', category: 'InProgress' },
+  { name: 'Resolved', color: '8b5cf6', category: 'Resolved' },
+  { name: 'Closed', color: '6b7280', category: 'Completed' },
 ];
 
 const CATEGORY_OF = new Map(GITHUB_STATES.map((state) => [state.name, state.category]));

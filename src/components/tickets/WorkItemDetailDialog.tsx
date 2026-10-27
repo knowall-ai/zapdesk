@@ -10,6 +10,7 @@ import TicketDialogShell from './TicketDialogShell';
 import { useWorkItemActions } from '@/hooks/useWorkItemActions';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import { hasTicketTag } from '@/lib/tags';
+import { GITHUB_WORK_ITEM_STATES } from '@/lib/github-process';
 import { fullViewHref } from '@/lib/full-view';
 import WorkItemDetailContent from './WorkItemDetailContent';
 import WorkItemDetailSidebar from './WorkItemDetailSidebar';
@@ -51,6 +52,34 @@ interface WorkItemDetailDialogProps {
 /** Stable reference, so deriving an empty list does not re-render on every pass. */
 const EMPTY_ATTACHMENTS: Attachment[] = [];
 
+/** A comment from /api/github/issue, as the comment list shows one (#566). */
+interface GitHubCommentPayload {
+  id: number;
+  authorLogin: string;
+  authorName: string;
+  avatarUrl?: string;
+  html: string;
+  createdAt: string;
+}
+
+function gitHubCommentToTicketComment(comment: GitHubCommentPayload): TicketComment {
+  return {
+    id: comment.id,
+    author: {
+      id: `github:${comment.authorLogin}`,
+      displayName: comment.authorName,
+      // GitHub does not hand out its users' addresses, and nothing here needs
+      // one -- but the shared comment list expects the field to exist.
+      email: '',
+      avatarUrl: comment.avatarUrl,
+    },
+    content: comment.html,
+    createdAt: new Date(comment.createdAt),
+    // Everything written on a GitHub issue is public.
+    isInternal: false,
+  };
+}
+
 /**
  * Quick view of a ticket or work item, opened from a list or board: its
  * fields, comments and attachments, with links to its full view and to DevOps.
@@ -71,6 +100,14 @@ export default function WorkItemDetailDialog({
 }: WorkItemDetailDialogProps) {
   const router = useRouter();
   const { fetchDevOps, hasOrganization } = useDevOpsApi();
+
+  /**
+   * A GitHub issue is shown in this dialog like anything else (#566), but
+   * nothing about it lives in DevOps: its comments, its body and its status
+   * are all on GitHub, behind /api/github/issue. `sourceRef` is
+   * `owner/repo#123`, which is how that endpoint names an issue.
+   */
+  const gitHubRef = workItem?.source === 'github' ? workItem.sourceRef : undefined;
 
   // Comments state (dialog fetches its own comments)
   const [comments, setComments] = useState<TicketComment[]>([]);
@@ -164,6 +201,7 @@ export default function WorkItemDetailDialog({
   const actions = useWorkItemActions({
     project: workItem?.project,
     workItemType: workItem?.workItemType,
+    states: gitHubRef ? [...GITHUB_WORK_ITEM_STATES] : undefined,
     onStateChange: onStateChange ? boundStateChange : undefined,
     onAssigneeChange: onAssigneeChange ? boundAssigneeChange : undefined,
     onPriorityChange: onPriorityChange ? boundPriorityChange : undefined,
@@ -175,18 +213,25 @@ export default function WorkItemDetailDialog({
     if (!workItem?.project || !hasOrganization) return;
     setIsLoadingComments(true);
     try {
-      const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}/comments`);
+      const response = await fetchDevOps(
+        gitHubRef
+          ? `/api/github/issue?ref=${encodeURIComponent(gitHubRef)}`
+          : `/api/devops/tickets/${workItem.id}/comments`
+      );
       if (response.ok) {
         const data = await response.json();
         setComments(
-          (data.comments || [])
-            .map((c: TicketComment & { createdAt: string }) => ({
-              ...c,
-              createdAt: new Date(c.createdAt),
-            }))
-            .sort(
-              (a: TicketComment, b: TicketComment) => a.createdAt.getTime() - b.createdAt.getTime()
-            )
+          gitHubRef
+            ? (data.comments || []).map(gitHubCommentToTicketComment)
+            : (data.comments || [])
+                .map((c: TicketComment & { createdAt: string }) => ({
+                  ...c,
+                  createdAt: new Date(c.createdAt),
+                }))
+                .sort(
+                  (a: TicketComment, b: TicketComment) =>
+                    a.createdAt.getTime() - b.createdAt.getTime()
+                )
         );
       }
     } catch (err) {
@@ -194,7 +239,7 @@ export default function WorkItemDetailDialog({
     } finally {
       setIsLoadingComments(false);
     }
-  }, [workItem?.id, workItem?.project, fetchDevOps, hasOrganization]);
+  }, [workItem?.id, workItem?.project, gitHubRef, fetchDevOps, hasOrganization]);
 
   /**
    * The full ticket page reads attachments off the ticket payload; this dialog
@@ -204,6 +249,9 @@ export default function WorkItemDetailDialog({
    */
   const fetchAttachments = useCallback(async () => {
     if (!workItem?.project || !hasOrganization) return;
+    // A GitHub issue has no DevOps attachments, and asking for them by a
+    // negated issue id would be a 404 on every open.
+    if (gitHubRef) return;
     const requestedFor = workItem.id;
     try {
       const response = await fetchDevOps(`/api/devops/tickets/${requestedFor}/attachments`);
@@ -215,17 +263,26 @@ export default function WorkItemDetailDialog({
       // Non-fatal: the rest of the dialog is still worth showing.
       console.error('Failed to fetch attachments:', err);
     }
-  }, [workItem?.id, workItem?.project, fetchDevOps, hasOrganization]);
+  }, [workItem?.id, workItem?.project, gitHubRef, fetchDevOps, hasOrganization]);
 
   const handleAddComment = useCallback(
     async (comment: string, isInternal = false) => {
       if (!workItem || !hasOrganization) return;
       try {
-        const response = await fetchDevOps(`/api/devops/tickets/${workItem.id}/comments`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ comment, isInternal }),
-        });
+        // An issue has no internal notes: everything written on a GitHub
+        // issue is public, so there is nowhere to put one that would stay
+        // hidden. The control is not offered for one.
+        const response = gitHubRef
+          ? await fetchDevOps('/api/github/issue/comments', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ref: gitHubRef, comment }),
+            })
+          : await fetchDevOps(`/api/devops/tickets/${workItem.id}/comments`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ comment, isInternal }),
+            });
         if (!response.ok) {
           const data = await response.json().catch(() => ({}));
           throw new Error(data.error || 'Failed to add comment');
@@ -241,7 +298,7 @@ export default function WorkItemDetailDialog({
         throw error;
       }
     },
-    [workItem, fetchComments, fetchAttachments, fetchDevOps, hasOrganization]
+    [workItem, gitHubRef, fetchComments, fetchAttachments, fetchDevOps, hasOrganization]
   );
 
   const handleZapSent = useCallback(
@@ -416,7 +473,21 @@ export default function WorkItemDetailDialog({
     </>
   );
 
-  const headerRight = (
+  // A GitHub issue has no page of its own in ZapDesk, is not in DevOps, and
+  // cannot be put in the DevOps Recycle Bin. Offering any of the three would
+  // be offering something the server refuses -- so the issue gets the one
+  // link that works, to itself on GitHub.
+  const headerRight = gitHubRef ? (
+    <a
+      href={workItem.sourceUrl ?? workItem.devOpsUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+      style={{ color: 'var(--color-brand)' }}
+    >
+      View on GitHub <ExternalLink size={14} />
+    </a>
+  ) : (
     <>
       <button
         onClick={() => {
@@ -477,12 +548,18 @@ export default function WorkItemDetailDialog({
         actions={actions}
         showAreaPath
         showEffortHours
-        canEditAssignee={!!onAssigneeChange}
-        canEditPriority={!!onPriorityChange}
-        canEditType={!!onTypeChange}
-        canEditTags={!!onTagsChange}
+        // A GitHub issue has no DevOps priority, type or area path, and these
+        // controls save through the DevOps routes. Its status is editable --
+        // that writes back to GitHub (#566) -- and the rest is read-only
+        // rather than a control that fails when it is used.
+        canEditAssignee={!!onAssigneeChange && !gitHubRef}
+        canEditPriority={!!onPriorityChange && !gitHubRef}
+        canEditType={!!onTypeChange && !gitHubRef}
+        canEditTags={!!onTagsChange && !gitHubRef}
         onTagsChange={
-          onTagsChange ? (tags: string[]) => onTagsChange(workItem.id, tags) : undefined
+          onTagsChange && !gitHubRef
+            ? (tags: string[]) => onTagsChange(workItem.id, tags)
+            : undefined
         }
       />
     </div>
