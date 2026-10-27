@@ -47,7 +47,7 @@ import {
   attachedFilesHtml,
 } from '@/lib/attachment-utils';
 import { emailFromTag, hasEmailTag, hasTicketTag, tagsAtCreation } from '@/lib/tags';
-import { exitFullViewHref } from '@/lib/full-view';
+import { exitFullViewHref, reachedByInAppNavigation } from '@/lib/full-view';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
 import PriorityIndicator from '../common/PriorityIndicator';
@@ -155,16 +155,20 @@ export default function TicketDetail({
   // with the ticket's quick view open again (#7727). Read after mount, as the
   // address is not available while rendering on the server.
   const [exitHref, setExitHref] = useState<string | null>(null);
+  const [cameFromApp, setCameFromApp] = useState(false);
   useEffect(() => {
     setExitHref(exitFullViewHref(ticket.id));
+    setCameFromApp(reachedByInAppNavigation());
   }, [ticket.id]);
   const leaveFullView = () => {
-    // Only the recorded origin counts as somewhere to go back to. This used to
-    // fall back to `router.back()` whenever the browser had any history, which
-    // a ticket opened from an email always does: following the link signs the
-    // reader in, and the sign-in redirects leave entries behind, so "back"
-    // returned to an auth page rather than the list (7771).
+    // A ticket opened from an email used to go "back" to an auth page: the
+    // link signs the reader in, and the sign-in redirects leave history
+    // entries behind (7771). So the browser's history is only trusted when
+    // this page was reached by navigating inside ZapDesk -- the dashboard,
+    // reports and boards link here without recording an origin, and back
+    // must still return to them.
     if (exitHref) router.push(exitHref);
+    else if (cameFromApp) router.back();
     else router.push(isTicket ? '/tickets' : '/kanban');
   };
   const [isSubmitting, setIsSubmitting] = useState(false);

@@ -537,7 +537,11 @@ export async function sendAgentReply(
     // Pasted images are stored as proxy URLs that only a signed-in ZapDesk
     // session can fetch. Sent as-is the customer gets a broken image where the
     // screenshot should be, so the bytes travel with the message instead.
-    const inlined = inlineProxyImages(replyHtml);
+    //
+    // The reply comes straight from the request body, so a direct POST can
+    // carry anything the browser's editor would have stripped. This is the
+    // one message that reaches the customer, so it is sanitised here too.
+    const inlined = inlineProxyImages(sanitizeEmailHtml(replyHtml));
     // Files attached with the paperclip are linked, not drawn; they go on the
     // message as ordinary attachments (#7376).
     const linked = attachLinkedFiles(inlined.html, inlined.attachments);

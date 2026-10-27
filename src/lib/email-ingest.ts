@@ -28,6 +28,14 @@ import {
 const TICKET_REF_REGEX = /\[ZapDesk #(\d+)\]/;
 
 /**
+ * True for a reply to the support team's internal-note email, whose subject
+ * reads `[ZapDesk #N] Internal note — "…"` (see `sendInternalNoteNotification`).
+ */
+export function isInternalNoteReply(subject: string): boolean {
+  return /\[ZapDesk #\d+\]\s*Internal note\b/i.test(subject);
+}
+
+/**
  * Deadline on every DevOps call made while ingesting an email.
  *
  * Ingestion runs unattended off the poller, so a request that never returns
@@ -211,7 +219,12 @@ async function handleThreadReply(
       failures,
       splicedInlineCids(renderedBody, uploaded)
     );
-    const commentHtml = `
+    // A teammate answering the internal-note email sends a reply that carries
+    // the ticket reference like any other. Stored as a public comment, it
+    // would be quoted to the customer with the next agent reply, so it is
+    // kept internal, as the note it answers was.
+    const marker = isInternalNoteReply(email.subject) ? '[Internal Note] ' : '';
+    const commentHtml = `${marker}
 <div style="font-family: sans-serif;">
   <p><strong>Email reply from:</strong> ${escapeHtml(senderEmail)}</p>
   <hr/>

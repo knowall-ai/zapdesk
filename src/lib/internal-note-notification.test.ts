@@ -125,6 +125,21 @@ describe('internal note tells the support team (7767)', () => {
     expect(sendInternalNoteNotification.mock.calls[0][0].recipients).toBe('sam@example.test');
   });
 
+  it('never emails an internal note on an email ticket to the customer', async () => {
+    findProjectForWorkItem.mockResolvedValue({
+      project: { name: 'Internal' },
+      workItem: workItem('ticket; email; email-from:customer@example.test'),
+    });
+
+    await post({ comment: 'The customer is wrong about the invoice', isInternal: true });
+    expect(sendAgentReply).not.toHaveBeenCalled();
+
+    // The same ticket does reach the customer for a public reply, so the
+    // assertion above is not passing for want of an email ticket.
+    await post({ comment: 'Thanks, looking now', isInternal: false });
+    expect(sendAgentReply).toHaveBeenCalledTimes(1);
+  });
+
   it('adds the note even when nobody is configured to hear about it', async () => {
     delete process.env.SUPPORT_TEAM_NOTIFY_EMAIL;
 
