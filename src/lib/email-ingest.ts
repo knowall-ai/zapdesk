@@ -304,21 +304,28 @@ function withoutStyleAttributes(html: string): string {
  * Regex, not a parser, to match the rest of this module's best-effort
  * treatment of inbound markup — and the input here is already sanitised.
  */
-export function renderForNotification(storedHtml: string): string {
-  // The stored description opens with the sender's address, and every
-  // notification template states who it is from in its own header -- so the
-  // first email about a ticket showed "From:" twice, once from the template
-  // and once from the body quoted underneath it (7765). Only a leading one is
-  // removed: a "From:" further down belongs to a quoted message and is the
-  // reader's only clue whose it is.
+export function renderForNotification(
+  storedHtml: string,
+  { stripSenderHeader = false }: { stripSenderHeader?: boolean } = {}
+): string {
+  // `storedDescriptionHtml` opens a new ticket's description with the sender's
+  // address, and every notification template states who it is from in its own
+  // header -- so the team's first email about a ticket showed "From:" twice
+  // (7765). That paragraph is ZapDesk's own, so only the caller that knows it
+  // is there asks for it to be removed.
   //
-  // `storedDescriptionHtml` wraps that paragraph in a <div>, so the wrapper is
-  // matched with it and put back -- anchoring on the paragraph alone matched
-  // nothing a real stored description looks like.
-  const plain = withoutStyleAttributes(storedHtml).replace(
-    /^(\s*<div\b[^>]*>)?\s*<p>\s*<strong>\s*From:\s*<\/strong>[^<]*<\/p>\s*(<hr\s*\/?>)?\s*/i,
-    (_match, wrapper?: string) => wrapper ?? ''
-  );
+  // Off by default, and off for replies. A reply that opens with "From:" is a
+  // message the customer forwarded, and that header is the reader's only clue
+  // whose it was -- removing it would delete the sender's own words.
+  //
+  // The wrapper is matched with the paragraph and put back: anchoring on the
+  // paragraph alone matched nothing a real stored description looks like.
+  const plain = stripSenderHeader
+    ? withoutStyleAttributes(storedHtml).replace(
+        /^(\s*<div\b[^>]*>)?\s*<p>\s*<strong>\s*From:\s*<\/strong>[^<]*<\/p>\s*(<hr\s*\/?>)?\s*/i,
+        (_match, wrapper?: string) => wrapper ?? ''
+      )
+    : withoutStyleAttributes(storedHtml);
   // Attachment links point at the DevOps attachment API, which answers 401
   // without a signed-in session. In the app that is fine; in an email it is a
   // link that refuses the reader, so the filename stays as plain text and the
@@ -394,7 +401,8 @@ function notifyTeamOfNewTicket(
     ticketSubject: subject,
     requesterEmail: senderEmail,
     project: projectName,
-    messageHtml: renderForNotification(descriptionHtml),
+    // The only body ZapDesk wrote the "From:" line into.
+    messageHtml: renderForNotification(descriptionHtml, { stripSenderHeader: true }),
     recipients: recipients.join(', '),
   }).catch(() => {});
 }
