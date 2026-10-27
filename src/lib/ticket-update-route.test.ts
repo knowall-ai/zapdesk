@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
+import { MAX_TITLE_LENGTH } from './ticket-title';
 
 // Route-level coverage for PATCH /api/devops/tickets/[id]: input validation
 // and the customer's title/priority email (#7724). DevOps is mocked at the
@@ -117,6 +118,33 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       { thread: 'Cannot print', current: 'Printer still offline' },
       'customer@example.test',
       expect.any(Array)
+    );
+  });
+
+  it.each(['', '   ', null, 42])('rejects title %j before touching DevOps', async (title) => {
+    const { status } = await patch({ project: 'Internal', title });
+    expect(status).toBe(400);
+    expect(updateTicketFields).not.toHaveBeenCalled();
+  });
+
+  it('rejects a title longer than DevOps accepts, saying what the limit is', async () => {
+    const { status, body } = await patch({
+      project: 'Internal',
+      title: 'x'.repeat(MAX_TITLE_LENGTH + 1),
+    });
+    expect(status).toBe(400);
+    expect(body.error).toContain(String(MAX_TITLE_LENGTH));
+    expect(updateTicketFields).not.toHaveBeenCalled();
+  });
+
+  it('saves a title trimmed, so padding cannot reach DevOps', async () => {
+    updateTicketFields.mockResolvedValue(workItem({ 'System.Title': 'Printer offline' }));
+    const { status } = await patch({ project: 'Internal', title: '  Printer still offline  ' });
+    expect(status).toBe(200);
+    expect(updateTicketFields).toHaveBeenCalledWith(
+      'Internal',
+      7,
+      expect.objectContaining({ title: 'Printer still offline' })
     );
   });
 
