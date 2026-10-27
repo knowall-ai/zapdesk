@@ -450,6 +450,14 @@ function notifyAgentOfReply(
   );
 }
 
+/** `organisation|project` -> the work item type emailed tickets are created as. */
+const ticketTypeCache = new Map<string, string>();
+
+/** Forget the cached types, so a test or a process change is not shadowed by them. */
+export function clearTicketTypeCache(): void {
+  ticketTypeCache.clear();
+}
+
 class AzureDevOpsServiceWithPAT {
   private encodedPat: string;
   private organization: string;
@@ -493,8 +501,11 @@ class AzureDevOpsServiceWithPAT {
       },
     ];
 
+    const type = await this.ticketTypeFor(projectName);
     const response = await fetch(
-      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$Task?api-version=7.0`,
+      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/$${encodeURIComponent(
+        type
+      )}?api-version=7.0`,
       {
         method: 'POST',
         headers: { ...this.headers, 'Content-Type': 'application/json-patch+json' },
@@ -507,6 +518,46 @@ class AzureDevOpsServiceWithPAT {
       throw new Error(`Failed to create work item: ${response.statusText} - ${errorText}`);
     }
     return response.json();
+  }
+
+  /**
+   * The work item type an emailed ticket is created as.
+   *
+   * `Ticket` on a project using the Support Ticket process (#569), whose
+   * states are ZapDesk's statuses; `Task` everywhere else, which is what every
+   * project used before that process existed.
+   *
+   * Read from the project's own type list rather than from a setting, so
+   * moving a project onto the process is the only thing anybody has to do --
+   * a setting would be a second place to change and a way for the two to
+   * disagree. Cached for the life of the process: a project does not change
+   * its process between two emails, and this would otherwise be an extra
+   * round trip on every message.
+   */
+  private async ticketTypeFor(projectName: string): Promise<string> {
+    const key = `${this.baseUrl}|${projectName.toLowerCase()}`;
+    const cached = ticketTypeCache.get(key);
+    if (cached) return cached;
+
+    let type = 'Task';
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes?api-version=7.0`,
+        { headers: this.headers, signal: AbortSignal.timeout(DEVOPS_TIMEOUT_MS) }
+      );
+      if (response.ok) {
+        const data = (await response.json()) as { value?: Array<{ name?: string }> };
+        const names = (data.value || []).map((t) => (t.name || '').toLowerCase());
+        if (names.includes('ticket')) type = 'Ticket';
+      }
+    } catch (error) {
+      // Not worth failing an inbound email over: Task is what every project
+      // used before the Support Ticket process existed.
+      console.warn(`[Ingest] Could not read work item types for ${projectName}:`, error);
+    }
+
+    ticketTypeCache.set(key, type);
+    return type;
   }
 
   async addComment(ticketId: number, commentHtml: string) {

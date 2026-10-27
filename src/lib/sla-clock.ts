@@ -14,10 +14,10 @@ import type { WorkItemUpdate } from '@/types';
  *
  * ## Which states stop it
  *
- * A dedicated "Awaiting customer response" state does not exist in the process
- * template yet — that is 7378, and this is written so that adding it there is
- * the only change needed here. Today the one state that means "not being
- * worked on, and not finished" is Blocked, so that is the default.
+ * The Support Ticket process template (#569) defines `Pending` for exactly
+ * this: waiting on the customer or a third party. `Blocked` stays beside it,
+ * because that is what every development template calls the same thing, and
+ * ZapDesk writes it when a ticket on one of those is set to Pending.
  *
  * ## Why a timeline rather than the current state
  *
@@ -29,7 +29,7 @@ import type { WorkItemUpdate } from '@/types';
  */
 
 /** DevOps state names that stop the clock, lower-cased for comparison. */
-export const DEFAULT_PAUSING_STATES: readonly string[] = ['blocked'];
+export const DEFAULT_PAUSING_STATES: readonly string[] = ['blocked', 'pending'];
 
 export interface StatePeriod {
   /** The DevOps state name, as spelled on the work item. */
