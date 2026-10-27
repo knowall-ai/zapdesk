@@ -578,12 +578,12 @@ export default function TicketDetail({
   };
 
   const handleTitleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    // An input method uses Enter to accept the candidate it is offering and
+    // Escape to drop it, so a title typed in Japanese, Chinese or Korean
+    // reaches this handler mid-word. Acting then would save half a title, or
+    // close the editor and lose the draft, under the person typing it.
+    if (event.nativeEvent.isComposing) return;
     if (event.key === 'Enter') {
-      // An input method uses Enter to accept the candidate it is offering, so
-      // a title typed in Japanese, Chinese or Korean reaches this handler
-      // mid-word. Saving then would commit half a title and close the editor
-      // under the person typing it.
-      if (event.nativeEvent.isComposing) return;
       event.preventDefault();
       void handleSaveTitle();
     } else if (event.key === 'Escape') {

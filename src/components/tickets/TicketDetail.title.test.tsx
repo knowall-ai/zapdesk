@@ -140,6 +140,18 @@ describe('TicketDetail title editing', () => {
     await waitFor(() => expect(onTitleChange).toHaveBeenCalledWith('プリンタが動かない'));
   });
 
+  it('keeps the editor and draft when Escape only cancels composition', () => {
+    // An IME uses Escape to drop the candidate it is offering, not the edit.
+    const onTitleChange = vi.fn(async () => {});
+    show(onTitleChange);
+    openEditor();
+    fireEvent.change(input(), { target: { value: 'プリンタ' } });
+    fireEvent.keyDown(input(), { key: 'Escape', isComposing: true });
+
+    expect(onTitleChange).not.toHaveBeenCalled();
+    expect((input() as HTMLInputElement).value).toBe('プリンタ');
+  });
+
   it('abandons the edit on Escape without saving', () => {
     const onTitleChange = vi.fn(async () => {});
     show(onTitleChange);
