@@ -27,6 +27,7 @@ import {
   resolveStateForColumn,
   type AllowedStates,
 } from '@/lib/kanban-columns';
+import { formatLastUpdated, summarizeGroup } from '@/lib/kanban-summary';
 import type { GroupActivitySummary, HighlightReason } from '@/lib/activity-summary';
 import type { PullRequestActivity, StandupColumn, StandupWorkItem } from '@/types';
 import { debugLog, debugWarn } from '@/lib/debug';
@@ -49,6 +50,7 @@ function DroppableColumn({
   activeId,
   isBlocked = false,
   blockedReason,
+  isFocused = false,
   highlights,
   onItemClick,
 }: {
@@ -59,6 +61,8 @@ function DroppableColumn({
   /** The dragged card's type has no state for this column — refuse the drop. */
   isBlocked?: boolean;
   blockedReason?: string;
+  /** The board is narrowed to this state (a KPI tile is pressed); mark the column. */
+  isFocused?: boolean;
   /** While highlighting: the cards to light up, and why. Everything else is dimmed. */
   highlights?: Map<number, HighlightReason[]>;
   onItemClick?: (item: StandupWorkItem) => void;
@@ -73,7 +77,7 @@ function DroppableColumn({
 
   return (
     <div
-      className="kanban-column"
+      className={`kanban-column ${isFocused ? 'kanban-column-focused' : ''}`}
       style={isBlocked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
       title={isBlocked ? blockedReason : undefined}
     >
@@ -142,6 +146,11 @@ interface KanbanGroupSectionProps {
    * so coming back from a work item finds it as it was left (#318).
    */
   positionScope?: string;
+  /**
+   * The state the board is narrowed to, when a KPI tile is pressed (#320).
+   * The group then starts open, with that column marked.
+   */
+  focusedColumn?: string | null;
   columns: StandupColumn[];
   /** Project -> work item type -> states that type defines there. Omit to allow every drop. */
   allowedStatesByProjectType?: AllowedStates;
@@ -154,6 +163,7 @@ interface KanbanGroupSectionProps {
 export default function KanbanGroupSection({
   groupName,
   positionScope,
+  focusedColumn = null,
   columns,
   allowedStatesByProjectType,
   onStateChange,
@@ -161,17 +171,23 @@ export default function KanbanGroupSection({
   activity,
 }: KanbanGroupSectionProps) {
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
-  const totalItems = useMemo(() => columns.reduce((sum, c) => sum + c.items.length, 0), [columns]);
+  const summary = useMemo(() => summarizeGroup(columns), [columns]);
+  const totalItems = summary.total;
 
+  // Narrowed to one state, the group is listed because it has cards there, so
+  // it starts open. That is a view of the moment: it is not remembered, and it
+  // does not overwrite which groups the user had open on the full board.
+  const isFocusedView = focusedColumn !== null;
   const [expanded, setExpanded] = useState(
     () =>
-      positionScope !== undefined &&
-      readExpandedGroups(sessionPositionStorage(), positionScope).includes(groupName)
+      isFocusedView ||
+      (positionScope !== undefined &&
+        readExpandedGroups(sessionPositionStorage(), positionScope).includes(groupName))
   );
   const toggleExpanded = () => {
     const next = !expanded;
     setExpanded(next);
-    if (positionScope !== undefined) {
+    if (positionScope !== undefined && !isFocusedView) {
       writeGroupExpanded(sessionPositionStorage(), positionScope, groupName, next);
     }
   };
@@ -418,14 +434,14 @@ export default function KanbanGroupSection({
   }, [syncFromProps]);
 
   return (
-    <div className="card overflow-hidden">
+    <div className="card kanban-group">
       {/* Header. The summary sits beside the expand button, not inside it,
           because it holds a button of its own. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pr-4 transition-colors hover:bg-white/5">
         <button
           onClick={toggleExpanded}
           aria-expanded={expanded}
-          className="flex min-w-0 flex-1 items-center gap-3 p-4 text-left"
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2 p-4 text-left"
         >
           <span style={{ color: 'var(--text-muted)' }}>
             {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
@@ -434,6 +450,34 @@ export default function KanbanGroupSection({
           <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
             {groupName}
           </h3>
+
+          {/* What is inside, readable without opening the group (#321). */}
+          {totalItems > 0 && (
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {summary.counts.map((count) => (
+                <span
+                  key={count.name}
+                  className="flex items-center gap-1 text-xs font-medium"
+                  style={{ color: getColumnColor(count.name, count.category) }}
+                >
+                  {getColumnIcon(count.name, count.category, 12)}
+                  {/* The name is written out: Resolved and Closed share an icon,
+                      and a tooltip is no help on a touch screen. */}
+                  <span style={{ color: 'var(--text-muted)' }}>{count.name}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>{count.count}</span>
+                </span>
+              ))}
+              {summary.lastUpdated && (
+                <span
+                  className="text-xs"
+                  style={{ color: 'var(--text-muted)' }}
+                  title={summary.lastUpdated.toLocaleString('en-GB')}
+                >
+                  {formatLastUpdated(summary.lastUpdated)}
+                </span>
+              )}
+            </span>
+          )}
 
           {totalItems === 0 && (
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -484,6 +528,7 @@ export default function KanbanGroupSection({
                     items={items}
                     activeId={activeId}
                     isBlocked={isBlocked}
+                    isFocused={focusedColumn === col.name}
                     highlights={highlights}
                     blockedReason={
                       isBlocked && activeItem

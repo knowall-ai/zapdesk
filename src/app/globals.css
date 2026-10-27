@@ -683,6 +683,72 @@ body {
   }
 }
 
+/* Kanban Board page: one board per group (project or person). */
+.kanban-group {
+  overflow: hidden;
+}
+
+/* State columns sit side by side with no gap, sharing their borders (#305). */
+.kanban-group .kanban-columns {
+  gap: 0;
+}
+
+.kanban-group .kanban-column {
+  border-radius: 0;
+}
+
+.kanban-group .kanban-column + .kanban-column {
+  border-left-width: 0;
+}
+
+.kanban-group .kanban-column:first-child {
+  border-top-left-radius: 0.5rem;
+  border-bottom-left-radius: 0.5rem;
+}
+
+.kanban-group .kanban-column:last-child {
+  border-top-right-radius: 0.5rem;
+  border-bottom-right-radius: 0.5rem;
+}
+
+/* The state a pressed KPI tile narrowed the board to (#320). */
+.kanban-column-focused .kanban-column-header {
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+/*
+ * Keep the state names in view while scrolling down a long group (#305).
+ * A sticky header sticks to its nearest scrolling ancestor, so the group and
+ * its row of columns must not be scroll containers themselves: "clip" hides
+ * overflow without becoming one. That is only safe where the six columns fit
+ * across the page; on narrower screens the row keeps its own horizontal
+ * scrolling and the headers scroll with the cards, as before.
+ */
+@media (min-width: 1280px) {
+  .kanban-group {
+    overflow: clip;
+  }
+
+  .kanban-group .kanban-columns {
+    overflow-x: visible;
+  }
+
+  .kanban-group .kanban-column-header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--surface);
+  }
+
+  .kanban-group .kanban-column:first-child .kanban-column-header {
+    border-top-left-radius: calc(0.5rem - 1px);
+  }
+
+  .kanban-group .kanban-column:last-child .kanban-column-header {
+    border-top-right-radius: calc(0.5rem - 1px);
+  }
+}
+
 /* Activity Calendar responsive styles */
 .activity-calendar-wrapper {
   width: 100%;
