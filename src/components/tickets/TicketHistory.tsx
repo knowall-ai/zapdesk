@@ -88,7 +88,11 @@ export default function TicketHistory({ updates, loading, emailRequester }: Tick
         const isLast = index === updates.length - 1;
 
         return (
-          <div key={update.id} className="relative flex gap-3 pl-1">
+          <div
+            key={update.id}
+            data-testid={`history-entry-${update.id}`}
+            className="relative flex gap-3 pl-1"
+          >
             {/* Timeline line */}
             {!isLast && (
               <div

@@ -286,12 +286,26 @@ export function renderForNotification(storedHtml: string): string {
   // and once from the body quoted underneath it (7765). Only a leading one is
   // removed: a "From:" further down belongs to a quoted message and is the
   // reader's only clue whose it is.
+  //
+  // `storedDescriptionHtml` wraps that paragraph in a <div>, so the wrapper is
+  // matched with it and put back -- anchoring on the paragraph alone matched
+  // nothing a real stored description looks like.
   const plain = withoutStyleAttributes(storedHtml).replace(
-    /^\s*<p>\s*<strong>\s*From:\s*<\/strong>[^<]*<\/p>\s*(<hr\s*\/?>)?\s*/i,
-    ''
+    /^(\s*<div\b[^>]*>)?\s*<p>\s*<strong>\s*From:\s*<\/strong>[^<]*<\/p>\s*(<hr\s*\/?>)?\s*/i,
+    (_match, wrapper?: string) => wrapper ?? ''
   );
+  // Attachment links point at the DevOps attachment API, which answers 401
+  // without a signed-in session. In the app that is fine; in an email it is a
+  // link that refuses the reader, so the filename stays as plain text and the
+  // template's ticket button is the way in. Cloud attachments keep their
+  // links -- those are the sender's own shareable URLs.
+  const unlinked = plain.replace(
+    /<a\b[^>]*href="[^"]*\/_apis\/wit\/attachments\/[^"]*"[^>]*>([\s\S]*?)<\/a>/gi,
+    '$1'
+  );
+
   let removed = 0;
-  const withoutImages = plain.replace(/<img\b[^>]*>/gi, () => {
+  const withoutImages = unlinked.replace(/<img\b[^>]*>/gi, () => {
     removed += 1;
     return '';
   });
@@ -894,12 +908,28 @@ function formatEmailBody(
     failures,
     splicedInlineCids(renderedBody, uploaded)
   );
+  return storedDescriptionHtml(
+    senderEmail,
+    `${renderedBody}
+  ${appendix}`
+  );
+}
+
+/**
+ * The wrapper every stored email description is written in: who it is from, a
+ * rule, then the message.
+ *
+ * Exported so `renderForNotification` and its tests work against the shape
+ * this actually produces. The two were written apart, and the strip of the
+ * sender paragraph (7765) was anchored at the start of the content -- where
+ * the opening `<div>` sits, so it never matched a real description.
+ */
+export function storedDescriptionHtml(senderEmail: string, body: string): string {
   return `
 <div style="font-family: sans-serif;">
   <p><strong>From:</strong> ${escapeHtml(senderEmail)}</p>
   <hr/>
-  ${renderedBody}
-  ${appendix}
+  ${body}
 </div>
   `.trim();
 }

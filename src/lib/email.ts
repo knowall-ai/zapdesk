@@ -13,7 +13,7 @@ import {
   inlineProxyImages,
   type OutboundAttachment,
 } from './email-attachments';
-import { escapeHtml } from './email-clean';
+import { escapeHtml, sanitizeEmailHtml } from './email-clean';
 import {
   assignmentNotificationTemplate,
   ticketConfirmationTemplate,
@@ -661,7 +661,9 @@ export async function sendCustomerReplyNotification(
       ticketId,
       ticketSubject,
       customerEmail,
-      replyContentHtml,
+      // Sanitised here for the same reason as the internal note above: the
+      // markup arrives from a request body, not from the editor that wrote it.
+      replyContentHtml: sanitizeEmailHtml(replyContentHtml),
     });
     await sendViaGraph({
       to: agentEmail,
@@ -704,7 +706,14 @@ export async function sendInternalNoteNotification(opts: {
 }): Promise<void> {
   if (!isEmailConfigured()) return;
   try {
-    const html = internalNoteNotificationTemplate(opts);
+    // The note is written in the browser's editor and reaches here straight
+    // from the request body, so a direct POST can carry anything: the
+    // client-side sanitiser is not in the path. `sanitizeEmailHtml` is the
+    // server-side one, and it keeps the ordinary markup a note is written in.
+    const html = internalNoteNotificationTemplate({
+      ...opts,
+      noteHtml: sanitizeEmailHtml(opts.noteHtml),
+    });
     await sendViaGraph({
       to: opts.recipients,
       subject: `[ZapDesk #${opts.ticketId}] Internal note — "${opts.ticketSubject}"`,

@@ -50,7 +50,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 /**
  * Add a comment to a ticket. `isInternal: true` stores it as an internal note,
- * which is never emailed.
+ * which is never emailed to the customer -- it is emailed to the configured
+ * support team, so a handover written on a ticket is seen without somebody
+ * having to open it (7767).
  *
  * A public reply on a ticket that arrived by email is also emailed to the
  * requester, quoting the earlier public conversation -- without the

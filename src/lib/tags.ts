@@ -1,3 +1,5 @@
+import type { WorkItemUpdate } from '@/types';
+
 // Shared tag helpers. The "ticket" tag is the marker that flags a work item
 // as a customer-facing ticket (vs an internal work item created from the
 // Kanban Board). Tag casing isn't preserved consistently across DevOps users
@@ -15,4 +17,50 @@ export function hasEmailTag(tags: readonly string[] | null | undefined): boolean
 function hasTag(tags: readonly string[] | null | undefined, wanted: string): boolean {
   if (!tags) return false;
   return tags.some((t) => typeof t === 'string' && t.toLowerCase() === wanted);
+}
+
+const EMAIL_FROM_PREFIX = 'email-from:';
+
+/**
+ * The sender address ingest recorded on an emailed ticket, or undefined.
+ *
+ * Anything that is not an address is ignored: the tag is editable like any
+ * other, so its contents are not trustworthy.
+ */
+export function emailFromTag(tags: readonly string[] | null | undefined): string | undefined {
+  if (!tags) return undefined;
+  for (const tag of tags) {
+    if (typeof tag !== 'string') continue;
+    const trimmed = tag.trim();
+    if (!trimmed.toLowerCase().startsWith(EMAIL_FROM_PREFIX)) continue;
+    const address = trimmed.slice(EMAIL_FROM_PREFIX.length).trim();
+    if (address.includes('@')) return address;
+  }
+  return undefined;
+}
+
+/**
+ * The tags the work item was created with, read off its first revision.
+ *
+ * Attribution of the creation entry has to come from here and not from the
+ * live tags. `email-from:` is an ordinary tag, so it can be edited or removed
+ * afterwards, and reading the current value would rewrite who is shown as
+ * having raised the ticket -- or drop the "by email" label off a ticket that
+ * did arrive by email. The entry describes something that already happened,
+ * so it is read from the state at the time.
+ *
+ * Undefined when the history is not loaded or the work item was created with
+ * no tags at all.
+ */
+export function tagsAtCreation(
+  updates: readonly WorkItemUpdate[] | null | undefined
+): string[] | undefined {
+  const creation = updates?.find((update) => update.id === 1);
+  const raw = creation?.fields?.['System.Tags']?.newValue;
+  if (typeof raw !== 'string') return undefined;
+  const tags = raw
+    .split(';')
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+  return tags.length > 0 ? tags : undefined;
 }

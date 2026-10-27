@@ -27,6 +27,23 @@ async function loadWrapper(env: Record<string, string | undefined>) {
 // agent, and back to the customer.
 const PAYLOAD = '<img src=x onerror="alert(1)">';
 
+describe('layoutWrapper footer', () => {
+  it('invites a reply by email by default', async () => {
+    // A reply to the polled mailbox becomes a comment on the ticket, which is
+    // how customers are meant to answer. Only the internal note turns it off.
+    expect(await loadWrapper({})).toContain('Please reply to this email');
+  });
+
+  it('leaves the invitation out when a reply would go to the wrong place', async () => {
+    vi.resetModules();
+    const mod = await import('./email-templates');
+    const html = mod.layoutWrapper('<p>body</p>', 'team', { replyByEmail: false });
+
+    expect(html).not.toContain('Please reply to this email');
+    expect(html).toContain('Powered by');
+  });
+});
+
 describe('customerReplyNotificationTemplate', () => {
   it('escapes the subject and the customer address', () => {
     const html = customerReplyNotificationTemplate({

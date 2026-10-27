@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildAppendixHtml, renderForNotification, splicedInlineCids } from './email-ingest';
+import {
+  buildAppendixHtml,
+  renderForNotification,
+  splicedInlineCids,
+  storedDescriptionHtml,
+} from './email-ingest';
 
 const inline = (filename: string, contentId?: string) => ({
   filename,
@@ -150,10 +155,43 @@ describe('renderForNotification', () => {
     // The stored description opens with the sender, and the notification
     // template has its own From header -- so the team's first email about a
     // ticket showed the address twice (7765).
-    const stored = '<p><strong>From:</strong> rowan@example.test</p><hr/><p>Printer is dead.</p>';
+    //
+    // Built with the real wrapper, not a hand-written approximation of it:
+    // the first attempt at this fix was anchored at the start of the content
+    // and never matched, because `storedDescriptionHtml` opens with a <div>.
+    const stored = storedDescriptionHtml('rowan@example.test', '<p>Printer is dead.</p>');
     const out = renderForNotification(stored);
     expect(out).not.toContain('From:');
+    expect(out).not.toContain('rowan@example.test');
     expect(out).toContain('Printer is dead.');
+  });
+
+  it('keeps the wrapper the description was stored in', () => {
+    const stored = storedDescriptionHtml('rowan@example.test', '<p>Printer is dead.</p>');
+    const out = renderForNotification(stored);
+    expect(out.startsWith('<div')).toBe(true);
+    expect(out.trimEnd().endsWith('</div>')).toBe(true);
+  });
+
+  it('unlinks attachment links, which refuse a reader with no DevOps session', () => {
+    // The href is the DevOps attachment API, which answers 401 unauthenticated:
+    // a link in an email that cannot be followed is worse than no link.
+    const stored = storedDescriptionHtml(
+      'rowan@example.test',
+      '<p><strong>Attachments:</strong></p><ul><li><a href="https://dev.azure.com/KnowAll/_apis/wit/attachments/abc?fileName=quote.pdf" rel="noopener noreferrer">quote.pdf</a></li></ul>'
+    );
+    const out = renderForNotification(stored);
+    expect(out).toContain('quote.pdf');
+    expect(out).not.toContain('_apis/wit/attachments');
+    expect(out).not.toContain('<a ');
+  });
+
+  it("keeps a cloud attachment's own link, which anyone can open", () => {
+    const stored = storedDescriptionHtml(
+      'rowan@example.test',
+      '<p><strong>Cloud attachments:</strong></p><ul><li><a href="https://example.test/share/quote.pdf">quote.pdf</a></li></ul>'
+    );
+    expect(renderForNotification(stored)).toContain('https://example.test/share/quote.pdf');
   });
 
   it('keeps a From further down, which belongs to a quoted message', () => {

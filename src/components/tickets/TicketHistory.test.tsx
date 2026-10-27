@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, within } from '@testing-library/react';
 import TicketHistory from './TicketHistory';
 import type { WorkItemUpdate } from '@/types';
 
@@ -54,7 +54,18 @@ describe('TicketHistory', () => {
       />
     );
 
-    expect(screen.getByText('Rowan Blake')).toBeDefined();
-    expect(screen.getByText('Service Account')).toBeDefined();
+    // Scoped per entry rather than over the whole timeline: asserting that
+    // both names are present somewhere also passes when they are the wrong
+    // way round, which is the failure this is here to catch.
+    const creation = within(screen.getByTestId('history-entry-1'));
+    const revision = within(screen.getByTestId('history-entry-2'));
+
+    expect(creation.getByText('Rowan Blake')).toBeDefined();
+    expect(creation.queryByText('Service Account')).toBeNull();
+    expect(creation.getByText('by email')).toBeDefined();
+
+    expect(revision.getByText('Service Account')).toBeDefined();
+    expect(revision.queryByText('Rowan Blake')).toBeNull();
+    expect(revision.queryByText('by email')).toBeNull();
   });
 });

@@ -46,7 +46,7 @@ import {
   buildAttachmentProxyUrl,
   attachedFilesHtml,
 } from '@/lib/attachment-utils';
-import { hasEmailTag, hasTicketTag } from '@/lib/tags';
+import { emailFromTag, hasEmailTag, hasTicketTag, tagsAtCreation } from '@/lib/tags';
 import { exitFullViewHref } from '@/lib/full-view';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
@@ -751,6 +751,23 @@ export default function TicketDetail({
     }
   };
 
+  // Who the timeline credits with raising the ticket (7770). Read from the
+  // tags the ticket was *created* with, so editing `email-from:` afterwards
+  // cannot rewrite the author of an entry that has already happened. The live
+  // tags are the fallback only while the history has not arrived -- which is
+  // also while the timeline is not drawn.
+  const creationTags = tagsAtCreation(history);
+  const senderAtCreation = creationTags ? emailFromTag(creationTags) : undefined;
+  const requesterEmail = ticket.requester.email?.toLowerCase() ?? '';
+  // The resolved requester is read off the *current* tag, so their name only
+  // belongs to this entry while the address still matches. When it does not,
+  // the address recorded at creation is all that can honestly be shown.
+  const timelineEmailRequester = !hasEmailTag(creationTags ?? ticket.tags)
+    ? undefined
+    : senderAtCreation && senderAtCreation.toLowerCase() !== requesterEmail
+      ? { displayName: senderAtCreation }
+      : { displayName: ticket.requester.displayName, avatarUrl: ticket.requester.avatarUrl };
+
   return (
     <div className="flex h-full">
       {/* Main content */}
@@ -1307,14 +1324,7 @@ export default function TicketDetail({
             <TicketHistory
               updates={history}
               loading={historyLoading}
-              emailRequester={
-                hasEmailTag(ticket.tags)
-                  ? {
-                      displayName: ticket.requester.displayName,
-                      avatarUrl: ticket.requester.avatarUrl,
-                    }
-                  : undefined
-              }
+              emailRequester={timelineEmailRequester}
             />
           </div>
         )}
