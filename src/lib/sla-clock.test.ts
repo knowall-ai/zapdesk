@@ -186,9 +186,19 @@ describe('workingMillis', () => {
 });
 
 describe('the default pausing states', () => {
-  it('pauses on Blocked, the only state today that means nobody is working on it', () => {
+  it('pauses on the states that mean nobody can be working on it', () => {
     // New, Todo and Active are ours to move; Resolved, Closed and Removed end
-    // the ticket and with it the SLA. Blocked is the one that is neither.
-    expect(DEFAULT_PAUSING_STATES).toEqual(['blocked']);
+    // the ticket and with it the SLA. These two are neither: Pending is the
+    // Support Ticket template's name for waiting on the customer (#569), and
+    // Blocked is what every development template calls the same thing --
+    // which is what ZapDesk writes when a ticket on one is set to Pending.
+    expect(DEFAULT_PAUSING_STATES).toEqual(['blocked', 'pending']);
+  });
+
+  it('does not pause on a state that is merely named like one', () => {
+    // The match is on the whole name: a state called "Pending Review" is the
+    // team's to move, and stopping the clock on it would hide real time.
+    expect(DEFAULT_PAUSING_STATES).not.toContain('pending review');
+    expect(isPaused([{ state: 'Pending Review', from: new Date() }])).toBe(false);
   });
 });

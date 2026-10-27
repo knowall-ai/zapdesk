@@ -198,6 +198,66 @@ You can also trigger a release via GitHub Actions:
 2. Click "Run workflow"
 3. Select branch and run
 
+== Support Ticket Process
+
+ZapDesk shows Zendesk-style statuses -- New, Open, In Progress, Pending,
+Closed -- but every stock Azure DevOps process is built for development work.
+ZapDesk therefore translates by state category, and the translation is lossy:
+`Pending` is written as the `Blocked` state and read back out of it, and `Open`
+and `In Progress` share a category in most templates, so one of the two is
+always a guess.
+
+The *Support Ticket* process removes the guessing. It is an inherited process
+with a `Ticket` work item type whose states _are_ ZapDesk's statuses:
+
+[cols="1,1,2,1"]
+|===
+|State |Category |Meaning |SLA clock
+
+|New |Proposed |Raised, not yet triaged |running
+|Open |InProgress |Triaged or assigned, waiting on the support team |running
+|In Progress |InProgress |Being worked on |running
+|Pending |InProgress |Waiting on the customer or a third party |*paused*
+|Closed |Completed |Solved, or closed without being solved |stopped
+|===
+
+There is deliberately no `Resolved` state: a support desk closes a ticket when
+the customer is satisfied, and a separate Resolved is the state nobody moves
+out of. A project that wants one can add it to its own inherited process, and
+ZapDesk will read it correctly.
+
+=== Creating it
+
+[source,bash]
+----
+export AZURE_DEVOPS_PAT=<pat>
+node scripts/create-support-ticket-process.mjs -o <org> --dry-run
+node scripts/create-support-ticket-process.mjs -o <org>
+----
+
+The PAT owner needs the *Edit process* permission at organization level.
+`Work Items (Read, Write)` is not enough, and the failure is a 403 that says
+nothing about processes -- which is why the script says it for you.
+
+=== Moving a project onto it
+
+In the DevOps UI: *Project settings -> Overview -> Process -> change process*.
+
+This is not scripted on purpose. Changing a project's process rewrites the
+state of every existing work item in it, so it is a deliberate step somebody
+takes with the project in front of them.
+
+Afterwards, nothing in ZapDesk needs configuring:
+
+* The process is already in ZapDesk's supported list, so the project does not
+  show the unsupported-template warning.
+* Statuses map straight through, with `Pending` staying Pending.
+* The SLA clock stops while a ticket is Pending.
+* Tickets arriving by email are created as `Ticket` in `New` -- the ingest
+  reads the project's own work item types and uses `Ticket` where it exists,
+  falling back to `Task` where it does not, so projects on either process keep
+  working.
+
 == Demo Data Setup
 
 For testing and demonstration purposes, ZapDesk includes scripts to populate an Azure DevOps project with realistic dummy data.
