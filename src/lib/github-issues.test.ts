@@ -362,8 +362,10 @@ describe('gitHubIssueToTicket', () => {
     expect(ticket.sourceRef).toBe('acme/portal#12');
     expect(ticket.sourceUrl).toBe('https://github.com/acme/portal/issues/12');
     expect(ticket.title).toBe('Export fails on large files');
-    expect(ticket.status).toBe('Open');
-    expect(ticket.devOpsState).toBe('Open');
+    // Open, unassigned and carrying no status label: raised, not yet triaged
+    // -- which the GitHub process template calls New (#567).
+    expect(ticket.devOpsState).toBe('New');
+    expect(ticket.status).toBe('New');
     expect(ticket.project).toBe('Internal');
     expect(ticket.tags).toEqual(['bug', 'customer']);
     expect(ticket.requester.displayName).toBe('dana');
