@@ -133,7 +133,8 @@ describe('GitHub issue routes', () => {
       expect(body.tickets[0]).toMatchObject({
         source: 'github',
         sourceRef: 'acme/portal#1',
-        status: 'Open',
+        // Open, unassigned and unlabelled: raised, not yet triaged (#567).
+        status: 'New',
         project: 'Internal',
       });
     });
