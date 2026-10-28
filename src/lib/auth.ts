@@ -35,7 +35,6 @@ function redactSensitive(obj: unknown): unknown {
 declare module 'next-auth' {
   interface Session {
     accessToken?: string;
-    refreshToken?: string;
     error?: string;
     /** The Entra tenant the user signed in from (the `tid` claim). */
     tenantId?: string;
@@ -141,10 +140,15 @@ export const authOptions: NextAuthOptions = {
       // session, so no route can call Azure DevOps on its behalf; the proxy
       // (src/proxy.ts) also answers its API calls with 403. Checked on every
       // request, so approving a tenant or removing one applies at once.
+      //
+      // The refresh token is not among them. It stays in the encrypted JWT
+      // cookie only: the session object is served to the browser at
+      // /api/auth/session, so anything copied here is readable by any script
+      // on the page (#540). Refresh happens server-side in the jwt callback
+      // above, which is the only thing that needs it.
       session.tenantApproved = isTenantApproved(token.tenantId);
       if (session.tenantApproved) {
         session.accessToken = token.accessToken;
-        session.refreshToken = token.refreshToken;
       }
       session.error = token.error;
       if (token.id) {

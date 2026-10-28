@@ -82,7 +82,10 @@ describe('session callback', () => {
     const session = await sessionFrom(STRANGER);
     expect(session.tenantApproved).toBe(false);
     expect(session.accessToken).toBeUndefined();
-    expect(session.refreshToken).toBeUndefined();
+    // Checked on the serialised session rather than the field: since #540
+    // the refresh token is off the Session type altogether, so reading it
+    // back would not compile. What matters is that it reaches no browser.
+    expect(JSON.stringify(session)).not.toContain('refresh');
     expect(session.tenantId).toBe(STRANGER);
   });
 
