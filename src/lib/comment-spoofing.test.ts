@@ -6,7 +6,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // the endpoint stopped calling it -- which is the failure worth catching.
 
 const getServerSession = vi.fn();
-vi.mock('next-auth', () => ({ getServerSession: () => getServerSession() }));
+vi.mock('@/lib/server-session', () => ({
+  getServerSessionWithToken: () => getServerSession(),
+}));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
 const addComment = vi.fn();

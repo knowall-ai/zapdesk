@@ -34,7 +34,18 @@ function redactSensitive(obj: unknown): unknown {
 // Extend the built-in session types
 declare module 'next-auth' {
   interface Session {
-    accessToken?: string;
+    /**
+     * Whether a DevOps access token is available to the server for this
+     * session. The token itself is deliberately absent: this object is served
+     * to the browser at `/api/auth/session`, so anything on it is readable by
+     * any script on the page (#542, following #540 for the refresh token).
+     *
+     * Browser code only ever used the token's presence as "am I signed in and
+     * allowed to call DevOps", which is what this boolean says. Server code
+     * that needs the real token calls `getServerSessionWithToken()` from
+     * `src/lib/server-session.ts`.
+     */
+    hasDevOpsToken?: boolean;
     error?: string;
     /** The Entra tenant the user signed in from (the `tid` claim). */
     tenantId?: string;
@@ -141,18 +152,28 @@ export const authOptions: NextAuthOptions = {
       // (src/proxy.ts) also answers its API calls with 403. Checked on every
       // request, so approving a tenant or removing one applies at once.
       //
-      // The refresh token is not among them. It stays in the encrypted JWT
-      // cookie only: the session object is served to the browser at
-      // /api/auth/session, so anything copied here is readable by any script
-      // on the page (#540). Refresh happens server-side in the jwt callback
-      // above, which is the only thing that needs it.
+      // Neither token is among them. They stay in the encrypted JWT cookie
+      // only: this object is served to the browser at /api/auth/session, so
+      // anything copied here is readable by any script on the page -- the
+      // refresh token for that reason in #540, the access token for the same
+      // reason in #542. Refresh happens server-side in the jwt callback above;
+      // server code reads the access token from the cookie through
+      // getServerSessionWithToken(). Neither needs it on the session.
+      //
+      // The browser gets instead the one thing it used the token for: whether
+      // it may call DevOps at all.
       session.tenantApproved = isTenantApproved(token.tenantId);
-      if (session.tenantApproved) {
-        session.accessToken = token.accessToken;
-      }
+      session.hasDevOpsToken = session.tenantApproved && !!token.accessToken;
       session.error = token.error;
-      if (token.id) {
-        session.user.id = token.id;
+      // `sub` is NextAuth's own subject claim and is always set, so the session
+      // carries a stable per-user id even for an account the provider gave no
+      // object id for. TicketCountsProvider scopes cached ticket counts on this
+      // id; it used to tell two such accounts apart by their differing access
+      // tokens, which is no longer on the session (#542), so the id has to be
+      // dependable instead.
+      const userId = token.id ?? token.sub;
+      if (userId) {
+        session.user.id = userId;
       }
       if (token.picture) {
         session.user.image = token.picture;

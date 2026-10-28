@@ -69,7 +69,7 @@ export default function LiveDashboardPage() {
   }, [status, router]);
 
   const fetchData = useCallback(async () => {
-    if (!session?.accessToken || !hasOrganization) {
+    if (!session?.hasDevOpsToken || !hasOrganization) {
       setLoading(false);
       return;
     }
@@ -156,24 +156,24 @@ export default function LiveDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [session?.accessToken, hasOrganization, devOpsGet]);
+  }, [session?.hasDevOpsToken, hasOrganization, devOpsGet]);
 
   useEffect(() => {
-    if (session?.accessToken && hasOrganization) {
+    if (session?.hasDevOpsToken && hasOrganization) {
       fetchData();
     }
-  }, [session?.accessToken, hasOrganization, fetchData]);
+  }, [session?.hasDevOpsToken, hasOrganization, fetchData]);
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
-    if (!autoRefresh || !session?.accessToken || !hasOrganization) return;
+    if (!autoRefresh || !session?.hasDevOpsToken || !hasOrganization) return;
 
     const interval = setInterval(() => {
       fetchData();
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [autoRefresh, session?.accessToken, hasOrganization, fetchData]);
+  }, [autoRefresh, session?.hasDevOpsToken, hasOrganization, fetchData]);
 
   // Compute chart data from tickets filtered by date range
   const chartData = useMemo(() => {

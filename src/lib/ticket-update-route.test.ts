@@ -7,7 +7,9 @@ import { MAX_TITLE_LENGTH } from './ticket-title';
 // service boundary; the real workItemToTicket and email tag helpers are kept.
 
 const getServerSession = vi.fn();
-vi.mock('next-auth', () => ({ getServerSession: () => getServerSession() }));
+vi.mock('@/lib/server-session', () => ({
+  getServerSessionWithToken: () => getServerSession(),
+}));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
 const sendTicketUpdateNotification = vi.fn(async (..._args: unknown[]) => {});

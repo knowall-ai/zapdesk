@@ -6,7 +6,9 @@ import { NextRequest } from 'next/server';
 // route's own logic -- auth, validation, matching, ordering -- is what's tested.
 
 const getServerSession = vi.fn();
-vi.mock('next-auth', () => ({ getServerSession: () => getServerSession() }));
+vi.mock('@/lib/server-session', () => ({
+  getServerSessionWithToken: () => getServerSession(),
+}));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
 const validateOrganizationAccess = vi.fn();

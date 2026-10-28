@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getServerSessionWithToken } from '@/lib/server-session';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { canManageProject, gitHubAppConfig, installUrl, signConnectState } from '@/lib/github-app';
 import { appBaseUrl } from '@/lib/install';
@@ -14,7 +13,7 @@ import { appBaseUrl } from '@/lib/install';
  * trust where the installation is meant to go.
  */
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getServerSessionWithToken();
   if (!session?.accessToken || !session.user?.id) {
     return NextResponse.redirect(`${appBaseUrl()}/login`);
   }

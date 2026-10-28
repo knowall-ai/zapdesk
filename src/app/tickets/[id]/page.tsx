@@ -41,7 +41,7 @@ export default function TicketDetailPage() {
   // A stable signal, not the session object: NextAuth refetches the session
   // whenever the window regains focus, so keying on it reloaded the ticket on
   // every tab switch and after every download (#7391, #7719).
-  const isSignedIn = !!session?.accessToken;
+  const isSignedIn = !!session?.hasDevOpsToken;
 
   // Helper to build headers with org
   const orgHeaders = useCallback(

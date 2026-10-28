@@ -73,7 +73,7 @@ export default function TicketCountsProvider({ children }: Props) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const accessToken = session?.accessToken;
+  const hasDevOpsToken = session?.hasDevOpsToken;
   const accountName = selectedOrganization?.accountName;
   /**
    * Stable identity for scoping. The session callback sets `user.id` from the
@@ -92,37 +92,38 @@ export default function TicketCountsProvider({ children }: Props) {
    *
    * A missing identity deliberately does not block the fetch — scoping is a
    * correctness guard, not a precondition, and an account with neither an id
-   * nor an email would otherwise get no counts at all. The placeholder that
-   * stands in for it cannot distinguish two such accounts on its own, so the
-   * effect below clears the cache whenever the access token changes, which a
-   * change of user always implies.
+   * nor an email would otherwise get no counts at all. The id now falls back to
+   * the session's `sub` claim, which NextAuth always sets, so the placeholder
+   * below is a last resort rather than the common case it used to be.
    */
-  const scopeKey = accessToken && accountName ? `${identity}::${accountName}` : null;
+  const scopeKey = hasDevOpsToken && accountName ? `${identity}::${accountName}` : null;
 
   /**
-   * Drop cached counts when the session itself changes.
+   * Drop cached counts when the user changes.
    *
-   * The scope key falls back to a placeholder for accounts with no id and no
-   * email, and two of those in one organisation would otherwise share a key
-   * and see each other's numbers. A different user always means a different
-   * access token, so this closes that case without making the identity a
-   * precondition for fetching at all.
+   * This watched the access token until #542 took it off the session: a
+   * different user always meant a different token, which closed the case of two
+   * accounts sharing the placeholder identity. It now watches the identity
+   * itself, which says the same thing more directly and no longer needs a
+   * credential in the browser to say it.
    *
-   * A token refresh for the same user also lands here and briefly empties the
-   * sidebar. That is the right trade: the effect below refetches immediately,
-   * and a blank count for a moment beats another account's count for any time
-   * at all.
+   * Signing out lands here too, since the identity falls back to the
+   * placeholder once the session is gone.
+   *
+   * A token refresh for the same user no longer clears anything, which is a
+   * small improvement: the sidebar used to blank for a moment on every refresh
+   * even though the counts on screen were still that user's own.
    */
-  const lastTokenRef = useRef<string | undefined>(undefined);
+  const lastIdentityRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (lastTokenRef.current !== undefined && lastTokenRef.current !== accessToken) {
+    if (lastIdentityRef.current !== undefined && lastIdentityRef.current !== identity) {
       setResult(undefined);
     }
-    lastTokenRef.current = accessToken;
-  }, [accessToken]);
+    lastIdentityRef.current = identity;
+  }, [identity]);
 
   const fetchCounts = useCallback(async () => {
-    if (!accessToken || !accountName || !scopeKey) return;
+    if (!hasDevOpsToken || !accountName || !scopeKey) return;
     const scope = scopeKey;
 
     // Only one recount is ever useful; drop anything still in flight.
@@ -151,7 +152,7 @@ export default function TicketCountsProvider({ children }: Props) {
       clearTimeout(timeout);
       if (requestId === requestIdRef.current) setIsLoading(false);
     }
-  }, [accessToken, accountName, scopeKey]);
+  }, [hasDevOpsToken, accountName, scopeKey]);
 
   /**
    * Single scheduling path for both the initial load and every invalidation.

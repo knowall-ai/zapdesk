@@ -9,23 +9,31 @@ import { useOrganization } from '@/components/providers/OrganizationProvider';
 import FailedProjectsNotice from '@/components/common/FailedProjectsNotice';
 
 interface SLARiskPanelProps {
-  accessToken?: string;
+  /**
+   * Whether the viewer is signed in and allowed to call DevOps.
+   *
+   * This used to be the access token itself, which the panel only ever tested
+   * for truthiness -- it never sent it anywhere, because `/api/devops/sla-status`
+   * reads the token server-side. Passing a credential into a component that had
+   * no use for it put it in the browser for nothing (#542).
+   */
+  enabled?: boolean;
 }
 
-export function SLARiskPanel({ accessToken }: SLARiskPanelProps) {
+export function SLARiskPanel({ enabled }: SLARiskPanelProps) {
   const { selectedOrganization } = useOrganization();
   const org = selectedOrganization?.accountName;
   const [data, setData] = useState<SLAStatusResponse | null>(null);
-  const [loading, setLoading] = useState(!!accessToken);
+  const [loading, setLoading] = useState(!!enabled);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (accessToken && org) {
+    if (enabled && org) {
       fetchSLAStatus(org);
-    } else if (!accessToken) {
+    } else if (!enabled) {
       setLoading(false);
     }
-  }, [accessToken, org]);
+  }, [enabled, org]);
 
   const fetchSLAStatus = async (organization: string) => {
     try {

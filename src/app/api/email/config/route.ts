@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getServerSessionWithToken } from '@/lib/server-session';
 import { isEmailConfigured, mailGraphCredentials } from '@/lib/email';
 import { pollMailboxFromEnv } from '@/lib/email-poll';
 import { verifyMailCredentials, type MailCredentialCheck } from '@/lib/mail-credentials';
@@ -15,7 +14,7 @@ import { verifyMailCredentials, type MailCredentialCheck } from '@/lib/mail-cred
  */
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSessionWithToken();
     if (!session?.accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

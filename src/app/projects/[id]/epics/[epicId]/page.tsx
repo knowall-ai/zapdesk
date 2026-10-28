@@ -76,13 +76,13 @@ export default function EpicDetailPage() {
   }, [status, router]);
 
   useEffect(() => {
-    if (session?.accessToken && projectId && epicId && selectedOrganization) {
+    if (session?.hasDevOpsToken && projectId && epicId && selectedOrganization) {
       fetchEpicHierarchy();
     }
-    // Use session?.accessToken instead of session to avoid refetch on tab focus
+    // Use session?.hasDevOpsToken instead of session to avoid refetch on tab focus
     // (session object reference changes but token stays the same)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken, projectId, epicId, selectedOrganization]);
+  }, [session?.hasDevOpsToken, projectId, epicId, selectedOrganization]);
 
   if (status === 'loading' || loading) {
     return (

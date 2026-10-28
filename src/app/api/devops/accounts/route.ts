@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getServerSessionWithToken } from '@/lib/server-session';
 import type { DevOpsOrganization } from '@/types';
 
 // Fetch Azure DevOps organizations (accounts) the user has access to
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSessionWithToken();
 
     if (!session?.accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

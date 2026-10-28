@@ -80,7 +80,7 @@ function TicketsPageContent() {
 
   // A stable signal rather than the session object, which NextAuth replaces on
   // every window focus -- that reloaded the list on each tab switch (#7391).
-  const isSignedIn = !!session?.accessToken;
+  const isSignedIn = !!session?.hasDevOpsToken;
 
   const fetchTickets = useCallback(async () => {
     if (!selectedOrganization) return;

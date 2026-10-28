@@ -10,7 +10,9 @@ import { NextRequest } from 'next/server';
  */
 
 const getServerSession = vi.fn();
-vi.mock('next-auth', () => ({ getServerSession: () => getServerSession() }));
+vi.mock('@/lib/server-session', () => ({
+  getServerSessionWithToken: () => getServerSession(),
+}));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 vi.mock('@/lib/devops-auth', () => ({ validateOrganizationAccess: async () => true }));
 

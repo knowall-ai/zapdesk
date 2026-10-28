@@ -34,7 +34,7 @@ export default function ProjectsPage() {
   }, [status, router]);
 
   useEffect(() => {
-    if (!session?.accessToken || !selectedOrganization) return;
+    if (!session?.hasDevOpsToken || !selectedOrganization) return;
 
     const fetchProjects = async () => {
       try {
@@ -63,8 +63,8 @@ export default function ProjectsPage() {
     };
 
     fetchProjects();
-    // Use session?.accessToken instead of session to avoid refetch on tab focus
-  }, [session?.accessToken, selectedOrganization]);
+    // Use session?.hasDevOpsToken instead of session to avoid refetch on tab focus
+  }, [session?.hasDevOpsToken, selectedOrganization]);
 
   if (status === 'loading') {
     return (

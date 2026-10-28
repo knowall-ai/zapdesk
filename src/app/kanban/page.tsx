@@ -248,7 +248,7 @@ function StandupPageContent() {
 
   const fetchStandupData = useCallback(
     async (isAutoRefresh = false, forceRefresh = false, afterChange = false) => {
-      if (!session?.accessToken || !hasOrganization || !selectedOrganization?.accountName) {
+      if (!session?.hasDevOpsToken || !hasOrganization || !selectedOrganization?.accountName) {
         setLoading(false);
         return;
       }
@@ -347,7 +347,7 @@ function StandupPageContent() {
       }
     },
     [
-      session?.accessToken,
+      session?.hasDevOpsToken,
       hasOrganization,
       selectedOrganization?.accountName,
       devOpsGet,
@@ -361,7 +361,8 @@ function StandupPageContent() {
   // unavailable.
   const fetchPrActivity = useCallback(
     async (forceRefresh = false) => {
-      if (!session?.accessToken || !hasOrganization || !selectedOrganization?.accountName) return;
+      if (!session?.hasDevOpsToken || !hasOrganization || !selectedOrganization?.accountName)
+        return;
       const mySeq = ++prFetchSeqRef.current;
       const isCurrent = () => mySeq === prFetchSeqRef.current;
 
@@ -397,7 +398,7 @@ function StandupPageContent() {
       }
     },
     [
-      session?.accessToken,
+      session?.hasDevOpsToken,
       hasOrganization,
       selectedOrganization?.accountName,
       devOpsGet,
@@ -408,11 +409,11 @@ function StandupPageContent() {
   // Wait until the source toggle is known, so the board loads once with the
   // right sources instead of DevOps first and then everything again.
   useEffect(() => {
-    if (session?.accessToken && hasOrganization && sourceReady) {
+    if (session?.hasDevOpsToken && hasOrganization && sourceReady) {
       fetchStandupData();
       fetchPrActivity();
     }
-  }, [session?.accessToken, hasOrganization, sourceReady, fetchStandupData, fetchPrActivity]);
+  }, [session?.hasDevOpsToken, hasOrganization, sourceReady, fetchStandupData, fetchPrActivity]);
 
   // Live update: while the tab is visible, run a poll on the cache TTL
   // cadence. When the tab is hidden the interval is cleared so no timer

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getServerSessionWithToken } from '@/lib/server-session';
 import {
   getInstallation,
   gitHubAppConfig,
@@ -24,7 +23,7 @@ import { appBaseUrl } from '@/lib/install';
  */
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
-  const session = await getServerSession(authOptions);
+  const session = await getServerSessionWithToken();
   if (!session?.accessToken || !session.user?.id) {
     return NextResponse.redirect(`${appBaseUrl()}/login`);
   }
