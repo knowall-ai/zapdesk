@@ -7,7 +7,7 @@ import { normalizeStateName } from '@/lib/kanban-columns';
 import { getGitHubTickets } from '@/lib/github-issues';
 import { gitHubAvailable, gitHubSourceFor, type GitHubSource } from '@/lib/github-source';
 import { gitHubPeopleFor } from '@/lib/github-people';
-import { addGitHubTicketsToStandup } from '@/lib/github-kanban';
+import { addGitHubTicketsToStandup, boardGitHubTickets } from '@/lib/github-kanban';
 import type {
   StandupData,
   StandupWorkItem,
@@ -286,6 +286,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const dateParam = searchParams.get('date');
     const currentSprintOnly = searchParams.get('currentSprintOnly') === 'true';
+    // Work nobody owns is off the board unless asked for (#581, #530). Opt-in
+    // rather than opt-out, so a caller that says nothing gets the fast board.
+    const includeUnassigned = searchParams.get('includeUnassigned') === 'true';
     // Which sources the header toggle asked for (#447). Anything else is "both".
     const sources = searchParams.get('sources');
     const includeDevOps = sources !== 'github';
@@ -311,7 +314,8 @@ export async function GET(request: NextRequest) {
           targetDate,
           stateCategories,
           categoriesByProjectType,
-          discoveryComplete
+          discoveryComplete,
+          includeUnassigned
         )
       : { items: [] as DevOpsWorkItem[] };
 
@@ -433,7 +437,10 @@ export async function GET(request: NextRequest) {
           devOpsUsers,
           linkedAccounts
         );
-        projects = addGitHubTicketsToStandup(devOpsProjects, displayColumns, gitHub.tickets);
+        // The same rule as the DevOps side: an unowned issue is left off the
+        // board unless asked for, so the two sources agree.
+        const boardTickets = boardGitHubTickets(gitHub.tickets, includeUnassigned);
+        projects = addGitHubTicketsToStandup(devOpsProjects, displayColumns, boardTickets);
         failedGitHubRepos = [...gitHubConfig.failed, ...gitHub.failedRepos];
       } catch (error) {
         console.error('Error adding GitHub issues to the standup board:', error);

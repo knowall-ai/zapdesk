@@ -71,8 +71,17 @@ const LIVE_UPDATE_STORAGE_KEY = 'zapdesk:kanban:liveUpdate';
 const PR_ACTIVITY_CACHE_TTL_MS = 2 * 60 * 1000;
 const prActivityCache = createBoardCache<PullRequestActivityResponse>(PR_ACTIVITY_CACHE_TTL_MS);
 
-function cacheKey(organization: string, currentSprintOnly: boolean, sources: SourceFilter): string {
-  return `${organization}::${currentSprintOnly ? 'sprint' : 'all'}::${sources}`;
+function cacheKey(
+  organization: string,
+  currentSprintOnly: boolean,
+  sources: SourceFilter,
+  showUnassigned: boolean
+): string {
+  // showUnassigned is part of the key: the two boards hold different items, so
+  // sharing a key would show one of them the other's cached answer.
+  return `${organization}::${currentSprintOnly ? 'sprint' : 'all'}::${sources}::${
+    showUnassigned ? 'with-unassigned' : 'assigned'
+  }`;
 }
 
 /** Build /kanban URL with the given params */
@@ -80,11 +89,14 @@ function buildKanbanUrl(
   groupBy: GroupBy,
   sprint: boolean,
   project?: string | null,
-  column: string | null = null
+  column: string | null = null,
+  showUnassigned = false
 ): string {
   const params = new URLSearchParams();
   if (groupBy !== 'project') params.set('groupBy', groupBy);
   if (sprint) params.set('sprint', 'true');
+  // Only in the URL when on, so the ordinary board keeps a clean link.
+  if (showUnassigned) params.set('unassigned', 'true');
   // One project's board (#7377), e.g. a support board.
   if (project) params.set('project', project);
   if (column) params.set('column', column);
@@ -104,6 +116,12 @@ function regroupByPerson(data: StandupData): GroupData[] {
   for (const project of data.projects) {
     for (const col of project.columns) {
       for (const item of col.items) {
+        // Kept rather than removed with the fetch filter (#581). The group is
+        // empty on the ordinary board, holds everything when "Show unassigned"
+        // is ticked, and still catches anything that arrives without an
+        // assignee -- a GitHub issue whose assignee ZapDesk cannot map to a
+        // DevOps person reaches here with none, and dropping the group would
+        // have dropped those items off the board silently.
         const personName = item.assignee?.displayName || 'Unassigned';
         if (!personMap.has(personName)) {
           const colMap = new Map<string, StandupWorkItem[]>();
@@ -184,6 +202,10 @@ function StandupPageContent() {
   // Derive from URL — single source of truth
   const groupBy: GroupBy = (searchParams.get('groupBy') as GroupBy) || 'project';
   const currentSprintOnly = searchParams.get('sprint') === 'true';
+  // Work nobody owns, off by default (#581, #530). In the URL with the other
+  // board settings so it survives a reload and can be linked to -- the same
+  // way the sprint toggle works.
+  const showUnassigned = searchParams.get('unassigned') === 'true';
   // The state the board is narrowed to by a pressed KPI tile (#320). In the URL
   // with the others, so the narrowed board can be linked to and survives a
   // reload. Checked against the board's real columns below, before use.
@@ -254,7 +276,7 @@ function StandupPageContent() {
       }
 
       const organization = selectedOrganization.accountName;
-      const key = cacheKey(organization, currentSprintOnly, sourceFilter);
+      const key = cacheKey(organization, currentSprintOnly, sourceFilter, showUnassigned);
       // A work item was just changed. Any request already in flight read the
       // board before that, so it must not answer for this refresh (#366).
       if (afterChange) standupCache.invalidate(organization);
@@ -296,6 +318,9 @@ function StandupPageContent() {
           }
           if (sourceFilter !== 'both') {
             params.set('sources', sourceFilter);
+          }
+          if (showUnassigned) {
+            params.set('includeUnassigned', 'true');
           }
           const queryString = params.toString();
           const url = `/api/devops/standup${queryString ? `?${queryString}` : ''}`;
@@ -353,6 +378,7 @@ function StandupPageContent() {
       devOpsGet,
       currentSprintOnly,
       sourceFilter,
+      showUnassigned,
     ]
   );
 
@@ -844,11 +870,14 @@ function StandupPageContent() {
     (columnName: string) => {
       // Pressing the pressed tile again shows every group.
       const next = columnName === focusedColumn ? null : columnName;
-      router.replace(buildKanbanUrl(groupBy, currentSprintOnly, projectFilter, next), {
-        scroll: false,
-      });
+      router.replace(
+        buildKanbanUrl(groupBy, currentSprintOnly, projectFilter, next, showUnassigned),
+        {
+          scroll: false,
+        }
+      );
     },
-    [router, groupBy, currentSprintOnly, projectFilter, focusedColumn]
+    [router, groupBy, currentSprintOnly, projectFilter, focusedColumn, showUnassigned]
   );
 
   useEffect(() => {
@@ -866,7 +895,7 @@ function StandupPageContent() {
   // own. Narrowing shortens the board, which clamps the scroll position;
   // sharing one record would lose where the user was on the whole board when
   // they went back.
-  const scrollScope = `${groupScope}:${currentSprintOnly ? 'sprint' : 'all'}:${projectFilter ?? '*'}:${focusedColumn ?? ''}`;
+  const scrollScope = `${groupScope}:${currentSprintOnly ? 'sprint' : 'all'}:${showUnassigned ? 'unassigned' : 'assigned'}:${projectFilter ?? '*'}:${focusedColumn ?? ''}`;
   const boardRef = useRef<HTMLDivElement>(null);
   // The scope whose position has been put back. The saved position is applied
   // each time a board comes on screen (first load, or after the loading
@@ -934,7 +963,8 @@ function StandupPageContent() {
                         groupBy,
                         currentSprintOnly,
                         e.target.value || null,
-                        columnParam
+                        columnParam,
+                        showUnassigned
                       ),
                       {
                         scroll: false,
@@ -971,7 +1001,13 @@ function StandupPageContent() {
               {/* Group By toggle */}
               <div className="flex rounded-md border" style={{ borderColor: 'var(--border)' }}>
                 <Link
-                  href={buildKanbanUrl('project', currentSprintOnly, projectFilter, columnParam)}
+                  href={buildKanbanUrl(
+                    'project',
+                    currentSprintOnly,
+                    projectFilter,
+                    columnParam,
+                    showUnassigned
+                  )}
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'project'
@@ -984,7 +1020,13 @@ function StandupPageContent() {
                   Project
                 </Link>
                 <Link
-                  href={buildKanbanUrl('person', currentSprintOnly, projectFilter, columnParam)}
+                  href={buildKanbanUrl(
+                    'person',
+                    currentSprintOnly,
+                    projectFilter,
+                    columnParam,
+                    showUnassigned
+                  )}
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'person'
@@ -1008,7 +1050,13 @@ function StandupPageContent() {
                   checked={currentSprintOnly}
                   onChange={(e) =>
                     router.replace(
-                      buildKanbanUrl(groupBy, e.target.checked, projectFilter, columnParam),
+                      buildKanbanUrl(
+                        groupBy,
+                        e.target.checked,
+                        projectFilter,
+                        columnParam,
+                        showUnassigned
+                      ),
                       {
                         scroll: false,
                       }
@@ -1017,6 +1065,38 @@ function StandupPageContent() {
                   className="accent-brand"
                 />
                 Current Sprint
+              </label>
+
+              {/* Show unassigned toggle (#581, #530).
+                  Off by default: the unassigned group is often the largest in a
+                  busy organisation, and leaving it out is what makes the board
+                  quick. Worded as what ticking it does, not as a filter being
+                  removed, because "Unassigned" alone would not say whether it
+                  shows or hides them. The items are excluded in the query, so
+                  ticking this refetches rather than revealing hidden cards. */}
+              <label
+                className="flex cursor-pointer items-center gap-2 text-xs"
+                style={{ color: 'var(--text-muted)' }}
+                title="Work nobody is assigned to is left off the board to keep it quick. Tick to fetch it as well."
+              >
+                <input
+                  type="checkbox"
+                  checked={showUnassigned}
+                  onChange={(e) =>
+                    router.replace(
+                      buildKanbanUrl(
+                        groupBy,
+                        currentSprintOnly,
+                        projectFilter,
+                        columnParam,
+                        e.target.checked
+                      ),
+                      { scroll: false }
+                    )
+                  }
+                  className="accent-brand"
+                />
+                Show unassigned
               </label>
 
               {/* Live update toggle. A broadcast icon that pulses while polling

@@ -91,6 +91,22 @@ export function gitHubTicketToStandupItem(ticket: Ticket): StandupWorkItem {
  * to, after that column's DevOps cards. A project with issues but no DevOps
  * items gets a board of its own. Projects stay in alphabetical order.
  */
+/**
+ * The GitHub issues the Kanban board should show.
+ *
+ * The DevOps side leaves unowned work out in the WIQL (#581, #530); GitHub
+ * issues are already in memory by this point, so there is nothing to save by
+ * filtering earlier -- what matters is that the two sources agree, or the board
+ * would show unowned issues beside owned work items and look arbitrary.
+ *
+ * An issue whose GitHub assignee cannot be mapped to a DevOps person arrives
+ * here with no `assignee`, so it counts as unowned. That is the honest reading:
+ * the board groups by person, and it has no person to group this one under.
+ */
+export function boardGitHubTickets(tickets: Ticket[], includeUnassigned: boolean): Ticket[] {
+  return includeUnassigned ? tickets : tickets.filter((ticket) => ticket.assignee);
+}
+
 export function addGitHubTicketsToStandup(
   projects: ProjectStandupData[],
   displayColumns: BoardColumn[],
