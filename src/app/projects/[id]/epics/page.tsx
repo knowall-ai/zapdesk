@@ -99,7 +99,14 @@ export default function ProjectEpicsPage() {
     } else if (status !== 'loading') {
       setLoading(false);
     }
-  }, [session?.hasDevOpsToken, projectId, selectedOrganization, fetchEpics, status]);
+  }, [
+    session?.hasDevOpsToken,
+    session?.user?.id,
+    projectId,
+    selectedOrganization,
+    fetchEpics,
+    status,
+  ]);
 
   const handleEpicSelect = useCallback(
     (epicId: number) => {

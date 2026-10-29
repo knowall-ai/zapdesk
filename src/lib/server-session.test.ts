@@ -20,7 +20,12 @@ vi.mock('next/headers', () => ({
   headers: async () => new Headers(),
 }));
 
-vi.mock('@/lib/auth', () => ({ authOptions: {} }));
+// The accessor runs the jwt callback so an expired access token is refreshed,
+// rather than handing a route the one the cookie happened to hold.
+const jwtCallback = vi.fn();
+vi.mock('@/lib/auth', () => ({
+  authOptions: { callbacks: { jwt: (...args: unknown[]) => jwtCallback(...args) } },
+}));
 
 const approved = (over: Partial<Session> = {}): Session =>
   ({
@@ -34,6 +39,9 @@ const approved = (over: Partial<Session> = {}): Session =>
 beforeEach(() => {
   vi.clearAllMocks();
   getToken.mockResolvedValue({ accessToken: 'devops-token' });
+  // By default the callback behaves as it does for a token that is still
+  // valid: it hands the same one straight back.
+  jwtCallback.mockImplementation(async ({ token }: { token: unknown }) => token);
 });
 
 describe('getServerSessionWithToken', () => {
@@ -77,5 +85,43 @@ describe('getServerSessionWithToken', () => {
     const [params] = getToken.mock.calls[0] as [{ req: { cookies: unknown } }];
     expect(params.req.cookies).toBe(cookieStore);
     expect(typeof (params.req.cookies as { getAll?: unknown }).getAll).toBe('function');
+  });
+
+  it('hands back the refreshed token, not the one the cookie held', async () => {
+    getServerSession.mockResolvedValue(approved());
+    // What getToken reads is the cookie as it arrived, so for an expired token
+    // this is the expired one. getServerSession's jwt callback refreshes it,
+    // and a route must get that result -- otherwise Azure DevOps answers 401.
+    getToken.mockResolvedValue({ accessToken: 'expired-token', accessTokenExpires: 1 });
+    jwtCallback.mockResolvedValue({ accessToken: 'refreshed-token' });
+
+    const { getServerSessionWithToken } = await import('./server-session');
+    const session = await getServerSessionWithToken();
+
+    expect(session?.accessToken).toBe('refreshed-token');
+  });
+
+  it('withholds the token when the refresh failed', async () => {
+    getServerSession.mockResolvedValue(approved());
+    getToken.mockResolvedValue({ accessToken: 'expired-token', accessTokenExpires: 1 });
+    jwtCallback.mockResolvedValue({ error: 'RefreshAccessTokenError' });
+
+    const { getServerSessionWithToken } = await import('./server-session');
+    const session = await getServerSessionWithToken();
+
+    // The app asks the person to sign in again off session.error. Handing the
+    // route a dead token as well would just add a second, vaguer failure.
+    expect(session?.accessToken).toBeUndefined();
+  });
+
+  it('returns the session unchanged when there is no cookie to read', async () => {
+    getServerSession.mockResolvedValue(approved());
+    getToken.mockResolvedValue(null);
+
+    const { getServerSessionWithToken } = await import('./server-session');
+    const session = await getServerSessionWithToken();
+
+    expect(session?.accessToken).toBeUndefined();
+    expect(jwtCallback).not.toHaveBeenCalled();
   });
 });

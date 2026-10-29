@@ -163,7 +163,7 @@ export default function TeamPage() {
       fetchTeamData();
       fetchActivityData();
     }
-  }, [session?.hasDevOpsToken, org, fetchTeamData, fetchActivityData]);
+  }, [session?.hasDevOpsToken, session?.user?.id, org, fetchTeamData, fetchActivityData]);
 
   // Pre-calculate max values once for workload distribution (must be before conditional returns)
   const maxAssigned = React.useMemo(() => {

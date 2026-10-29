@@ -413,7 +413,14 @@ function StandupPageContent() {
       fetchStandupData();
       fetchPrActivity();
     }
-  }, [session?.hasDevOpsToken, hasOrganization, sourceReady, fetchStandupData, fetchPrActivity]);
+  }, [
+    session?.hasDevOpsToken,
+    session?.user?.id,
+    hasOrganization,
+    sourceReady,
+    fetchStandupData,
+    fetchPrActivity,
+  ]);
 
   // Live update: while the tab is visible, run a poll on the cache TTL
   // cadence. When the tab is hidden the interval is cleared so no timer

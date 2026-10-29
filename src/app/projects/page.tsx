@@ -64,7 +64,7 @@ export default function ProjectsPage() {
 
     fetchProjects();
     // Use session?.hasDevOpsToken instead of session to avoid refetch on tab focus
-  }, [session?.hasDevOpsToken, selectedOrganization]);
+  }, [session?.hasDevOpsToken, session?.user?.id, selectedOrganization]);
 
   if (status === 'loading') {
     return (

@@ -85,7 +85,7 @@ export default function ProjectDetailPage() {
       }
     }
     // Use session?.hasDevOpsToken instead of session to avoid refetch on tab focus
-  }, [session?.hasDevOpsToken, projectId, selectedOrganization]);
+  }, [session?.hasDevOpsToken, session?.user?.id, projectId, selectedOrganization]);
 
   // Fetch epics once we have the project name
   useEffect(() => {
@@ -117,7 +117,7 @@ export default function ProjectDetailPage() {
 
     fetchProjectEpics(projectName);
     // Use session?.hasDevOpsToken instead of session to avoid refetch on tab focus
-  }, [session?.hasDevOpsToken, project, selectedOrganization]);
+  }, [session?.hasDevOpsToken, session?.user?.id, project, selectedOrganization]);
 
   if (status === 'loading' || loading) {
     return (

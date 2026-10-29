@@ -84,7 +84,7 @@ export default function ProfilePage() {
     if (session?.hasDevOpsToken) {
       loadLightningAddress();
     }
-  }, [session?.hasDevOpsToken, loadLightningAddress]);
+  }, [session?.hasDevOpsToken, session?.user?.id, loadLightningAddress]);
 
   const saveLightningAddress = async () => {
     if (!session) return;

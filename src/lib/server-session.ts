@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth';
 import type { Session } from 'next-auth';
 import { getToken } from 'next-auth/jwt';
+import type { JWT } from 'next-auth/jwt';
 import type { NextRequest } from 'next/server';
 import { cookies, headers } from 'next/headers';
 import { authOptions } from '@/lib/auth';
@@ -53,7 +54,38 @@ export async function getServerSessionWithToken(): Promise<ServerSession | null>
     headers: await headers(),
   } as unknown as NextRequest;
 
-  const jwt = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  const stored = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  if (!stored) {
+    return session;
+  }
 
-  return { ...session, accessToken: jwt?.accessToken };
+  // getToken only decodes the cookie that arrived with the request, so what it
+  // returns is the access token as the cookie was last written. If that token
+  // has since expired, this is the expired one -- where the code this replaced,
+  // which read the token inside the session callback, was handed the refreshed
+  // token that getServerSession's jwt callback had just produced.
+  //
+  // Running the same callback here keeps that behaviour rather than
+  // reimplementing it: it returns the token untouched while it is still valid,
+  // and refreshes it when it is not.
+  //
+  // On a request that genuinely needs a refresh this runs the refresh a second
+  // time, because getServerSession above has already run the callback once.
+  // That is one extra token request to Entra, only on requests where the token
+  // had expired. Handing a route the expired token instead costs it a 401 from
+  // Azure DevOps, which is worse and harder to explain.
+  const jwtCallback = authOptions.callbacks!.jwt!;
+  const refreshed = (await jwtCallback({
+    token: stored,
+  } as Parameters<typeof jwtCallback>[0])) as JWT | null;
+
+  // A failed refresh leaves `error` on the token, which the session callback
+  // passes to the browser as `session.error` so the app can ask the person to
+  // sign in again. Giving a route the dead token on top of that turns one clear
+  // failure into two.
+  if (!refreshed || refreshed.error) {
+    return session;
+  }
+
+  return { ...session, accessToken: refreshed.accessToken };
 }

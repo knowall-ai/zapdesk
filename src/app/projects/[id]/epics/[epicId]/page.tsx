@@ -82,7 +82,7 @@ export default function EpicDetailPage() {
     // Use session?.hasDevOpsToken instead of session to avoid refetch on tab focus
     // (session object reference changes but token stays the same)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.hasDevOpsToken, projectId, epicId, selectedOrganization]);
+  }, [session?.hasDevOpsToken, session?.user?.id, projectId, epicId, selectedOrganization]);
 
   if (status === 'loading' || loading) {
     return (
