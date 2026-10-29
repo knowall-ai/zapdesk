@@ -262,6 +262,12 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
       accessToken: data.access_token,
       accessTokenExpires: Date.now() + data.expires_in * 1000,
       refreshToken: data.refresh_token ?? token.refreshToken,
+      // Clear a failure recorded earlier. Spreading the old token carried
+      // `error` forward through a refresh that had just succeeded, which left
+      // the app telling the person to sign in again when nothing was wrong --
+      // and, since #542, made the server accessor withhold a working token for
+      // good, because it declines to hand a route a token marked failed.
+      error: undefined,
     };
   } catch (error) {
     console.error('Error refreshing access token:', error);
