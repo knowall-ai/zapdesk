@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AzureDevOpsService } from './devops';
 import { boardGitHubTickets } from './github-kanban';
+import { gitHubUserToPerson } from './github-issues';
 import type { Ticket, User } from '@/types';
 
 /**
@@ -106,11 +107,14 @@ describe('GitHub issues on the board', () => {
     expect(boardGitHubTickets(tickets, true)).toHaveLength(2);
   });
 
-  it('treats an issue whose assignee could not be mapped as unassigned', () => {
-    // A GitHub login ZapDesk cannot match to a DevOps person reaches the board
-    // with no assignee. The board groups by person, so there is nobody to group
-    // it under -- counting it as owned would put it in a column under a name
-    // that does not exist.
-    expect(boardGitHubTickets([ticket(9, undefined)], false)).toEqual([]);
+  it('keeps an issue whose assignee maps to no DevOps person', () => {
+    // Build the assignee through the real mapper rather than asserting what it
+    // returns: with no user map it falls back to the GitHub identity, so the
+    // ticket still has an assignee and `regroupByPerson` heads a column with
+    // the login. Hiding that card would drop work somebody owns.
+    const unmapped = gitHubUserToPerson({ id: 42, login: 'alexmorgan' }, undefined);
+    expect(unmapped.displayName).toBe('alexmorgan');
+
+    expect(boardGitHubTickets([ticket(9, unmapped)], false).map((t) => t.id)).toEqual([9]);
   });
 });
