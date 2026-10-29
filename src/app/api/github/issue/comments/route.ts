@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getServerSessionWithToken } from '@/lib/server-session';
 import { resolveIssueAccess } from '@/lib/github-issue-access';
 import { addIssueComment } from '@/lib/github-issue-detail';
 import { GitHubApiError } from '@/lib/github-issues';
@@ -16,7 +15,7 @@ const MAX_COMMENT_LENGTH = 65536;
  * app, and a reader there could not tell who on the support team wrote it.
  */
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getServerSessionWithToken();
   if (!session?.accessToken) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

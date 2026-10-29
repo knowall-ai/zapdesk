@@ -6,7 +6,9 @@ import { NextRequest } from 'next/server';
 // loaded" (#509). That silence is what hid #501 for weeks.
 
 const getServerSession = vi.fn();
-vi.mock('next-auth', () => ({ getServerSession: () => getServerSession() }));
+vi.mock('@/lib/server-session', () => ({
+  getServerSessionWithToken: () => getServerSession(),
+}));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 vi.mock('@/lib/devops-auth', () => ({ validateOrganizationAccess: async () => true }));
 

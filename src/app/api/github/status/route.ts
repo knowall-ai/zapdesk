@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getServerSessionWithToken } from '@/lib/server-session';
 import { gitHubAppAvailable, gitHubAvailable } from '@/lib/github-source';
 
 /**
@@ -8,7 +7,7 @@ import { gitHubAppAvailable, gitHubAvailable } from '@/lib/github-source';
  * toggle, and whether project admins can connect GitHub themselves (#457).
  */
 export async function GET() {
-  const session = await getServerSession(authOptions);
+  const session = await getServerSessionWithToken();
   if (!session?.accessToken) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

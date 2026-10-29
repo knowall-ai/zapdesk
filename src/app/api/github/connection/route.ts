@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getServerSessionWithToken } from '@/lib/server-session';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import {
   canManageProject,
@@ -18,7 +17,7 @@ import {
  */
 
 async function context(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getServerSessionWithToken();
   if (!session?.accessToken) {
     return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   }

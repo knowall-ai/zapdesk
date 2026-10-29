@@ -22,7 +22,7 @@ export default function UsersPage() {
   const { data: session, status } = useSession();
   // Stable across NextAuth's refetch on window focus, unlike the session
   // object, so switching tabs does not reload the page (#7391).
-  const isSignedIn = !!session?.accessToken;
+  const isSignedIn = !!session?.hasDevOpsToken;
   const router = useRouter();
   const { selectedOrganization, isLoading: organizationsLoading } = useOrganization();
   const [users, setUsers] = useState<Customer[]>([]);

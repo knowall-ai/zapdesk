@@ -8,7 +8,9 @@ import { clearGitHubAppCaches, signConnectState } from './github-app';
 // agree. GitHub and DevOps are mocked at fetch.
 
 const getServerSession = vi.fn();
-vi.mock('next-auth', () => ({ getServerSession: () => getServerSession() }));
+vi.mock('@/lib/server-session', () => ({
+  getServerSessionWithToken: () => getServerSession(),
+}));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
 const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>();

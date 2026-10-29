@@ -165,7 +165,7 @@ function MonthlyCheckpointContent() {
   // Fetch projects
   // Keyed on a stable flag, not the session object NextAuth replaces on every
   // window focus -- that refetched everything on each tab switch (#7391).
-  const isSignedIn = !!session?.accessToken;
+  const isSignedIn = !!session?.hasDevOpsToken;
   useEffect(() => {
     if (isSignedIn) {
       fetchProjects();

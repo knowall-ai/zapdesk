@@ -7,7 +7,9 @@ import { clearGitHubIssuesCache } from './github-issues';
 // mapping, conversion and view filtering in between are real.
 
 const getServerSession = vi.fn();
-vi.mock('next-auth', () => ({ getServerSession: () => getServerSession() }));
+vi.mock('@/lib/server-session', () => ({
+  getServerSessionWithToken: () => getServerSession(),
+}));
 vi.mock('@/lib/auth', () => ({ authOptions: {}, getGraphToken: async () => null }));
 
 const validateOrganizationAccess = vi.fn();

@@ -49,7 +49,7 @@ export default function ProjectDetailPage() {
   }, [status, router]);
 
   useEffect(() => {
-    if (session?.accessToken && projectId && selectedOrganization) {
+    if (session?.hasDevOpsToken && projectId && selectedOrganization) {
       fetchProject();
     }
 
@@ -84,13 +84,13 @@ export default function ProjectDetailPage() {
         setLoading(false);
       }
     }
-    // Use session?.accessToken instead of session to avoid refetch on tab focus
-  }, [session?.accessToken, projectId, selectedOrganization]);
+    // Use session?.hasDevOpsToken instead of session to avoid refetch on tab focus
+  }, [session?.hasDevOpsToken, session?.user?.id, projectId, selectedOrganization]);
 
   // Fetch epics once we have the project name
   useEffect(() => {
     const projectName = project?.devOpsProject;
-    if (!session?.accessToken || !projectName || !selectedOrganization) {
+    if (!session?.hasDevOpsToken || !projectName || !selectedOrganization) {
       return;
     }
 
@@ -116,8 +116,8 @@ export default function ProjectDetailPage() {
     }
 
     fetchProjectEpics(projectName);
-    // Use session?.accessToken instead of session to avoid refetch on tab focus
-  }, [session?.accessToken, project, selectedOrganization]);
+    // Use session?.hasDevOpsToken instead of session to avoid refetch on tab focus
+  }, [session?.hasDevOpsToken, session?.user?.id, project, selectedOrganization]);
 
   if (status === 'loading' || loading) {
     return (

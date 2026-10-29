@@ -94,12 +94,19 @@ export default function ProjectEpicsPage() {
   }, [status, router]);
 
   useEffect(() => {
-    if (session?.accessToken && projectId && selectedOrganization) {
+    if (session?.hasDevOpsToken && projectId && selectedOrganization) {
       fetchEpics();
     } else if (status !== 'loading') {
       setLoading(false);
     }
-  }, [session?.accessToken, projectId, selectedOrganization, fetchEpics, status]);
+  }, [
+    session?.hasDevOpsToken,
+    session?.user?.id,
+    projectId,
+    selectedOrganization,
+    fetchEpics,
+    status,
+  ]);
 
   const handleEpicSelect = useCallback(
     (epicId: number) => {

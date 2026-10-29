@@ -8,7 +8,9 @@ import { NextRequest } from 'next/server';
 // read by the real helpers.
 
 const getServerSession = vi.fn();
-vi.mock('next-auth', () => ({ getServerSession: () => getServerSession() }));
+vi.mock('@/lib/server-session', () => ({
+  getServerSessionWithToken: () => getServerSession(),
+}));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
 const sendStatusChangeNotification = vi.fn();

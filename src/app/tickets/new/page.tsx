@@ -218,7 +218,7 @@ export default function NewTicketPage() {
 
   // Fetch projects on load
   useEffect(() => {
-    if (session?.accessToken && hasOrganization) {
+    if (session?.hasDevOpsToken && hasOrganization) {
       fetchProjects();
     } else if (!hasOrganization && status === 'authenticated') {
       setIsLoadingProjects(false);
@@ -227,7 +227,7 @@ export default function NewTicketPage() {
 
   // Fetch team members, work item types, iterations, and areas when project changes
   useEffect(() => {
-    if (form.project && session?.accessToken && hasOrganization) {
+    if (form.project && session?.hasDevOpsToken && hasOrganization) {
       fetchTeamMembers(form.project);
       fetchWorkItemTypes(form.project);
       fetchIterations(form.project);
@@ -250,7 +250,7 @@ export default function NewTicketPage() {
 
   // Fetch required fields when project or work item type changes
   useEffect(() => {
-    if (form.project && form.workItemType && session?.accessToken && hasOrganization) {
+    if (form.project && form.workItemType && session?.hasDevOpsToken && hasOrganization) {
       fetchRequiredFields(form.project, form.workItemType);
     } else {
       setRequiredFields([]);

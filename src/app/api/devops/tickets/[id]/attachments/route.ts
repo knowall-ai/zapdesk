@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getServerSessionWithToken } from '@/lib/server-session';
 import { parseWorkItemId } from '@/lib/work-item-id';
 import { AzureDevOpsService } from '@/lib/devops';
 import { requestDevOpsOrg } from '@/lib/devops-org';
@@ -11,7 +10,7 @@ type RouteParams = { params: Promise<{ id: string }> };
 // GET - Fetch attachments for a ticket
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSessionWithToken();
 
     if (!session?.accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -43,7 +42,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // POST - Upload attachment to a ticket
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSessionWithToken();
 
     if (!session?.accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

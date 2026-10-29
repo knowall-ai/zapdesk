@@ -43,7 +43,7 @@ export default function ProfilePage() {
   const { data: session, status } = useSession();
   // Stable across NextAuth's refetch on window focus, unlike the session
   // object, so switching tabs does not reload the page (#7391).
-  const isSignedIn = !!session?.accessToken;
+  const isSignedIn = !!session?.hasDevOpsToken;
   const { photoUrl } = useProfilePhoto(status === 'authenticated');
   const { selectedOrganization, isLoading: organizationsLoading } = useOrganization();
   const org = selectedOrganization?.accountName;
@@ -81,10 +81,10 @@ export default function ProfilePage() {
   }, []);
 
   useEffect(() => {
-    if (session?.accessToken) {
+    if (session?.hasDevOpsToken) {
       loadLightningAddress();
     }
-  }, [session?.accessToken, loadLightningAddress]);
+  }, [session?.hasDevOpsToken, session?.user?.id, loadLightningAddress]);
 
   const saveLightningAddress = async () => {
     if (!session) return;
