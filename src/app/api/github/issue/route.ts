@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getServerSessionWithToken } from '@/lib/server-session';
 import { resolveIssueAccess } from '@/lib/github-issue-access';
 import {
   fetchIssueDetail,
@@ -21,7 +20,7 @@ import type { TicketStatus } from '@/types';
  * see `github-issue-access`.
  */
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getServerSessionWithToken();
   if (!session?.accessToken) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -63,7 +62,7 @@ const STATUSES: readonly TicketStatus[] = [
  * state and a label rather than only open or closed.
  */
 export async function PATCH(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getServerSessionWithToken();
   if (!session?.accessToken) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

@@ -97,13 +97,13 @@ export default function HomePage() {
 
   // Fetch data when session or organization changes
   useEffect(() => {
-    if (session?.accessToken) {
+    if (session?.hasDevOpsToken) {
       fetchDashboardStats();
       fetchProjects();
     }
-    // Use session?.accessToken instead of session to avoid refetch on tab focus
+    // Use session?.hasDevOpsToken instead of session to avoid refetch on tab focus
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken, selectedOrganization]);
+  }, [session?.hasDevOpsToken, session?.user?.id, selectedOrganization]);
 
   if (status === 'loading') {
     return (
@@ -211,7 +211,14 @@ export default function HomePage() {
         {/* SLA Risk Panel and Quick actions */}
         <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* SLA Risk Panel */}
-          <SLARiskPanel accessToken={session.accessToken} />
+          {/*
+            Keyed on the signed-in person so a change of user remounts it and
+            drops what the previous one was shown. The panel keeps its own
+            fetched tickets, and `enabled` is true for both users, so nothing
+            in its props would otherwise tell it to start again -- the access
+            token used to, by being a different string (#542).
+          */}
+          <SLARiskPanel key={session.user?.id} enabled={session.hasDevOpsToken} />
 
           {/* Quick Actions */}
           <div className="card">

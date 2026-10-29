@@ -3,14 +3,23 @@ import { NextRequest } from 'next/server';
 import type { Session } from 'next-auth';
 import type { JWT } from 'next-auth/jwt';
 import { authOptions } from './auth';
+import type { ServerSession } from './server-session';
 import { KNOWALL_TENANT_ID } from './tenant-approval';
 
 // Approved organisations only, enforced on the server: the session callback,
 // the proxy, API routes and the install callback. Sessions here come from the
 // real session callback, so the routes see exactly what they would in
-// production.
+// production -- which since #542 means two shapes. The browser session has no
+// token on it at all; the one a route is handed carries the token, and only
+// when the callback approved the tenant.
 
 const getServerSession = vi.fn();
+vi.mock('@/lib/server-session', () => ({
+  getServerSessionWithToken: () => getServerSession(),
+}));
+// /api/lightning and /api/profile/github never needed the DevOps token, so they
+// still take the plain session. Both accessors answer from the same spy, so a
+// test does not have to know which of them the route it drives happens to use.
 vi.mock('next-auth', () => ({ getServerSession: () => getServerSession() }));
 
 const getToken = vi.fn();
@@ -47,6 +56,19 @@ async function sessionFrom(tid: string | undefined): Promise<Session> {
   return (await callback({ session, token } as Parameters<typeof callback>[0])) as Session;
 }
 
+/**
+ * What `getServerSessionWithToken()` makes of a token from tenant `tid`.
+ *
+ * It applies the same rule as `src/lib/server-session.ts`: read the token only
+ * for a tenant the session callback approved. Handing a route `sessionFrom()`
+ * instead would 401 every one of them since #542, for reasons that have nothing
+ * to do with the gate being tested.
+ */
+async function serverSessionFrom(tid: string | undefined): Promise<ServerSession> {
+  const session = await sessionFrom(tid);
+  return session.tenantApproved ? { ...session, accessToken: 'devops-token' } : session;
+}
+
 async function proxyFor(path: string, tid: string | undefined | null) {
   getToken.mockResolvedValue(tid === null ? null : { tenantId: tid });
   const { proxy } = await import('@/proxy');
@@ -70,29 +92,34 @@ afterEach(() => {
 });
 
 describe('session callback', () => {
-  it('gives an approved tenant its Azure DevOps token', async () => {
+  it('tells an approved tenant it may call Azure DevOps', async () => {
     for (const tid of [KNOWALL_TENANT_ID, CUSTOMER]) {
       const session = await sessionFrom(tid);
       expect(session.tenantApproved).toBe(true);
-      expect(session.accessToken).toBe('devops-token');
+      expect(session.hasDevOpsToken).toBe(true);
+      // Approval says the token may be used, not that the browser may see it.
+      // Server code reads it from the cookie instead (#542).
+      expect(JSON.stringify(session)).not.toContain('devops-token');
     }
   });
 
   it('keeps every token out of an unapproved session', async () => {
     const session = await sessionFrom(STRANGER);
     expect(session.tenantApproved).toBe(false);
-    expect(session.accessToken).toBeUndefined();
-    // Checked on the serialised session rather than the field: since #540
-    // the refresh token is off the Session type altogether, so reading it
-    // back would not compile. What matters is that it reaches no browser.
-    expect(JSON.stringify(session)).not.toContain('refresh');
+    expect(session.hasDevOpsToken).toBe(false);
+    // Checked on the serialised session rather than the fields: since #540 and
+    // #542 neither token is on the Session type at all, so reading one back
+    // would not compile. What matters is that neither reaches a browser.
+    const served = JSON.stringify(session);
+    expect(served).not.toContain('refresh');
+    expect(served).not.toContain('devops-token');
     expect(session.tenantId).toBe(STRANGER);
   });
 
   it('blocks a session with no tid', async () => {
     const session = await sessionFrom(undefined);
     expect(session.tenantApproved).toBe(false);
-    expect(session.accessToken).toBeUndefined();
+    expect(session.hasDevOpsToken).toBe(false);
   });
 });
 
@@ -159,7 +186,7 @@ describe('proxy', () => {
 });
 
 describe('API routes', () => {
-  const searchAs = async (session: Session) => {
+  const searchAs = async (session: ServerSession) => {
     getServerSession.mockResolvedValue(session);
     const { GET } = await import('@/app/api/devops/search/route');
     const url = new URL('https://zapdesk.test/api/devops/search?q=login');
@@ -167,14 +194,14 @@ describe('API routes', () => {
   };
 
   it('returns no data to an unapproved tenant from a DevOps route (401)', async () => {
-    const response = await searchAs(await sessionFrom(STRANGER));
+    const response = await searchAs(await serverSessionFrom(STRANGER));
     expect(response.status).toBe(401);
     expect(validateOrganizationAccess).not.toHaveBeenCalled();
     expect(getAllTickets).not.toHaveBeenCalled();
   });
 
   it('returns 403 to an unapproved tenant from a Graph-backed route', async () => {
-    getServerSession.mockResolvedValue(await sessionFrom(STRANGER));
+    getServerSession.mockResolvedValue(await serverSessionFrom(STRANGER));
     const { GET } = await import('@/app/api/lightning/route');
     const response = await GET();
     expect(response.status).toBe(403);
@@ -183,7 +210,7 @@ describe('API routes', () => {
 
   it('still applies the per-user organisation access rule to an approved tenant', async () => {
     validateOrganizationAccess.mockResolvedValue(false);
-    const response = await searchAs(await sessionFrom(CUSTOMER));
+    const response = await searchAs(await serverSessionFrom(CUSTOMER));
     expect(response.status).toBe(403);
     expect(validateOrganizationAccess).toHaveBeenCalledWith('devops-token', 'Contoso');
     expect(getAllTickets).not.toHaveBeenCalled();
@@ -192,7 +219,7 @@ describe('API routes', () => {
   it('serves an approved tenant whose user has access', async () => {
     validateOrganizationAccess.mockResolvedValue(true);
     getAllTickets.mockResolvedValue([]);
-    const response = await searchAs(await sessionFrom(CUSTOMER));
+    const response = await searchAs(await serverSessionFrom(CUSTOMER));
     expect(response.status).toBe(200);
   });
 });

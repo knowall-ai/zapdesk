@@ -7,7 +7,8 @@ import { KNOWALL_TENANT_ID } from './tenant-approval';
 /**
  * The session object is what NextAuth serves to the browser at
  * /api/auth/session, so anything copied onto it is readable by any script on
- * the page. The Azure DevOps refresh token must never get there (#540).
+ * the page. Neither Azure DevOps token may get there: the refresh token per
+ * #540, the access token per #542.
  */
 describe('session callback', () => {
   async function buildSession(token: JWT): Promise<Session> {
@@ -21,7 +22,7 @@ describe('session callback', () => {
     })) as Session;
   }
 
-  it('never exposes the refresh token to the browser', async () => {
+  it('never exposes either token to the browser', async () => {
     const session = await buildSession({
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
@@ -31,7 +32,14 @@ describe('session callback', () => {
     });
 
     expect(session).not.toHaveProperty('refreshToken');
-    expect(JSON.stringify(session)).not.toContain('refresh-token');
+    expect(session).not.toHaveProperty('accessToken');
+
+    // Checked on the serialised object as well as the fields, because this is
+    // exactly what /api/auth/session sends: a token reachable by any path
+    // through it is reachable by a script on the page.
+    const served = JSON.stringify(session);
+    expect(served).not.toContain('refresh-token');
+    expect(served).not.toContain('access-token');
   });
 
   it('still carries the fields the app reads', async () => {
@@ -44,14 +52,14 @@ describe('session callback', () => {
       error: 'RefreshAccessTokenError',
     });
 
-    expect(session.accessToken).toBe('access-token');
+    expect(session.hasDevOpsToken).toBe(true);
     expect(session.error).toBe('RefreshAccessTokenError');
     expect(session.user.id).toBe('user-1');
     expect(session.user.image).toBe('https://example.test/avatar.png');
     expect(session.tenantId).toBe(KNOWALL_TENANT_ID);
   });
 
-  it('exposes neither token when the organisation is not approved', async () => {
+  it('reports no DevOps token when the organisation is not approved', async () => {
     const session = await buildSession({
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
@@ -60,7 +68,29 @@ describe('session callback', () => {
     });
 
     expect(session.tenantApproved).toBe(false);
-    expect(session.accessToken).toBeUndefined();
+    expect(session.hasDevOpsToken).toBe(false);
     expect(JSON.stringify(session)).not.toContain('refresh-token');
+  });
+
+  it('reports no DevOps token when an approved organisation has none', async () => {
+    const session = await buildSession({
+      id: 'user-1',
+      tenantId: KNOWALL_TENANT_ID,
+    });
+
+    expect(session.tenantApproved).toBe(true);
+    expect(session.hasDevOpsToken).toBe(false);
+  });
+
+  it('falls back to the sub claim for the user id', async () => {
+    // TicketCountsProvider scopes cached counts on this id. It used to tell two
+    // id-less accounts apart by their differing access tokens, which #542 took
+    // off the session, so the id has to stand on its own now.
+    const session = await buildSession({
+      sub: 'subject-claim',
+      tenantId: KNOWALL_TENANT_ID,
+    });
+
+    expect(session.user.id).toBe('subject-claim');
   });
 });

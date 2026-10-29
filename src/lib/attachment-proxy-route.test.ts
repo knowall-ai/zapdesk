@@ -5,7 +5,9 @@ import { NextRequest } from 'next/server';
 // validation and the download disposition. DevOps is the global fetch, mocked.
 
 const getServerSession = vi.fn();
-vi.mock('next-auth', () => ({ getServerSession: () => getServerSession() }));
+vi.mock('@/lib/server-session', () => ({
+  getServerSessionWithToken: () => getServerSession(),
+}));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
 const ID = '11111111-2222-3333-4444-555555555555';

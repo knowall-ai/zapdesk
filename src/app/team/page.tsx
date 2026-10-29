@@ -159,11 +159,11 @@ export default function TeamPage() {
   }, [ticketsOnly, org]);
 
   useEffect(() => {
-    if (session?.accessToken && org) {
+    if (session?.hasDevOpsToken && org) {
       fetchTeamData();
       fetchActivityData();
     }
-  }, [session?.accessToken, org, fetchTeamData, fetchActivityData]);
+  }, [session?.hasDevOpsToken, session?.user?.id, org, fetchTeamData, fetchActivityData]);
 
   // Pre-calculate max values once for workload distribution (must be before conditional returns)
   const maxAssigned = React.useMemo(() => {
