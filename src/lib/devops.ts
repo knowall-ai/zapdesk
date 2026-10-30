@@ -3066,7 +3066,20 @@ export class AzureDevOpsService {
      */
     categoriesByProjectType?: Record<string, Record<string, Record<string, string>>>,
     /** False when part of the org's type/state discovery failed. */
-    discoveryComplete = true
+    discoveryComplete = true,
+    /**
+     * Whether to fetch work nobody owns.
+     *
+     * The board's default is `false` (#581, #530): in a busy organisation the
+     * unassigned group is often the largest, and it is filtered here in WIQL
+     * rather than in the browser so the ids are never fetched and their fields
+     * never hydrated. Hiding them client-side would have left the slow part --
+     * the query and the batched field reads -- exactly as it was.
+     *
+     * Defaults to `true` so the method on its own still answers "all the work",
+     * and only the board asks for less.
+     */
+    includeUnassigned = true
   ): Promise<{ items: DevOpsWorkItem[] }> {
     // Recently-done window: 7 days ending on the target date (inclusive).
     // This matches the "recently-solved" view elsewhere in the app and ensures
@@ -3124,6 +3137,10 @@ export class AzureDevOpsService {
     const activeStatesList = activeStates.map((s) => `'${escapeState(s)}'`).join(', ');
     const resolvedStatesList = resolvedStates.map((s) => `'${escapeState(s)}'`).join(', ');
 
+    // Work nobody owns, left out unless asked for. An identity field compares
+    // against the empty string in WIQL; there is no IS NULL for it.
+    const assignedClause = includeUnassigned ? '' : "AND [System.AssignedTo] <> '' ";
+
     // Only show actionable work item types (exclude Epic, Feature, User Story)
     const allowedTypes = ['Task', 'Bug', 'Enhancement', 'Question', 'Issue', 'Risk'];
     const allowedTypesList = allowedTypes.map((t) => `'${t}'`).join(', ');
@@ -3150,6 +3167,7 @@ export class AzureDevOpsService {
           AND [System.WorkItemType] IN (${allowedTypesList})
           AND [System.ChangedDate] >= '${sevenDaysAgoStr}'
           AND [System.ChangedDate] < '${nextDayStr}'
+          ${assignedClause}
         ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
       `,
     };
@@ -3166,6 +3184,7 @@ export class AzureDevOpsService {
         WHERE [System.State] IN (${activeStatesList})
           AND [System.WorkItemType] IN (${allowedTypesList})
           AND [System.ChangedDate] >= '${ninetyDaysAgoStr}'
+          ${assignedClause}
         ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
       `,
     };
@@ -3180,6 +3199,7 @@ export class AzureDevOpsService {
         FROM WorkItems
         WHERE [System.State] IN (${resolvedStatesList})
           AND [System.WorkItemType] IN (${allowedTypesList})
+          ${assignedClause}
         ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
       `,
     };
