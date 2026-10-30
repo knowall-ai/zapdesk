@@ -382,6 +382,23 @@ function StandupPageContent() {
     ]
   );
 
+  // The newest `fetchStandupData`, for refreshes that begin inside an action
+  // rather than from a render. A PATCH can still be in flight when the dialog
+  // closes and a board setting changes -- "Show unassigned" (#581), the sprint
+  // filter or the source toggle -- and the callback captured when the click
+  // happened would refetch, and cache, under the settings that applied then,
+  // committing data for a filter the user has already moved off.
+  const fetchStandupDataRef = useRef(fetchStandupData);
+  useEffect(() => {
+    fetchStandupDataRef.current = fetchStandupData;
+  }, [fetchStandupData]);
+
+  // Stable on purpose: the action callbacks below only ever need "refresh the
+  // board as it is now", so they are not rebuilt on every settings change.
+  const refreshBoardAfterChange = useCallback(() => {
+    void fetchStandupDataRef.current(true, true, true);
+  }, []);
+
   // Pull requests from Azure DevOps and GitHub (#483), following the header
   // toggle. A failure leaves the board alone and just marks the PR counts
   // unavailable.
@@ -539,9 +556,9 @@ function StandupPageContent() {
         throw new Error(data.error || 'Failed to update state');
       }
 
-      fetchStandupData(true, true, true);
+      refreshBoardAfterChange();
     },
-    [fetchStandupData, devOpsPatch]
+    [refreshBoardAfterChange, devOpsPatch]
   );
 
   // Fetch the full Ticket on card click and open the detail dialog.
@@ -637,14 +654,14 @@ function StandupPageContent() {
         setSelectedTicket((prev) =>
           prev ? { ...prev, devOpsState: state, status: state as Ticket['status'] } : null
         );
-        fetchStandupData(true, true, true);
+        refreshBoardAfterChange();
         return;
       }
 
       await handleStateChange(workItemId, state, open?.project);
       setSelectedTicket((prev) => (prev ? { ...prev, devOpsState: state } : null));
     },
-    [handleStateChange, selectedTicket, devOpsPatch, fetchStandupData]
+    [handleStateChange, selectedTicket, devOpsPatch, refreshBoardAfterChange]
   );
 
   // Generic PATCH helper used by the dialog's assignee/priority/tags/update handlers.
@@ -669,10 +686,10 @@ function StandupPageContent() {
             : prev
         );
       }
-      fetchStandupData(true, true, true);
+      refreshBoardAfterChange();
       return updated;
     },
-    [devOpsPatch, fetchStandupData]
+    [devOpsPatch, refreshBoardAfterChange]
   );
 
   const handleDialogAssigneeChange = useCallback(
@@ -758,7 +775,7 @@ function StandupPageContent() {
           throw new Error(problem.error || 'Failed to update the GitHub issue');
         }
         setSelectedTicket((prev) => (prev ? { ...prev, title: updates.title! } : null));
-        fetchStandupData(true, true, true);
+        refreshBoardAfterChange();
         return;
       }
 
@@ -768,7 +785,7 @@ function StandupPageContent() {
         workItemType: selectedTicket.workItemType,
       });
     },
-    [patchTicket, selectedTicket, devOpsPatch, fetchStandupData]
+    [patchTicket, selectedTicket, devOpsPatch, refreshBoardAfterChange]
   );
 
   const handleDialogTypeChange = useCallback(
@@ -796,9 +813,9 @@ function StandupPageContent() {
             : { ...prev, workItemType: newType }
           : prev
       );
-      fetchStandupData(true, true, true);
+      refreshBoardAfterChange();
     },
-    [devOpsPatch, selectedTicket, fetchStandupData]
+    [devOpsPatch, selectedTicket, refreshBoardAfterChange]
   );
 
   const projectNames = useMemo(
