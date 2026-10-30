@@ -395,7 +395,15 @@ function StandupPageContent() {
 
   // Stable on purpose: the action callbacks below only ever need "refresh the
   // board as it is now", so they are not rebuilt on every settings change.
-  const refreshBoardAfterChange = useCallback(() => {
+  //
+  // The edited organisation is passed in rather than read from the latest
+  // callback, because the two can differ: switch organisation while the PATCH
+  // is in flight and the newest callback would invalidate the organisation
+  // just switched *to*, leaving the edited one's cached board to be restored
+  // unchanged on switching back within the TTL. So invalidate the one that was
+  // edited, then refresh whichever board is on screen now.
+  const refreshBoardAfterChange = useCallback((editedOrganization?: string) => {
+    if (editedOrganization) standupCache.invalidate(editedOrganization);
     void fetchStandupDataRef.current(true, true, true);
   }, []);
 
@@ -556,9 +564,9 @@ function StandupPageContent() {
         throw new Error(data.error || 'Failed to update state');
       }
 
-      refreshBoardAfterChange();
+      refreshBoardAfterChange(selectedOrganization?.accountName);
     },
-    [refreshBoardAfterChange, devOpsPatch]
+    [refreshBoardAfterChange, devOpsPatch, selectedOrganization?.accountName]
   );
 
   // Fetch the full Ticket on card click and open the detail dialog.
@@ -654,14 +662,20 @@ function StandupPageContent() {
         setSelectedTicket((prev) =>
           prev ? { ...prev, devOpsState: state, status: state as Ticket['status'] } : null
         );
-        refreshBoardAfterChange();
+        refreshBoardAfterChange(selectedOrganization?.accountName);
         return;
       }
 
       await handleStateChange(workItemId, state, open?.project);
       setSelectedTicket((prev) => (prev ? { ...prev, devOpsState: state } : null));
     },
-    [handleStateChange, selectedTicket, devOpsPatch, refreshBoardAfterChange]
+    [
+      handleStateChange,
+      selectedTicket,
+      devOpsPatch,
+      refreshBoardAfterChange,
+      selectedOrganization?.accountName,
+    ]
   );
 
   // Generic PATCH helper used by the dialog's assignee/priority/tags/update handlers.
@@ -686,10 +700,10 @@ function StandupPageContent() {
             : prev
         );
       }
-      refreshBoardAfterChange();
+      refreshBoardAfterChange(selectedOrganization?.accountName);
       return updated;
     },
-    [devOpsPatch, refreshBoardAfterChange]
+    [devOpsPatch, refreshBoardAfterChange, selectedOrganization?.accountName]
   );
 
   const handleDialogAssigneeChange = useCallback(
@@ -775,7 +789,7 @@ function StandupPageContent() {
           throw new Error(problem.error || 'Failed to update the GitHub issue');
         }
         setSelectedTicket((prev) => (prev ? { ...prev, title: updates.title! } : null));
-        refreshBoardAfterChange();
+        refreshBoardAfterChange(selectedOrganization?.accountName);
         return;
       }
 
@@ -785,7 +799,13 @@ function StandupPageContent() {
         workItemType: selectedTicket.workItemType,
       });
     },
-    [patchTicket, selectedTicket, devOpsPatch, refreshBoardAfterChange]
+    [
+      patchTicket,
+      selectedTicket,
+      devOpsPatch,
+      refreshBoardAfterChange,
+      selectedOrganization?.accountName,
+    ]
   );
 
   const handleDialogTypeChange = useCallback(
@@ -813,9 +833,9 @@ function StandupPageContent() {
             : { ...prev, workItemType: newType }
           : prev
       );
-      refreshBoardAfterChange();
+      refreshBoardAfterChange(selectedOrganization?.accountName);
     },
-    [devOpsPatch, selectedTicket, refreshBoardAfterChange]
+    [devOpsPatch, selectedTicket, refreshBoardAfterChange, selectedOrganization?.accountName]
   );
 
   const projectNames = useMemo(
