@@ -1080,8 +1080,10 @@ function StandupPageContent() {
                   busy organisation, and leaving it out is what makes the board
                   quick. Worded as what ticking it does, not as a filter being
                   removed, because "Unassigned" alone would not say whether it
-                  shows or hides them. The items are excluded in the query, so
-                  ticking this refetches rather than revealing hidden cards. */}
+                  shows or hides them. Both sources drop them on the server --
+                  DevOps in the WIQL, GitHub issues in `boardGitHubTickets` once
+                  the API has returned them -- so ticking this refetches rather
+                  than revealing cards the browser was already holding. */}
               <label
                 className="flex cursor-pointer items-center gap-2 text-xs"
                 style={{ color: 'var(--text-muted)' }}
