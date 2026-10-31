@@ -127,6 +127,10 @@ The deploy signs in to Azure with GitHub's OIDC token, so no Azure password is s
 * `AZURE_TENANT_ID` - its Entra tenant
 * `AZURE_SUBSCRIPTION_ID` - the subscription holding the App Service
 
+The build job also needs the repository variables `APP_URL`, `MAIL_FROM_NAME`, `AZURE_WEBAPP_NAME` and `AZURE_DEVOPS_ORG` (*Settings > Secrets and variables > Actions > Variables*); it stops, naming any that are missing.
+
+The `production` environment accepts deploys only from `v*` tags, and only admins and maintainers can create those tags.
+
 === Deployment Workflow
 
 The workflow at `.github/workflows/deploy.yml` handles:
