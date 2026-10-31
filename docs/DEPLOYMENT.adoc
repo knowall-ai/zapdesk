@@ -119,11 +119,17 @@ Set the following environment variables in Azure App Service > Configuration:
 
 == GitHub Actions Deployment
 
-=== Configure Secrets
+=== Configure Azure Sign-in
 
-In GitHub repository settings, add these secrets:
+The deploy signs in to Azure with GitHub's OIDC token, so no Azure password is stored. Create an app registration with a federated credential for `repo:knowall-ai@50064085/zapdesk@1127234707:environment:production` and *Website Contributor* on the App Service only. Then, in **Settings > Environments > production**, add these variables:
 
-* `AZURE_WEBAPP_PUBLISH_PROFILE` - Download from Azure Portal
+* `AZURE_CLIENT_ID` - the app registration's client ID
+* `AZURE_TENANT_ID` - its Entra tenant
+* `AZURE_SUBSCRIPTION_ID` - the subscription holding the App Service
+
+The build job also needs the repository variables `APP_URL`, `MAIL_FROM_NAME`, `AZURE_WEBAPP_NAME` and `AZURE_DEVOPS_ORG` (*Settings > Secrets and variables > Actions > Variables*); it stops, naming any that are missing.
+
+The `production` environment accepts deploys only from `v*` tags, and only admins and maintainers can create those tags.
 
 === Deployment Workflow
 
