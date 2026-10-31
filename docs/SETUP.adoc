@@ -234,9 +234,6 @@ so set it directly in the App Service configuration (see
 |===
 |Secret |Description
 
-|`AZURE_WEBAPP_PUBLISH_PROFILE`
-|Azure Web App publish profile (XML). Get with: `az webapp deployment list-publishing-profiles --name zapdesk-knowallai --resource-group KnowAllAIRG --xml`
-
 |`NEXTAUTH_SECRET`
 |Random 32-byte hex string. Generate with: `openssl rand -hex 32`
 
@@ -263,11 +260,6 @@ so set it directly in the App Service configuration (see
 [source,bash]
 ----
 # Auto-generated secrets
-az webapp deployment list-publishing-profiles \
-  --name zapdesk-knowallai \
-  --resource-group KnowAllAIRG \
-  --xml | gh secret set AZURE_WEBAPP_PUBLISH_PROFILE
-
 gh secret set NEXTAUTH_SECRET --body "$(openssl rand -hex 32)"
 gh secret set EMAIL_WEBHOOK_SECRET --body "$(openssl rand -hex 16)"
 

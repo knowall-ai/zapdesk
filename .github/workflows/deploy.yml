@@ -9,6 +9,12 @@ name: Deploy to Azure App Service
 #   AZURE_WEBAPP_NAME  App Service to deploy to, e.g. zapdesk-knowallai
 #   AZURE_DEVOPS_ORG   Azure DevOps organisation, e.g. KnowAll
 #
+# The production environment's variables sign the deploy in to Azure with
+# GitHub's OIDC token: AZURE_CLIENT_ID, AZURE_TENANT_ID and
+# AZURE_SUBSCRIPTION_ID, for an app registration with a federated credential
+# for this repo's production environment and Website Contributor on the App
+# Service only.
+#
 # None has a default. The deploy checks all four are set and stops if any
 # is missing, because a default that silently disagrees with reality is a
 # misconfiguration nobody can see -- and it would leave production values
@@ -96,6 +102,10 @@ jobs:
     environment:
       name: production
       url: ${{ vars.APP_URL }}
+    # Signs in with GitHub's OIDC token for the production environment: no stored Azure secret.
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Download artifact
@@ -106,7 +116,9 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3

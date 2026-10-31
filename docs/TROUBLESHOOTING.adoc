@@ -66,7 +66,7 @@
 |API routes should proxy all requests. Check you're using /api/ routes, not calling DevOps directly. Verify NEXTAUTH_URL is correct.
 
 |**Deployment failing**
-|Check GitHub Actions logs. Verify AZURE_CREDENTIALS secret contains valid service principal. Ensure Node.js version matches (20+).
+|Check GitHub Actions logs. If *Login to Azure* fails, check the production environment's AZURE_CLIENT_ID, AZURE_TENANT_ID and AZURE_SUBSCRIPTION_ID variables, and that the app registration's federated credential matches the subject in the error (`repo:knowall-ai/zapdesk:environment:production`). Ensure Node.js version matches (20+).
 
 |**503 Service Unavailable / Exit code 127 after deployment**
 |Exit code 127 means "command not found". This usually means node_modules are missing. The app requires `output: 'standalone'` in `next.config.ts` for Azure App Service. The standalone build creates a self-contained package in `.next/standalone/` with all dependencies bundled. Deploy this folder and use `node server.js` as startup command instead of `npm start`.
