@@ -74,9 +74,6 @@
 |**.next folder not deployed**
 |Ensure `include-hidden-files: true` is set in the upload-artifact action. Files/folders starting with `.` are excluded by default.
 
-|**"Publish profile is invalid" deployment error**
-|SCM Basic Authentication may be disabled. Check with: `az rest --method get --url "https://management.azure.com/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Web/sites/{app}/basicPublishingCredentialsPolicies/scm?api-version=2022-03-01" --query "properties.allow"`. If false, switch to service principal authentication using azure/login action.
-
 |**Custom domain not working**
 |Verify DNS CNAME record. Check Azure SSL certificate status. Allow up to 24 hours for DNS propagation.
 
