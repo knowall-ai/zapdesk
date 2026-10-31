@@ -121,7 +121,7 @@ Set the following environment variables in Azure App Service > Configuration:
 
 === Configure Azure Sign-in
 
-The deploy signs in to Azure with GitHub's OIDC token, so no Azure password is stored. Create an app registration with a federated credential for `repo:knowall-ai/zapdesk:environment:production` and *Website Contributor* on the App Service only. Then, in **Settings > Environments > production**, add these variables:
+The deploy signs in to Azure with GitHub's OIDC token, so no Azure password is stored. Create an app registration with a federated credential for `repo:knowall-ai@50064085/zapdesk@1127234707:environment:production` and *Website Contributor* on the App Service only. Then, in **Settings > Environments > production**, add these variables:
 
 * `AZURE_CLIENT_ID` - the app registration's client ID
 * `AZURE_TENANT_ID` - its Entra tenant
