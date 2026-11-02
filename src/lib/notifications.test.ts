@@ -35,6 +35,10 @@ const configure = () => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  // Not only the per-test mockRestore calls: a failing assertion skips those,
+  // and a console spy that outlives its test silently swallows the next one's
+  // output. The config does not restore mocks automatically.
+  vi.restoreAllMocks();
 });
 
 describe('assignment notification (#7374)', () => {
