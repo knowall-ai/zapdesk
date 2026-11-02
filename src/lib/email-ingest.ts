@@ -236,7 +236,19 @@ async function handleThreadReply(
 
     // Notify before linking attachments, not after: the comment is already on
     // the ticket, so a later link failure must not cost the agent their alert.
-    notifyAgentOfReply(updatedWorkItem, ticketId, senderEmail, renderForNotification(renderedBody));
+    //
+    // The appendix goes with the body (#7768). A new ticket's notification is
+    // built from the stored description, which `formatEmailBody` assembled
+    // with it, so the team's mail names the files. A reply's was built from
+    // the body alone: the appendix above was stored on the comment and then
+    // left out of the one thing the agent reads. A file named on the ticket
+    // and in no mail is a file nobody knows to go and look for.
+    notifyAgentOfReply(
+      updatedWorkItem,
+      ticketId,
+      senderEmail,
+      renderForNotification(`${renderedBody}\n${appendix}`)
+    );
 
     if (projectName) {
       await reportUnlinkedAttachments(
