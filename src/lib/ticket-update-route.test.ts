@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { MAX_TITLE_LENGTH } from './ticket-title';
 
@@ -72,6 +72,10 @@ describe('PATCH /api/devops/tickets/[id]', () => {
     getServerSession.mockResolvedValue({ accessToken: 'token', user: { name: 'Dana' } });
     getWorkItem.mockResolvedValue(workItem({}));
   });
+
+  // Same reason as the create-path suite: a spy restored at the end of its own
+  // test is not restored when an assertion throws first.
+  afterEach(() => vi.restoreAllMocks());
 
   // The route decides whether to notify at all, before the sender's own
   // guards run, and that branch was silent (#7374). `identityToUser` reads the

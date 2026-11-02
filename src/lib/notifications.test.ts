@@ -142,7 +142,12 @@ describe('assignment notification (#7374)', () => {
     });
 
     it('names unconfigured mail, rather than looking like a failed send', async () => {
+      // Both, or this proves nothing: mailClientSecret() falls back to
+      // AZURE_AD_CLIENT_SECRET, which the documented .env sets, so clearing
+      // only the MAIL_ one leaves outbound still configured and the helper
+      // sends through the Graph stub.
       vi.stubEnv('MAIL_CLIENT_SECRET', '');
+      vi.stubEnv('AZURE_AD_CLIENT_SECRET', '');
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       await sendAssignmentNotification({
         ticketId: 7400,

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
 // Route-level coverage for POST /api/devops/tickets: the email sent when a
@@ -87,6 +87,11 @@ describe('POST /api/devops/tickets — assignment email (#7374)', () => {
     });
     createTicketWithAssignee.mockResolvedValue(createdWorkItem(assignee));
   });
+
+  // beforeEach only clears mocks. A console spy restored at the end of its own
+  // test is not restored when an assertion throws first, and the next test then
+  // runs with console.warn still mocked.
+  afterEach(() => vi.restoreAllMocks());
 
   it('emails the assignee when the ticket is created already assigned', async () => {
     const response = await post({ project: 'Internal', title: 'Printer', assignee: 'u2' });
