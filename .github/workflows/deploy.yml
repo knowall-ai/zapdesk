@@ -29,6 +29,14 @@ on:
   # Allow manual deployment
   workflow_dispatch:
 
+# Read-only by default, for every job. build compiles and uploads an
+# artifact and notify echoes; neither writes to the repository, and
+# build runs repository code -- bun install and bun run build -- so a
+# wider token than it needs is a token that code could use. deploy
+# raises its own, below, because OIDC needs id-token: write.
+permissions:
+  contents: read
+
 env:
   AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
   BUN_VERSION: '1.2'
@@ -63,6 +71,10 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Otherwise the token is left in .git/config for every step
+          # after this one, including the build. Nothing here pushes.
+          persist-credentials: false
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
