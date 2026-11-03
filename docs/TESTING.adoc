@@ -12,7 +12,8 @@ This guide covers testing strategies and procedures for ZapDesk.
 === Unit Tests
 
 Unit tests for utility functions and services, run with Vitest. Files are
-`src/**/*.test.ts`.
+`src/**/*.test.ts`, and `src/**/*.test.tsx` for the ones that render a
+component.
 
 [source,bash]
 ----
@@ -37,6 +38,27 @@ rather than switching the whole suite to `jsdom`:
 parsing markup into a DOM and walking it — there is nothing to test against
 without one. `jsdom` is a dev dependency and is only loaded by files carrying
 the docblock.
+
+==== Component tests
+
+A `.test.tsx` file renders a component with `@testing-library/react` and
+asserts on what someone using it would find — roles, labels, what is on
+screen — rather than on its markup. They carry the same
+`// @vitest-environment jsdom` docblock. `userEvent` is not a dependency;
+use `fireEvent` from `@testing-library/react`.
+
+Two limits worth knowing before writing one:
+
+* *jsdom applies no CSS*, so Tailwind classes have no effect there.
+  `toBeVisible()` cannot see a control hidden by `opacity-0`, and will call
+  it visible. When the defect *is* a class — a control revealed only on
+  hover, say — assert on the class list and say in the test why.
+* *A control that exists is not a control that works.* Asserting a button
+  has an accessible name passes for a button with no handler at all.
+
+`Sidebar.default-view.test.tsx` and `WorkItemBoard.customer-filter.test.tsx`
+are both worked examples: the first covers a control that could not be found,
+the second a filter whose options disagreed with the rows it filtered.
 
 ==== HTML sanitisation coverage
 
