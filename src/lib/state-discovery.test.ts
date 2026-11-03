@@ -360,6 +360,40 @@ describe('the per-organisation cache', () => {
     expect(stub.urls().length).toBe(afterFirst);
   });
 
+  /**
+   * An organisation that cannot be read at all returns empty and incomplete.
+   * That answer has to be cached too, briefly: not caching it meant the next
+   * request repeated the entire fan-out, so the harder the organisation was
+   * struggling the more often it was asked.
+   */
+  it('holds an unreadable organisation briefly instead of retrying every request', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 503 }))
+    );
+    let reads = 0;
+    const unreadable = {
+      getProjects: async () => {
+        reads++;
+        throw new Error('no projects');
+      },
+    } as unknown as AzureDevOpsService;
+
+    const first = await fetchStateMetadata(unreadable, 'token', 'org-down', 'alex@example.test');
+    expect(first.categories).toEqual({});
+    expect(first.discoveryComplete).toBe(false);
+    expect(reads).toBe(1);
+
+    // Inside the minute the failure is remembered rather than re-attempted.
+    await fetchStateMetadata(unreadable, 'token', 'org-down', 'alex@example.test');
+    expect(reads).toBe(1);
+
+    // And past it, tried again, so an outage does not become permanent.
+    vi.setSystemTime(new Date(Date.now() + 61_000));
+    await fetchStateMetadata(unreadable, 'token', 'org-down', 'alex@example.test');
+    expect(reads).toBe(2);
+  });
+
   // Concurrent first requests must not each pay for the whole fan-out.
   it('collapses concurrent callers onto one read', async () => {
     const { service, stub } = stubDevOps({ projects: ['Internal'] });

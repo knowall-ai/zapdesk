@@ -122,9 +122,19 @@ export async function fetchStateMetadata(
   stateCategoryInFlight.set(key, promise);
   try {
     const metadata = await promise;
-    if (Object.keys(metadata.categories).length > 0) {
-      stateCategoryCache.set(key, { ...metadata, timestamp: Date.now() });
-    }
+    // Cached whatever came back, including an empty answer.
+    //
+    // This used to be written only when something had been discovered, which
+    // sounds careful and is the opposite. An organisation that cannot be read
+    // at all -- its project list fails, or every state read does -- returns
+    // empty and incomplete, so nothing was cached and the next request ran the
+    // whole fan-out again. The harder the organisation was struggling, the more
+    // often it was asked.
+    //
+    // The completeness flag already decides how long it is held, and an empty
+    // answer is always incomplete, so it gets the short window: a failing
+    // organisation is left alone for a minute and then tried again.
+    stateCategoryCache.set(key, { ...metadata, timestamp: Date.now() });
     return metadata;
   } finally {
     stateCategoryInFlight.delete(key);
