@@ -204,11 +204,21 @@ The app version is displayed in the sidebar footer and is read from `package.jso
 
 === Manual Workflow Dispatch
 
-You can also trigger a release via GitHub Actions:
+Dispatching the workflow against a *branch* runs the build and stops: the
+`production` environment accepts only `v*` tags, so the deploy job never
+reaches Azure. Useful for checking that a branch builds; it is not a
+release, and the run goes green either way.
 
 1. Go to Actions > Deploy to Azure
 2. Click "Run workflow"
-3. Select branch and run
+3. Select a branch and run -- build only, nothing is deployed
+
+To release without pushing a new tag, dispatch an existing one:
+
+[source,bash]
+----
+gh workflow run deploy.yml --ref vX.Y.Z
+----
 
 == Support Ticket Process
 

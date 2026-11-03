@@ -515,11 +515,15 @@ organization's user list.
 
 == Deployment
 
-The GitHub Actions workflow automatically deploys to Azure on push to `main`:
+The GitHub Actions workflow deploys to Azure when a `v*` release tag is
+pushed -- not on a push to `main`:
 
 . Builds the Next.js application
 . Uploads artifacts
 . Deploys to Azure Web App
 . Configures app settings
 
-Manual deployment trigger: Go to Actions > "Deploy to Azure App Service" > "Run workflow"
+The workflow can also be dispatched by hand, but the `production`
+environment accepts only `v*` tags: dispatch a branch and the build runs
+while the deploy job stops short of Azure. See
+xref:DEPLOYMENT.adoc[the deployment guide] for the release process.
