@@ -46,3 +46,62 @@ describe('KanbanGroupSection', () => {
     expect(screen.getByText('Internal')).toBeDefined();
   });
 });
+
+/**
+ * The hint beside the Closed column heading, which has to follow the board's
+ * closed window (#6713).
+ *
+ * It is the kind of label that goes stale unnoticed: it said "the last 7 days"
+ * while the window was being made selectable, and nothing but a reader would
+ * have caught it. `focusedColumn` is passed to open the group, because a
+ * collapsed one renders no columns at all.
+ */
+describe('the Closed column hint', () => {
+  // A card is needed as well as an open group: a group with no items at all
+  // renders no columns, so it would have no hint to assert against.
+  const withClosed: StandupColumn[] = [
+    { name: 'Active', category: 'InProgress', items: [] },
+    {
+      name: 'Closed',
+      category: 'Completed',
+      items: [
+        {
+          id: 1,
+          title: 'Reset a password',
+          state: 'Closed',
+          workItemType: 'Task',
+          project: 'Internal',
+        },
+      ] as unknown as StandupColumn['items'],
+    },
+  ];
+
+  it('names the bounded span by default', () => {
+    render(<KanbanGroupSection groupName="Internal" columns={withClosed} focusedColumn="Closed" />);
+
+    expect(screen.getByLabelText('Showing items closed in the last 14 days')).toBeDefined();
+  });
+
+  it('says every closed item when the board shows the whole history', () => {
+    render(
+      <KanbanGroupSection
+        groupName="Internal"
+        columns={withClosed}
+        focusedColumn="Closed"
+        closedWindow="all"
+      />
+    );
+
+    expect(screen.getByLabelText('Showing every closed item, however long ago')).toBeDefined();
+    // The fixed span must be gone, not merely joined by the new wording.
+    expect(screen.queryByLabelText(/last 14 days/)).toBeNull();
+  });
+
+  // It is measured on the closed date now, so the hint must not promise that
+  // it is about when an item last changed.
+  it('does not describe the window as the last change', () => {
+    render(<KanbanGroupSection groupName="Internal" columns={withClosed} focusedColumn="Closed" />);
+
+    expect(screen.queryByLabelText(/changed in the last/)).toBeNull();
+  });
+});

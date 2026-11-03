@@ -24,6 +24,13 @@ import type { GroupActivity } from '@/components/standup/KanbanGroupSection';
 import type { PullRequestLoadState } from '@/components/standup/ActivitySummaryBar';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import { useDevOpsApi } from '@/hooks';
+import {
+  CLOSED_WINDOW_DAYS,
+  CLOSED_WINDOW_LABELS,
+  closedWindowParam,
+  parseClosedWindow,
+  type ClosedWindow,
+} from '@/lib/closed-window';
 import { useSourceFilter } from '@/components/providers/SourceProvider';
 import SourceLegend from '@/components/common/SourceLegend';
 import { sourceKindOf, type SourceKind } from '@/lib/source-colors';
@@ -75,31 +82,47 @@ function cacheKey(
   organization: string,
   currentSprintOnly: boolean,
   sources: SourceFilter,
-  showUnassigned: boolean
+  showUnassigned: boolean,
+  closedWindow: ClosedWindow
 ): string {
-  // showUnassigned is part of the key: the two boards hold different items, so
-  // sharing a key would show one of them the other's cached answer.
+  // showUnassigned and closedWindow are part of the key: each pair of boards
+  // holds different items, so sharing a key would show one of them the other's
+  // cached answer (#581, #6713).
   return `${organization}::${currentSprintOnly ? 'sprint' : 'all'}::${sources}::${
     showUnassigned ? 'with-unassigned' : 'assigned'
-  }`;
+  }::closed-${closedWindow}`;
 }
 
-/** Build /kanban URL with the given params */
-function buildKanbanUrl(
-  groupBy: GroupBy,
-  sprint: boolean,
-  project?: string | null,
-  column: string | null = null,
-  showUnassigned = false
-): string {
+/** Every board setting that lives in the URL. */
+interface BoardSettings {
+  groupBy: GroupBy;
+  sprint: boolean;
+  project: string | null;
+  column: string | null;
+  showUnassigned: boolean;
+  closedWindow: ClosedWindow;
+}
+
+/**
+ * Build a /kanban URL from the board's settings.
+ *
+ * Named rather than positional: there are six settings now, three of them
+ * boolean or string-union, and a positional call reads as
+ * `(groupBy, false, null, null, true, 'all')` -- which says nothing about
+ * which flag is which and swaps two of them without a type error.
+ */
+function buildKanbanUrl(settings: BoardSettings): string {
   const params = new URLSearchParams();
-  if (groupBy !== 'project') params.set('groupBy', groupBy);
-  if (sprint) params.set('sprint', 'true');
+  if (settings.groupBy !== 'project') params.set('groupBy', settings.groupBy);
+  if (settings.sprint) params.set('sprint', 'true');
   // Only in the URL when on, so the ordinary board keeps a clean link.
-  if (showUnassigned) params.set('unassigned', 'true');
+  if (settings.showUnassigned) params.set('unassigned', 'true');
   // One project's board (#7377), e.g. a support board.
-  if (project) params.set('project', project);
-  if (column) params.set('column', column);
+  if (settings.project) params.set('project', settings.project);
+  if (settings.column) params.set('column', settings.column);
+  // Likewise only when it is not the default (#6713).
+  const closed = closedWindowParam(settings.closedWindow);
+  if (closed) params.set('closed', closed);
   const qs = params.toString();
   return `/kanban${qs ? `?${qs}` : ''}`;
 }
@@ -212,6 +235,10 @@ function StandupPageContent() {
   const columnParam = searchParams.get('column');
   // Only this project's items, when chosen (#7377).
   const requestedProject = searchParams.get('project');
+  // How far back the closed columns reach (#6713). In the URL with the other
+  // board settings, so a board showing the whole closed history can be linked
+  // to and survives a reload.
+  const closedWindow = parseClosedWindow(searchParams.get('closed'));
   // Azure DevOps, GitHub or both, from the header toggle (#447)
   const { sourceFilter, sourceReady } = useSourceFilter();
 
@@ -276,7 +303,13 @@ function StandupPageContent() {
       }
 
       const organization = selectedOrganization.accountName;
-      const key = cacheKey(organization, currentSprintOnly, sourceFilter, showUnassigned);
+      const key = cacheKey(
+        organization,
+        currentSprintOnly,
+        sourceFilter,
+        showUnassigned,
+        closedWindow
+      );
       // A work item was just changed. Any request already in flight read the
       // board before that, so it must not answer for this refresh (#366).
       if (afterChange) standupCache.invalidate(organization);
@@ -321,6 +354,12 @@ function StandupPageContent() {
           }
           if (showUnassigned) {
             params.set('includeUnassigned', 'true');
+          }
+          // Only when it is not the default, so the ordinary board's request
+          // is unchanged (#6713).
+          const closedParam = closedWindowParam(closedWindow);
+          if (closedParam) {
+            params.set('closed', closedParam);
           }
           const queryString = params.toString();
           const url = `/api/devops/standup${queryString ? `?${queryString}` : ''}`;
@@ -379,6 +418,7 @@ function StandupPageContent() {
       currentSprintOnly,
       sourceFilter,
       showUnassigned,
+      closedWindow,
     ]
   );
 
@@ -848,6 +888,20 @@ function StandupPageContent() {
     () => canonicalProject(requestedProject, projectNames),
     [requestedProject, projectNames]
   );
+  // Every setting a /kanban link carries, in one object, so changing one of
+  // them is `{ ...boardSettings, sprint: true }` and cannot silently drop
+  // another.
+  const boardSettings: BoardSettings = useMemo(
+    () => ({
+      groupBy,
+      sprint: currentSprintOnly,
+      project: projectFilter,
+      column: columnParam,
+      showUnassigned,
+      closedWindow,
+    }),
+    [groupBy, currentSprintOnly, projectFilter, columnParam, showUnassigned, closedWindow]
+  );
   const boardData = useMemo(
     () => filterStandupByProject(standupData, projectFilter),
     [standupData, projectFilter]
@@ -915,14 +969,15 @@ function StandupPageContent() {
     (columnName: string) => {
       // Pressing the pressed tile again shows every group.
       const next = columnName === focusedColumn ? null : columnName;
-      router.replace(
-        buildKanbanUrl(groupBy, currentSprintOnly, projectFilter, next, showUnassigned),
-        {
-          scroll: false,
-        }
-      );
+      router.replace(buildKanbanUrl({ ...boardSettings, column: next }), {
+        scroll: false,
+      });
     },
-    [router, groupBy, currentSprintOnly, projectFilter, focusedColumn, showUnassigned]
+    // boardSettings, not its parts: the callback reads the whole object now, and
+    // listing the parts would leave a tile click building a URL from the settings
+    // that applied when the callback was last built -- silently resetting
+    // whichever one had changed since (#6713).
+    [router, boardSettings, focusedColumn]
   );
 
   useEffect(() => {
@@ -940,7 +995,7 @@ function StandupPageContent() {
   // own. Narrowing shortens the board, which clamps the scroll position;
   // sharing one record would lose where the user was on the whole board when
   // they went back.
-  const scrollScope = `${groupScope}:${currentSprintOnly ? 'sprint' : 'all'}:${showUnassigned ? 'unassigned' : 'assigned'}:${projectFilter ?? '*'}:${focusedColumn ?? ''}`;
+  const scrollScope = `${groupScope}:${currentSprintOnly ? 'sprint' : 'all'}:${showUnassigned ? 'unassigned' : 'assigned'}:${projectFilter ?? '*'}:${focusedColumn ?? ''}:closed-${closedWindow}`;
   const boardRef = useRef<HTMLDivElement>(null);
   // The scope whose position has been put back. The saved position is applied
   // each time a board comes on screen (first load, or after the loading
@@ -1004,13 +1059,7 @@ function StandupPageContent() {
                   value={projectFilter ?? ''}
                   onChange={(e) =>
                     router.replace(
-                      buildKanbanUrl(
-                        groupBy,
-                        currentSprintOnly,
-                        e.target.value || null,
-                        columnParam,
-                        showUnassigned
-                      ),
+                      buildKanbanUrl({ ...boardSettings, project: e.target.value || null }),
                       {
                         scroll: false,
                       }
@@ -1046,13 +1095,7 @@ function StandupPageContent() {
               {/* Group By toggle */}
               <div className="flex rounded-md border" style={{ borderColor: 'var(--border)' }}>
                 <Link
-                  href={buildKanbanUrl(
-                    'project',
-                    currentSprintOnly,
-                    projectFilter,
-                    columnParam,
-                    showUnassigned
-                  )}
+                  href={buildKanbanUrl({ ...boardSettings, groupBy: 'project' })}
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'project'
@@ -1065,13 +1108,7 @@ function StandupPageContent() {
                   Project
                 </Link>
                 <Link
-                  href={buildKanbanUrl(
-                    'person',
-                    currentSprintOnly,
-                    projectFilter,
-                    columnParam,
-                    showUnassigned
-                  )}
+                  href={buildKanbanUrl({ ...boardSettings, groupBy: 'person' })}
                   replace
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                     groupBy === 'person'
@@ -1094,18 +1131,9 @@ function StandupPageContent() {
                   type="checkbox"
                   checked={currentSprintOnly}
                   onChange={(e) =>
-                    router.replace(
-                      buildKanbanUrl(
-                        groupBy,
-                        e.target.checked,
-                        projectFilter,
-                        columnParam,
-                        showUnassigned
-                      ),
-                      {
-                        scroll: false,
-                      }
-                    )
+                    router.replace(buildKanbanUrl({ ...boardSettings, sprint: e.target.checked }), {
+                      scroll: false,
+                    })
                   }
                   className="accent-brand"
                 />
@@ -1131,13 +1159,7 @@ function StandupPageContent() {
                   checked={showUnassigned}
                   onChange={(e) =>
                     router.replace(
-                      buildKanbanUrl(
-                        groupBy,
-                        currentSprintOnly,
-                        projectFilter,
-                        columnParam,
-                        e.target.checked
-                      ),
+                      buildKanbanUrl({ ...boardSettings, showUnassigned: e.target.checked }),
                       { scroll: false }
                     )
                   }
@@ -1145,6 +1167,57 @@ function StandupPageContent() {
                 />
                 Show unassigned
               </label>
+
+              {/* How far back the closed columns reach (#6713).
+                  Two buttons rather than a checkbox, because the choice is
+                  between two spans and a tick box could not say which one it
+                  meant -- "Closed" alone would not tell you whether ticking it
+                  showed more or less. The label names the column it governs,
+                  so it cannot be read as filtering the whole board, and each
+                  option says its span rather than the word "filter" (which
+                  would not say what the control does).
+                  Both sources are bounded on the server -- DevOps in the WIQL
+                  and then per item on ClosedDate, GitHub issues by `since` and
+                  then on the issue's closed date -- so switching refetches
+                  rather than revealing cards the browser already held. */}
+              <div
+                className="flex items-center gap-2 text-xs"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <span id="closed-window-label">Closed</span>
+                <div
+                  role="group"
+                  aria-labelledby="closed-window-label"
+                  className="flex rounded-md border"
+                  style={{ borderColor: 'var(--border)' }}
+                >
+                  {(['recent', 'all'] as const).map((option, index) => (
+                    <Link
+                      key={option}
+                      href={buildKanbanUrl({ ...boardSettings, closedWindow: option })}
+                      replace
+                      scroll={false}
+                      aria-current={closedWindow === option ? 'true' : undefined}
+                      title={
+                        option === 'all'
+                          ? 'Every closed item, however long ago. Slower: it reads the whole history.'
+                          : `Only items closed in the last ${CLOSED_WINDOW_DAYS} days.`
+                      }
+                      className={`px-3 py-1.5 font-medium transition-colors ${
+                        closedWindow === option
+                          ? 'bg-brand text-brand-foreground'
+                          : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
+                      }`}
+                      style={{
+                        borderRadius:
+                          index === 0 ? '0.375rem 0 0 0.375rem' : '0 0.375rem 0.375rem 0',
+                      }}
+                    >
+                      {CLOSED_WINDOW_LABELS[option]}
+                    </Link>
+                  ))}
+                </div>
+              </div>
 
               {/* Live update toggle. A broadcast icon that pulses while polling
                   reads as "live" at a glance in a way a checkbox doesn't, and it
@@ -1260,6 +1333,7 @@ function StandupPageContent() {
                     onStateChange={handleStateChange}
                     onItemClick={handleItemClick}
                     activity={groupActivity.get(group.groupName)}
+                    closedWindow={closedWindow}
                   />
                 ))
               ) : (

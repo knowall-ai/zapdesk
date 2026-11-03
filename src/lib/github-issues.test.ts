@@ -20,6 +20,7 @@ import {
   parseUserMap,
   type GitHubIssue,
 } from './github-issues';
+import { CLOSED_WINDOW_DAYS } from './closed-window';
 import type { DevOpsProject, User } from '@/types';
 
 // GitHub issues beside DevOps work items (#447). GitHub is mocked at fetch; the
@@ -482,16 +483,30 @@ describe('fetching', () => {
       expect((init.headers as Record<string, string>).Authorization).toBe('Bearer secret-token');
     });
 
-    it('only asks for issues closed in the last week', async () => {
+    // A fortnight, not a week: the span now matches the Kanban board's closed
+    // window so the two sources in that column agree (#6713). Derived from the
+    // shared constant rather than written out again, so the two cannot drift.
+    it('only asks for issues closed inside the board window', async () => {
       gitHub({ 'acme/portal': {} });
       const before = Date.now();
       await fetchRepoIssues('acme/portal', 'secret-token');
 
       const closed = calledUrls().find((u) => u.searchParams.get('state') === 'closed');
       const since = new Date(closed!.searchParams.get('since')!).getTime();
-      const weekMs = 7 * 24 * 60 * 60 * 1000;
-      expect(before - since).toBeGreaterThanOrEqual(weekMs - 1000);
-      expect(before - since).toBeLessThanOrEqual(weekMs + 5000);
+      const windowMs = CLOSED_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+      expect(before - since).toBeGreaterThanOrEqual(windowMs - 1000);
+      expect(before - since).toBeLessThanOrEqual(windowMs + 5000);
+    });
+
+    // The "All" choice (#6713). No `since` at all, rather than a very old one:
+    // a bound the caller did not ask for is a bound that can be wrong.
+    it('asks for every closed issue when given no floor', async () => {
+      gitHub({ 'acme/portal': {} });
+      await fetchRepoIssues('acme/portal', 'secret-token', null);
+
+      const closed = calledUrls().find((u) => u.searchParams.get('state') === 'closed');
+      expect(closed).toBeDefined();
+      expect(closed!.searchParams.has('since')).toBe(false);
     });
 
     it('follows pages of open issues until a short one', async () => {

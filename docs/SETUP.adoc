@@ -493,8 +493,12 @@ above), and under the GitHub username otherwise.
 |Requester
 |===
 
-Open issues are listed, plus closed issues updated in the last seven days,
-the same window the Kanban Board uses for closed work items. Pull requests are
+Open issues are listed, plus closed issues updated inside the Kanban Board's
+closed window -- the last 14 days, or the whole history when the board's
+*Closed* control is set to *All*. The same window applies to DevOps work items,
+so both sources in the Closed column cover the same span. Within it, an issue
+is placed by when it was closed, not by when it was last updated: commenting on
+an old closed issue does not make it recently closed. Pull requests are
 not listed as tickets, but the Kanban board's 24h summary counts those opened,
 updated or merged in its window, under the person (mapped like issue authors)
 and the project of the repository. A GitHub pull request lights up the work

@@ -121,7 +121,9 @@ function workItem(
   state: string,
   changed: string,
   type = 'Bug',
-  project = 'Internal'
+  project = 'Internal',
+  /** Left out to stand for a process that sets no ClosedDate (#6713). */
+  closed?: string
 ): DevOpsWorkItem {
   return {
     id,
@@ -132,6 +134,7 @@ function workItem(
       'System.ChangedDate': changed,
       'System.WorkItemType': type,
       'System.TeamProject': project,
+      ...(closed ? { 'Microsoft.VSTS.Common.ClosedDate': closed } : {}),
     },
   } as unknown as DevOpsWorkItem;
 }
@@ -163,6 +166,101 @@ describe('isOutsideClosedWindow', () => {
   it('keeps an item whose type was not discovered', () => {
     const item = workItem(1, 'Closed', '2026-08-01T10:00:00Z', 'Risk');
     expect(isOutsideClosedWindow(item, start, end, PER_TYPE)).toBe(false);
+  });
+
+  // The bug exactly as it stood on the live board: task 183 was closed on 15
+  // May and edited on 28 October, which put it in a column labelled as the
+  // last few days. ChangedDate is inside the window and ClosedDate is not, so
+  // this test fails if the filter reads the wrong field (#6713).
+  it('judges by the closed date, not the last change', () => {
+    const item = workItem(
+      183,
+      'Closed',
+      '2026-10-05T10:00:00Z',
+      'Bug',
+      'Internal',
+      '2026-05-15T09:00:00Z'
+    );
+    expect(isOutsideClosedWindow(item, start, end, PER_TYPE)).toBe(true);
+  });
+
+  // The other direction: closed inside the window, not touched since. Nothing
+  // about reading ClosedDate may hide an item that belongs on the board.
+  it('keeps an item closed inside the window', () => {
+    const item = workItem(
+      1,
+      'Closed',
+      '2026-10-05T10:00:00Z',
+      'Bug',
+      'Internal',
+      '2026-10-04T09:00:00Z'
+    );
+    expect(isOutsideClosedWindow(item, start, end, PER_TYPE)).toBe(false);
+  });
+
+  // The boundary the acceptance criteria names. The window is inclusive of its
+  // first day and exclusive of the day after its last.
+  it('keeps an item closed exactly on the first moment of the window', () => {
+    const item = workItem(
+      1,
+      'Closed',
+      '2026-10-05T10:00:00Z',
+      'Bug',
+      'Internal',
+      `${start}T00:00:00Z`
+    );
+    expect(isOutsideClosedWindow(item, start, end, PER_TYPE)).toBe(false);
+  });
+
+  it('drops an item closed one millisecond before the window', () => {
+    const item = workItem(
+      1,
+      'Closed',
+      '2026-10-05T10:00:00Z',
+      'Bug',
+      'Internal',
+      '2026-10-02T23:59:59.999Z'
+    );
+    expect(isOutsideClosedWindow(item, start, end, PER_TYPE)).toBe(true);
+  });
+
+  // "All": no floor, so however old the closed date, the item stays.
+  it('keeps an item closed years ago when there is no floor', () => {
+    const item = workItem(
+      1,
+      'Closed',
+      '2026-10-05T10:00:00Z',
+      'Bug',
+      'Internal',
+      '2021-01-04T09:00:00Z'
+    );
+    expect(isOutsideClosedWindow(item, null, end, PER_TYPE)).toBe(false);
+  });
+
+  // The upper bound still applies with no floor: a board asked for an earlier
+  // date must not show work closed after the day it is showing.
+  it('still drops an item closed after the window with no floor', () => {
+    const item = workItem(
+      1,
+      'Closed',
+      '2026-10-05T10:00:00Z',
+      'Bug',
+      'Internal',
+      '2026-10-11T09:00:00Z'
+    );
+    expect(isOutsideClosedWindow(item, null, end, PER_TYPE)).toBe(true);
+  });
+
+  // A process that sets no ClosedDate falls back to ChangedDate, which is
+  // exactly what this filter did before 6713. Such an organisation sees no
+  // change rather than an empty column.
+  it('falls back to the last change when no closed date is set', () => {
+    expect(
+      isOutsideClosedWindow(workItem(1, 'Closed', '2026-09-20T10:00:00Z'), start, end, PER_TYPE)
+    ).toBe(true);
+    expect(
+      isOutsideClosedWindow(workItem(2, 'Closed', '2026-10-05T10:00:00Z'), start, end, PER_TYPE)
+    ).toBe(false);
   });
 });
 
@@ -209,7 +307,9 @@ describe('getStandupData query flow', () => {
 
     expect(items.map((item) => item.id).sort()).toEqual([1, 2]);
     const doneQuery = wiql.find((q) => q.includes("IN ('Closed')"));
-    expect(doneQuery).toContain(">= '2026-10-03'");
+    // Fourteen days back from the 9th, inclusive of it, because 6713 asked for
+    // a fortnight. It was seven days (>= '2026-10-03') until then.
+    expect(doneQuery).toContain(">= '2026-09-26'");
     expect(doneQuery).toContain("< '2026-10-10'");
     // The 90-day floor is what hid 84 items resolved as far back as February
     // (#518). The query that fetches them must carry no ChangedDate bound.
@@ -291,5 +391,71 @@ describe('getStandupData query flow', () => {
 
     expect(wiql).toHaveLength(1);
     expect(items.map((item) => item.id).sort()).toEqual([1, 2, 3]);
+  });
+  // "All": the floor leaves the query entirely rather than becoming a very old
+  // date. A bound the caller did not ask for is a bound that can be wrong.
+  it('asks for closed items with no date floor when given the whole history', async () => {
+    const wiql = stubDevOps({ Closed: [1] }, [
+      workItem(1, 'Closed', '2026-10-08T10:00:00Z', 'Bug', 'Internal', '2021-03-02T09:00:00Z'),
+    ]);
+
+    const { items } = await new AzureDevOpsService('token', 'org').getStandupData(
+      target,
+      FLAT,
+      PER_TYPE,
+      true,
+      true,
+      'all'
+    );
+
+    const doneQuery = wiql.find((q) => q.includes("IN ('Closed')"));
+    expect(doneQuery).not.toContain('ChangedDate] >=');
+    // The upper bound stays: a board asked for an earlier date must not show
+    // work closed after it.
+    expect(doneQuery).toContain("< '2026-10-10'");
+    // And the item closed in 2021 survives the per-item filter, which is the
+    // half the query cannot express.
+    expect(items.map((item) => item.id)).toEqual([1]);
+  });
+
+  // The whole point of 6713, end to end: the same item is on the board under
+  // "All" and off it under the fortnight, even though its last change is
+  // inside both. Fails if either half of the pair reads ChangedDate.
+  it('drops a long-closed item from the bounded window but not from All', async () => {
+    const longClosed = () =>
+      workItem(183, 'Closed', '2026-10-08T10:00:00Z', 'Bug', 'Internal', '2026-05-15T09:00:00Z');
+
+    stubDevOps({ Closed: [183] }, [longClosed()]);
+    const bounded = await new AzureDevOpsService('token', 'org').getStandupData(
+      target,
+      FLAT,
+      PER_TYPE
+    );
+    expect(bounded.items).toEqual([]);
+
+    stubDevOps({ Closed: [183] }, [longClosed()]);
+    const everything = await new AzureDevOpsService('token', 'org').getStandupData(
+      target,
+      FLAT,
+      PER_TYPE,
+      true,
+      true,
+      'all'
+    );
+    expect(everything.items.map((item) => item.id)).toEqual([183]);
+  });
+
+  // The field the per-item filter reads has to be fetched, or every item falls
+  // back to ChangedDate and the window is silently the old, wrong one.
+  it('fetches the closed date it windows on', async () => {
+    stubDevOps({ Closed: [1] }, [workItem(1, 'Closed', '2026-10-08T10:00:00Z')]);
+    const fetchMock = vi.mocked(globalThis.fetch);
+
+    await new AzureDevOpsService('token', 'org').getStandupData(target, FLAT, PER_TYPE);
+
+    const batchUrl = fetchMock.mock.calls
+      .map(([url]) => String(url))
+      .find((url) => url.includes('/_apis/wit/workitems?ids='));
+    expect(batchUrl).toContain('Microsoft.VSTS.Common.ClosedDate');
   });
 });
