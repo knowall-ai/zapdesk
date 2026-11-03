@@ -8,6 +8,7 @@ import { gitHubAvailable, gitHubSourceFor, type GitHubSource } from '@/lib/githu
 import { gitHubPeopleFor } from '@/lib/github-people';
 import { addGitHubTicketsToStandup, boardGitHubTickets } from '@/lib/github-kanban';
 import { closedWindowStartDay, parseClosedWindow } from '@/lib/closed-window';
+import { isBoardWorkItemType } from '@/lib/board-work-item-types';
 import type {
   StandupData,
   StandupWorkItem,
@@ -137,7 +138,22 @@ async function doFetchStateMetadata(
       if (!typesResponse.ok) return { project: project.name, types: [], complete: false };
 
       const typesData = await typesResponse.json();
-      const types: { name: string }[] = typesData.value || [];
+      const allTypes: { name: string }[] = typesData.value || [];
+
+      // Only the types the board can show (#4337).
+      //
+      // A project defines around twenty, of which the board queries six: the
+      // rest are Epic, Feature, Test Case, Shared Steps, Code Review Request
+      // and the like, and the WIQL filters every one of them out. Asking for
+      // their states cost three quarters of the requests here -- 663 instead
+      // of 170 on an organisation of 34 projects -- and nothing could ever
+      // read the answers.
+      //
+      // The filter is deliberately on the way *in*, before any state request
+      // is made, rather than on the results: the cost this is about is the
+      // round trips, not the parsing. The list is shared with the query that
+      // decides which types reach the board, so the two cannot disagree.
+      const types = allTypes.filter((witType) => isBoardWorkItemType(witType.name));
 
       // Fetch states for each work item type in parallel
       const stateResults = await Promise.allSettled(
