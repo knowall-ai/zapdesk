@@ -327,7 +327,13 @@ export default function LiveDashboardPage() {
       <div className="flex h-full flex-col">
         {/* Header */}
         <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
-          <div className="flex items-center justify-between">
+          {/* Wraps rather than overflowing (#6539). At a tablet width the
+              sidebar takes 16rem and the padding another 2rem, leaving about
+              30rem for a title and a control row that together want closer to
+              50rem. Flex items do not shrink past their content by default,
+              so without this the row stayed on one line, pushed Refresh past
+              the right edge and gave the whole page a horizontal scrollbar. */}
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
                 Live Dashboard
@@ -336,7 +342,7 @@ export default function LiveDashboardPage() {
                 Real-time overview across all projects
               </p>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-4">
               <div
                 role="group"
                 aria-label="Date range"
@@ -390,7 +396,19 @@ export default function LiveDashboardPage() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto p-4">
+        {/* The page itself does not scroll -- the app shell is `h-screen
+            overflow-hidden` -- so this is the only scroll path to Team
+            Performance, Recent Activity and Projects Overview. A scrollable
+            div is not focusable in Chromium, so Page Down and the arrow keys
+            did nothing unless focus happened to be inside it, and there is no
+            document scrollbar to fall back on (#6538). Named, because a
+            region a screen reader can land in should say what it holds. */}
+        <div
+          className="flex-1 overflow-auto p-4"
+          tabIndex={0}
+          role="region"
+          aria-label="Dashboard content"
+        >
           <FailedProjectsNotice
             projects={[...new Set([...(stats?.failedProjects ?? []), ...ticketsFailedProjects])]}
             className="mb-4"
