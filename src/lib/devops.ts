@@ -3220,7 +3220,7 @@ export class AzureDevOpsService {
           ${doneFloorClause}
           AND [System.ChangedDate] < '${nextDayStr}'
           ${assignedClause}
-        ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
+        ORDER BY [System.ChangedDate] DESC, [System.TeamProject] ASC
       `,
     };
 
@@ -3237,7 +3237,7 @@ export class AzureDevOpsService {
           AND [System.WorkItemType] IN (${allowedTypesList})
           AND [System.ChangedDate] >= '${ninetyDaysAgoStr}'
           ${assignedClause}
-        ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
+        ORDER BY [System.ChangedDate] DESC, [System.TeamProject] ASC
       `,
     };
 
@@ -3252,7 +3252,7 @@ export class AzureDevOpsService {
         WHERE [System.State] IN (${resolvedStatesList})
           AND [System.WorkItemType] IN (${allowedTypesList})
           ${assignedClause}
-        ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
+        ORDER BY [System.ChangedDate] DESC, [System.TeamProject] ASC
       `,
     };
 
@@ -3264,9 +3264,15 @@ export class AzureDevOpsService {
     // floor from the closed query and so removed the thing that had kept it
     // small. $top asks for as much as WIQL will give instead.
     //
-    // Each query orders by ChangedDate descending, so what a cap drops is the
-    // oldest -- the same bargain the GitHub reads make with their page caps,
-    // and documented beside them.
+    // Which is why every query orders by ChangedDate first, with project only as
+    // a tie-breaker. Sorted by project first -- as they were -- a cap would keep
+    // whole alphabetically-early projects and drop later ones entirely, so a
+    // project late in the alphabet could lose today's work while another kept
+    // last year's. Ordered by date, what a cap drops is the oldest, which is the
+    // same bargain the GitHub reads make with their page caps.
+    //
+    // Nothing depends on the old ordering: the route groups the items by project
+    // itself and sorts those groups with localeCompare.
     const runQuery = async (query: { query: string }, label: string): Promise<number[]> => {
       const response = await fetch(
         `${this.baseUrl}/_apis/wit/wiql?api-version=7.0&$top=${WIQL_MAX_RESULTS}`,

@@ -506,6 +506,34 @@ describe('getStandupData query flow', () => {
   // so removed what had kept it small, which would have failed the whole board
   // with a 500 -- and kept failing, since the window is remembered in the
   // address. So the ceiling is asked for.
+  // The cap is only a sensible bargain if the sort makes it one. Ordered by
+  // project first -- as these queries were -- $top keeps whole
+  // alphabetically-early projects and drops later ones entirely, so a project
+  // late in the alphabet could lose today's work while another kept last
+  // year's. Date first, and what a cap drops is the oldest.
+  it('orders every query by change date before project, so the cap drops the oldest', async () => {
+    const wiql = stubDevOps({ Closed: [1], Resolved: [2], Active: [3] }, [
+      workItem(1, 'Closed', '2026-10-08T10:00:00Z'),
+    ]);
+
+    await new AzureDevOpsService('token', 'wiql-order').getStandupData(
+      target,
+      FLAT,
+      PER_TYPE,
+      true,
+      true,
+      'all'
+    );
+
+    expect(wiql.length).toBeGreaterThan(0);
+    for (const query of wiql) {
+      const order = query.slice(query.indexOf('ORDER BY'));
+      expect(order.indexOf('[System.ChangedDate]')).toBeLessThan(
+        order.indexOf('[System.TeamProject]')
+      );
+    }
+  });
+
   it('caps every query at the WIQL limit', async () => {
     stubDevOps({ Closed: [1], Resolved: [2], Active: [3] }, [
       workItem(1, 'Closed', '2026-10-08T10:00:00Z'),
