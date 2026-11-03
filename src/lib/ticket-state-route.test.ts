@@ -181,7 +181,37 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
         'Printer offline',
         'requester@example.test',
         'Active',
-        'Resolved'
+        'Resolved',
+        undefined,
+        undefined
+      );
+    });
+
+    // The customer's thread, so the engineer who owns the ticket belongs on
+    // it too (#7384). The route is what reads the assignee off the work
+    // item, so a test on the sender alone would not have caught it being
+    // left out here.
+    it('copies the assigned engineer on the state change', async () => {
+      const assigned = {
+        ...workItem(42, 'Active', EMAIL_TAGS),
+        fields: {
+          ...workItem(42, 'Active', EMAIL_TAGS).fields,
+          'System.AssignedTo': { id: 'u2', displayName: 'Sam', uniqueName: 'engineer@example.test' },
+        },
+      };
+      getWorkItem.mockResolvedValue(assigned);
+      updateTicketState.mockResolvedValue(assigned);
+
+      await patch('42', { state: 'Resolved', project: 'Internal' });
+
+      expect(sendStatusChangeNotification).toHaveBeenCalledWith(
+        42,
+        'Printer offline',
+        'requester@example.test',
+        'Active',
+        expect.any(String),
+        undefined,
+        'engineer@example.test'
       );
     });
 

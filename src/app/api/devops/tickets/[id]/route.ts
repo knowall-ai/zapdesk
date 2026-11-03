@@ -422,7 +422,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           ticketId,
           { thread: threadTitle, current: ticket.title },
           requesterEmail,
-          changes
+          changes,
+          // Part of the customer's thread, so the engineer who owns the
+          // ticket is copied on it as they are on a reply (#7384).
+          ticket.assignee?.email
         );
       }
     }
