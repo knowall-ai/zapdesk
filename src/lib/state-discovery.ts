@@ -45,23 +45,65 @@ export interface StateMetadata {
   discoveryComplete: boolean;
 }
 
-// Per-org TTL cache + in-flight dedup for state metadata.
-// State definitions virtually never change in production, so we cache
-// aggressively (1 hour). The dedup map prevents thundering-herd refetches
-// when many requests arrive simultaneously after a cache expiry.
-const stateCategoryCacheByOrg: Map<string, StateMetadata & { timestamp: number }> = new Map();
+// TTL cache + in-flight dedup for state metadata. State definitions virtually
+// never change in production, so a complete picture is held for an hour. The
+// dedup map prevents a thundering herd of refetches when many requests arrive
+// at once after an entry expires.
+const stateCategoryCache: Map<string, StateMetadata & { timestamp: number }> = new Map();
 const stateCategoryInFlight: Map<string, Promise<StateMetadata>> = new Map();
 const STATE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * How long an *incomplete* picture is held.
+ *
+ * Far shorter than an hour, and that matters more than it looks. Discovery
+ * fails safe when it is incomplete: `partitionStandupStates` treats nothing as
+ * agreed, which hides resolved items older than ninety days, and cards in an
+ * undescribed project are refused by every drop target. Holding that for an
+ * hour would mean one bad minute costs an hour of a wrong board -- and would
+ * undo the retry this module gained, which exists precisely so a brief refusal
+ * does not become a lasting one.
+ *
+ * Still cached rather than not cached at all: an organisation answering 503 is
+ * the last one that should be asked again by every request that arrives.
+ */
+const INCOMPLETE_STATE_CACHE_TTL_MS = 60 * 1000; // 1 minute
+
+/**
+ * The cache key: the organisation *and* who is asking.
+ *
+ * `doFetchStateMetadata` builds its picture from `getProjects()`, which is
+ * scoped to the caller's token -- so the picture is the caller's, not the
+ * organisation's. Keyed by organisation alone, the first user through
+ * populates it for everyone, and a user who can see fewer projects is handed
+ * `allowedStatesByProjectType` naming projects they have no access to. In this
+ * product a project is a customer, so those names are the thing least safe to
+ * hand to the wrong person.
+ *
+ * The viewer's own identity, not their access token: a token is rotated and
+ * would miss the cache on every refresh, while the identity is what the
+ * visibility actually follows.
+ */
+function cacheKeyFor(organization: string, viewer: string): string {
+  return `${organization.toLowerCase()}|${viewer.toLowerCase()}`;
+}
 
 // Fetch work item states, keyed both by state name and by work item type
 export async function fetchStateMetadata(
   devopsService: AzureDevOpsService,
   accessToken: string,
-  organization: string
+  organization: string,
+  /**
+   * Who is asking, as a stable identifier. Part of the cache key, because
+   * which projects they can see is part of the answer.
+   */
+  viewer: string
 ): Promise<StateMetadata> {
-  const cached = stateCategoryCacheByOrg.get(organization);
+  const key = cacheKeyFor(organization, viewer);
+  const cached = stateCategoryCache.get(key);
   if (cached) {
-    if (Date.now() - cached.timestamp < STATE_CACHE_TTL_MS) {
+    const ttl = cached.discoveryComplete ? STATE_CACHE_TTL_MS : INCOMPLETE_STATE_CACHE_TTL_MS;
+    if (Date.now() - cached.timestamp < ttl) {
       return {
         categories: cached.categories,
         statesByProjectType: cached.statesByProjectType,
@@ -69,23 +111,23 @@ export async function fetchStateMetadata(
         discoveryComplete: cached.discoveryComplete,
       };
     }
-    // Expired — evict so the map doesn't accumulate stale per-org entries forever.
-    stateCategoryCacheByOrg.delete(organization);
+    // Expired - evict so the map doesn't accumulate stale entries forever.
+    stateCategoryCache.delete(key);
   }
 
-  const inFlight = stateCategoryInFlight.get(organization);
+  const inFlight = stateCategoryInFlight.get(key);
   if (inFlight) return inFlight;
 
   const promise = doFetchStateMetadata(devopsService, accessToken, organization);
-  stateCategoryInFlight.set(organization, promise);
+  stateCategoryInFlight.set(key, promise);
   try {
     const metadata = await promise;
     if (Object.keys(metadata.categories).length > 0) {
-      stateCategoryCacheByOrg.set(organization, { ...metadata, timestamp: Date.now() });
+      stateCategoryCache.set(key, { ...metadata, timestamp: Date.now() });
     }
     return metadata;
   } finally {
-    stateCategoryInFlight.delete(organization);
+    stateCategoryInFlight.delete(key);
   }
 }
 
@@ -259,6 +301,6 @@ async function doFetchStateMetadata(
 }
 /** For tests: forget every organisation's discovered states. */
 export function clearStateMetadataCache(): void {
-  stateCategoryCacheByOrg.clear();
+  stateCategoryCache.clear();
   stateCategoryInFlight.clear();
 }

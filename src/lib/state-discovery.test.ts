@@ -111,6 +111,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('which states discovery asks for', () => {
@@ -119,7 +120,7 @@ describe('which states discovery asks for', () => {
   it('asks only about the work item types the board can show', async () => {
     const { service, stub } = stubDevOps();
 
-    await fetchStateMetadata(service, 'token', 'org-a');
+    await fetchStateMetadata(service, 'token', 'org-a', 'viewer@example.test');
 
     const asked = new Set(stub.stateRequests().map((r) => r.type));
     expect([...asked].sort()).toEqual([...BOARD_WORK_ITEM_TYPES].sort());
@@ -130,7 +131,7 @@ describe('which states discovery asks for', () => {
     async (type) => {
       const { service, stub } = stubDevOps();
 
-      await fetchStateMetadata(service, 'token', `org-${type}`);
+      await fetchStateMetadata(service, 'token', `org-${type}`, 'viewer@example.test');
 
       expect(stub.stateRequests().some((r) => r.type === type)).toBe(false);
     }
@@ -139,7 +140,7 @@ describe('which states discovery asks for', () => {
   it('asks each project for its types exactly once', async () => {
     const { service, stub } = stubDevOps({ projects: ['Internal', 'Contoso Ltd', 'ABC Inc'] });
 
-    await fetchStateMetadata(service, 'token', 'org-c');
+    await fetchStateMetadata(service, 'token', 'org-c', 'viewer@example.test');
 
     expect(stub.typeRequests()).toHaveLength(3);
   });
@@ -148,7 +149,7 @@ describe('which states discovery asks for', () => {
   it('makes one states request per project and board type, and no more', async () => {
     const { service, stub } = stubDevOps({ projects: ['Internal', 'Contoso Ltd', 'ABC Inc'] });
 
-    await fetchStateMetadata(service, 'token', 'org-d');
+    await fetchStateMetadata(service, 'token', 'org-d', 'viewer@example.test');
 
     expect(stub.stateRequests()).toHaveLength(3 * BOARD_WORK_ITEM_TYPES.length);
   });
@@ -156,7 +157,7 @@ describe('which states discovery asks for', () => {
   it('spells the project and type in the URL so a space or slash cannot break it', async () => {
     const { service, stub } = stubDevOps({ projects: ['Contoso Ltd'] });
 
-    await fetchStateMetadata(service, 'token', 'org-e');
+    await fetchStateMetadata(service, 'token', 'org-e', 'viewer@example.test');
 
     expect(stub.urls().some((u) => u.includes('Contoso%20Ltd'))).toBe(true);
     expect(stub.urls().some((u) => u.includes('Contoso Ltd'))).toBe(false);
@@ -167,7 +168,7 @@ describe('what discovery returns', () => {
   it('describes every board type of every project', async () => {
     const { service } = stubDevOps({ projects: ['Internal'] });
 
-    const meta = await fetchStateMetadata(service, 'token', 'org-f');
+    const meta = await fetchStateMetadata(service, 'token', 'org-f', 'viewer@example.test');
 
     for (const type of BOARD_WORK_ITEM_TYPES) {
       expect(meta.categoriesByProjectType.Internal[type]).toBeDefined();
@@ -179,7 +180,7 @@ describe('what discovery returns', () => {
   it('keeps the per-type category, which the flat map loses', async () => {
     const { service } = stubDevOps({ projects: ['Internal'] });
 
-    const meta = await fetchStateMetadata(service, 'token', 'org-g');
+    const meta = await fetchStateMetadata(service, 'token', 'org-g', 'viewer@example.test');
 
     expect(meta.categoriesByProjectType.Internal.Task.Closed).toBe('Completed');
     expect(meta.categoriesByProjectType.Internal.Bug.Resolved).toBe('Resolved');
@@ -191,7 +192,7 @@ describe('what discovery returns', () => {
   it('leaves out a state only a non-board type defines', async () => {
     const { service } = stubDevOps({ projects: ['Internal'] });
 
-    const meta = await fetchStateMetadata(service, 'token', 'org-h');
+    const meta = await fetchStateMetadata(service, 'token', 'org-h', 'viewer@example.test');
 
     expect(meta.categories[EPIC_ONLY_STATE.name]).toBeUndefined();
   });
@@ -207,7 +208,7 @@ describe('when Azure DevOps will not answer', () => {
       fail: (url) => (url.includes('Contoso') && url.includes('/workitemtypes?') ? 403 : undefined),
     });
 
-    const meta = await fetchStateMetadata(service, 'token', 'org-i');
+    const meta = await fetchStateMetadata(service, 'token', 'org-i', 'viewer@example.test');
 
     expect(meta.discoveryComplete).toBe(false);
     // And the project that did answer is still fully described.
@@ -222,7 +223,7 @@ describe('when Azure DevOps will not answer', () => {
       fail: (url) => (url.includes('/Bug/states') ? 403 : undefined),
     });
 
-    const meta = await fetchStateMetadata(service, 'token', 'org-j');
+    const meta = await fetchStateMetadata(service, 'token', 'org-j', 'viewer@example.test');
 
     expect(meta.discoveryComplete).toBe(false);
     expect(meta.categoriesByProjectType.Internal.Task).toBeDefined();
@@ -236,7 +237,7 @@ describe('when Azure DevOps will not answer', () => {
       fail: (url) => (url.includes('/Bug/states') ? 403 : undefined),
     });
 
-    await fetchStateMetadata(service, 'token', 'org-k');
+    await fetchStateMetadata(service, 'token', 'org-k', 'viewer@example.test');
 
     expect(stub.stateRequests().filter((r) => r.type === 'Bug')).toHaveLength(1);
   });
@@ -252,7 +253,7 @@ describe('when Azure DevOps will not answer', () => {
       },
     } as unknown as AzureDevOpsService;
 
-    const meta = await fetchStateMetadata(service, 'token', 'org-l');
+    const meta = await fetchStateMetadata(service, 'token', 'org-l', 'viewer@example.test');
 
     expect(meta.categories).toEqual({});
     expect(meta.discoveryComplete).toBe(false);
@@ -263,9 +264,9 @@ describe('the per-organisation cache', () => {
   it('reads once and serves the second caller from memory', async () => {
     const { service, stub } = stubDevOps({ projects: ['Internal'] });
 
-    await fetchStateMetadata(service, 'token', 'org-m');
+    await fetchStateMetadata(service, 'token', 'org-m', 'viewer@example.test');
     const afterFirst = stub.urls().length;
-    await fetchStateMetadata(service, 'token', 'org-m');
+    await fetchStateMetadata(service, 'token', 'org-m', 'viewer@example.test');
 
     expect(stub.urls().length).toBe(afterFirst);
   });
@@ -275,11 +276,88 @@ describe('the per-organisation cache', () => {
   it('keeps organisations apart', async () => {
     const { service, stub } = stubDevOps({ projects: ['Internal'] });
 
-    await fetchStateMetadata(service, 'token', 'org-n');
+    await fetchStateMetadata(service, 'token', 'org-n', 'viewer@example.test');
     const afterFirst = stub.urls().length;
-    await fetchStateMetadata(service, 'token', 'org-o');
+    await fetchStateMetadata(service, 'token', 'org-o', 'viewer@example.test');
 
     expect(stub.urls().length).toBeGreaterThan(afterFirst);
+  });
+
+  /**
+   * The picture is built from `getProjects()`, which is scoped to the caller's
+   * token, so it belongs to the caller and not to the organisation. Keyed by
+   * organisation alone, the first user through populates it for everyone, and a
+   * user who can see fewer projects is handed `allowedStatesByProjectType`
+   * naming projects they have no access to. A project here is a customer, so
+   * those names are the thing least safe to hand to the wrong person.
+   */
+  it('does not serve one viewer the picture built for another', async () => {
+    const { service, stub } = stubDevOps({ projects: ['Internal'] });
+
+    await fetchStateMetadata(service, 'token', 'org-q', 'alex@example.test');
+    const afterAlex = stub.urls().length;
+    await fetchStateMetadata(service, 'token', 'org-q', 'sam@example.test');
+
+    expect(stub.urls().length).toBeGreaterThan(afterAlex);
+  });
+
+  it('still serves the same viewer from memory', async () => {
+    const { service, stub } = stubDevOps({ projects: ['Internal'] });
+
+    await fetchStateMetadata(service, 'token', 'org-r', 'alex@example.test');
+    const afterFirst = stub.urls().length;
+    await fetchStateMetadata(service, 'token', 'org-r', 'ALEX@example.test');
+
+    // Same person, different capitalisation: still one read.
+    expect(stub.urls().length).toBe(afterFirst);
+  });
+
+  /**
+   * An incomplete picture must not be held for the full hour.
+   *
+   * Discovery fails safe when it is incomplete: nothing counts as agreed, which
+   * hides resolved items older than ninety days, and cards in an undescribed
+   * project are refused by every drop target. Holding that for an hour would
+   * make one bad minute cost an hour of a wrong board, and would undo the
+   * retry this module gained.
+   */
+  it('holds an incomplete picture briefly and a complete one for long', async () => {
+    const failing = stubDevOps({
+      projects: ['Internal'],
+      fail: (url) => (url.includes('/Bug/states') ? 503 : undefined),
+    });
+
+    const partial = await fetchStateMetadata(
+      failing.service,
+      'token',
+      'org-s',
+      'alex@example.test'
+    );
+    expect(partial.discoveryComplete).toBe(false);
+    const afterPartial = failing.stub.urls().length;
+
+    // Within the minute it is reused rather than hammering a struggling server.
+    await fetchStateMetadata(failing.service, 'token', 'org-s', 'alex@example.test');
+    expect(failing.stub.urls().length).toBe(afterPartial);
+
+    // Past the minute it is read again, so a brief refusal does not last.
+    vi.setSystemTime(new Date(Date.now() + 61_000));
+    await fetchStateMetadata(failing.service, 'token', 'org-s', 'alex@example.test');
+    expect(failing.stub.urls().length).toBeGreaterThan(afterPartial);
+  });
+
+  it('keeps a complete picture past the incomplete window', async () => {
+    const { service, stub } = stubDevOps({ projects: ['Internal'] });
+
+    const meta = await fetchStateMetadata(service, 'token', 'org-t', 'alex@example.test');
+    expect(meta.discoveryComplete).toBe(true);
+    const afterFirst = stub.urls().length;
+
+    vi.setSystemTime(new Date(Date.now() + 5 * 60_000));
+    await fetchStateMetadata(service, 'token', 'org-t', 'alex@example.test');
+
+    // Five minutes on, a complete picture is still good: it is held an hour.
+    expect(stub.urls().length).toBe(afterFirst);
   });
 
   // Concurrent first requests must not each pay for the whole fan-out.
@@ -287,9 +365,9 @@ describe('the per-organisation cache', () => {
     const { service, stub } = stubDevOps({ projects: ['Internal'] });
 
     await Promise.all([
-      fetchStateMetadata(service, 'token', 'org-p'),
-      fetchStateMetadata(service, 'token', 'org-p'),
-      fetchStateMetadata(service, 'token', 'org-p'),
+      fetchStateMetadata(service, 'token', 'org-p', 'viewer@example.test'),
+      fetchStateMetadata(service, 'token', 'org-p', 'viewer@example.test'),
+      fetchStateMetadata(service, 'token', 'org-p', 'viewer@example.test'),
     ]);
 
     expect(stub.typeRequests()).toHaveLength(1);

@@ -4,6 +4,7 @@ import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import { normalizeStateName } from '@/lib/kanban-columns';
 import { fetchStateMetadata } from '@/lib/state-discovery';
+import { createHash } from 'node:crypto';
 import { getGitHubTickets } from '@/lib/github-issues';
 import { gitHubAvailable, gitHubSourceFor, type GitHubSource } from '@/lib/github-source';
 import { gitHubPeopleFor } from '@/lib/github-people';
@@ -61,6 +62,31 @@ function mapWorkItemToStandupItem(
   };
 }
 
+/**
+ * Who a cached state picture belongs to.
+ *
+ * Discovery builds its answer from the projects this token can see, so the
+ * answer is the caller's and must not be handed to another caller (#608
+ * review). A project here is a customer, so its name is the thing least safe
+ * to leak to someone without access to it.
+ *
+ * The address is stable across token refreshes, which is what keeps the cache
+ * useful. Without one, the token is hashed instead: that costs cache hits on
+ * every refresh, but it never shares an entry between two people, and no token
+ * material is kept in the key.
+ */
+function viewerKey(session: {
+  user?: { email?: string | null } | null;
+  accessToken?: string;
+}): string {
+  const email = session.user?.email;
+  if (email) return email;
+  // No address and no token should not happen on an authenticated route; a
+  // distinct constant is still safer than a shared one.
+  if (!session.accessToken) return 'anonymous:no-identity';
+  return `token:${createHash('sha256').update(session.accessToken).digest('hex').slice(0, 32)}`;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSessionWithToken();
@@ -97,7 +123,12 @@ export async function GET(request: NextRequest) {
       statesByProjectType,
       categoriesByProjectType,
       discoveryComplete,
-    } = await fetchStateMetadata(devopsService, session.accessToken, organization);
+    } = await fetchStateMetadata(
+      devopsService,
+      session.accessToken,
+      organization,
+      viewerKey(session)
+    );
 
     if (Object.keys(stateCategories).length === 0) {
       return NextResponse.json({ error: 'Failed to fetch state categories' }, { status: 500 });
