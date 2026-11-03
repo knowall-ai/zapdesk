@@ -508,7 +508,9 @@ capped at `MAX_OPEN_PAGES` pages of 100 for a named repository (500 issues) and
 closed issues than that loses the oldest of them, and the server log carries a
 `has more than ... recently closed items` warning. Azure DevOps work items have
 no such cap: *All* there really is every closed item.
-==== Pull requests are
+====
+
+Pull requests are
 not listed as tickets, but the Kanban board's 24h summary counts those opened,
 updated or merged in its window, under the person (mapped like issue authors)
 and the project of the repository. A GitHub pull request lights up the work

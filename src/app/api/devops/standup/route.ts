@@ -441,7 +441,10 @@ export async function GET(request: NextRequest) {
           gitHubConfig,
           devOpsUsers,
           linkedAccounts,
-          closedWindow
+          closedWindow,
+          // The same day the DevOps half is bounded by, so a historical
+          // board reads its own window rather than one counted back from now.
+          targetDate
         );
         // The same rules as the DevOps side, so the two sources agree: an
         // unowned issue is left off the board unless asked for, and a closed

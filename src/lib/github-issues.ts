@@ -50,9 +50,30 @@ const CLOSED_LOOKBACK_MS = CLOSED_WINDOW_DAYS * 24 * 60 * 60 * 1000;
  * hint and the docs say so too -- a DevOps `All` really is unbounded, and the
  * two must not be described as if they were the same thing.
  */
-export function closedIssuesSince(window: ClosedWindow = 'recent'): string | null {
+export function closedIssuesSince(
+  window: ClosedWindow = 'recent',
+  /**
+   * The day the board is showing. Today unless a `?date=` asked for an earlier
+   * one, in which case the clock is the wrong thing to count back from: the
+   * DevOps half of the column bounds that day, so counting back from *now*
+   * would fetch a window that has nothing to do with the board, and a GitHub
+   * issue closed inside it but untouched since would never be read at all.
+   */
+  boardDate: Date = new Date()
+): string | null {
   if (window === 'all') return null;
-  return new Date(Date.now() - CLOSED_LOOKBACK_MS).toISOString();
+  return new Date(boardDate.getTime() - CLOSED_LOOKBACK_MS).toISOString();
+}
+
+/**
+ * The board day as `YYYY-MM-DD`, for the issues cache key.
+ *
+ * A day rather than the instant: keying on the instant would miss the cache on
+ * every single request, and keying on nothing would let a historical board and
+ * today's board answer for each other.
+ */
+export function boardDayKey(boardDate: Date = new Date()): string {
+  return boardDate.toISOString().slice(0, 10);
 }
 /**
  * How long a repository's issues are reused. The token's rate limit is shared
@@ -595,7 +616,8 @@ export async function fetchOrgIssues(
  * window is in the key for the same reason the board's cache key carries
  * `showUnassigned` -- the two reads hold different issues, so sharing an entry
  * would answer "All" with the fortnight's worth somebody else had already
- * fetched (#6713).
+ * fetched (#6713). The board day is in it too, so a board asked for an earlier
+ * date and today's board cannot answer for one another.
  */
 const issuesCache = new Map<string, { issues: GitHubIssue[]; timestamp: number }>();
 
@@ -648,12 +670,13 @@ async function cachedRepoIssues(
   repo: string,
   token: string,
   credential: string,
-  closedWindow: ClosedWindow = 'recent'
+  closedWindow: ClosedWindow = 'recent',
+  boardDate: Date = new Date()
 ): Promise<GitHubIssue[]> {
-  const key = `${credential}|${repo.toLowerCase()}|${closedWindow}`;
+  const key = `${credential}|${repo.toLowerCase()}|${closedWindow}|${boardDayKey(boardDate)}`;
   const cached = issuesCache.get(key);
   if (cached && Date.now() - cached.timestamp < ISSUES_CACHE_TTL_MS) return cached.issues;
-  const closedSince = closedIssuesSince(closedWindow);
+  const closedSince = closedIssuesSince(closedWindow, boardDate);
   const issues = isOrgWildcard(repo)
     ? await fetchOrgIssues(repo, token, closedSince)
     : await fetchRepoIssues(repo, token, closedSince);
@@ -730,7 +753,9 @@ export async function getGitHubTickets(
    * How far back closed issues are read (#6713). The default is the bounded
    * window, so every caller but the board keeps the read it always had.
    */
-  closedWindow: ClosedWindow = 'recent'
+  closedWindow: ClosedWindow = 'recent',
+  /** The day the board is showing, so a historical board reads its own window. */
+  boardDate: Date = new Date()
 ): Promise<GitHubTicketsResult> {
   const people: GitHubPeople = { userMap: config.userMap ?? {}, devOpsUsers, linkedAccounts };
   const byName = new Map(projects.map((p) => [p.name.toLowerCase(), p]));
@@ -761,8 +786,8 @@ export async function getGitHubTickets(
     targets.map(({ repo }) => {
       const credential = config.credentialFor?.(repo);
       return credential
-        ? cachedRepoIssues(repo, credential.token, credential.id, closedWindow)
-        : cachedRepoIssues(repo, config.token, SERVER_CREDENTIAL, closedWindow);
+        ? cachedRepoIssues(repo, credential.token, credential.id, closedWindow, boardDate)
+        : cachedRepoIssues(repo, config.token, SERVER_CREDENTIAL, closedWindow, boardDate);
     })
   );
 

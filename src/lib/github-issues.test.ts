@@ -9,6 +9,8 @@ import {
   devOpsUsersForGitHub,
   fetchOrgIssues,
   fetchRepoIssues,
+  closedIssuesSince,
+  boardDayKey,
   forgetCredentialIssues,
   getGitHubTickets,
   gitHubIssueToTicket,
@@ -498,8 +500,30 @@ describe('fetching', () => {
       expect(before - since).toBeLessThanOrEqual(windowMs + 5000);
     });
 
+    // A board asked for an earlier date counts its window back from that day,
+    // not from now (#603 review). Counting back from the clock would fetch a
+    // window with nothing to do with the board, and a GitHub issue closed
+    // inside the board's window but untouched since would never be read.
+    it('counts the window back from the board day, not the clock', async () => {
+      gitHub({ 'acme/portal': {} });
+      const boardDate = new Date('2026-06-15T12:00:00Z');
+
+      await fetchRepoIssues('acme/portal', 'secret-token', closedIssuesSince('recent', boardDate));
+
+      const closed = calledUrls().find((u) => u.searchParams.get('state') === 'closed');
+      const since = new Date(closed!.searchParams.get('since')!);
+      // 14 days before 15 June, give or take nothing.
+      expect(since.toISOString().slice(0, 10)).toBe('2026-06-01');
+    });
+
     // The "All" choice (#6713). No `since` at all, rather than a very old one:
     // a bound the caller did not ask for is a bound that can be wrong.
+    it('keys the cache by the board day, so two boards cannot answer for each other', () => {
+      expect(boardDayKey(new Date('2026-06-15T23:30:00Z'))).toBe('2026-06-15');
+      expect(boardDayKey(new Date('2026-06-15T00:30:00Z'))).toBe('2026-06-15');
+      expect(boardDayKey(new Date('2026-06-16T00:30:00Z'))).toBe('2026-06-16');
+    });
+
     it('asks for every closed issue when given no floor', async () => {
       gitHub({ 'acme/portal': {} });
       await fetchRepoIssues('acme/portal', 'secret-token', null);
