@@ -234,9 +234,6 @@ so set it directly in the App Service configuration (see
 |===
 |Secret |Description
 
-|`AZURE_WEBAPP_PUBLISH_PROFILE`
-|Azure Web App publish profile (XML). Get with: `az webapp deployment list-publishing-profiles --name zapdesk-knowallai --resource-group KnowAllAIRG --xml`
-
 |`NEXTAUTH_SECRET`
 |Random 32-byte hex string. Generate with: `openssl rand -hex 32`
 
@@ -263,11 +260,6 @@ so set it directly in the App Service configuration (see
 [source,bash]
 ----
 # Auto-generated secrets
-az webapp deployment list-publishing-profiles \
-  --name zapdesk-knowallai \
-  --resource-group KnowAllAIRG \
-  --xml | gh secret set AZURE_WEBAPP_PUBLISH_PROFILE
-
 gh secret set NEXTAUTH_SECRET --body "$(openssl rand -hex 32)"
 gh secret set EMAIL_WEBHOOK_SECRET --body "$(openssl rand -hex 16)"
 
@@ -523,11 +515,15 @@ organization's user list.
 
 == Deployment
 
-The GitHub Actions workflow automatically deploys to Azure on push to `main`:
+The GitHub Actions workflow deploys to Azure when a `v*` release tag is
+pushed -- not on a push to `main`:
 
 . Builds the Next.js application
 . Uploads artifacts
 . Deploys to Azure Web App
 . Configures app settings
 
-Manual deployment trigger: Go to Actions > "Deploy to Azure App Service" > "Run workflow"
+The workflow can also be dispatched by hand, but the `production`
+environment accepts only `v*` tags: dispatch a branch and the build runs,
+the deploy job is refused by the environment rule, and the run fails. See
+xref:DEPLOYMENT.adoc[the deployment guide] for the release process.
