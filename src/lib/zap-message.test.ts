@@ -4,6 +4,7 @@ import {
   greetingName,
   zapCommentToPost,
   zapRecordFallback,
+  zapCommentHtml,
 } from './zap-message';
 
 /**
@@ -76,5 +77,35 @@ describe('zapCommentToPost', () => {
   // and a note that is nothing but whitespace should count as no note.
   it('trims the edges of what the sender wrote', () => {
     expect(zapCommentToPost('  thanks!  ', 'Alex Morgan', 100)).toBe('thanks!');
+  });
+});
+
+/**
+ * A ticket comment is stored as HTML, and this is the first time a zap note
+ * carries anything the sender typed -- the old wording was written by the app,
+ * so `<` in it was impossible.
+ */
+describe('zapCommentHtml', () => {
+  it('escapes markup so it reads as the sender typed it', () => {
+    expect(zapCommentHtml('a < b & c', 'Alex Morgan', 100)).toBe('a &lt; b &amp; c');
+  });
+
+  // Unescaped, this would vanish into a tag that never closes.
+  it('does not let a tag through', () => {
+    const out = zapCommentHtml('<b>thanks</b>', 'Alex Morgan', 100);
+    expect(out).not.toContain('<b>');
+    expect(out).toContain('&lt;b&gt;');
+  });
+
+  // The textarea has two rows; a note written on two lines should arrive on two.
+  it('keeps the sender line breaks', () => {
+    expect(zapCommentHtml('thanks\nand well done', 'Alex Morgan', 100)).toBe(
+      'thanks<br />and well done'
+    );
+    expect(zapCommentHtml('thanks\r\nagain', 'Alex Morgan', 100)).toBe('thanks<br />again');
+  });
+
+  it('still records an emptied note, escaped the same way', () => {
+    expect(zapCommentHtml('', 'Alex & Co', 1000)).toBe('Zapped 1,000 sats to Alex &amp; Co.');
   });
 });

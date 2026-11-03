@@ -6,7 +6,7 @@ import { X, Copy, Check, Zap, ExternalLink, Loader2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { User } from '@/types';
 import { DEFAULT_ZAP_PRESETS } from '@/types';
-import { defaultZapMessage, zapCommentToPost } from '@/lib/zap-message';
+import { defaultZapMessage, zapCommentHtml } from '@/lib/zap-message';
 import Avatar from '../common/Avatar';
 import { lightningUri } from '@/lib/lnurl';
 
@@ -59,19 +59,17 @@ function ZapDialogContent({
   /**
    * The note that goes on the ticket, offered rather than imposed (#330).
    *
-   * It follows the amount until the sender types something of their own, and
-   * then stops: rewriting words somebody has just written is worse than
-   * offering none.
+   * Only what the sender typed is held in state. While they have typed
+   * nothing, the note is *derived* from the amount actually in force, so the
+   * two can never disagree.
+   *
+   * Pushing it on each control's handler was wrong, and wrong in a way that
+   * could post a false statement: focusing the custom field again after
+   * choosing a preset switches the amount back to the custom one without any
+   * change event, so the note went on naming the preset while the zap sent the
+   * custom amount. Derivation has no such gap.
    */
-  const [message, setMessage] = useState(() =>
-    defaultZapMessage(agent.displayName, DEFAULT_ZAP_PRESETS[1])
-  );
-  const [messageEdited, setMessageEdited] = useState(false);
-
-  /** Offer wording for a newly chosen amount, unless the sender wrote their own. */
-  const offerMessageFor = (amount: number) => {
-    if (!messageEdited) setMessage(defaultZapMessage(agent.displayName, amount));
-  };
+  const [editedMessage, setEditedMessage] = useState<string | null>(null);
   const [customAmount, setCustomAmount] = useState<string>('');
   const [isCustom, setIsCustom] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
@@ -84,6 +82,8 @@ function ZapDialogContent({
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
 
   const actualAmount = isCustom ? parseZapAmount(customAmount) : selectedAmount;
+  /** What the sender typed, or the note offered for the amount in force. */
+  const message = editedMessage ?? defaultZapMessage(agent.displayName, actualAmount);
 
   // Fetch actual BOLT11 invoice from LNURL-pay endpoint
   const fetchInvoice = useCallback(async () => {
@@ -261,7 +261,7 @@ function ZapDialogContent({
     // wasn't logged on the ticket and can retry / add it manually.
     if (onZapSent) {
       try {
-        await onZapSent(actualAmount, zapCommentToPost(message, agent.displayName, actualAmount));
+        await onZapSent(actualAmount, zapCommentHtml(message, agent.displayName, actualAmount));
       } catch (err) {
         console.error('[ZapDialog] Failed to post zap comment:', err);
         toast.error(
@@ -338,7 +338,6 @@ function ZapDialogContent({
                   onClick={() => {
                     setSelectedAmount(amount);
                     setIsCustom(false);
-                    offerMessageFor(amount);
                   }}
                   className="zap-amount-btn"
                   style={{
@@ -364,7 +363,6 @@ function ZapDialogContent({
                 onChange={(e) => {
                   setCustomAmount(e.target.value);
                   setIsCustom(true);
-                  offerMessageFor(parseZapAmount(e.target.value));
                 }}
                 onFocus={() => setIsCustom(true)}
                 className="input flex-1"
@@ -380,32 +378,37 @@ function ZapDialogContent({
             </div>
           </div>
 
-          {/* The note that goes on the ticket (#330). Offered, not imposed: the
-              app used to write it and post it unasked, in the third person and
-              about the recipient rather than to them. It follows the amount
-              until the sender types their own words, and then leaves them
-              alone. Cleared, the zap is still recorded -- the comment is its
-              only trace in the activity log. */}
-          <div className="mb-6">
-            <label
-              htmlFor="zap-message"
-              className="mb-2 block text-xs uppercase"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              Message on the ticket
-            </label>
-            <textarea
-              id="zap-message"
-              value={message}
-              onChange={(e) => {
-                setMessageEdited(true);
-                setMessage(e.target.value);
-              }}
-              rows={2}
-              className="input w-full"
-              placeholder="Leave empty to record the zap without a note"
-            />
-          </div>
+          {/* The note that goes on the ticket (#330).
+
+              Offered, not imposed: the app used to write it and post it unasked,
+              in the third person and about the recipient rather than to them.
+              While the sender has typed nothing it is derived from the amount in
+              force, so the two cannot disagree. Cleared, the zap is still
+              recorded -- the comment is its only trace in the activity log.
+
+              Only offered where there is somewhere to post it: the list and
+              Kanban views open this dialog without onZapSent and record no
+              comment, so a message field there would invite somebody to write
+              one and then discard it. */}
+          {onZapSent && (
+            <div className="mb-6">
+              <label
+                htmlFor="zap-message"
+                className="mb-2 block text-xs uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Message on the ticket
+              </label>
+              <textarea
+                id="zap-message"
+                value={message}
+                onChange={(e) => setEditedMessage(e.target.value)}
+                rows={2}
+                className="input w-full"
+                placeholder="Leave empty to record the zap without a note"
+              />
+            </div>
+          )}
 
           {/* QR Code */}
           <div
@@ -555,7 +558,11 @@ export default function ZapDialog({ isOpen, onClose, agent, ticketId, onZapSent 
 
       {/* Dialog */}
       <div
-        className="relative z-10 w-full max-w-md overflow-hidden rounded-lg"
+        // Bounded and scrollable: the message field made the dialog tall enough
+        // to push the confirmation controls off a short phone, where they could
+        // not be reached at all. A dialog whose own buttons are unreachable is
+        // worse than one that scrolls.
+        className="relative z-10 max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg"
         style={{ backgroundColor: 'var(--background)', border: '1px solid var(--border)' }}
       >
         {/* Header */}

@@ -301,13 +301,15 @@ export default function WorkItemDetailDialog({
     [workItem, gitHubRef, fetchComments, fetchAttachments, fetchDevOps, hasOrganization]
   );
 
+  // The dialog offers the wording and the sender may change it (#330), so what
+  // arrives here is already what should be posted. This used to write its own
+  // copy of the note -- a third place saying the same thing, and the one that
+  // would have thrown the sender's words away.
   const handleZapSent = useCallback(
-    async (amount: number) => {
+    async (amount: number, message: string) => {
       if (!workItem) return;
-      const assigneeName = workItem.assignee?.displayName || 'the agent';
-      const zapMessage = `⚡ Sent a ${amount.toLocaleString()} sat zap to ${assigneeName} for great support!`;
       try {
-        await handleAddComment(zapMessage);
+        await handleAddComment(message);
       } catch (err) {
         console.error('[WorkItemDetailDialog] Failed to post zap comment:', err);
       }

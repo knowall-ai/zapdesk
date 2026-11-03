@@ -31,7 +31,7 @@ interface WorkItemDetailContentProps {
     resolution?: string;
     mitigation?: string;
   }) => Promise<void>;
-  onZapSent?: (amount: number) => void;
+  onZapSent?: (amount: number, message: string) => void;
   showRequester?: boolean;
   compact?: boolean;
   processTemplate?: string;
@@ -326,9 +326,11 @@ export default function WorkItemDetailContent({
     }
   };
 
-  const handleZapSent = async (amount: number) => {
+  // The message the sender wrote travels with the amount (#330). Dropping it
+  // here would quietly post the app's own wording instead of theirs.
+  const handleZapSent = async (amount: number, message: string) => {
     if (onZapSent) {
-      onZapSent(amount);
+      onZapSent(amount, message);
     }
   };
 

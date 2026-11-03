@@ -1,3 +1,5 @@
+import { escapeHtml } from './email-clean';
+
 /**
  * The message that goes on the ticket when somebody zaps the assignee (#330).
  *
@@ -68,4 +70,27 @@ export function zapCommentToPost(
 ): string {
   const written = message.trim();
   return written || zapRecordFallback(displayName, amount);
+}
+
+/**
+ * The same message as HTML, which is what a ticket comment is stored as.
+ *
+ * Escaped, because this is the first time a zap note carries anything the
+ * sender typed: the old wording was written by the app, so `<` in it was
+ * impossible. Unescaped, "a < b" would vanish into a tag that never closes,
+ * and anything resembling markup would render as markup.
+ *
+ * Newlines become `<br />` for the same reason the textarea has two rows: a
+ * note written on two lines should arrive on two lines, and HTML would
+ * otherwise collapse them into one.
+ *
+ * `escapeHtml` is reused from email-clean rather than written again here --
+ * that module has no imports of its own, so it costs a client bundle nothing.
+ */
+export function zapCommentHtml(
+  message: string,
+  displayName: string | null | undefined,
+  amount: number
+): string {
+  return escapeHtml(zapCommentToPost(message, displayName, amount)).replace(/\r?\n/g, '<br />');
 }
