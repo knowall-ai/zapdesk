@@ -527,10 +527,10 @@ describe('getStandupData query flow', () => {
 
     expect(wiql.length).toBeGreaterThan(0);
     for (const query of wiql) {
-      const order = query.slice(query.indexOf('ORDER BY'));
-      expect(order.indexOf('[System.ChangedDate]')).toBeLessThan(
-        order.indexOf('[System.TeamProject]')
-      );
+      // The direction matters as much as the position: ChangedDate ASC would
+      // put the date first and still make the cap discard the newest items,
+      // which is the failure this guards. So the whole clause is asserted.
+      expect(query).toContain('ORDER BY [System.ChangedDate] DESC, [System.TeamProject] ASC');
     }
   });
 
