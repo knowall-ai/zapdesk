@@ -8,18 +8,18 @@ import type {
   MonthlyCheckpointStats,
   TicketTrendPoint,
   Organization,
-  CheckpointCustomer,
+  CheckpointRequester,
 } from '@/types';
 
 /** The query parameters this route reads; anything else is refused. */
-const ALLOWED_PARAMS = new Set(['project', 'startDate', 'endDate', 'customer']);
+const ALLOWED_PARAMS = new Set(['project', 'startDate', 'endDate', 'requester']);
 
 /**
  * Monthly checkpoint statistics for one project and period.
  *
  * Query: `project` is required. `startDate` and `endDate` default to the last
- * 30 days. `customer` (a key from `customers`) narrows every figure to that
- * customer's tickets (#7385).
+ * 30 days. `requester` (a key from `requesters`) narrows every figure to the
+ * tickets that one person raised (#7385).
  *
  * Returns the KPIs, daily trend points, the tickets created or resolved in the
  * period, and `customers`: everyone who has raised a ticket in the project,
@@ -52,8 +52,8 @@ export async function GET(request: Request) {
     const projectName = searchParams.get('project');
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');
-    // Optional: one customer's tickets only (#7385). Matched on customerKey.
-    const customerParam = (searchParams.get('customer') || '').trim().toLowerCase();
+    // Optional: one customer's tickets only (#7385). Matched on requesterKey.
+    const requesterParam = (searchParams.get('requester') || '').trim().toLowerCase();
 
     if (!projectName) {
       return NextResponse.json({ error: 'Project name is required' }, { status: 400 });
@@ -90,31 +90,31 @@ export async function GET(request: Request) {
 
     // The customers on offer come from the whole project, so picking one does
     // not empty the list of the others.
-    const customerMap = new Map<string, CheckpointCustomer>();
+    const requesterMap = new Map<string, CheckpointRequester>();
     for (const t of projectTickets) {
-      const key = customerKey(t);
+      const key = requesterKey(t);
       if (!key) continue;
-      const existing = customerMap.get(key);
+      const existing = requesterMap.get(key);
       if (existing) existing.ticketCount += 1;
       else
-        customerMap.set(key, {
+        requesterMap.set(key, {
           key,
           displayName: t.requester?.displayName || key,
           ticketCount: 1,
         });
     }
-    const customers = [...customerMap.values()].sort((a, b) =>
+    const requesters = [...requesterMap.values()].sort((a, b) =>
       a.displayName.localeCompare(b.displayName)
     );
 
     // A customer the project has never had is a bad request, not a report of
     // zeroes that reads as "this customer raised nothing".
-    if (customerParam && !customerMap.has(customerParam)) {
+    if (requesterParam && !requesterMap.has(requesterParam)) {
       return NextResponse.json({ error: 'Unknown customer for this project' }, { status: 400 });
     }
 
-    const allTickets = customerParam
-      ? projectTickets.filter((t) => customerKey(t) === customerParam)
+    const allTickets = requesterParam
+      ? projectTickets.filter((t) => requesterKey(t) === requesterParam)
       : projectTickets;
 
     // Filter tickets created within the date range
@@ -153,7 +153,7 @@ export async function GET(request: Request) {
       tickets: relevantTickets.sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       ),
-      customers,
+      requesters,
     };
 
     return NextResponse.json(stats);
@@ -164,7 +164,7 @@ export async function GET(request: Request) {
 }
 
 /** Who raised a ticket, as the customer filter knows them. */
-function customerKey(ticket: Ticket): string {
+function requesterKey(ticket: Ticket): string {
   // Email first; then the identity id, so two people who share a display name
   // are never merged; the name only as a last resort.
   const requester = ticket.requester;

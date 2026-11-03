@@ -73,7 +73,9 @@ export const TICKET_COLUMNS: ColumnConfig[] = [
   { id: 'type', label: 'Type', sortField: 'type' },
   { id: 'status', label: 'Ticket Status', sortField: 'status' },
   { id: 'subject', label: 'Subject', sortField: 'subject' },
-  { id: 'project', label: 'Project', sortField: 'project' },
+  // A project is one customer: its email domain comes from the project's
+  // description, which is what routes a customer's mail into it (#7385).
+  { id: 'project', label: 'Customer', sortField: 'project' },
   { id: 'requester', label: 'Requester', sortField: 'requester' },
   { id: 'requested', label: 'Requested', sortField: 'requested' },
   { id: 'priority', label: 'Priority', sortField: 'priority' },
@@ -153,9 +155,18 @@ interface Filters {
   assignee: string[];
   requester: string[];
   type: string[];
+  /** Project names: one project is one customer (#7385). */
+  customer: string[];
 }
 
-const EMPTY_FILTERS: Filters = { status: [], priority: [], assignee: [], requester: [], type: [] };
+const EMPTY_FILTERS: Filters = {
+  status: [],
+  priority: [],
+  assignee: [],
+  requester: [],
+  type: [],
+  customer: [],
+};
 
 const SORT_FIELDS: readonly SortField[] = [
   'id',
@@ -622,6 +633,7 @@ export default function WorkItemBoard({
   const filterOptions = useMemo(() => {
     const assignees = new Set<string>();
     const requesters = new Set<string>();
+    const customers = new Set<string>();
     const statuses = new Set<string>(definedStates);
     const types = new Set<string>();
 
@@ -631,6 +643,9 @@ export default function WorkItemBoard({
       }
       if (item.requester?.displayName) {
         requesters.add(item.requester.displayName);
+      }
+      if (item.project) {
+        customers.add(item.project);
       }
       if (item.state) {
         statuses.add(item.state);
@@ -648,6 +663,7 @@ export default function WorkItemBoard({
     return {
       assignees: Array.from(assignees).sort(),
       requesters: Array.from(requesters).sort(),
+      customers: Array.from(customers).sort(),
       statuses: Array.from(statuses).sort(),
       types: typeOptions,
     };
@@ -668,6 +684,7 @@ export default function WorkItemBoard({
     filters.priority.length > 0 ||
     filters.assignee.length > 0 ||
     filters.requester.length > 0 ||
+    filters.customer.length > 0 ||
     filters.type.length > 0;
 
   // Apply filters
@@ -708,6 +725,13 @@ export default function WorkItemBoard({
       if (
         filters.requester.length > 0 &&
         (!item.requester?.displayName || !filters.requester.includes(item.requester.displayName))
+      )
+        return false;
+      // One project is one customer (#7385). An item with no project cannot
+      // belong to the customer that was picked, so it drops out as well.
+      if (
+        filters.customer.length > 0 &&
+        (!item.project || !filters.customer.includes(item.project))
       )
         return false;
       if (
@@ -1004,6 +1028,18 @@ export default function WorkItemBoard({
                       options={filterOptions.requesters}
                       onToggle={(v) => toggleFilter('requester', v)}
                       onClear={() => setFilters((prev) => ({ ...prev, requester: [] }))}
+                    />
+                  )}
+
+                  {/* Who the ticket is for, next to who raised it (#7385). Only
+                      worth offering when the list spans more than one. */}
+                  {filterOptions.customers.length > 1 && (
+                    <MultiSelectFilter
+                      label="Customers"
+                      selected={filters.customer}
+                      options={filterOptions.customers}
+                      onToggle={(v) => toggleFilter('customer', v)}
+                      onClear={() => setFilters((prev) => ({ ...prev, customer: [] }))}
                     />
                   )}
 
@@ -1551,13 +1587,10 @@ export default function WorkItemBoard({
                 <button
                   onClick={() => {
                     setSearchQuery('');
-                    setFilters({
-                      status: [],
-                      priority: [],
-                      assignee: [],
-                      requester: [],
-                      type: [],
-                    });
+                    // EMPTY_FILTERS rather than a second list of every filter:
+                    // this copy had already fallen behind when customer was
+                    // added, and Clear all silently stopped clearing it.
+                    setFilters(EMPTY_FILTERS);
                   }}
                   className="mt-2 text-sm transition-colors hover:underline"
                   style={{ color: 'var(--color-brand)' }}
