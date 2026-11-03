@@ -501,6 +501,35 @@ describe('getStandupData query flow', () => {
     expect(items.map((item) => item.id)).toEqual([1]);
   });
 
+  // WIQL refuses a query matching more than 20,000 items with VS402337 rather
+  // than truncating it. "All" removed the date floor from the closed query and
+  // so removed what had kept it small, which would have failed the whole board
+  // with a 500 -- and kept failing, since the window is remembered in the
+  // address. So the ceiling is asked for.
+  it('caps every query at the WIQL limit', async () => {
+    stubDevOps({ Closed: [1], Resolved: [2], Active: [3] }, [
+      workItem(1, 'Closed', '2026-10-08T10:00:00Z'),
+    ]);
+
+    await new AzureDevOpsService('token', 'wiql-cap').getStandupData(
+      target,
+      FLAT,
+      PER_TYPE,
+      true,
+      true,
+      'all'
+    );
+
+    const wiqlCalls = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.map(([url]) => String(url))
+      .filter((url) => url.includes('/_apis/wit/wiql'));
+    expect(wiqlCalls.length).toBeGreaterThan(0);
+    for (const url of wiqlCalls) {
+      expect(url).toContain('$top=20000');
+    }
+  });
+
   // WIQL validates its SELECT list too (400 TF51005), and the ids are all that
   // is ever read from it, so it names nothing but the id.
   it('selects only the id in its WIQL, so no field can fail the query', async () => {

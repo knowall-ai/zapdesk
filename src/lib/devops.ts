@@ -455,6 +455,15 @@ export class DevOpsApiError extends Error {
 const ORG_LOOKUP_TIMEOUT_MS = 15_000;
 
 /**
+ * Most work items one WIQL query may return.
+ *
+ * Azure DevOps refuses a query matching more than this with VS402337 rather
+ * than truncating it, so the ceiling has to be asked for rather than
+ * discovered. 20,000 is the service's own limit.
+ */
+const WIQL_MAX_RESULTS = 20_000;
+
+/**
  * State names that every work item type defining them treats as Removed.
  *
  * Only these are safe to exclude from the WIQL query, which can filter on the
@@ -3248,17 +3257,37 @@ export class AzureDevOpsService {
     };
 
     // Execute the WIQL queries in parallel at org level
+    // Capped, because WIQL refuses outright above its own ceiling rather than
+    // truncating: a query matching more than 20,000 work items answers
+    // VS402337, which would fail the whole board with a 500 and keep failing,
+    // since the window is remembered in the address. 'All' removed the date
+    // floor from the closed query and so removed the thing that had kept it
+    // small. $top asks for as much as WIQL will give instead.
+    //
+    // Each query orders by ChangedDate descending, so what a cap drops is the
+    // oldest -- the same bargain the GitHub reads make with their page caps,
+    // and documented beside them.
     const runQuery = async (query: { query: string }, label: string): Promise<number[]> => {
-      const response = await fetch(`${this.baseUrl}/_apis/wit/wiql?api-version=7.0`, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify(query),
-      });
+      const response = await fetch(
+        `${this.baseUrl}/_apis/wit/wiql?api-version=7.0&$top=${WIQL_MAX_RESULTS}`,
+        {
+          method: 'POST',
+          headers: this.headers,
+          body: JSON.stringify(query),
+        }
+      );
       if (!response.ok) {
         throw new Error(`Standup ${label} query failed: ${response.statusText}`);
       }
       const data = await response.json();
-      return data.workItems?.map((wi: { id: number }) => wi.id) || [];
+      const ids: number[] = data.workItems?.map((wi: { id: number }) => wi.id) || [];
+      if (ids.length >= WIQL_MAX_RESULTS) {
+        console.warn(
+          `[Standup] the ${label} query reached the ${WIQL_MAX_RESULTS}-item limit; ` +
+            'the oldest matches are not on the board'
+        );
+      }
+      return ids;
     };
 
     const [doneIds, activeIds, resolvedIds] = await Promise.all([
