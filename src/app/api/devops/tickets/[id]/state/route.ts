@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSessionWithToken } from '@/lib/server-session';
 import { parseWorkItemId } from '@/lib/work-item-id';
 import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
-import { isEmailTicket, extractRequesterEmail, sendStatusChangeNotification } from '@/lib/email';
+import {
+  isEmailTicket,
+  extractRequesterEmail,
+  sendStatusChangeNotification,
+  assigneeEmailFrom,
+} from '@/lib/email';
 import { debugLog } from '@/lib/debug';
 
 /** Azure DevOps work item ids are positive int32 values. */
@@ -169,7 +174,16 @@ function notifyStateChange(
   if (!requesterEmail) return;
 
   const subject = String(workItem.fields?.['System.Title'] || 'Your ticket');
-  sendStatusChangeNotification(ticketId, subject, requesterEmail, oldState, newState).catch(
-    () => {}
-  );
+  // Blind-copy the assigned engineer: this message is part of the customer's
+  // thread, and until now only the agent's own replies reached them (#7384).
+  const assigneeEmail = assigneeEmailFrom(workItem.fields?.['System.AssignedTo']);
+  sendStatusChangeNotification(
+    ticketId,
+    subject,
+    requesterEmail,
+    oldState,
+    newState,
+    undefined,
+    assigneeEmail
+  ).catch(() => {});
 }
