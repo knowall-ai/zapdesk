@@ -210,8 +210,10 @@ describe('GitHub issues and the closed window', () => {
     expect(boardGitHubTickets(tickets, true, null, end).map((t) => t.id)).toEqual([1]);
   });
 
-  // Today's board passes no ceiling, and then nothing is bounded above.
-  it('bounds nothing above when no end day is given', () => {
+  // The default, for a caller that passes no ceiling. Not a description of
+  // today's board: the standup route builds the end day from the board's own
+  // date and passes it every time, today included.
+  it('bounds nothing above when the caller omits the end day', () => {
     expect(
       boardGitHubTickets([closed(1, '2026-11-05T09:00:00Z')], true, floor).map((t) => t.id)
     ).toEqual([1]);

@@ -117,8 +117,12 @@ export function boardGitHubTickets(
    *
    * Applied here and not at the fetch because the GitHub API has no `until`:
    * `since` returns issues *updated* after the floor, so one closed after the
-   * board's day is fetched regardless. Omitted, nothing is bounded above --
-   * which is only right for a board showing today.
+   * board's day is fetched regardless.
+   *
+   * Omitted, nothing is bounded above. The board always passes it, today's
+   * included -- the standup route builds it from the board's own date -- so
+   * the default describes a caller that has no window in mind, not any
+   * board.
    */
   closedEnd: string | null = null
 ): Ticket[] {
