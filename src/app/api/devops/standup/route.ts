@@ -3,6 +3,8 @@ import { getServerSessionWithToken } from '@/lib/server-session';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import { normalizeStateName } from '@/lib/kanban-columns';
+import { fetchStateMetadata } from '@/lib/state-discovery';
+import { createHash } from 'node:crypto';
 import { getGitHubTickets } from '@/lib/github-issues';
 import { gitHubAvailable, gitHubSourceFor, type GitHubSource } from '@/lib/github-source';
 import { gitHubPeopleFor } from '@/lib/github-people';
@@ -15,211 +17,6 @@ import type {
   DevOpsWorkItem,
   TicketPriority,
 } from '@/types';
-
-/** State definitions for an org, in both the shapes the board needs. */
-interface StateMetadata {
-  /** State name -> category, unioned across every project and work item type. */
-  categories: Record<string, string>;
-  /**
-   * Project -> work item type -> the state names that type actually defines
-   * there. The union in `categories` can't answer "may this card enter that
-   * column?", because states are defined per work item type *and* per
-   * project's process template: an Agile-template Bug has no "To Do" state
-   * even when a Task in the same project does, and a Bug in a different
-   * project may have one (#391).
-   */
-  statesByProjectType: Record<string, Record<string, string[]>>;
-  /**
-   * Project -> work item type -> state name -> that state's category *for that
-   * type*.
-   *
-   * `categories` above flattens this by state name, which is lossy: two work
-   * item types can use the same state name in different categories, and the
-   * last one written wins. That flat map is fine for column ordering, but not
-   * for deciding whether a given item is Removed — see `getStandupData` (#277).
-   */
-  categoriesByProjectType: Record<string, Record<string, Record<string, string>>>;
-  /**
-   * False when any project's type list or any type's state list failed to
-   * load, so `categoriesByProjectType` describes only part of the org.
-   *
-   * It matters because the two halves of the Removed filter fail in opposite
-   * directions. Dropping a state name from the WIQL query is unrecoverable —
-   * items never fetched can't be filtered back in — so a partial picture must
-   * not be treated as agreement that a name is Removed everywhere (#277).
-   */
-  discoveryComplete: boolean;
-}
-
-// Per-org TTL cache + in-flight dedup for state metadata.
-// State definitions virtually never change in production, so we cache
-// aggressively (1 hour). The dedup map prevents thundering-herd refetches
-// when many requests arrive simultaneously after a cache expiry.
-const stateCategoryCacheByOrg: Map<string, StateMetadata & { timestamp: number }> = new Map();
-const stateCategoryInFlight: Map<string, Promise<StateMetadata>> = new Map();
-const STATE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
-
-// Fetch work item states, keyed both by state name and by work item type
-async function fetchStateMetadata(
-  devopsService: AzureDevOpsService,
-  accessToken: string,
-  organization: string
-): Promise<StateMetadata> {
-  const cached = stateCategoryCacheByOrg.get(organization);
-  if (cached) {
-    if (Date.now() - cached.timestamp < STATE_CACHE_TTL_MS) {
-      return {
-        categories: cached.categories,
-        statesByProjectType: cached.statesByProjectType,
-        categoriesByProjectType: cached.categoriesByProjectType,
-        discoveryComplete: cached.discoveryComplete,
-      };
-    }
-    // Expired — evict so the map doesn't accumulate stale per-org entries forever.
-    stateCategoryCacheByOrg.delete(organization);
-  }
-
-  const inFlight = stateCategoryInFlight.get(organization);
-  if (inFlight) return inFlight;
-
-  const promise = doFetchStateMetadata(devopsService, accessToken, organization);
-  stateCategoryInFlight.set(organization, promise);
-  try {
-    const metadata = await promise;
-    if (Object.keys(metadata.categories).length > 0) {
-      stateCategoryCacheByOrg.set(organization, { ...metadata, timestamp: Date.now() });
-    }
-    return metadata;
-  } finally {
-    stateCategoryInFlight.delete(organization);
-  }
-}
-
-async function doFetchStateMetadata(
-  devopsService: AzureDevOpsService,
-  accessToken: string,
-  organization: string
-): Promise<StateMetadata> {
-  const empty: StateMetadata = {
-    categories: {},
-    statesByProjectType: {},
-    categoriesByProjectType: {},
-    discoveryComplete: false,
-  };
-
-  // Reuse the cached project list rather than re-fetching independently
-  let projects: { name: string }[] = [];
-  try {
-    projects = await devopsService.getProjects();
-  } catch {
-    return empty;
-  }
-  if (projects.length === 0) return empty;
-
-  const stateCategories: Record<string, string> = {};
-  const statesByProjectType: Record<string, Record<string, Set<string>>> = {};
-  const categoriesByProjectType: Record<string, Record<string, Record<string, string>>> = {};
-
-  // Fetch states from ALL projects to cover different process templates
-  const projectResults = await Promise.allSettled(
-    projects.map(async (project) => {
-      // Discover work item types for this project
-      const typesResponse = await fetch(
-        `https://dev.azure.com/${organization}/${encodeURIComponent(project.name)}/_apis/wit/workitemtypes?api-version=7.0`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!typesResponse.ok) return { project: project.name, types: [], complete: false };
-
-      const typesData = await typesResponse.json();
-      const types: { name: string }[] = typesData.value || [];
-
-      // Fetch states for each work item type in parallel
-      const stateResults = await Promise.allSettled(
-        types.map(async (witType) => {
-          const statesResponse = await fetch(
-            `https://dev.azure.com/${organization}/${encodeURIComponent(project.name)}/_apis/wit/workitemtypes/${encodeURIComponent(witType.name)}/states?api-version=7.0`,
-            {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-              },
-            }
-          );
-
-          if (!statesResponse.ok) return { type: witType.name, states: [], complete: false };
-          const statesData = await statesResponse.json();
-          return {
-            type: witType.name,
-            states: (statesData.value || []) as { name: string; category: string }[],
-            complete: true,
-          };
-        })
-      );
-
-      const settled = stateResults.filter(
-        (
-          r
-        ): r is PromiseFulfilledResult<{
-          type: string;
-          states: { name: string; category: string }[];
-          complete: boolean;
-        }> => r.status === 'fulfilled'
-      );
-
-      return {
-        project: project.name,
-        types: settled.map((r) => r.value),
-        // A rejected request, or one that answered non-OK, leaves this
-        // project's picture incomplete.
-        complete: settled.length === stateResults.length && settled.every((r) => r.value.complete),
-      };
-    })
-  );
-
-  let discoveryComplete = true;
-  for (const result of projectResults) {
-    if (result.status !== 'fulfilled') {
-      discoveryComplete = false;
-      continue;
-    }
-    const { project, types, complete } = result.value;
-    if (!complete) discoveryComplete = false;
-    for (const { type, states } of types) {
-      for (const state of states) {
-        // Categories stay org-wide here: they only drive column *ordering*,
-        // which is a union across templates by design.
-        stateCategories[state.name] = state.category;
-        // Allowed states are kept per project, because a state defined only in
-        // another project's process template must not unblock a column here.
-        ((statesByProjectType[project] ??= {})[type] ??= new Set()).add(state.name);
-        // The category is kept per project and type too. The flat map above
-        // loses it when two types share a state name in different categories,
-        // and "is this item Removed?" has to be answered per item (#277).
-        ((categoriesByProjectType[project] ??= {})[type] ??= {})[state.name] = state.category;
-      }
-    }
-  }
-
-  return {
-    categories: stateCategories,
-    statesByProjectType: Object.fromEntries(
-      Object.entries(statesByProjectType).map(([project, byType]) => [
-        project,
-        Object.fromEntries(
-          Object.entries(byType).map(([type, states]) => [type, Array.from(states)])
-        ),
-      ])
-    ),
-    categoriesByProjectType,
-    discoveryComplete,
-  };
-}
 
 function mapPriority(priority?: number): TicketPriority | undefined {
   if (!priority) return undefined;
@@ -266,6 +63,31 @@ function mapWorkItemToStandupItem(
   };
 }
 
+/**
+ * Who a cached state picture belongs to.
+ *
+ * Discovery builds its answer from the projects this token can see, so the
+ * answer is the caller's and must not be handed to another caller (#608
+ * review). A project here is a customer, so its name is the thing least safe
+ * to leak to someone without access to it.
+ *
+ * The address is stable across token refreshes, which is what keeps the cache
+ * useful. Without one, the token is hashed instead: that costs cache hits on
+ * every refresh, but it never shares an entry between two people, and no token
+ * material is kept in the key.
+ */
+function viewerKey(session: {
+  user?: { email?: string | null } | null;
+  accessToken?: string;
+}): string {
+  const email = session.user?.email;
+  if (email) return email;
+  // No address and no token should not happen on an authenticated route; a
+  // distinct constant is still safer than a shared one.
+  if (!session.accessToken) return 'anonymous:no-identity';
+  return `token:${createHash('sha256').update(session.accessToken).digest('hex').slice(0, 32)}`;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSessionWithToken();
@@ -306,7 +128,12 @@ export async function GET(request: NextRequest) {
       statesByProjectType,
       categoriesByProjectType,
       discoveryComplete,
-    } = await fetchStateMetadata(devopsService, session.accessToken, organization);
+    } = await fetchStateMetadata(
+      devopsService,
+      session.accessToken,
+      organization,
+      viewerKey(session)
+    );
 
     if (Object.keys(stateCategories).length === 0) {
       return NextResponse.json({ error: 'Failed to fetch state categories' }, { status: 500 });
