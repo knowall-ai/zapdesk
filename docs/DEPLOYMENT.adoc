@@ -143,8 +143,14 @@ The workflow at `.github/workflows/deploy.yml` handles:
 
 Deployment triggers on:
 
-* Push to `main` branch
+* Push of a `v*` release tag
 * Manual workflow dispatch
+
+Both paths end at the same gate. The `production` environment accepts only
+`v*` tags, so a manual dispatch has to target one: dispatch a branch and the
+build job runs, then the deploy job stops without reaching Azure. Pair that
+with the tag rule above -- only admins and maintainers can create a `v*` tag
+-- and releasing is a maintainer action by design, whichever trigger is used.
 
 == Manual Deployment
 
