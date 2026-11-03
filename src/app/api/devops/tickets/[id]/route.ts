@@ -364,10 +364,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     // Fire-and-forget: the assignment is already saved, and a slow mail server
     // must not turn a successful change into a reported failure.
     if (updates.assignee) {
-      // Read the identity, not the mapped ticket: workItemToTicket goes through
-      // identityToUser, which only understands the object form and returns
-      // undefined for an identity DevOps gave us as a bare address -- which
-      // would warn and send nothing, the very silence #7374 was about.
+      // Read the identity, not the mapped ticket. workItemToTicket goes through
+      // identityToUser, which takes the address off an object's uniqueName.
+      // Handed a bare address it still returns a user -- one whose email is
+      // undefined -- so the ticket carries an assignee with no address, and
+      // reading it here would warn and send nothing: the silence #7374 was
+      // about, for one shape of the field.
       const assigneeEmail = assigneeEmailFrom(updatedWorkItem.fields?.['System.AssignedTo']);
       if (!assigneeEmail) {
         // Same silence as the create path (#7374): an identity DevOps gave us
