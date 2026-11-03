@@ -4,6 +4,7 @@ import {
   renderEmailBodyHtml,
   rewriteCidReferences,
   collectReferencedCids,
+  stripQuotedHtml,
 } from './email-clean';
 
 describe('sanitizeEmailHtml', () => {
@@ -140,5 +141,91 @@ describe('renderEmailBodyHtml — truncation', () => {
     const out = renderEmailBodyHtml('<p>hello</p>');
     expect(out).toContain('<p>hello</p>');
     expect(out).not.toContain('[truncated]');
+  });
+});
+
+/**
+ * The earlier message, labelled (#7769).
+ *
+ * Reported from the Testing 2.0 pass as "Message shows irrelevant information
+ * if there is another attachment rather than screenshot", resolved once, and
+ * returned: "still the same - in this mail it was only attachment. It captures
+ * old converstions".
+ *
+ * The title is misleading and that is worth recording, because it sent the
+ * first attempt to the wrong place: the attachment has nothing to do with it.
+ * What the reporter saw was an Outlook reply whose quoted thread sat directly
+ * beneath one new sentence, with nothing between them, so the ticket read as
+ * though the old conversation were part of the request.
+ *
+ * It is labelled rather than cut: a forwarded mail is often the request
+ * itself, and its forwarded body the only description of it.
+ */
+describe('the earlier message is labelled, not hidden', () => {
+  const reply = (separator: string) =>
+    `<div>Please see the figures attached.</div>${separator}` +
+    '<div>From: Alex Morgan&lt;alex@example.test&gt;<br />' +
+    'Sent: 14 October 2026 09:12<br />To: Sam Taylor&lt;sam@example.test&gt;<br />' +
+    'Subject: Q3 reconciliation</div>' +
+    '<div>Sam, the Q3 numbers still do not tie out.</div>';
+
+  it.each([
+    ['divRplyFwdMsg', '<div id="divRplyFwdMsg">'],
+    ['appendonsend', '<div id="appendonsend"></div>'],
+    ['Original Message', '<div>-----Original Message-----</div>'],
+  ])('labels the boundary at an %s separator', (_name, separator) => {
+    const out = stripQuotedHtml(reply(separator));
+
+    expect(out).toContain('Earlier message');
+    // The sender's own words come first, the label after them.
+    expect(out.indexOf('figures attached')).toBeLessThan(out.indexOf('Earlier message'));
+  });
+
+  // The whole point of labelling rather than cutting: a forward's body is
+  // often the only description of what is being asked for.
+  it('keeps every word of the earlier message', () => {
+    const out = stripQuotedHtml(reply('<div id="divRplyFwdMsg">'));
+
+    expect(out).toContain('Q3 numbers still do not tie out');
+    expect(out).toContain('Subject: Q3 reconciliation');
+  });
+
+  // Only allowed markup: the sanitiser refuses class, id and data-*, so a
+  // marker for the browser could not have survived storage anyway.
+  it('uses only markup the sanitiser allows', () => {
+    const out = stripQuotedHtml(reply('<div id="divRplyFwdMsg">'));
+    const label = out.slice(out.indexOf('<hr'), out.indexOf('Earlier message'));
+
+    expect(label).not.toMatch(/class=|data-|id=/);
+  });
+
+  it('labels the boundary once, however many separators follow', () => {
+    const out = stripQuotedHtml(
+      reply('<div id="divRplyFwdMsg">') + '<div id="appendonsend"></div><div>older still</div>'
+    );
+
+    expect(out.match(/Earlier message/g) ?? []).toHaveLength(1);
+  });
+
+  // A mail with nothing quoted must not grow a divider out of nowhere.
+  it('says nothing when there is no earlier message', () => {
+    const out = stripQuotedHtml('<div>Just the one message, nothing quoted.</div>');
+
+    expect(out).not.toContain('Earlier message');
+    expect(out).not.toContain('<hr');
+  });
+
+  // ZapDesk quoting itself is still removed outright (#7720), so there is no
+  // boundary left to label.
+  it('does not label a quote of ZapDesk its own mail, which is removed', () => {
+    const out = stripQuotedHtml(
+      '<div>Thanks.</div><div id="divRplyFwdMsg">' +
+        '<div>From: ZapDesk Support&lt;support@example.test&gt;<br />' +
+        'Sent: 14 October 2026 09:12<br />Subject: [ZapDesk #42] Printer</div>' +
+        '<div>We have raised your ticket.</div>'
+    );
+
+    expect(out).not.toContain('Earlier message');
+    expect(out).not.toContain('We have raised your ticket');
   });
 });

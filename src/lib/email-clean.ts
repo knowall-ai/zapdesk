@@ -200,6 +200,17 @@ function attributionStart(html: string, index: number): number {
  * block, a `stopSpelling` rule or "-----Original Message-----", so those are
  * cut to the end when their header block names ZapDesk.
  */
+/**
+ * Marks where the sender's own words end and the message they replied to or
+ * forwarded begins (#7769).
+ *
+ * Plain `hr` and `strong` with an inline style, because those are what the
+ * sanitiser allows: `class`, `id` and `data-*` attributes are all refused by
+ * design, so a marker for the browser to act on could not survive storage.
+ */
+const EARLIER_MESSAGE_LABEL =
+  '<hr /><p style="margin:0 0 8px 0;"><strong>Earlier message</strong></p>';
+
 export function stripQuotedHtml(html: string): string {
   if (!html) return '';
   let out = html;
@@ -253,6 +264,29 @@ export function stripQuotedHtml(html: string): string {
       out = out.slice(0, attributionStart(out, start));
       break;
     }
+  }
+
+  // Whatever earlier message survives is labelled, so the sender's own words
+  // lead and the rest reads as history rather than as part of the request
+  // (#7769). A reply or forward from someone other than ZapDesk is kept on
+  // purpose -- see isZapDeskQuote -- and a ticket raised from such a mail was
+  // reported as "capturing old conversations", which it was: the quote sat
+  // directly under one new sentence with nothing to separate them.
+  //
+  // Labelled rather than cut. A forwarded mail is often the request itself,
+  // and its forwarded body the only description of it, so cutting would throw
+  // away the very thing the ticket is about. Labelled rather than collapsed in
+  // the browser, too: that would need a marker to survive into the stored HTML,
+  // and the sanitiser deliberately allows neither class nor id nor data-*.
+  // A divider works in Azure DevOps and in ZapDesk alike, with no exception
+  // carved into the allowlist.
+  //
+  // Only the first separator is labelled: everything after it is already part
+  // of the same earlier message.
+  const firstHeader = [...out.matchAll(header)][0];
+  if (firstHeader) {
+    const at = attributionStart(out, firstHeader.index ?? 0);
+    out = out.slice(0, at) + EARLIER_MESSAGE_LABEL + out.slice(at);
   }
 
   return out.trimEnd();
