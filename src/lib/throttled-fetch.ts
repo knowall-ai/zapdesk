@@ -109,6 +109,27 @@ export function backoffMs(attempt: number, retryAfter: string | null): number {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Let go of a response nobody is going to read.
+ *
+ * Node's `fetch` is undici, where an unread body can hold its connection until
+ * garbage collection. That works directly against what this file is for: the
+ * point of pacing requests is to reuse a small pool of connections, and a
+ * discarded `503` that still owns one makes the next attempt wait for a
+ * connection rather than for the server.
+ *
+ * Cancelling can reject -- the body may already be locked, consumed, or absent
+ * -- and none of that is worth propagating, because the caller had no use for
+ * the body either way.
+ */
+export async function discardBody(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // Already read, already cancelled, or there was never a body.
+  }
+}
+
+/**
  * `fetch`, asking again when the server says it is too busy.
  *
  * Only the statuses that mean "not now" are retried. A `401`, `403` or `404`
@@ -127,7 +148,12 @@ export async function fetchWithRetry(
     try {
       const response = await fetch(url, init);
       if (!RETRYABLE.has(response.status) || attempt === maxAttempts) return response;
-      await sleep(backoffMs(attempt, response.headers.get('retry-after')));
+      // Read the header before letting the body go, then let it go before
+      // waiting: holding a dead connection across the backoff is the one place
+      // this would cost most.
+      const retryAfter = response.headers.get('retry-after');
+      await discardBody(response);
+      await sleep(backoffMs(attempt, retryAfter));
     } catch (error) {
       // A network error or a timeout. Worth one more go for the same reason a
       // 503 is, but the last one has to be reported rather than swallowed.

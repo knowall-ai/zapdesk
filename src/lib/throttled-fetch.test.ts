@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   DEVOPS_CONCURRENCY,
   backoffMs,
+  discardBody,
   fetchWithRetry,
   mapWithLimit,
   retryAfterMs,
@@ -210,6 +211,110 @@ describe('fetchWithRetry', () => {
     const init = { headers: { Authorization: 'Bearer token' } };
     await fetchWithRetry('https://example.test/x', init);
     expect(mock).toHaveBeenCalledWith('https://example.test/x', init);
+  });
+});
+
+/**
+ * Node's `fetch` is undici, where an unread body can hold its connection until
+ * garbage collection. Pacing requests is pointless if each discarded `503`
+ * keeps a connection out of the pool while we wait to retry.
+ */
+describe('discardBody', () => {
+  /** A response whose body reports whether it was cancelled. */
+  function withBody() {
+    let cancelled = false;
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{}'));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    return { response: new Response(body, { status: 503 }), wasCancelled: () => cancelled };
+  }
+
+  it('releases the body', async () => {
+    const { response, wasCancelled } = withBody();
+    await discardBody(response);
+    expect(wasCancelled()).toBe(true);
+  });
+
+  it('says nothing when there is no body at all', async () => {
+    await expect(discardBody(new Response(null, { status: 204 }))).resolves.toBeUndefined();
+  });
+
+  // A body already read, or a stream that refuses to cancel, is not the
+  // caller's problem: it wanted rid of the body either way.
+  it('does not throw when the body cannot be cancelled', async () => {
+    const response = new Response('{}', { status: 503 });
+    await response.text();
+    await expect(discardBody(response)).resolves.toBeUndefined();
+
+    const refuses = new Response(
+      new ReadableStream({
+        start(c) {
+          c.enqueue(new TextEncoder().encode('{}'));
+        },
+        cancel() {
+          throw new Error('will not cancel');
+        },
+      }),
+      { status: 503 }
+    );
+    await expect(discardBody(refuses)).resolves.toBeUndefined();
+  });
+});
+
+describe('fetchWithRetry and the bodies it throws away', () => {
+  it('releases the body of a response it discards before retrying', async () => {
+    let cancelled = false;
+    let call = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        // The first answer is the one thrown away, so only it is instrumented.
+        // It is deliberately left unclosed, because a closed stream has nothing
+        // to cancel and the test would pass without the fix.
+        if (call++ === 0) {
+          const body = new ReadableStream({
+            start(c) {
+              c.enqueue(new TextEncoder().encode('{}'));
+            },
+            cancel() {
+              cancelled = true;
+            },
+          });
+          return new Response(body, { status: 503, headers: { 'retry-after': '0' } });
+        }
+        return new Response('{}', { status: 200 });
+      })
+    );
+
+    const response = await fetchWithRetry('https://example.test/x');
+
+    expect(cancelled).toBe(true);
+    // And the response handed back is untouched: the caller still has to read
+    // it, so releasing that one would be the opposite mistake.
+    expect(await response.json()).toEqual({});
+  });
+
+  // The retry-after header has to be read before the body is released, or the
+  // backoff silently falls back to exponential and ignores what the server said.
+  it('still honours retry-after when it releases the body', async () => {
+    let call = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        const status = call++ === 0 ? 503 : 200;
+        return new Response('{}', { status, headers: { 'retry-after': '0' } });
+      })
+    );
+    const started = Date.now();
+    await fetchWithRetry('https://example.test/x');
+    // retry-after: 0 means no wait. Exponential backoff would have slept
+    // at least 125ms, so a slow run here means the header was lost.
+    expect(Date.now() - started).toBeLessThan(120);
   });
 });
 

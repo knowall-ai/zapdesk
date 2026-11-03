@@ -3,7 +3,12 @@ import { getServerSessionWithToken } from '@/lib/server-session';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import { normalizeStateName } from '@/lib/kanban-columns';
-import { DEVOPS_CONCURRENCY, fetchWithRetry, mapWithLimit } from '@/lib/throttled-fetch';
+import {
+  DEVOPS_CONCURRENCY,
+  discardBody,
+  fetchWithRetry,
+  mapWithLimit,
+} from '@/lib/throttled-fetch';
 import { getGitHubTickets } from '@/lib/github-issues';
 import { gitHubAvailable, gitHubSourceFor, type GitHubSource } from '@/lib/github-source';
 import { gitHubPeopleFor } from '@/lib/github-people';
@@ -147,6 +152,8 @@ async function doFetchStateMetadata(
       console.warn(
         `[Standup] work item types for ${project.name}: ${response.status} ${response.statusText}`
       );
+      // Nobody reads this body, and an unread one holds its connection.
+      await discardBody(response);
       return null;
     }
     const data = await response.json();
@@ -177,6 +184,7 @@ async function doFetchStateMetadata(
       console.warn(
         `[Standup] states for ${project}/${type}: ${response.status} ${response.statusText}`
       );
+      await discardBody(response);
       return null;
     }
     const data = await response.json();
