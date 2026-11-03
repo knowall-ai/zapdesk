@@ -210,7 +210,8 @@ describe('fetchWithRetry', () => {
     const mock = stubStatuses(200);
     const init = { headers: { Authorization: 'Bearer token' } };
     await fetchWithRetry('https://example.test/x', init);
-    expect(mock).toHaveBeenCalledWith('https://example.test/x', init);
+    // objectContaining, because the attempt's abort signal is added to it.
+    expect(mock).toHaveBeenCalledWith('https://example.test/x', expect.objectContaining(init));
   });
 });
 
@@ -300,21 +301,92 @@ describe('fetchWithRetry and the bodies it throws away', () => {
   });
 
   // The retry-after header has to be read before the body is released, or the
-  // backoff silently falls back to exponential and ignores what the server said.
-  it('still honours retry-after when it releases the body', async () => {
-    let call = 0;
+  // backoff silently falls back to exponential and ignores what the server
+  // asked for. Asserted as an ordering, not by timing the call: a correct
+  // retry can take longer than any threshold on a busy runner, and a test that
+  // fails for that reason teaches people to ignore it.
+  it('reads retry-after before it releases the body', async () => {
+    const order: string[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {
-        const status = call++ === 0 ? 503 : 200;
-        return new Response('{}', { status, headers: { 'retry-after': '0' } });
+        if (order.includes('fetched-twice')) return new Response('{}', { status: 200 });
+        order.push('fetched-twice');
+        const body = new ReadableStream({
+          start(c) {
+            c.enqueue(new TextEncoder().encode('{}'));
+          },
+          cancel() {
+            order.push('body-released');
+          },
+        });
+        const response = new Response(body, {
+          status: 503,
+          headers: { 'retry-after': '0' },
+        });
+        const realGet = response.headers.get.bind(response.headers);
+        vi.spyOn(response.headers, 'get').mockImplementation((name: string) => {
+          if (name.toLowerCase() === 'retry-after') order.push('header-read');
+          return realGet(name);
+        });
+        return response;
       })
     );
-    const started = Date.now();
+
     await fetchWithRetry('https://example.test/x');
-    // retry-after: 0 means no wait. Exponential backoff would have slept
-    // at least 125ms, so a slow run here means the header was lost.
-    expect(Date.now() - started).toBeLessThan(120);
+
+    expect(order.indexOf('header-read')).toBeGreaterThan(-1);
+    expect(order.indexOf('body-released')).toBeGreaterThan(-1);
+    expect(order.indexOf('header-read')).toBeLessThan(order.indexOf('body-released'));
+  });
+});
+
+/**
+ * Node's fetch falls back to undici's 300-second headers timeout, so without a
+ * signal a stalled attempt is not retried for five minutes -- and holds one of
+ * the eight workers for all of it, because the retry loop cannot run until
+ * fetch settles.
+ */
+describe('fetchWithRetry and stalled attempts', () => {
+  it('gives each attempt its own abort signal', async () => {
+    const mock = vi.fn(
+      async (_url: string, _init?: RequestInit) => new Response('{}', { status: 200 })
+    );
+    vi.stubGlobal('fetch', mock);
+
+    await fetchWithRetry('https://example.test/x', { headers: { Authorization: 'Bearer t' } });
+
+    const init = mock.mock.calls[0][1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(init.signal!.aborted).toBe(false);
+    // The caller's own options survive alongside it.
+    expect(init.headers).toEqual({ Authorization: 'Bearer t' });
+  });
+
+  it('leaves a signal the caller supplied alone', async () => {
+    const mock = vi.fn(
+      async (_url: string, _init?: RequestInit) => new Response('{}', { status: 200 })
+    );
+    vi.stubGlobal('fetch', mock);
+    const mine = new AbortController().signal;
+
+    await fetchWithRetry('https://example.test/x', { signal: mine });
+
+    expect((mock.mock.calls[0][1] as RequestInit).signal).toBe(mine);
+  });
+
+  // An aborted attempt lands in the same catch a network error does, so it is
+  // retried rather than ending the read.
+  it('retries an aborted attempt', async () => {
+    let call = 0;
+    const mock = vi.fn(async () => {
+      if (call++ === 0) throw new DOMException('The operation was aborted', 'TimeoutError');
+      return new Response('{}', { status: 200 });
+    });
+    vi.stubGlobal('fetch', mock);
+
+    expect((await fetchWithRetry('https://example.test/x', undefined, 2)).status).toBe(200);
+    expect(mock).toHaveBeenCalledTimes(2);
   });
 });
 

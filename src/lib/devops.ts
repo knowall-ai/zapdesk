@@ -41,6 +41,7 @@ import {
 
 import { configuredDevOpsOrg, devOpsOrgOrDefault } from './devops-org';
 import { ticketFieldsToRequest } from './work-item-fields';
+import { BOARD_WORK_ITEM_TYPES } from './board-work-item-types';
 import { isPendingStateName, statusNamedByState } from './state-categories';
 
 /**
@@ -3141,9 +3142,10 @@ export class AzureDevOpsService {
     // against the empty string in WIQL; there is no IS NULL for it.
     const assignedClause = includeUnassigned ? '' : "AND [System.AssignedTo] <> '' ";
 
-    // Only show actionable work item types (exclude Epic, Feature, User Story)
-    const allowedTypes = ['Task', 'Bug', 'Enhancement', 'Question', 'Issue', 'Risk'];
-    const allowedTypesList = allowedTypes.map((t) => `'${t}'`).join(', ');
+    // Only the actionable types (no Epic, Feature or User Story). Shared with
+    // state discovery, which must ask about exactly these and no others
+    // (#4337) -- see board-work-item-types.ts for what drifting apart costs.
+    const allowedTypesList = BOARD_WORK_ITEM_TYPES.map((t) => `'${t}'`).join(', ');
 
     const fields = [
       'System.Id',

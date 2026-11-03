@@ -34,6 +34,17 @@ const MAX_RETRY_AFTER_MS = 10_000;
 const BASE_BACKOFF_MS = 250;
 
 /**
+ * Longest one attempt may take before it is abandoned and tried again.
+ *
+ * Without this, Node's `fetch` falls back to undici's default headers timeout
+ * of 300 seconds, so a stalled request is not retried for five minutes -- and
+ * it holds one of the `mapWithLimit` workers for all of it, because the retry
+ * loop cannot run until `fetch` settles. A few of those and discovery stalls
+ * behind requests that are never coming back.
+ */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/**
  * Run `task` over `items`, at most `limit` at a time, settling every one.
  *
  * Settled rather than rejecting, because every caller here already treats a
@@ -146,7 +157,13 @@ export async function fetchWithRetry(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const response = await fetch(url, init);
+      // A fresh signal per attempt, so the budget is per try rather than
+      // shared across all of them. A caller that brought its own signal keeps
+      // it: it knows something we do not about when to give up.
+      const response = await fetch(url, {
+        ...init,
+        signal: init?.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
       if (!RETRYABLE.has(response.status) || attempt === maxAttempts) return response;
       // Read the header before letting the body go, then let it go before
       // waiting: holding a dead connection across the backoff is the one place
