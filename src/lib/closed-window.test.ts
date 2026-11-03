@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   CLOSED_WINDOW_DAYS,
   CLOSED_WINDOW_LABELS,
+  CLOSED_WINDOW_TITLES,
   closedWindowDays,
   closedWindowEndDay,
   closedWindowParam,
@@ -86,5 +87,37 @@ describe('CLOSED_WINDOW_LABELS', () => {
   it('names the span rather than the act of filtering', () => {
     expect(CLOSED_WINDOW_LABELS.recent).toBe(`Last ${CLOSED_WINDOW_DAYS} days`);
     expect(CLOSED_WINDOW_LABELS.all).toBe('All');
+  });
+});
+
+/**
+ * Neither source is unbounded: GitHub closed-issue reads stop at 500 a
+ * repository and 1,000 an `owner/*` entry, and a single Azure DevOps query at
+ * 20,000 items. This wording has drifted twice -- the column hint and the docs
+ * were corrected while the control's tooltip went on promising everything --
+ * so it lives in one place now and is asserted here.
+ */
+describe('CLOSED_WINDOW_TITLES', () => {
+  it('does not promise every closed item', () => {
+    for (const title of Object.values(CLOSED_WINDOW_TITLES)) {
+      expect(title.toLowerCase()).not.toContain('every closed item');
+      expect(title.toLowerCase()).not.toContain('however long ago');
+      expect(title.toLowerCase()).not.toContain('whole history');
+    }
+  });
+
+  it('says what All actually reaches, and that it costs something', () => {
+    expect(CLOSED_WINDOW_TITLES.all).toMatch(/as far back as the reads go/i);
+    expect(CLOSED_WINDOW_TITLES.all).toMatch(/slower/i);
+    // Named, because a GitHub issue is the one that can silently be missing.
+    expect(CLOSED_WINDOW_TITLES.all).toMatch(/github/i);
+  });
+
+  it('names the span for the bounded window, from the one constant', () => {
+    expect(CLOSED_WINDOW_TITLES.recent).toContain(String(CLOSED_WINDOW_DAYS));
+  });
+
+  it('covers both choices', () => {
+    expect(Object.keys(CLOSED_WINDOW_TITLES).sort()).toEqual(['all', 'recent']);
   });
 });

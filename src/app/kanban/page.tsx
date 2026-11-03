@@ -27,6 +27,7 @@ import { useDevOpsApi } from '@/hooks';
 import {
   CLOSED_WINDOW_DAYS,
   CLOSED_WINDOW_LABELS,
+  CLOSED_WINDOW_TITLES,
   closedWindowParam,
   parseClosedWindow,
   type ClosedWindow,
@@ -1198,11 +1199,7 @@ function StandupPageContent() {
                       replace
                       scroll={false}
                       aria-current={closedWindow === option ? 'true' : undefined}
-                      title={
-                        option === 'all'
-                          ? 'Every closed item, however long ago. Slower: it reads the whole history.'
-                          : `Only items closed in the last ${CLOSED_WINDOW_DAYS} days.`
-                      }
+                      title={CLOSED_WINDOW_TITLES[option]}
                       className={`px-3 py-1.5 font-medium transition-colors ${
                         closedWindow === option
                           ? 'bg-brand text-brand-foreground'

@@ -72,6 +72,20 @@ export function closedWindowEndDay(boardDate: Date): string {
   return end.toISOString().split('T')[0];
 }
 
+/**
+ * What each choice promises, for the control's tooltip.
+ *
+ * Here rather than at the call site because this wording has drifted twice.
+ * Neither source is unbounded -- GitHub closed-issue reads stop at 500 a
+ * repository, and a single Azure DevOps query at 20,000 items -- so a tooltip
+ * saying "every closed item" promises something the reads cannot deliver, and
+ * contradicts both the column's own hint and the documentation.
+ */
+export const CLOSED_WINDOW_TITLES: Record<ClosedWindow, string> = {
+  recent: `Only items closed in the last ${CLOSED_WINDOW_DAYS} days.`,
+  all: 'Closed items as far back as the reads go. Slower, and very old closed GitHub issues may be missing.',
+};
+
 /** What the control reads on screen. Says the span, not "filter" (#6713). */
 export const CLOSED_WINDOW_LABELS: Record<ClosedWindow, string> = {
   recent: `Last ${CLOSED_WINDOW_DAYS} days`,
