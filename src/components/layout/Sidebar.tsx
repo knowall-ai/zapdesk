@@ -11,7 +11,6 @@ import {
   Activity,
   Settings,
   Plus,
-  RefreshCw,
   Inbox,
   Clock,
   UserCheck,
@@ -251,21 +250,13 @@ export default function Sidebar({
       {/* Views section */}
       <div className="flex-1 overflow-y-auto border-t" style={{ borderColor: 'var(--border)' }}>
         <div className={`p-3 ${hideWhenCollapsed}`}>
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2 flex items-center">
             <span
               className="text-xs font-semibold uppercase"
               style={{ color: 'var(--text-muted)' }}
             >
               Views
             </span>
-            <div className="flex items-center gap-1">
-              <button className="rounded p-1 hover:bg-[var(--surface-hover)]">
-                <Plus size={14} style={{ color: 'var(--text-muted)' }} />
-              </button>
-              <button className="rounded p-1 hover:bg-[var(--surface-hover)]">
-                <RefreshCw size={14} style={{ color: 'var(--text-muted)' }} />
-              </button>
-            </div>
           </div>
 
           <div className="space-y-1">
@@ -281,7 +272,7 @@ export default function Sidebar({
                 ? `Stop opening "${view.name}" by default`
                 : `Open "${view.name}" by default`;
               return (
-                <div key={view.id} className="group flex items-center gap-1">
+                <div key={view.id} className="flex items-center gap-1">
                   <Link
                     href={view.href}
                     className={`flex min-w-0 flex-1 items-center justify-between rounded px-2 py-1.5 text-sm transition-colors ${
@@ -312,15 +303,16 @@ export default function Sidebar({
                       onClick={() =>
                         saveDefaultView(isDefault ? null : (view.id as typeof defaultView))
                       }
-                      className={`shrink-0 rounded p-1 transition-opacity hover:bg-[var(--surface-hover)] focus-visible:opacity-100 ${
-                        isDefault ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                      }`}
+                      // Always drawn, never revealed on hover. Hidden until
+                      // hover it could not be found (#7729), and on a touch
+                      // screen there is no hover to reveal it with at all.
+                      className="shrink-0 rounded p-1.5 transition-colors hover:bg-[var(--surface-hover)]"
                       title={starLabel}
                       aria-label={starLabel}
                       aria-pressed={isDefault}
                     >
                       <Star
-                        size={13}
+                        size={14}
                         fill={isDefault ? 'var(--warning)' : 'none'}
                         style={{ color: isDefault ? 'var(--warning)' : 'var(--text-muted)' }}
                       />
