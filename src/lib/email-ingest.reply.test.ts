@@ -142,6 +142,36 @@ describe('merge point: a customer reply still notifies the assigned agent', () =
     expect(emailed).not.toMatch(/<img/i);
     expect(emailed).toContain('1 inline image omitted');
   });
+
+  // #7768. The appendix is the only place a file that is not in the body gets
+  // named. A new ticket's notification is built from the stored description,
+  // which carries it; a reply's was built from the body alone, so an
+  // attachment sent on a reply was listed on the ticket and in no mail the
+  // agent would ever open.
+  it('names a file attached to a reply in the notification, not only on the ticket', async () => {
+    await ingestEmail({
+      from: 'cust@example.com',
+      subject: 'Re: [ZapDesk #7145] Printer on fire',
+      bodyType: 'html',
+      body: '<p>Here is the log you asked for.</p>',
+      attachments: [
+        {
+          filename: 'printer.log',
+          contentType: 'text/plain',
+          content: Buffer.from('jam at tray 2').toString('base64'),
+        },
+      ],
+    });
+
+    const emailed = (
+      h.sendCustomerReplyNotification.mock.calls[0] as unknown as unknown[]
+    )[4] as string;
+    expect(emailed).toContain('printer.log');
+    // Named, not linked: the DevOps attachment URL answers 401 without a
+    // session, so the filename travels as text and the ticket button is the
+    // way in -- the same rule the stored body follows.
+    expect(emailed).not.toContain('dev.azure.com');
+  });
 });
 
 describe('unassigned tickets fall back to the support team, but never into a loop', () => {
