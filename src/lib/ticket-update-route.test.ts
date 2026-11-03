@@ -134,7 +134,8 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       7,
       { thread: 'Printer offline', current: 'Printer offline' },
       'customer@example.test',
-      [{ label: 'Priority', from: 'Normal', to: 'High' }]
+      [{ label: 'Priority', from: 'Normal', to: 'High' }],
+      undefined
     );
   });
 
@@ -145,7 +146,8 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       7,
       { thread: 'Printer offline', current: 'Printer still offline' },
       'customer@example.test',
-      [{ label: 'Title', from: 'Printer offline', to: 'Printer still offline' }]
+      [{ label: 'Title', from: 'Printer offline', to: 'Printer still offline' }],
+      undefined
     );
   });
 
@@ -160,7 +162,8 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       7,
       { thread: 'Cannot print', current: 'Printer still offline' },
       'customer@example.test',
-      expect.any(Array)
+      expect.any(Array),
+      undefined
     );
   });
 
@@ -213,7 +216,55 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       7,
       { thread: 'Printer offline', current: 'New title' },
       'customer@example.test',
-      expect.any(Array)
+      expect.any(Array),
+      undefined
+    );
+  });
+
+  // The customer's thread, so the engineer who owns the ticket belongs on it
+  // too (#7384). The route is what reads the assignee off the work item, so a
+  // test on the sender alone would not have caught it being left out.
+  it('copies the assigned engineer on the update', async () => {
+    getWorkItem.mockResolvedValue(
+      workItem({
+        'System.AssignedTo': { id: 'u2', displayName: 'Sam', uniqueName: 'engineer@example.test' },
+      })
+    );
+    updateTicketFields.mockResolvedValue(
+      workItem({
+        'Microsoft.VSTS.Common.Priority': 2,
+        'System.AssignedTo': { id: 'u2', displayName: 'Sam', uniqueName: 'engineer@example.test' },
+      })
+    );
+    await patch({ project: 'Internal', priority: 2 });
+    expect(sendTicketUpdateNotification).toHaveBeenCalledWith(
+      7,
+      expect.anything(),
+      'customer@example.test',
+      expect.any(Array),
+      'engineer@example.test'
+    );
+  });
+
+  // DevOps hands the identity back as an object or as a bare address,
+  // depending on how it was set. workItemToTicket only understands the
+  // object form, so reading the mapped ticket dropped the engineer here and
+  // sent no assignment mail at all -- the silence #7374 was raised about.
+  it('copies the engineer when DevOps gives the identity as a bare address', async () => {
+    getWorkItem.mockResolvedValue(workItem({ 'System.AssignedTo': 'engineer@example.test' }));
+    updateTicketFields.mockResolvedValue(
+      workItem({
+        'Microsoft.VSTS.Common.Priority': 2,
+        'System.AssignedTo': 'engineer@example.test',
+      })
+    );
+    await patch({ project: 'Internal', priority: 2 });
+    expect(sendTicketUpdateNotification).toHaveBeenCalledWith(
+      7,
+      expect.anything(),
+      'customer@example.test',
+      expect.any(Array),
+      'engineer@example.test'
     );
   });
 
