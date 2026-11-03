@@ -9,6 +9,7 @@ import { getGitHubTickets } from '@/lib/github-issues';
 import { gitHubAvailable, gitHubSourceFor, type GitHubSource } from '@/lib/github-source';
 import { gitHubPeopleFor } from '@/lib/github-people';
 import { addGitHubTicketsToStandup, boardGitHubTickets } from '@/lib/github-kanban';
+import { closedWindowEndDay, closedWindowStartDay, parseClosedWindow } from '@/lib/closed-window';
 import type {
   StandupData,
   StandupWorkItem,
@@ -110,6 +111,10 @@ export async function GET(request: NextRequest) {
     // Work nobody owns is off the board unless asked for (#581, #530). Opt-in
     // rather than opt-out, so a caller that says nothing gets the fast board.
     const includeUnassigned = searchParams.get('includeUnassigned') === 'true';
+    // How far back the closed columns reach (#6713). Bounded unless the board
+    // asked for the whole history, so a caller that says nothing gets the
+    // quick board -- the same rule as includeUnassigned above.
+    const closedWindow = parseClosedWindow(searchParams.get('closed'));
     // Which sources the header toggle asked for (#447). Anything else is "both".
     const sources = searchParams.get('sources');
     const includeDevOps = sources !== 'github';
@@ -141,7 +146,8 @@ export async function GET(request: NextRequest) {
           stateCategories,
           categoriesByProjectType,
           discoveryComplete,
-          includeUnassigned
+          includeUnassigned,
+          closedWindow
         )
       : { items: [] as DevOpsWorkItem[] };
 
@@ -261,11 +267,24 @@ export async function GET(request: NextRequest) {
           organization,
           gitHubConfig,
           devOpsUsers,
-          linkedAccounts
+          linkedAccounts,
+          closedWindow,
+          // The same day the DevOps half is bounded by, so a historical
+          // board reads its own window rather than one counted back from now.
+          targetDate
         );
-        // The same rule as the DevOps side: an unowned issue is left off the
-        // board unless asked for, so the two sources agree.
-        const boardTickets = boardGitHubTickets(gitHub.tickets, includeUnassigned);
+        // The same rules as the DevOps side, so the two sources agree: an
+        // unowned issue is left off the board unless asked for, and a closed
+        // one only shows inside the board's closed window (#6713).
+        const boardTickets = boardGitHubTickets(
+          gitHub.tickets,
+          includeUnassigned,
+          closedWindowStartDay(closedWindow, targetDate),
+          // Bounded above as well, and for 'all' too, so a board asked for an
+          // earlier date cannot show a GitHub issue closed after it while the
+          // DevOps half of the same column excludes one (#603 review).
+          closedWindowEndDay(targetDate)
+        );
         projects = addGitHubTicketsToStandup(devOpsProjects, displayColumns, boardTickets);
         failedGitHubRepos = [...gitHubConfig.failed, ...gitHub.failedRepos];
       } catch (error) {

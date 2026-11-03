@@ -31,16 +31,31 @@ import { formatLastUpdated, summarizeGroup } from '@/lib/kanban-summary';
 import type { GroupActivitySummary, HighlightReason } from '@/lib/activity-summary';
 import type { PullRequestActivity, StandupColumn, StandupWorkItem } from '@/types';
 import { debugLog, debugWarn } from '@/lib/debug';
+import { CLOSED_WINDOW_DAYS, type ClosedWindow } from '@/lib/closed-window';
 import {
   readExpandedGroups,
   sessionPositionStorage,
   writeGroupExpanded,
 } from '@/lib/kanban-position';
 
-// The Closed column only shows items changed in the last 7 days; this hint
-// explains the cutoff so users don't think older items have vanished. Resolved
-// items aren't windowed — they still await verification (#436).
-const DONE_WINDOW_HINT = 'Showing closed items changed in the last 7 days';
+/**
+ * What the Closed column is limited to, for the hint beside its heading, so
+ * users don't think older items have vanished. Resolved items aren't windowed
+ * -- they still await verification (#436).
+ *
+ * It follows the board's own setting rather than naming a fixed span (#6713):
+ * a hint that said "the last 7 days" beside a column showing everything would
+ * be worse than no hint, and the board can now show either.
+ *
+ * It says "closed in", not "changed in", because that is what the window is
+ * now measured on -- an old closed item edited yesterday is not recently
+ * closed.
+ */
+function doneWindowHint(closedWindow: ClosedWindow): string {
+  return closedWindow === 'all'
+    ? 'Showing closed items as far back as they go. Very old closed GitHub issues may be missing.'
+    : `Showing items closed in the last ${CLOSED_WINDOW_DAYS} days`;
+}
 
 /** Simple droppable column for the standup kanban */
 function DroppableColumn({
@@ -53,6 +68,7 @@ function DroppableColumn({
   isFocused = false,
   highlights,
   onItemClick,
+  closedWindow,
 }: {
   name: string;
   category: string;
@@ -66,10 +82,13 @@ function DroppableColumn({
   /** While highlighting: the cards to light up, and why. Everything else is dimmed. */
   highlights?: Map<number, HighlightReason[]>;
   onItemClick?: (item: StandupWorkItem) => void;
+  /** How far back the Closed column reaches, for its hint (#6713). */
+  closedWindow: ClosedWindow;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: name, disabled: isBlocked });
   const color = getColumnColor(name, category);
   const isDoneColumn = category === 'Completed';
+  const doneHint = doneWindowHint(closedWindow);
   // Highlighted cards first while highlighting is on (#503). One array for both
   // the rendered list and the SortableContext below: if those two disagree, a
   // drag lands on the wrong card.
@@ -88,8 +107,8 @@ function DroppableColumn({
           {isDoneColumn && (
             <button
               type="button"
-              title={DONE_WINDOW_HINT}
-              aria-label={DONE_WINDOW_HINT}
+              title={doneHint}
+              aria-label={doneHint}
               className="cursor-help"
               style={{ color: 'var(--text-muted)' }}
             >
@@ -158,6 +177,8 @@ interface KanbanGroupSectionProps {
   onStateChange?: (itemId: number, targetState: string, project?: string) => Promise<void>;
   onItemClick?: (item: StandupWorkItem) => void;
   activity?: GroupActivity;
+  /** How far back the Closed column reaches (#6713). */
+  closedWindow?: ClosedWindow;
 }
 
 export default function KanbanGroupSection({
@@ -169,6 +190,7 @@ export default function KanbanGroupSection({
   onStateChange,
   onItemClick,
   activity,
+  closedWindow = 'recent',
 }: KanbanGroupSectionProps) {
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
   const summary = useMemo(() => summarizeGroup(columns), [columns]);
@@ -536,6 +558,7 @@ export default function KanbanGroupSection({
                         : undefined
                     }
                     onItemClick={onItemClick}
+                    closedWindow={closedWindow}
                   />
                 );
               })}

@@ -4,6 +4,7 @@
 function escapeWiql(value: string): string {
   return value.replace(/'/g, "''");
 }
+import { closedWindowEndDay, closedWindowStartDay, type ClosedWindow } from './closed-window';
 import type {
   DevOpsWorkItem,
   DevOpsWorkItemRelation,
@@ -40,7 +41,7 @@ import {
 } from '@/config/process-templates';
 
 import { configuredDevOpsOrg, devOpsOrgOrDefault } from './devops-org';
-import { ticketFieldsToRequest } from './work-item-fields';
+import { boardFieldsToRequest, ticketFieldsToRequest } from './work-item-fields';
 import { BOARD_WORK_ITEM_TYPES } from './board-work-item-types';
 import { isPendingStateName, statusNamedByState } from './state-categories';
 
@@ -455,6 +456,15 @@ export class DevOpsApiError extends Error {
 const ORG_LOOKUP_TIMEOUT_MS = 15_000;
 
 /**
+ * Most work items one WIQL query may return.
+ *
+ * Azure DevOps refuses a query matching more than this with VS402337 rather
+ * than truncating it, so the ceiling has to be asked for rather than
+ * discovered. 20,000 is the service's own limit.
+ */
+const WIQL_MAX_RESULTS = 20_000;
+
+/**
  * State names that every work item type defining them treats as Removed.
  *
  * Only these are safe to exclude from the WIQL query, which can filter on the
@@ -524,12 +534,12 @@ export function revisionTimestamp(update: {
 /**
  * Split the board's state names between its three WIQL queries.
  *
- * `closedStates` go to the query limited to the last 7 days, `openStates` to
+ * `closedStates` go to the query limited to the closed window, `openStates` to
  * the 90-day query, and `resolvedStates` to a query with no date floor at all.
  *
  * Only Completed states belong in the short window. Resolved means the work is
  * done but not yet verified, so the item still needs attention and must stay on
- * the board however long it sits there. It used to share the 7-day window with
+ * the board however long it sits there. It used to share the closed window with
  * Closed, which made resolved items disappear the moment they were resolved
  * (#436); moving it to the 90-day window only postponed that, and 84 items
  * resolved as far back as February had already fallen out of it (#518). A state
@@ -539,7 +549,7 @@ export function revisionTimestamp(update: {
  * really is stale and the board really is a daily stand-up tool.
  *
  * As with the Removed filter, the flat map is lossy when two types use one
- * state name in different categories. Putting a name in the 7-day window hides
+ * state name in different categories. Putting a name in the closed window hides
  * older items of every type that uses it, so a name goes there only when every
  * type that defines it agrees it is Completed. When discovery was partial, an
  * undiscovered type may use the name differently, so nothing is known to be
@@ -627,18 +637,42 @@ export function isRemovedItem(
 }
 
 /**
- * Whether an item the 90-day query fetched is closed for its own type and was
- * last changed outside the 7-day closed window `[windowStart, windowEnd)`.
+ * When a work item was closed.
  *
- * A state name that is Completed for one type and open for another, or whose
- * types were not all discovered, is queried over 90 days so open items keep
- * showing (#436). This trims the closed items of such a name back to the window
- * the closed query would have used. An item whose type has no per-type data
- * is kept, as `isRemovedItem` keeps one.
+ * `ClosedDate` is set by the process on the transition into a Completed state,
+ * so it is the date the board's closed columns are actually about. ChangedDate
+ * is not: editing a long-closed item changes it, which is how a task closed in
+ * May came to sit in a column labelled as the last seven days (#6713).
+ *
+ * ChangedDate is the fallback, for a process that leaves ClosedDate unset. It
+ * restores exactly the behaviour this function used to have, so an
+ * organisation whose items carry no ClosedDate sees no change rather than an
+ * empty column -- the same way the Removed filter keeps an item it cannot
+ * judge instead of hiding it.
+ */
+export function closedDateOf(item: DevOpsWorkItem): string | undefined {
+  const fields = item.fields || {};
+  const closed = fields['Microsoft.VSTS.Common.ClosedDate'] as string | undefined;
+  return closed || (fields['System.ChangedDate'] as string | undefined);
+}
+
+/**
+ * Whether an item is closed for its own type and was closed outside the
+ * window `[windowStart, windowEnd)`. A null `windowStart` is the "All"
+ * choice: no floor, so only the upper bound applies (#6713).
+ *
+ * Two kinds of item reach this. A state name that is Completed for one type
+ * and open for another, or whose types were not all discovered, is queried
+ * over 90 days so open items keep showing (#436); this trims the closed ones
+ * back to the window. The closed query's own items are trimmed here too,
+ * because that query can only bound ChangedDate -- a date-only WIQL bound on
+ * the coarse field -- while the window is about the closed date, and
+ * ChangedDate is never earlier than it. An item whose type has no per-type
+ * data is kept, as `isRemovedItem` keeps one.
  */
 export function isOutsideClosedWindow(
   item: DevOpsWorkItem,
-  windowStart: string,
+  windowStart: string | null,
   windowEnd: string,
   categoriesByProjectType?: Record<string, Record<string, Record<string, string>>>
 ): boolean {
@@ -646,13 +680,14 @@ export function isOutsideClosedWindow(
   const state = fields['System.State'] as string | undefined;
   const project = fields['System.TeamProject'] as string | undefined;
   const type = fields['System.WorkItemType'] as string | undefined;
-  const changed = fields['System.ChangedDate'] as string | undefined;
-  if (!state || !project || !type || !changed) return false;
+  const closed = closedDateOf(item);
+  if (!state || !project || !type || !closed) return false;
 
   if (categoriesByProjectType?.[project]?.[type]?.[state] !== 'Completed') return false;
 
-  const changedAt = new Date(changed).getTime();
-  return changedAt < new Date(windowStart).getTime() || changedAt >= new Date(windowEnd).getTime();
+  const closedAt = new Date(closed).getTime();
+  if (windowStart !== null && closedAt < new Date(windowStart).getTime()) return true;
+  return closedAt >= new Date(windowEnd).getTime();
 }
 
 /**
@@ -3084,23 +3119,27 @@ export class AzureDevOpsService {
      * Defaults to `true` so the method on its own still answers "all the work",
      * and only the board asks for less.
      */
-    includeUnassigned = true
+    includeUnassigned = true,
+    /**
+     * How far back the closed columns reach: the bounded window, or 'all' for
+     * the whole history (#6713). Defaults to the bounded one, so a caller that
+     * says nothing still gets the quick board.
+     */
+    closedWindow: ClosedWindow = 'recent'
   ): Promise<{ items: DevOpsWorkItem[] }> {
-    // Recently-done window: 7 days ending on the target date (inclusive).
-    // This matches the "recently-solved" view elsewhere in the app and ensures
-    // items moved to a done state today still appear in the Closed column on
-    // the Kanban board (issue #317).
-    // The upper bound (< nextDay) anchors the window to targetDate so historical
-    // ?date=... requests don't pick up items changed after that date.
-    // Subtract 6 (not 7) so [windowStart, nextDay) covers exactly 7 calendar
-    // days inclusive of the target day — otherwise the date-only truncation
-    // would give us 8 days.
-    const windowStart = new Date(targetDate);
-    windowStart.setDate(windowStart.getDate() - 6);
-    const sevenDaysAgoStr = windowStart.toISOString().split('T')[0];
-    const nextDay = new Date(targetDate);
-    nextDay.setDate(nextDay.getDate() + 1);
-    const nextDayStr = nextDay.toISOString().split('T')[0];
+    // How far back closed work is shown. The floor is null for 'all', which is
+    // the one case with no lower bound at all.
+    //
+    // The upper bound (< nextDay) anchors the window to targetDate, so a
+    // historical ?date=... request doesn't pick up work closed after the day
+    // it is showing. Both bounds are days in UTC; see closed-window.ts for why
+    // that matters.
+    //
+    // The floor used to be seven days, to match the "recently-solved" view and
+    // keep work closed today on the board (#317, #436). It is now fourteen,
+    // and selectable, because fourteen days is the span 6713 asked for.
+    const closedFloorStr = closedWindowStartDay(closedWindow, targetDate);
+    const nextDayStr = closedWindowEndDay(targetDate);
 
     // Build state lists dynamically from categories.
     //
@@ -3151,30 +3190,43 @@ export class AzureDevOpsService {
     // (#4337) -- see board-work-item-types.ts for what drifting apart costs.
     const allowedTypesList = BOARD_WORK_ITEM_TYPES.map((t) => `'${t}'`).join(', ');
 
-    const fields = [
-      'System.Id',
-      'System.Title',
-      'System.State',
-      'System.WorkItemType',
-      'System.AssignedTo',
-      'System.ChangedDate',
-      'System.CreatedDate',
-      'System.TeamProject',
-      'System.Tags',
-      'Microsoft.VSTS.Common.Priority',
-    ].join(', ');
+    // Ids only. Every one of these queries is read with
+    // `data.workItems.map((wi) => wi.id)` and the fields are then fetched by
+    // `fetchWorkItemBatch`, so naming any other column here changed nothing --
+    // except the ways it could fail. WIQL validates the SELECT list and
+    // answers `400 TF51005` for a field the organisation does not define, so
+    // the list was a standing risk of losing the whole board, and it already
+    // named `Microsoft.VSTS.Common.Priority`, which this project treats as a
+    // field not every process has.
+    const fields = 'System.Id';
 
-    // Query 1: Items currently in a closed state and changed in the last 7 days
+    // Query 1: items in a closed state, bounded by when they last changed.
+    //
+    // ChangedDate, not ClosedDate, and deliberately so: this is the coarse
+    // half of the pair, exactly as the Removed filter is coarse here and
+    // precise per item. An item closed inside the window must also have
+    // changed inside it -- closing an item changes it, so ChangedDate is never
+    // earlier than ClosedDate -- which makes this bound a superset of the one
+    // that is wanted, and never drops an item the window should hold. The
+    // precise closed-date bound is applied per item below, where ClosedDate
+    // has been fetched and can be trusted. Querying ClosedDate directly would
+    // be tighter but would fail closed: a process that leaves it unset would
+    // match nothing and empty the column.
+    //
+    // No floor at all for 'all', which is the whole point of that choice.
+    const doneFloorClause = closedFloorStr
+      ? `AND [System.ChangedDate] >= '${closedFloorStr}' `
+      : '';
     const doneQuery = {
       query: `
         SELECT ${fields}
         FROM WorkItems
         WHERE [System.State] IN (${doneStatesList})
           AND [System.WorkItemType] IN (${allowedTypesList})
-          AND [System.ChangedDate] >= '${sevenDaysAgoStr}'
+          ${doneFloorClause}
           AND [System.ChangedDate] < '${nextDayStr}'
           ${assignedClause}
-        ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
+        ORDER BY [System.ChangedDate] DESC, [System.TeamProject] ASC
       `,
     };
 
@@ -3191,7 +3243,7 @@ export class AzureDevOpsService {
           AND [System.WorkItemType] IN (${allowedTypesList})
           AND [System.ChangedDate] >= '${ninetyDaysAgoStr}'
           ${assignedClause}
-        ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
+        ORDER BY [System.ChangedDate] DESC, [System.TeamProject] ASC
       `,
     };
 
@@ -3206,22 +3258,48 @@ export class AzureDevOpsService {
         WHERE [System.State] IN (${resolvedStatesList})
           AND [System.WorkItemType] IN (${allowedTypesList})
           ${assignedClause}
-        ORDER BY [System.TeamProject] ASC, [System.ChangedDate] DESC
+        ORDER BY [System.ChangedDate] DESC, [System.TeamProject] ASC
       `,
     };
 
     // Execute the WIQL queries in parallel at org level
+    // Capped, because WIQL refuses outright above its own ceiling rather than
+    // truncating: a query matching more than 20,000 work items answers
+    // VS402337, which would fail the whole board with a 500 and keep failing,
+    // since the window is remembered in the address. 'All' removed the date
+    // floor from the closed query and so removed the thing that had kept it
+    // small. $top asks for as much as WIQL will give instead.
+    //
+    // Which is why every query orders by ChangedDate first, with project only as
+    // a tie-breaker. Sorted by project first -- as they were -- a cap would keep
+    // whole alphabetically-early projects and drop later ones entirely, so a
+    // project late in the alphabet could lose today's work while another kept
+    // last year's. Ordered by date, what a cap drops is the oldest, which is the
+    // same bargain the GitHub reads make with their page caps.
+    //
+    // Nothing depends on the old ordering: the route groups the items by project
+    // itself and sorts those groups with localeCompare.
     const runQuery = async (query: { query: string }, label: string): Promise<number[]> => {
-      const response = await fetch(`${this.baseUrl}/_apis/wit/wiql?api-version=7.0`, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify(query),
-      });
+      const response = await fetch(
+        `${this.baseUrl}/_apis/wit/wiql?api-version=7.0&$top=${WIQL_MAX_RESULTS}`,
+        {
+          method: 'POST',
+          headers: this.headers,
+          body: JSON.stringify(query),
+        }
+      );
       if (!response.ok) {
         throw new Error(`Standup ${label} query failed: ${response.statusText}`);
       }
       const data = await response.json();
-      return data.workItems?.map((wi: { id: number }) => wi.id) || [];
+      const ids: number[] = data.workItems?.map((wi: { id: number }) => wi.id) || [];
+      if (ids.length >= WIQL_MAX_RESULTS) {
+        console.warn(
+          `[Standup] the ${label} query reached the ${WIQL_MAX_RESULTS}-item limit; ` +
+            'the oldest matches are not on the board'
+        );
+      }
+      return ids;
     };
 
     const [doneIds, activeIds, resolvedIds] = await Promise.all([
@@ -3233,26 +3311,23 @@ export class AzureDevOpsService {
     // Combine IDs and batch-fetch in one pass — saves a round-trip when the
     // total fits in a single 200-item batch (the common case).
     const items = await this.fetchWorkItemBatch([...doneIds, ...activeIds, ...resolvedIds]);
-    // The 90-day query can carry an item that is Completed for its own type,
-    // so its ids are checked against the 7-day window below. The resolved
-    // query's ids cannot be — a name only reaches it when every type agrees it
-    // is Resolved — so including them is belt and braces, there to stay
-    // correct if that rule is ever loosened rather than to catch anything
-    // today. No test covers it, because nothing can reach it.
-    const unwindowedIds = new Set([...activeIds, ...resolvedIds]);
-
-    // The precise half of the Removed filter. Here each item carries its own
-    // project and type, so the ambiguous state names the query let through can
-    // finally be judged correctly (#277). The same goes for closed items the
-    // other queries let through: they keep only the 7-day window (#436).
+    // The precise half of both filters. Here each item carries its own project
+    // and type, so the ambiguous state names the queries let through can
+    // finally be judged correctly (#277), and its ClosedDate has been fetched
+    // so the closed window can be applied to the date it is really about
+    // (#6713).
+    //
+    // Every item is offered to isOutsideClosedWindow, not just the ones the
+    // 90-day and resolved queries brought in. It guards on the item's own
+    // category, so an item that is Resolved for its type is never windowed --
+    // those wait on a person and age is a reason to show them (#518) -- while
+    // the closed query's own items now get the closed-date bound its coarse
+    // ChangedDate clause could not express.
     return {
       items: items.filter(
         (item) =>
           !isRemovedItem(item, stateCategories, categoriesByProjectType) &&
-          !(
-            unwindowedIds.has(item.id) &&
-            isOutsideClosedWindow(item, sevenDaysAgoStr, nextDayStr, categoriesByProjectType)
-          )
+          !isOutsideClosedWindow(item, closedFloorStr, nextDayStr, categoriesByProjectType)
       ),
     };
   }
@@ -3263,19 +3338,12 @@ export class AzureDevOpsService {
 
     const batchSize = 200;
     const allWorkItems: DevOpsWorkItem[] = [];
-    const fields = [
-      'System.Title',
-      'System.State',
-      'System.WorkItemType',
-      'System.AssignedTo',
-      'System.ChangedDate',
-      'System.CreatedDate',
-      'System.TeamProject',
-      'System.Tags',
-      'System.IterationPath',
-      'Microsoft.VSTS.Common.Priority',
-      'Microsoft.VSTS.Scheduling.RemainingWork',
-    ].join(',');
+    // Only the fields this organisation defines. The batch endpoint is
+    // all-or-nothing: one field it has never heard of answers
+    // `400 TF51535` and loses every item in the batch, which here would be
+    // the whole board rather than one column. The org's field list is cached,
+    // so the guard costs nothing after the first read.
+    const fields = boardFieldsToRequest(await this.availableFieldNames()).join(',');
 
     for (let i = 0; i < workItemIds.length; i += batchSize) {
       const batch = workItemIds.slice(i, i + batchSize);

@@ -98,8 +98,52 @@ export function gitHubTicketToStandupItem(ticket: Ticket): StandupWorkItem {
  * login. Such a card is kept -- hiding one the board labels with a person's
  * name would drop owned work, which #581 asks to preserve.
  */
-export function boardGitHubTickets(tickets: Ticket[], includeUnassigned: boolean): Ticket[] {
-  return includeUnassigned ? tickets : tickets.filter((ticket) => ticket.assignee);
+export function boardGitHubTickets(
+  tickets: Ticket[],
+  includeUnassigned: boolean,
+  /**
+   * First day inside the board's closed window as `YYYY-MM-DD`, or null for
+   * "All" (#6713). Closed issues outside it are dropped here rather than at
+   * the fetch, because GitHub's `since` filters on the last update and the
+   * window is about when the issue was closed -- the same split as the DevOps
+   * side, where WIQL bounds ChangedDate and `isOutsideClosedWindow` applies
+   * the closed date per item.
+   */
+  closedFloor: string | null = null,
+  /**
+   * The day after the board's, as `YYYY-MM-DD`: the window's exclusive upper
+   * bound. It applies to "All" as well, where there is no floor, because a
+   * board asked for an earlier date must not show work closed after it.
+   *
+   * Applied here and not at the fetch because the GitHub API has no `until`:
+   * `since` returns issues *updated* after the floor, so one closed after the
+   * board's day is fetched regardless.
+   *
+   * Omitted, nothing is bounded above. The board always passes it, today's
+   * included -- the standup route builds it from the board's own date -- so
+   * the default describes a caller that has no window in mind, not any
+   * board.
+   */
+  closedEnd: string | null = null
+): Ticket[] {
+  const owned = includeUnassigned ? tickets : tickets.filter((ticket) => ticket.assignee);
+  if (!closedFloor && !closedEnd) return owned;
+
+  const floor = closedFloor === null ? null : new Date(closedFloor).getTime();
+  const end = closedEnd === null ? null : new Date(closedEnd).getTime();
+
+  return owned.filter((ticket) => {
+    // Only closed issues are windowed. An open one has no closed date, and a
+    // GitHub issue that is Resolved rather than Closed (#567) waits on a
+    // person, so age is a reason to show it, not to hide it (#518).
+    if (ticket.status !== 'Closed') return true;
+    // No closed date to judge by: keep it, as the DevOps filter keeps an item
+    // it cannot judge.
+    if (!ticket.resolvedAt) return true;
+    const closedAt = new Date(ticket.resolvedAt).getTime();
+    if (floor !== null && closedAt < floor) return false;
+    return end === null || closedAt < end;
+  });
 }
 
 /**

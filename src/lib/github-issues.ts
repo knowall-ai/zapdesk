@@ -11,6 +11,7 @@
 
 import type { DevOpsProject, Organization, Ticket, User } from '@/types';
 import { gitHubStatusFor } from './github-process';
+import { CLOSED_WINDOW_DAYS, type ClosedWindow } from './closed-window';
 
 const GITHUB_API_URL = 'https://api.github.com';
 const GITHUB_TIMEOUT_MS = 15_000;
@@ -23,12 +24,57 @@ const MAX_OPEN_PAGES = 5;
  */
 const MAX_ORG_PAGES = 10;
 /**
- * Closed issues are only needed for the "recently" views and the boards'
- * Closed column, which look back a week. The week is counted from the issue's
- * last update, not from when it was closed, as it is for DevOps items: the
- * Kanban Board shows closed work items changed in the last seven days.
+ * How far back closed issues are read for the "recently" views and the boards'
+ * Closed column.
+ *
+ * It matches the Kanban board's own closed window (#6713) on purpose. The two
+ * sources sit in one column, and a board showing a fortnight of DevOps work
+ * beside a week of GitHub work would be telling two different stories about
+ * the same question.
+ *
+ * `since` on the GitHub API filters on the issue's last update, not on when it
+ * was closed, so this is a coarse bound -- the same arrangement as the DevOps
+ * side, where the WIQL bounds ChangedDate and the closed date is applied per
+ * item afterwards. An issue updated inside the span but closed long before it
+ * is read and then dropped by `boardGitHubTickets`.
  */
-const CLOSED_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+const CLOSED_LOOKBACK_MS = CLOSED_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+/**
+ * The `since` bound for reading closed issues, or null for every one of them.
+ *
+ * Null is the "All" choice on the board (#6713). It is page-capped like any
+ * other read here, so it means "as far back as the caps reach" and not
+ * literally every closed issue: 500 for a named repository, 1,000 for an
+ * `owner/*` entry, oldest lost first, with a warning in the log. The board's
+ * hint and the docs say so too -- a DevOps `All` really is unbounded, and the
+ * two must not be described as if they were the same thing.
+ */
+export function closedIssuesSince(
+  window: ClosedWindow = 'recent',
+  /**
+   * The day the board is showing. Today unless a `?date=` asked for an earlier
+   * one, in which case the clock is the wrong thing to count back from: the
+   * DevOps half of the column bounds that day, so counting back from *now*
+   * would fetch a window that has nothing to do with the board, and a GitHub
+   * issue closed inside it but untouched since would never be read at all.
+   */
+  boardDate: Date = new Date()
+): string | null {
+  if (window === 'all') return null;
+  return new Date(boardDate.getTime() - CLOSED_LOOKBACK_MS).toISOString();
+}
+
+/**
+ * The board day as `YYYY-MM-DD`, for the issues cache key.
+ *
+ * A day rather than the instant: keying on the instant would miss the cache on
+ * every single request, and keying on nothing would let a historical board and
+ * today's board answer for each other.
+ */
+export function boardDayKey(boardDate: Date = new Date()): string {
+  return boardDate.toISOString().slice(0, 10);
+}
 /**
  * How long a repository's issues are reused. The token's rate limit is shared
  * by every ZapDesk user, so a page reload must not cost a round of requests.
@@ -484,11 +530,16 @@ async function fetchIssuePage(scope: string, token: string, query: string): Prom
 }
 
 /**
- * Open issues in a repository, plus closed ones updated in the last week.
+ * Open issues in a repository, plus closed ones updated since `closedSince`
+ * (null for every closed issue the page caps reach).
  *
  * Pull requests are dropped: GitHub's issues endpoint returns them too.
  */
-export async function fetchRepoIssues(repo: string, token: string): Promise<GitHubIssue[]> {
+export async function fetchRepoIssues(
+  repo: string,
+  token: string,
+  closedSince: string | null = closedIssuesSince()
+): Promise<GitHubIssue[]> {
   const issues: GitHubIssue[] = [];
 
   for (let page = 1; page <= MAX_OPEN_PAGES; page++) {
@@ -501,12 +552,12 @@ export async function fetchRepoIssues(repo: string, token: string): Promise<GitH
     if (batch.length < PAGE_SIZE) break;
   }
 
-  const since = new Date(Date.now() - CLOSED_LOOKBACK_MS).toISOString();
+  const sinceClause = closedSince ? `&since=${encodeURIComponent(closedSince)}` : '';
   for (let page = 1; page <= MAX_OPEN_PAGES; page++) {
     const batch = await fetchIssuePage(
       repo,
       token,
-      `state=closed&since=${encodeURIComponent(since)}&per_page=${PAGE_SIZE}&page=${page}`
+      `state=closed${sinceClause}&per_page=${PAGE_SIZE}&page=${page}`
     );
     issues.push(...batch);
     if (batch.length < PAGE_SIZE) break;
@@ -522,17 +573,21 @@ export async function fetchRepoIssues(repo: string, token: string): Promise<GitH
 
 /**
  * Open issues in every repository of an organization, plus closed ones
- * updated in the last week. `wildcard` is the `owner/*` entry.
+ * updated since `closedSince`. `wildcard` is the `owner/*` entry.
  *
  * One request stream for the whole organization, rather than two requests per
  * repository: an organization can have more repositories than the token's
  * rate limit would stand. Each issue carries the repository it belongs to.
  */
-export async function fetchOrgIssues(wildcard: string, token: string): Promise<GitHubIssue[]> {
+export async function fetchOrgIssues(
+  wildcard: string,
+  token: string,
+  closedSince: string | null = closedIssuesSince()
+): Promise<GitHubIssue[]> {
   const issues: GitHubIssue[] = [];
-  const since = new Date(Date.now() - CLOSED_LOOKBACK_MS).toISOString();
+  const sinceClause = closedSince ? `&since=${encodeURIComponent(closedSince)}` : '';
 
-  for (const query of ['state=open', `state=closed&since=${encodeURIComponent(since)}`]) {
+  for (const query of ['state=open', `state=closed${sinceClause}`]) {
     for (let page = 1; page <= MAX_ORG_PAGES; page++) {
       const batch = await fetchIssuePage(
         wildcard,
@@ -553,10 +608,16 @@ export async function fetchOrgIssues(wildcard: string, token: string): Promise<G
 }
 
 /**
- * Cached issues, keyed by the credential that read them and the repository
- * (`credential|owner/repo`). Two GitHub App installations, or an installation
- * and the server token, never share an entry: each read is checked by GitHub
- * with its own credential.
+ * Cached issues, keyed by the credential that read them, the repository and
+ * the closed window (`credential|owner/repo|window`).
+ *
+ * Two GitHub App installations, or an installation and the server token, never
+ * share an entry: each read is checked by GitHub with its own credential. The
+ * window is in the key for the same reason the board's cache key carries
+ * `showUnassigned` -- the two reads hold different issues, so sharing an entry
+ * would answer "All" with the fortnight's worth somebody else had already
+ * fetched (#6713). The board day is in it too, so a board asked for an earlier
+ * date and today's board cannot answer for one another.
  */
 const issuesCache = new Map<string, { issues: GitHubIssue[]; timestamp: number }>();
 
@@ -569,7 +630,16 @@ export interface GitHubCredential {
 /** The credential of repositories read with the server's own `GITHUB_TOKEN`. */
 const SERVER_CREDENTIAL = 'server';
 
-const repoOfKey = (key: string) => key.slice(key.indexOf('|') + 1).toLowerCase();
+/**
+ * The credential and repository a cache key names. Split rather than sliced:
+ * the key has three segments now, and `everything after the first bar` would
+ * read the repository as `owner/repo|window` and match nothing (#6713).
+ * Neither a credential id nor a repository contains a bar.
+ */
+function keyParts(key: string): { credential: string; repo: string } {
+  const [credential = '', repo = ''] = key.split('|');
+  return { credential, repo: repo.toLowerCase() };
+}
 
 /** For tests: forget every cached repository. */
 export function clearGitHubIssuesCache(): void {
@@ -584,7 +654,7 @@ export function forgetRepoIssues(fullName: string): void {
   const repo = fullName.toLowerCase();
   const wildcard = `${repo.split('/')[0]}/*`;
   for (const key of issuesCache.keys()) {
-    const lower = repoOfKey(key);
+    const { repo: lower } = keyParts(key);
     if (lower === repo || lower === wildcard) issuesCache.delete(key);
   }
 }
@@ -592,21 +662,30 @@ export function forgetRepoIssues(fullName: string): void {
 /** Forget everything read with one credential, e.g. a GitHub App installation that changed. */
 export function forgetCredentialIssues(credential: string): void {
   for (const key of issuesCache.keys()) {
-    if (key.startsWith(`${credential}|`)) issuesCache.delete(key);
+    if (keyParts(key).credential === credential) issuesCache.delete(key);
   }
 }
 
 async function cachedRepoIssues(
   repo: string,
   token: string,
-  credential: string
+  credential: string,
+  closedWindow: ClosedWindow = 'recent',
+  boardDate: Date = new Date()
 ): Promise<GitHubIssue[]> {
-  const key = `${credential}|${repo.toLowerCase()}`;
+  // The board day is only part of the key for the bounded window. "All" has no
+  // `since` bound at all, so its read is identical whatever day the board is
+  // showing -- keying it by day would miss the cache on every step through a
+  // history and repeat the same paged reads against a rate limit every ZapDesk
+  // user shares.
+  const dayKey = closedWindow === 'all' ? 'any-day' : boardDayKey(boardDate);
+  const key = `${credential}|${repo.toLowerCase()}|${closedWindow}|${dayKey}`;
   const cached = issuesCache.get(key);
   if (cached && Date.now() - cached.timestamp < ISSUES_CACHE_TTL_MS) return cached.issues;
+  const closedSince = closedIssuesSince(closedWindow, boardDate);
   const issues = isOrgWildcard(repo)
-    ? await fetchOrgIssues(repo, token)
-    : await fetchRepoIssues(repo, token);
+    ? await fetchOrgIssues(repo, token, closedSince)
+    : await fetchRepoIssues(repo, token, closedSince);
   issuesCache.set(key, { issues, timestamp: Date.now() });
   return issues;
 }
@@ -675,7 +754,14 @@ export async function getGitHubTickets(
     credentialFor?: (repo: string) => GitHubCredential | undefined;
   },
   devOpsUsers?: User[],
-  linkedAccounts?: Record<string, LinkedGitHubPerson>
+  linkedAccounts?: Record<string, LinkedGitHubPerson>,
+  /**
+   * How far back closed issues are read (#6713). The default is the bounded
+   * window, so every caller but the board keeps the read it always had.
+   */
+  closedWindow: ClosedWindow = 'recent',
+  /** The day the board is showing, so a historical board reads its own window. */
+  boardDate: Date = new Date()
 ): Promise<GitHubTicketsResult> {
   const people: GitHubPeople = { userMap: config.userMap ?? {}, devOpsUsers, linkedAccounts };
   const byName = new Map(projects.map((p) => [p.name.toLowerCase(), p]));
@@ -706,8 +792,8 @@ export async function getGitHubTickets(
     targets.map(({ repo }) => {
       const credential = config.credentialFor?.(repo);
       return credential
-        ? cachedRepoIssues(repo, credential.token, credential.id)
-        : cachedRepoIssues(repo, config.token, SERVER_CREDENTIAL);
+        ? cachedRepoIssues(repo, credential.token, credential.id, closedWindow, boardDate)
+        : cachedRepoIssues(repo, config.token, SERVER_CREDENTIAL, closedWindow, boardDate);
     })
   );
 

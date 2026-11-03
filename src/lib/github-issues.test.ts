@@ -9,6 +9,8 @@ import {
   devOpsUsersForGitHub,
   fetchOrgIssues,
   fetchRepoIssues,
+  closedIssuesSince,
+  boardDayKey,
   forgetCredentialIssues,
   getGitHubTickets,
   gitHubIssueToTicket,
@@ -20,6 +22,7 @@ import {
   parseUserMap,
   type GitHubIssue,
 } from './github-issues';
+import { CLOSED_WINDOW_DAYS } from './closed-window';
 import type { DevOpsProject, User } from '@/types';
 
 // GitHub issues beside DevOps work items (#447). GitHub is mocked at fetch; the
@@ -482,16 +485,52 @@ describe('fetching', () => {
       expect((init.headers as Record<string, string>).Authorization).toBe('Bearer secret-token');
     });
 
-    it('only asks for issues closed in the last week', async () => {
+    // A fortnight, not a week: the span now matches the Kanban board's closed
+    // window so the two sources in that column agree (#6713). Derived from the
+    // shared constant rather than written out again, so the two cannot drift.
+    it('only asks for issues closed inside the board window', async () => {
       gitHub({ 'acme/portal': {} });
       const before = Date.now();
       await fetchRepoIssues('acme/portal', 'secret-token');
 
       const closed = calledUrls().find((u) => u.searchParams.get('state') === 'closed');
       const since = new Date(closed!.searchParams.get('since')!).getTime();
-      const weekMs = 7 * 24 * 60 * 60 * 1000;
-      expect(before - since).toBeGreaterThanOrEqual(weekMs - 1000);
-      expect(before - since).toBeLessThanOrEqual(weekMs + 5000);
+      const windowMs = CLOSED_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+      expect(before - since).toBeGreaterThanOrEqual(windowMs - 1000);
+      expect(before - since).toBeLessThanOrEqual(windowMs + 5000);
+    });
+
+    // A board asked for an earlier date counts its window back from that day,
+    // not from now (#603 review). Counting back from the clock would fetch a
+    // window with nothing to do with the board, and a GitHub issue closed
+    // inside the board's window but untouched since would never be read.
+    it('counts the window back from the board day, not the clock', async () => {
+      gitHub({ 'acme/portal': {} });
+      const boardDate = new Date('2026-06-15T12:00:00Z');
+
+      await fetchRepoIssues('acme/portal', 'secret-token', closedIssuesSince('recent', boardDate));
+
+      const closed = calledUrls().find((u) => u.searchParams.get('state') === 'closed');
+      const since = new Date(closed!.searchParams.get('since')!);
+      // 14 days before 15 June, give or take nothing.
+      expect(since.toISOString().slice(0, 10)).toBe('2026-06-01');
+    });
+
+    // The "All" choice (#6713). No `since` at all, rather than a very old one:
+    // a bound the caller did not ask for is a bound that can be wrong.
+    it('keys the cache by the board day, so two boards cannot answer for each other', () => {
+      expect(boardDayKey(new Date('2026-06-15T23:30:00Z'))).toBe('2026-06-15');
+      expect(boardDayKey(new Date('2026-06-15T00:30:00Z'))).toBe('2026-06-15');
+      expect(boardDayKey(new Date('2026-06-16T00:30:00Z'))).toBe('2026-06-16');
+    });
+
+    it('asks for every closed issue when given no floor', async () => {
+      gitHub({ 'acme/portal': {} });
+      await fetchRepoIssues('acme/portal', 'secret-token', null);
+
+      const closed = calledUrls().find((u) => u.searchParams.get('state') === 'closed');
+      expect(closed).toBeDefined();
+      expect(closed!.searchParams.has('since')).toBe(false);
     });
 
     it('follows pages of open issues until a short one', async () => {
@@ -679,6 +718,61 @@ describe('fetching', () => {
 
       expect(tickets.every((t) => t.project === 'Internal')).toBe(true);
       expect(calledUrls().some((u) => u.pathname.includes('acme/secret'))).toBe(false);
+    });
+
+    // The cache key carries the board day so a historical board and today's
+    // board cannot answer for each other -- but only for the bounded window.
+    // "All" has no date bound at all, so its read is identical whatever day is
+    // showing, and keying it by day would repeat the same paged reads at every
+    // step through a history, against a rate limit every user shares.
+    it('reuses one All read across board dates, but not one Last-14-days read', async () => {
+      gitHub({ 'acme/portal': { open: [[issue()]] } });
+      const june = new Date('2026-06-15T12:00:00Z');
+      const july = new Date('2026-07-20T12:00:00Z');
+
+      await getGitHubTickets(
+        [project('Internal')],
+        'KnowAll',
+        config,
+        undefined,
+        undefined,
+        'all',
+        june
+      );
+      const afterFirstAll = calledUrls().length;
+      await getGitHubTickets(
+        [project('Internal')],
+        'KnowAll',
+        config,
+        undefined,
+        undefined,
+        'all',
+        july
+      );
+      expect(calledUrls().length).toBe(afterFirstAll);
+
+      // The bounded window does depend on the day, so it must read again.
+      await getGitHubTickets(
+        [project('Internal')],
+        'KnowAll',
+        config,
+        undefined,
+        undefined,
+        'recent',
+        june
+      );
+      const afterRecentJune = calledUrls().length;
+      expect(afterRecentJune).toBeGreaterThan(afterFirstAll);
+      await getGitHubTickets(
+        [project('Internal')],
+        'KnowAll',
+        config,
+        undefined,
+        undefined,
+        'recent',
+        july
+      );
+      expect(calledUrls().length).toBeGreaterThan(afterRecentJune);
     });
 
     it('matches project names without regard to case', async () => {

@@ -118,3 +118,114 @@ describe('GitHub issues on the board', () => {
     expect(boardGitHubTickets([ticket(9, unmapped)], false).map((t) => t.id)).toEqual([9]);
   });
 });
+
+// The GitHub half of the board's closed window (#6713). It has to agree with
+// the DevOps half: the two sources sit in one column, and a fortnight of one
+// beside a week of the other would be two stories about the same question.
+describe('GitHub issues and the closed window', () => {
+  const alex = { displayName: 'Alex Morgan' } as User;
+  const closed = (id: number, resolvedAt?: string): Ticket =>
+    ({
+      id,
+      title: `Issue ${id}`,
+      assignee: alex,
+      status: 'Closed',
+      ...(resolvedAt ? { resolvedAt: new Date(resolvedAt) } : {}),
+    }) as Ticket;
+  const open = (id: number): Ticket =>
+    ({ id, title: `Issue ${id}`, assignee: alex, status: 'Open' }) as Ticket;
+
+  const floor = '2026-10-21';
+
+  it('drops an issue closed before the window', () => {
+    expect(boardGitHubTickets([closed(1, '2026-10-20T23:59:59Z')], true, floor)).toHaveLength(0);
+  });
+
+  it('keeps an issue closed inside the window', () => {
+    expect(
+      boardGitHubTickets([closed(1, '2026-10-30T09:00:00Z')], true, floor).map((t) => t.id)
+    ).toEqual([1]);
+  });
+
+  // The boundary the acceptance criteria names: the first moment of the first
+  // day is inside.
+  it('keeps an issue closed exactly on the boundary', () => {
+    expect(
+      boardGitHubTickets([closed(1, `${floor}T00:00:00Z`)], true, floor).map((t) => t.id)
+    ).toEqual([1]);
+  });
+
+  // GitHub's `since` filters on the last update, so a long-closed issue
+  // commented on yesterday is fetched. It must not then appear as recently
+  // closed -- the same mistake the DevOps side made by reading ChangedDate.
+  it('drops a long-closed issue that was updated recently', () => {
+    expect(boardGitHubTickets([closed(1, '2026-05-15T09:00:00Z')], true, floor)).toHaveLength(0);
+  });
+
+  it('keeps every closed issue when there is no floor', () => {
+    const tickets = [closed(1, '2021-01-04T09:00:00Z'), closed(2, '2026-10-30T09:00:00Z')];
+    expect(boardGitHubTickets(tickets, true, null).map((t) => t.id)).toEqual([1, 2]);
+  });
+
+  // Only closed issues are windowed. An open one has no closed date, and a
+  // Resolved one waits on a person, so age is a reason to show it (#518).
+  it('never windows an open or resolved issue', () => {
+    const resolved = { ...closed(2, '2021-01-04T09:00:00Z'), status: 'Resolved' } as Ticket;
+    expect(boardGitHubTickets([open(1), resolved], true, floor).map((t) => t.id)).toEqual([1, 2]);
+  });
+
+  // Nothing to judge by: keep it, as the DevOps filter keeps an item it cannot
+  // judge rather than hiding live work.
+  it('keeps a closed issue with no closed date', () => {
+    expect(boardGitHubTickets([closed(1)], true, floor).map((t) => t.id)).toEqual([1]);
+  });
+
+  // The upper bound, which the DevOps side has always applied. Without it a
+  // board asked for an earlier date keeps a GitHub issue closed *after* that
+  // date, while the DevOps half of the same column drops it -- the two sources
+  // disagreeing about the one question the column asks (#603 review).
+  const end = '2026-11-04';
+
+  it('drops an issue closed after the board day', () => {
+    expect(boardGitHubTickets([closed(1, '2026-11-05T09:00:00Z')], true, floor, end)).toHaveLength(
+      0
+    );
+  });
+
+  it('keeps an issue closed on the board day itself', () => {
+    expect(
+      boardGitHubTickets([closed(1, '2026-11-03T23:59:59Z')], true, floor, end).map((t) => t.id)
+    ).toEqual([1]);
+  });
+
+  // Exclusive: the end day is the day *after* the board's, so the first moment
+  // of it is already outside.
+  it('drops an issue closed at the first moment of the end day', () => {
+    expect(boardGitHubTickets([closed(1, `${end}T00:00:00Z`)], true, floor, end)).toHaveLength(0);
+  });
+
+  // "All" has no floor but still has a ceiling, exactly as the DevOps query does.
+  it('bounds All above even though it has no floor', () => {
+    const tickets = [closed(1, '2019-03-04T09:00:00Z'), closed(2, '2026-11-05T09:00:00Z')];
+    expect(boardGitHubTickets(tickets, true, null, end).map((t) => t.id)).toEqual([1]);
+  });
+
+  // The default, for a caller that passes no ceiling. Not a description of
+  // today's board: the standup route builds the end day from the board's own
+  // date and passes it every time, today included.
+  it('bounds nothing above when the caller omits the end day', () => {
+    expect(
+      boardGitHubTickets([closed(1, '2026-11-05T09:00:00Z')], true, floor).map((t) => t.id)
+    ).toEqual([1]);
+  });
+
+  // Both rules at once: the window must not quietly readmit unassigned work.
+  it('still leaves out unassigned work inside the window', () => {
+    const unowned = { ...closed(2, '2026-10-30T09:00:00Z'), assignee: undefined } as Ticket;
+    expect(
+      boardGitHubTickets([closed(1, '2026-10-30T09:00:00Z'), unowned], false, floor).map(
+        (t) => t.id
+      )
+    ).toEqual([1]);
+  });
+});
