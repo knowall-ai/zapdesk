@@ -94,8 +94,16 @@ ZapDesk is a customer support ticketing portal that provides a Zendesk-like expe
 |One project per client
 
 |Customer
+|Project
+|The client a ticket belongs to. One project is one customer: its email
+domain comes from the project description, which is what routes that
+customer's mail into it. The ticket list shows and filters by this.
+
+|Requester
 |Identity
-|Work item creator/requester
+|The person who raised the ticket, the work item's creator. The Monthly
+Checkpoint filters by this. Not the customer: several people at one client
+raise tickets against the same project.
 
 |Status
 |Work Item State
@@ -105,6 +113,20 @@ ZapDesk is a customer support ticketing portal that provides a Zendesk-like expe
 |Priority Field
 |1=Urgent, 2=High, 3=Normal, 4=Low
 |===
+
+[NOTE]
+====
+*Customer* and *requester* are two different things and were once the same
+word here. An earlier version of this table defined a customer as the work
+item's creator, and the UI followed it: the Monthly Checkpoint offered a
+filter labelled *Customer* whose options were people's names. It was
+reported as a bug twice before the vocabulary was the thing that changed.
+
+In the UI, *customer* always means the client organisation and *requester*
+always means the person. In the code the older sense survives in one place:
+`src/app/users/page.tsx` types a user as `Customer`. Treat that as a legacy
+name, not a definition.
+====
 
 === Status Mapping
 

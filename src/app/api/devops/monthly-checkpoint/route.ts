@@ -52,7 +52,7 @@ export async function GET(request: Request) {
     const projectName = searchParams.get('project');
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');
-    // Optional: one customer's tickets only (#7385). Matched on requesterKey.
+    // Optional: one requester's tickets only (#7385). Matched on requesterKey.
     const requesterParam = (searchParams.get('requester') || '').trim().toLowerCase();
 
     if (!projectName) {
