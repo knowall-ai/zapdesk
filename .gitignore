@@ -59,7 +59,8 @@ azure/**/local.settings.json
 azure/**/node_modules/
 azure/**/dist/
 
-# Local output of scripts/capture-screenshots.mjs (its --out default, at the
-# repository root). Anchored: unanchored, it also swallowed docs/screenshots,
-# which is committed on purpose.
+# Local output of scripts/capture-screenshots.mjs, whose --out defaults to a
+# screenshots/ directory at the repository root. The leading slash confines
+# the rule to that one. Without it the pattern matched at any depth, which
+# included docs/screenshots -- committed on purpose.
 /screenshots/
