@@ -211,6 +211,56 @@ function attributionStart(html: string, index: number): number {
 const EARLIER_MESSAGE_LABEL =
   '<hr /><p style="margin:0 0 8px 0;"><strong>Earlier message</strong></p>';
 
+/** Whether `index` falls inside a tag, judged with the quoting rules of one. */
+function insideTag(html: string, index: number): boolean {
+  let inTag = false;
+  let quote: string | null = null;
+  for (let i = 0; i < index; i++) {
+    const c = html[i];
+    if (quote) {
+      if (c === quote) quote = null;
+    } else if (inTag && (c === '"' || c === "'")) {
+      quote = c;
+    } else if (c === '<') {
+      inTag = true;
+    } else if (c === '>') {
+      inTag = false;
+    }
+  }
+  return inTag;
+}
+
+/**
+ * Where to put the label, or null when there is no real separator to label.
+ *
+ * The element markers -- `divRplyFwdMsg`, `appendonsend`, `stopSpelling` -- are
+ * structural and can be trusted. The `-----Original Message-----` form is
+ * plain text, and the pattern for it is unanchored, so it also matches inside
+ * an attribute value and inside an ordinary sentence. Inserting a divider at
+ * either would be worse than not labelling at all: one lands in the middle of
+ * a tag, the other splits a sentence the sender wrote.
+ *
+ * So a text separator counts only when it stands as its own line of text:
+ * nothing but markup and whitespace between it and the markup either side.
+ */
+function labelPosition(html: string, header: RegExp): number | null {
+  for (const match of html.matchAll(header)) {
+    const start = match.index ?? 0;
+    if (insideTag(html, start)) continue;
+
+    // An element marker matched its own tag, which is separator enough.
+    if (match[0].startsWith('<')) return attributionStart(html, start);
+
+    // A text separator: the surrounding text node must hold nothing else.
+    const before = html.lastIndexOf('>', start);
+    const after = html.indexOf('<', start + match[0].length);
+    const lead = html.slice(before + 1, start);
+    const trail = html.slice(start + match[0].length, after === -1 ? undefined : after);
+    if (lead.trim() === '' && trail.trim() === '') return attributionStart(html, start);
+  }
+  return null;
+}
+
 export function stripQuotedHtml(html: string): string {
   if (!html) return '';
   let out = html;
@@ -282,10 +332,10 @@ export function stripQuotedHtml(html: string): string {
   // carved into the allowlist.
   //
   // Only the first separator is labelled: everything after it is already part
-  // of the same earlier message.
-  const firstHeader = [...out.matchAll(header)][0];
-  if (firstHeader) {
-    const at = attributionStart(out, firstHeader.index ?? 0);
+  // of the same earlier message. And only a separator that is really one --
+  // see labelPosition, which refuses a match inside a tag or mid-sentence.
+  const at = labelPosition(out, header);
+  if (at !== null) {
     out = out.slice(0, at) + EARLIER_MESSAGE_LABEL + out.slice(at);
   }
 

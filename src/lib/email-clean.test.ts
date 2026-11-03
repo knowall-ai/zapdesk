@@ -207,6 +207,44 @@ describe('the earlier message is labelled, not hidden', () => {
     expect(out.match(/Earlier message/g) ?? []).toHaveLength(1);
   });
 
+  /**
+   * The `-----Original Message-----` pattern is plain text and unanchored, so
+   * it matches inside an attribute value and inside an ordinary sentence too.
+   * Labelling either would be worse than not labelling: one divider lands in
+   * the middle of a tag, the other splits a sentence the sender wrote (#614
+   * review).
+   */
+  it('ignores the separator inside an attribute value', () => {
+    const html = '<div title="-----Original Message-----">Please see the figures attached.</div>';
+
+    const out = stripQuotedHtml(html);
+
+    expect(out).not.toContain('Earlier message');
+    // And the tag survives intact, rather than being cut open by a divider.
+    expect(out).toContain('<div title="-----Original Message-----">');
+  });
+
+  it('ignores the separator written inside a sentence', () => {
+    const html = '<div>I pasted the -----Original Message----- header below for reference.</div>';
+
+    const out = stripQuotedHtml(html);
+
+    expect(out).not.toContain('Earlier message');
+    expect(out).toContain('I pasted the -----Original Message----- header below');
+  });
+
+  // Standing on its own, as Outlook writes it, it is a real separator.
+  it('labels the separator when it stands as its own line', () => {
+    const out = stripQuotedHtml(
+      '<div>Please see the figures attached.</div>' +
+        '<div>-----Original Message-----</div>' +
+        '<div>From: Alex Morgan<br />Subject: Q3 reconciliation</div>'
+    );
+
+    expect(out).toContain('Earlier message');
+    expect(out.indexOf('figures attached')).toBeLessThan(out.indexOf('Earlier message'));
+  });
+
   // A mail with nothing quoted must not grow a divider out of nowhere.
   it('says nothing when there is no earlier message', () => {
     const out = stripQuotedHtml('<div>Just the one message, nothing quoted.</div>');
