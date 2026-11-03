@@ -506,8 +506,15 @@ commenting on an old closed issue does not make it recently closed.
 capped at `MAX_OPEN_PAGES` pages of 100 for a named repository (500 issues) and
 `MAX_ORG_PAGES` pages for an `owner/*` entry (1,000), so a repository with more
 closed issues than that loses the oldest of them, and the server log carries a
-`has more than ... recently closed items` warning. Azure DevOps work items have
-no such cap: *All* there really is every closed item.
+`has more than ... recently closed items` warning.
+
+Azure DevOps work items have no page cap, and *All* lifts the date floor from
+the query that fetches closed work. One case is still bounded: a state name
+that one work item type calls Completed and another calls open or Resolved
+cannot be queried as closed, so items in it are fetched by the 90-day query
+instead and then filtered per item. A closed item in such a state, untouched
+for more than 90 days, is therefore outside *All*. The same applies while
+state discovery is only partial, because then no state name counts as agreed.
 ====
 
 Pull requests are
