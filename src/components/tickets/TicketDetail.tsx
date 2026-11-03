@@ -205,11 +205,13 @@ export default function TicketDetail({
   const [isLoadingStates, setIsLoadingStates] = useState(false);
   const [isUpdatingState, setIsUpdatingState] = useState(false);
 
-  const handleZapSent = async (amount: number) => {
+  // The dialog offers the wording and the sender may change it (#330), so what
+  // arrives here is already what should be posted -- the app no longer writes
+  // the note itself.
+  const handleZapSent = async (amount: number, message: string) => {
     if (onAddComment) {
-      const zapMessage = `⚡ Sent a ${amount.toLocaleString()} sat zap to ${ticket.assignee?.displayName || 'the agent'} for great support!`;
       try {
-        await onAddComment(zapMessage);
+        await onAddComment(message);
       } catch (err) {
         console.error('[TicketDetail] Failed to post zap comment:', err);
       }

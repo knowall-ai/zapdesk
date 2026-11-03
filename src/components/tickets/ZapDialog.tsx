@@ -6,6 +6,7 @@ import { X, Copy, Check, Zap, ExternalLink, Loader2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { User } from '@/types';
 import { DEFAULT_ZAP_PRESETS } from '@/types';
+import { defaultZapMessage, zapCommentToPost } from '@/lib/zap-message';
 import Avatar from '../common/Avatar';
 import { lightningUri } from '@/lib/lnurl';
 
@@ -34,7 +35,7 @@ interface ZapDialogProps {
   onClose: () => void;
   agent: User;
   ticketId: number;
-  onZapSent?: (amount: number) => void;
+  onZapSent?: (amount: number, message: string) => void;
 }
 
 interface ZapDialogContentProps {
@@ -43,7 +44,7 @@ interface ZapDialogContentProps {
   ticketId: number;
   lightningAddress: string | null;
   isLoadingAddress: boolean;
-  onZapSent?: (amount: number) => void;
+  onZapSent?: (amount: number, message: string) => void;
 }
 
 function ZapDialogContent({
@@ -55,6 +56,22 @@ function ZapDialogContent({
   onZapSent,
 }: ZapDialogContentProps) {
   const [selectedAmount, setSelectedAmount] = useState<number>(DEFAULT_ZAP_PRESETS[1]);
+  /**
+   * The note that goes on the ticket, offered rather than imposed (#330).
+   *
+   * It follows the amount until the sender types something of their own, and
+   * then stops: rewriting words somebody has just written is worse than
+   * offering none.
+   */
+  const [message, setMessage] = useState(() =>
+    defaultZapMessage(agent.displayName, DEFAULT_ZAP_PRESETS[1])
+  );
+  const [messageEdited, setMessageEdited] = useState(false);
+
+  /** Offer wording for a newly chosen amount, unless the sender wrote their own. */
+  const offerMessageFor = (amount: number) => {
+    if (!messageEdited) setMessage(defaultZapMessage(agent.displayName, amount));
+  };
   const [customAmount, setCustomAmount] = useState<string>('');
   const [isCustom, setIsCustom] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
@@ -244,7 +261,7 @@ function ZapDialogContent({
     // wasn't logged on the ticket and can retry / add it manually.
     if (onZapSent) {
       try {
-        await onZapSent(actualAmount);
+        await onZapSent(actualAmount, zapCommentToPost(message, agent.displayName, actualAmount));
       } catch (err) {
         console.error('[ZapDialog] Failed to post zap comment:', err);
         toast.error(
@@ -321,6 +338,7 @@ function ZapDialogContent({
                   onClick={() => {
                     setSelectedAmount(amount);
                     setIsCustom(false);
+                    offerMessageFor(amount);
                   }}
                   className="zap-amount-btn"
                   style={{
@@ -346,6 +364,7 @@ function ZapDialogContent({
                 onChange={(e) => {
                   setCustomAmount(e.target.value);
                   setIsCustom(true);
+                  offerMessageFor(parseZapAmount(e.target.value));
                 }}
                 onFocus={() => setIsCustom(true)}
                 className="input flex-1"
@@ -359,6 +378,33 @@ function ZapDialogContent({
                 sats
               </span>
             </div>
+          </div>
+
+          {/* The note that goes on the ticket (#330). Offered, not imposed: the
+              app used to write it and post it unasked, in the third person and
+              about the recipient rather than to them. It follows the amount
+              until the sender types their own words, and then leaves them
+              alone. Cleared, the zap is still recorded -- the comment is its
+              only trace in the activity log. */}
+          <div className="mb-6">
+            <label
+              htmlFor="zap-message"
+              className="mb-2 block text-xs uppercase"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Message on the ticket
+            </label>
+            <textarea
+              id="zap-message"
+              value={message}
+              onChange={(e) => {
+                setMessageEdited(true);
+                setMessage(e.target.value);
+              }}
+              rows={2}
+              className="input w-full"
+              placeholder="Leave empty to record the zap without a note"
+            />
           </div>
 
           {/* QR Code */}
