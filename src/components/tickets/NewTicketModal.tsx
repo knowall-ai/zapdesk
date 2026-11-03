@@ -280,10 +280,12 @@ export function NewTicketModal({
                 <Loader2 className="animate-spin" size={14} />
                 Loading...
               </div>
-            ) : typesFailed ? (
+            ) : typesFailed || workItemTypes.length === 0 ? (
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span style={{ color: 'var(--text-muted)' }}>
-                  The types for this project could not be loaded.
+                  {typesFailed
+                    ? 'The types for this project could not be loaded.'
+                    : 'This project offers no ticket types.'}
                 </span>
                 <button
                   type="button"
@@ -303,7 +305,9 @@ export function NewTicketModal({
                   setWorkItemType(e.target.value);
                 }}
                 className="input w-full"
-                disabled={workItemTypes.length === 0}
+                // No `disabled` for an empty list: an empty list never reaches this
+                // branch now, and a disabled control with nothing in it and nothing
+                // said is what made the dialog a dead end.
                 required
               >
                 <option value="">Select type...</option>

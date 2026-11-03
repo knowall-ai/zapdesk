@@ -216,7 +216,28 @@ export interface Attachment {
 
 // Work item types that appear on the Tickets screen and support bulk actions.
 // Higher-level types (Epic, Feature, User Story) are managed on the Projects screen.
-export const TICKET_WORK_ITEM_TYPES = ['Task', 'Enhancement', 'Issue', 'Bug', 'Risk', 'Question'];
+//
+// This has to cover every type the process templates list as a ticket type,
+// because that is what ticket creation can produce: a project on Scrum gets a
+// Product Backlog Item, one on the Support Ticket process gets a Ticket. A type
+// that can be created but is not read back here is the worst kind of gap -- the
+// create succeeds, reports success, and the ticket is simply absent from the
+// screen. `process-template-ticket-types.test.ts` fails if a template ever lists
+// one that is missing from here.
+//
+// Being a superset is safe: the ticket reads also require the `ticket` tag, so a
+// type listed here only shows up when somebody tagged the item as a ticket.
+export const TICKET_WORK_ITEM_TYPES = [
+  'Task',
+  'Enhancement',
+  'Issue',
+  'Bug',
+  'Risk',
+  'Question',
+  'Product Backlog Item',
+  'Impediment',
+  'Ticket',
+];
 
 // Maximum file size for attachments (25MB)
 export const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;

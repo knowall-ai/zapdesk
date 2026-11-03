@@ -206,6 +206,52 @@ describe('when the type list cannot be read', () => {
   });
 });
 
+/**
+ * A 200 with an empty list is not the same as a failure, and it used to be
+ * treated as neither: the control was simply disabled with nothing in it and
+ * nothing said, which is the dead end the failure path was fixed for.
+ */
+describe('when the project offers no types', () => {
+  beforeEach(() => {
+    devOpsGet.mockImplementation(async (url: string) => {
+      if (url.includes('/workitemtypes')) {
+        return { ok: true, json: async () => ({ types: [] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ candidates: [] }) } as Response;
+    });
+  });
+
+  it('says so rather than showing an empty control', async () => {
+    open();
+    expect(await screen.findByText(/no ticket types/i)).toBeDefined();
+    expect(screen.queryByLabelText(/^type/i)).toBeNull();
+  });
+
+  // Distinct wording, because the two situations call for different things:
+  // one is worth retrying, the other means somebody must configure the project.
+  it('does not blame it on a failed load', async () => {
+    open();
+    await screen.findByText(/no ticket types/i);
+    expect(screen.queryByText(/could not be loaded/i)).toBeNull();
+  });
+
+  it('still offers another go, in case a type is added', async () => {
+    open();
+    await screen.findByText(/no ticket types/i);
+    const retry = await screen.findByRole('button', { name: /try again/i });
+
+    devOpsGet.mockImplementation(async (url: string) => {
+      if (url.includes('/workitemtypes')) {
+        return { ok: true, json: async () => ({ types: TYPES }) } as Response;
+      }
+      return { ok: true, json: async () => ({ candidates: [] }) } as Response;
+    });
+    fireEvent.click(retry);
+
+    expect(await screen.findByRole('option', { name: 'Bug' })).toBeDefined();
+  });
+});
+
 describe('across dialog sessions', () => {
   // Pick a type, close, reopen: the next ticket must not inherit the choice
   // merely because the fetched list still contains it (#7379 is about the type

@@ -103,7 +103,9 @@ describe('the work item type a created ticket gets', () => {
     expect(getProjectProcessTemplate).not.toHaveBeenCalled();
   });
 
-  // The bug: 'Task' is not the default of any template this product supports.
+  // The bug: hard-coding Task applied one template's answer to every project.
+  // Task is Agile's business only insofar as Agile does not use it -- Agile
+  // configures Issue.
   it('falls back to the project template default, not to Task', async () => {
     getProjectProcessTemplate.mockResolvedValue('Agile');
     await post({ project: 'Internal', title: 'Printer' });
