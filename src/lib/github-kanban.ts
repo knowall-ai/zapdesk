@@ -109,11 +109,25 @@ export function boardGitHubTickets(
    * side, where WIQL bounds ChangedDate and `isOutsideClosedWindow` applies
    * the closed date per item.
    */
-  closedFloor: string | null = null
+  closedFloor: string | null = null,
+  /**
+   * The day after the board's, as `YYYY-MM-DD`: the window's exclusive upper
+   * bound. It applies to "All" as well, where there is no floor, because a
+   * board asked for an earlier date must not show work closed after it.
+   *
+   * Applied here and not at the fetch because the GitHub API has no `until`:
+   * `since` returns issues *updated* after the floor, so one closed after the
+   * board's day is fetched regardless. Omitted, nothing is bounded above --
+   * which is only right for a board showing today.
+   */
+  closedEnd: string | null = null
 ): Ticket[] {
   const owned = includeUnassigned ? tickets : tickets.filter((ticket) => ticket.assignee);
-  if (!closedFloor) return owned;
-  const floor = new Date(closedFloor).getTime();
+  if (!closedFloor && !closedEnd) return owned;
+
+  const floor = closedFloor === null ? null : new Date(closedFloor).getTime();
+  const end = closedEnd === null ? null : new Date(closedEnd).getTime();
+
   return owned.filter((ticket) => {
     // Only closed issues are windowed. An open one has no closed date, and a
     // GitHub issue that is Resolved rather than Closed (#567) waits on a
@@ -122,7 +136,9 @@ export function boardGitHubTickets(
     // No closed date to judge by: keep it, as the DevOps filter keeps an item
     // it cannot judge.
     if (!ticket.resolvedAt) return true;
-    return new Date(ticket.resolvedAt).getTime() >= floor;
+    const closedAt = new Date(ticket.resolvedAt).getTime();
+    if (floor !== null && closedAt < floor) return false;
+    return end === null || closedAt < end;
   });
 }
 

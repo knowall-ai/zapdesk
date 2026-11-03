@@ -180,6 +180,43 @@ describe('GitHub issues and the closed window', () => {
     expect(boardGitHubTickets([closed(1)], true, floor).map((t) => t.id)).toEqual([1]);
   });
 
+  // The upper bound, which the DevOps side has always applied. Without it a
+  // board asked for an earlier date keeps a GitHub issue closed *after* that
+  // date, while the DevOps half of the same column drops it -- the two sources
+  // disagreeing about the one question the column asks (#603 review).
+  const end = '2026-11-04';
+
+  it('drops an issue closed after the board day', () => {
+    expect(boardGitHubTickets([closed(1, '2026-11-05T09:00:00Z')], true, floor, end)).toHaveLength(
+      0
+    );
+  });
+
+  it('keeps an issue closed on the board day itself', () => {
+    expect(
+      boardGitHubTickets([closed(1, '2026-11-03T23:59:59Z')], true, floor, end).map((t) => t.id)
+    ).toEqual([1]);
+  });
+
+  // Exclusive: the end day is the day *after* the board's, so the first moment
+  // of it is already outside.
+  it('drops an issue closed at the first moment of the end day', () => {
+    expect(boardGitHubTickets([closed(1, `${end}T00:00:00Z`)], true, floor, end)).toHaveLength(0);
+  });
+
+  // "All" has no floor but still has a ceiling, exactly as the DevOps query does.
+  it('bounds All above even though it has no floor', () => {
+    const tickets = [closed(1, '2019-03-04T09:00:00Z'), closed(2, '2026-11-05T09:00:00Z')];
+    expect(boardGitHubTickets(tickets, true, null, end).map((t) => t.id)).toEqual([1]);
+  });
+
+  // Today's board passes no ceiling, and then nothing is bounded above.
+  it('bounds nothing above when no end day is given', () => {
+    expect(
+      boardGitHubTickets([closed(1, '2026-11-05T09:00:00Z')], true, floor).map((t) => t.id)
+    ).toEqual([1]);
+  });
+
   // Both rules at once: the window must not quietly readmit unassigned work.
   it('still leaves out unassigned work inside the window', () => {
     const unowned = { ...closed(2, '2026-10-30T09:00:00Z'), assignee: undefined } as Ticket;

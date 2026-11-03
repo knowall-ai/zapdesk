@@ -7,7 +7,7 @@ import { getGitHubTickets } from '@/lib/github-issues';
 import { gitHubAvailable, gitHubSourceFor, type GitHubSource } from '@/lib/github-source';
 import { gitHubPeopleFor } from '@/lib/github-people';
 import { addGitHubTicketsToStandup, boardGitHubTickets } from '@/lib/github-kanban';
-import { closedWindowStartDay, parseClosedWindow } from '@/lib/closed-window';
+import { closedWindowEndDay, closedWindowStartDay, parseClosedWindow } from '@/lib/closed-window';
 import type {
   StandupData,
   StandupWorkItem,
@@ -452,7 +452,11 @@ export async function GET(request: NextRequest) {
         const boardTickets = boardGitHubTickets(
           gitHub.tickets,
           includeUnassigned,
-          closedWindowStartDay(closedWindow, targetDate)
+          closedWindowStartDay(closedWindow, targetDate),
+          // Bounded above as well, and for 'all' too, so a board asked for an
+          // earlier date cannot show a GitHub issue closed after it while the
+          // DevOps half of the same column excludes one (#603 review).
+          closedWindowEndDay(targetDate)
         );
         projects = addGitHubTicketsToStandup(devOpsProjects, displayColumns, boardTickets);
         failedGitHubRepos = [...gitHubConfig.failed, ...gitHub.failedRepos];
