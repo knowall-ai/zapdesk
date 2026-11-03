@@ -364,6 +364,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     // must not turn a successful change into a reported failure.
     if (updates.assignee) {
       const assigneeEmail = ticket.assignee?.email;
+      if (!assigneeEmail) {
+        // Same silence as the create path (#7374): an identity DevOps gave us
+        // no address for is not a failure anybody can see without this line.
+        console.warn(
+          `[Email] Ticket #${ticketId} reassigned, but DevOps returned no address for the assignee - not notifying.`
+        );
+      }
       if (assigneeEmail) {
         sendAssignmentNotification({
           ticketId,

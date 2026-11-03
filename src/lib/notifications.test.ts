@@ -35,6 +35,10 @@ const configure = () => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  // Not only the per-test mockRestore calls: a failing assertion skips those,
+  // and a console spy that outlives its test silently swallows the next one's
+  // output. The config does not restore mocks automatically.
+  vi.restoreAllMocks();
 });
 
 describe('assignment notification (#7374)', () => {
@@ -88,6 +92,7 @@ describe('assignment notification (#7374)', () => {
   });
 
   it('sends nothing when the assignee is not an address', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await sendAssignmentNotification({
       ticketId: 7400,
       subject: 'x',
@@ -95,6 +100,65 @@ describe('assignment notification (#7374)', () => {
       assignedByName: 'Lead',
     });
     expect(graph.sent()).toEqual({});
+    warn.mockRestore();
+  });
+
+  /**
+   * Every silence says why (#7374).
+   *
+   * "No notification arrived" is the only symptom anybody reports, and it had
+   * five causes that looked identical from outside. The item came back twice
+   * with nothing but "not fixed" against it, because there was nothing in any
+   * log to tell one cause from another. These hold each reason in place: a
+   * deliberate silence that stops explaining itself is the same bug again.
+   */
+  describe('says why it stayed quiet', () => {
+    it('names self-assignment as the reason', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await sendAssignmentNotification({
+        ticketId: 7400,
+        subject: 'Printer jam',
+        assigneeEmail: 'Lead@Example.test',
+        assignedByName: 'Team Lead',
+        assignedByEmail: 'lead@example.test',
+      });
+      expect(graph.sent()).toEqual({});
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('assigned it to themselves'));
+      log.mockRestore();
+    });
+
+    // A group or team identity is a legitimate DevOps assignee with no inbox.
+    it('names an assignee that is not an address', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      await sendAssignmentNotification({
+        ticketId: 7400,
+        subject: 'Printer jam',
+        assigneeEmail: '[Support]\Triage Team',
+        assignedByName: 'Team Lead',
+      });
+      expect(graph.sent()).toEqual({});
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('not an email address'));
+      warn.mockRestore();
+    });
+
+    it('names unconfigured mail, rather than looking like a failed send', async () => {
+      // Both, or this proves nothing: mailClientSecret() falls back to
+      // AZURE_AD_CLIENT_SECRET, which the documented .env sets, so clearing
+      // only the MAIL_ one leaves outbound still configured and the helper
+      // sends through the Graph stub.
+      vi.stubEnv('MAIL_CLIENT_SECRET', '');
+      vi.stubEnv('AZURE_AD_CLIENT_SECRET', '');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      await sendAssignmentNotification({
+        ticketId: 7400,
+        subject: 'Printer jam',
+        assigneeEmail: 'engineer@example.test',
+        assignedByName: 'Team Lead',
+      });
+      expect(graph.sent()).toEqual({});
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('not configured'));
+      warn.mockRestore();
+    });
   });
 });
 

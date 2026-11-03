@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { MAX_TITLE_LENGTH } from './ticket-title';
 
@@ -13,11 +13,12 @@ vi.mock('@/lib/server-session', () => ({
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
 const sendTicketUpdateNotification = vi.fn(async (..._args: unknown[]) => {});
+const sendAssignmentNotification = vi.fn(async (..._args: unknown[]) => {});
 vi.mock('@/lib/email', async () => {
   const actual = await vi.importActual<typeof import('./email')>('./email');
   return {
     ...actual,
-    sendAssignmentNotification: async () => {},
+    sendAssignmentNotification: (...args: unknown[]) => sendAssignmentNotification(...args),
     sendTicketUpdateNotification: (...args: unknown[]) => sendTicketUpdateNotification(...args),
   };
 });
@@ -70,6 +71,46 @@ describe('PATCH /api/devops/tickets/[id]', () => {
     vi.clearAllMocks();
     getServerSession.mockResolvedValue({ accessToken: 'token', user: { name: 'Dana' } });
     getWorkItem.mockResolvedValue(workItem({}));
+  });
+
+  // Same reason as the create-path suite: a spy restored at the end of its own
+  // test is not restored when an assertion throws first.
+  afterEach(() => vi.restoreAllMocks());
+
+  // The route decides whether to notify at all, before the sender's own
+  // guards run, and that branch was silent (#7374). `identityToUser` reads the
+  // address straight off `uniqueName`, so a DevOps identity without one -- a
+  // group, or an incomplete record -- reaches here with nothing to send to.
+  it('says why a reassignment notified nobody, when DevOps returns no address', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    updateTicketFields.mockResolvedValue(
+      workItem({
+        'System.AssignedTo': { id: 'u9', displayName: 'Triage Team', uniqueName: '' },
+      })
+    );
+
+    const { status } = await patch({ project: 'Internal', assignee: 'u9' });
+
+    expect(status).toBe(200);
+    expect(sendAssignmentNotification).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no address for the assignee'));
+    warn.mockRestore();
+  });
+
+  it('still notifies when DevOps does return an address', async () => {
+    updateTicketFields.mockResolvedValue(
+      workItem({
+        'System.AssignedTo': {
+          id: 'u9',
+          displayName: 'Sam Taylor',
+          uniqueName: 'sam@example.test',
+        },
+      })
+    );
+
+    await patch({ project: 'Internal', assignee: 'u9' });
+
+    expect(sendAssignmentNotification).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a field it does not handle, before touching DevOps', async () => {
