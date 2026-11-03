@@ -75,12 +75,14 @@ describe('Sidebar: choosing the view that opens by default (#7729)', () => {
   // Two buttons sat beside the Views heading since the first commit with no
   // handler and no accessible name. They did nothing, and a plus sign is
   // exactly what someone hunting for view options reaches for first.
-  it('shows no control beside the Views heading that does nothing', () => {
+  //
+  // Asserts there is no button at all rather than that each one is named: a
+  // named button that still does nothing would pass that, and doing nothing
+  // is the half that sent the reporter looking in the wrong place.
+  it('puts no button beside the Views heading', () => {
     const { container } = render(<Sidebar />);
     const heading = within(container).getByText('Views');
     const header = heading.parentElement as HTMLElement;
-    for (const button of Array.from(header.querySelectorAll('button'))) {
-      expect(button.getAttribute('aria-label') || button.textContent?.trim()).toBeTruthy();
-    }
+    expect(header.querySelectorAll('button')).toHaveLength(0);
   });
 });
