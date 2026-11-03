@@ -3,6 +3,7 @@ import { getServerSessionWithToken } from '@/lib/server-session';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
 import { normalizeStateName } from '@/lib/kanban-columns';
+import { DEVOPS_CONCURRENCY, fetchWithRetry, mapWithLimit } from '@/lib/throttled-fetch';
 import { getGitHubTickets } from '@/lib/github-issues';
 import { gitHubAvailable, gitHubSourceFor, type GitHubSource } from '@/lib/github-source';
 import { gitHubPeopleFor } from '@/lib/github-people';
@@ -119,76 +120,100 @@ async function doFetchStateMetadata(
   const statesByProjectType: Record<string, Record<string, Set<string>>> = {};
   const categoriesByProjectType: Record<string, Record<string, Record<string, string>>> = {};
 
-  // Fetch states from ALL projects to cover different process templates
-  const projectResults = await Promise.allSettled(
-    projects.map(async (project) => {
-      // Discover work item types for this project
-      const typesResponse = await fetch(
-        `https://dev.azure.com/${organization}/${encodeURIComponent(project.name)}/_apis/wit/workitemtypes?api-version=7.0`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        }
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  };
+  const typesUrl = (project: string) =>
+    `https://dev.azure.com/${organization}/${encodeURIComponent(project)}/_apis/wit/workitemtypes?api-version=7.0`;
+  const statesUrl = (project: string, type: string) =>
+    `https://dev.azure.com/${organization}/${encodeURIComponent(project)}/_apis/wit/workitemtypes/${encodeURIComponent(type)}/states?api-version=7.0`;
+
+  // Discovery runs as two paced phases rather than one unbounded fan-out
+  // (#604). It used to be Promise.allSettled over every project with another
+  // Promise.allSettled over every type inside it: hundreds of requests in
+  // flight at once, which Azure DevOps answers with 503.
+  //
+  // Flattened rather than nested-but-limited, because nesting two limits
+  // multiplies them -- eight projects each fetching eight types is sixty-four
+  // requests, not eight. Phase two collects every project/type pair first so
+  // one limit governs the whole of it, and a project with twenty types cannot
+  // crowd out the rest.
+  //
+  // Phase one: which types each project defines.
+  const typeResults = await mapWithLimit(projects, DEVOPS_CONCURRENCY, async (project) => {
+    const response = await fetchWithRetry(typesUrl(project.name), { headers });
+    if (!response.ok) {
+      console.warn(
+        `[Standup] work item types for ${project.name}: ${response.status} ${response.statusText}`
       );
-
-      if (!typesResponse.ok) return { project: project.name, types: [], complete: false };
-
-      const typesData = await typesResponse.json();
-      const types: { name: string }[] = typesData.value || [];
-
-      // Fetch states for each work item type in parallel
-      const stateResults = await Promise.allSettled(
-        types.map(async (witType) => {
-          const statesResponse = await fetch(
-            `https://dev.azure.com/${organization}/${encodeURIComponent(project.name)}/_apis/wit/workitemtypes/${encodeURIComponent(witType.name)}/states?api-version=7.0`,
-            {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-              },
-            }
-          );
-
-          if (!statesResponse.ok) return { type: witType.name, states: [], complete: false };
-          const statesData = await statesResponse.json();
-          return {
-            type: witType.name,
-            states: (statesData.value || []) as { name: string; category: string }[],
-            complete: true,
-          };
-        })
-      );
-
-      const settled = stateResults.filter(
-        (
-          r
-        ): r is PromiseFulfilledResult<{
-          type: string;
-          states: { name: string; category: string }[];
-          complete: boolean;
-        }> => r.status === 'fulfilled'
-      );
-
-      return {
-        project: project.name,
-        types: settled.map((r) => r.value),
-        // A rejected request, or one that answered non-OK, leaves this
-        // project's picture incomplete.
-        complete: settled.length === stateResults.length && settled.every((r) => r.value.complete),
-      };
-    })
-  );
-
-  let discoveryComplete = true;
-  for (const result of projectResults) {
-    if (result.status !== 'fulfilled') {
-      discoveryComplete = false;
-      continue;
+      return null;
     }
-    const { project, types, complete } = result.value;
-    if (!complete) discoveryComplete = false;
+    const data = await response.json();
+    return ((data.value || []) as { name: string }[]).map((witType) => witType.name);
+  });
+
+  /** Every project/type pair to ask about, and which projects we could not read. */
+  const pairs: { project: string; type: string }[] = [];
+  const incompleteProjects = new Set<string>();
+  typeResults.forEach((result, index) => {
+    const project = projects[index].name;
+    if (result.status !== 'fulfilled' || result.value === null) {
+      // A project whose type list never arrived is not described at all, so
+      // its picture is incomplete whatever else succeeds.
+      incompleteProjects.add(project);
+      if (result.status === 'rejected') {
+        console.warn(`[Standup] work item types for ${project} failed:`, result.reason);
+      }
+      return;
+    }
+    for (const type of result.value) pairs.push({ project, type });
+  });
+
+  // Phase two: the states of each of those types.
+  const stateResults = await mapWithLimit(pairs, DEVOPS_CONCURRENCY, async ({ project, type }) => {
+    const response = await fetchWithRetry(statesUrl(project, type), { headers });
+    if (!response.ok) {
+      console.warn(
+        `[Standup] states for ${project}/${type}: ${response.status} ${response.statusText}`
+      );
+      return null;
+    }
+    const data = await response.json();
+    return (data.value || []) as { name: string; category: string }[];
+  });
+
+  const projectResults = new Map<
+    string,
+    { type: string; states: { name: string; category: string }[] }[]
+  >();
+  stateResults.forEach((result, index) => {
+    const { project, type } = pairs[index];
+    if (result.status !== 'fulfilled' || result.value === null) {
+      // One unreadable type leaves this project's picture incomplete, which is
+      // what the Removed and closed-window filters fall back to safety on.
+      incompleteProjects.add(project);
+      if (result.status === 'rejected') {
+        console.warn(`[Standup] states for ${project}/${type} failed:`, result.reason);
+      }
+      return;
+    }
+    const forProject = projectResults.get(project) ?? [];
+    forProject.push({ type, states: result.value });
+    projectResults.set(project, forProject);
+  });
+
+  // Complete only when every project was fully described. Partial discovery is
+  // reported, not hidden: the filters downstream deliberately fail safe on it.
+  const discoveryComplete = incompleteProjects.size === 0;
+  if (!discoveryComplete) {
+    console.warn(
+      `[Standup] state discovery incomplete for ${incompleteProjects.size} of ${projects.length} projects; ` +
+        `resolved items older than 90 days may be hidden until this succeeds`
+    );
+  }
+
+  for (const [project, types] of projectResults) {
     for (const { type, states } of types) {
       for (const state of states) {
         // Categories stay org-wide here: they only drive column *ordering*,
