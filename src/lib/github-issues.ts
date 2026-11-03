@@ -673,7 +673,13 @@ async function cachedRepoIssues(
   closedWindow: ClosedWindow = 'recent',
   boardDate: Date = new Date()
 ): Promise<GitHubIssue[]> {
-  const key = `${credential}|${repo.toLowerCase()}|${closedWindow}|${boardDayKey(boardDate)}`;
+  // The board day is only part of the key for the bounded window. "All" has no
+  // `since` bound at all, so its read is identical whatever day the board is
+  // showing -- keying it by day would miss the cache on every step through a
+  // history and repeat the same paged reads against a rate limit every ZapDesk
+  // user shares.
+  const dayKey = closedWindow === 'all' ? 'any-day' : boardDayKey(boardDate);
+  const key = `${credential}|${repo.toLowerCase()}|${closedWindow}|${dayKey}`;
   const cached = issuesCache.get(key);
   if (cached && Date.now() - cached.timestamp < ISSUES_CACHE_TTL_MS) return cached.issues;
   const closedSince = closedIssuesSince(closedWindow, boardDate);

@@ -720,6 +720,61 @@ describe('fetching', () => {
       expect(calledUrls().some((u) => u.pathname.includes('acme/secret'))).toBe(false);
     });
 
+    // The cache key carries the board day so a historical board and today's
+    // board cannot answer for each other -- but only for the bounded window.
+    // "All" has no date bound at all, so its read is identical whatever day is
+    // showing, and keying it by day would repeat the same paged reads at every
+    // step through a history, against a rate limit every user shares.
+    it('reuses one All read across board dates, but not one Last-14-days read', async () => {
+      gitHub({ 'acme/portal': { open: [[issue()]] } });
+      const june = new Date('2026-06-15T12:00:00Z');
+      const july = new Date('2026-07-20T12:00:00Z');
+
+      await getGitHubTickets(
+        [project('Internal')],
+        'KnowAll',
+        config,
+        undefined,
+        undefined,
+        'all',
+        june
+      );
+      const afterFirstAll = calledUrls().length;
+      await getGitHubTickets(
+        [project('Internal')],
+        'KnowAll',
+        config,
+        undefined,
+        undefined,
+        'all',
+        july
+      );
+      expect(calledUrls().length).toBe(afterFirstAll);
+
+      // The bounded window does depend on the day, so it must read again.
+      await getGitHubTickets(
+        [project('Internal')],
+        'KnowAll',
+        config,
+        undefined,
+        undefined,
+        'recent',
+        june
+      );
+      const afterRecentJune = calledUrls().length;
+      expect(afterRecentJune).toBeGreaterThan(afterFirstAll);
+      await getGitHubTickets(
+        [project('Internal')],
+        'KnowAll',
+        config,
+        undefined,
+        undefined,
+        'recent',
+        july
+      );
+      expect(calledUrls().length).toBeGreaterThan(afterRecentJune);
+    });
+
     it('matches project names without regard to case', async () => {
       gitHub({ 'acme/portal': { open: [[issue()]] } });
       const { tickets } = await getGitHubTickets([project('INTERNAL')], 'KnowAll', config);
