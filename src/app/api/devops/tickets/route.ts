@@ -6,6 +6,7 @@ import { TICKET_WORK_ITEM_TYPES } from '@/types';
 import { filterTicketsByView } from '@/lib/ticket-views';
 import { sendAssignmentNotification, sendNewTicketNotification } from '@/lib/email';
 import { supportTeamRecipients } from '@/lib/support-team';
+import { getTemplateConfig } from '@/config/process-templates';
 
 // TTL cache for state categories (avoids refetching on every request)
 let stateCategoryCacheData: {
@@ -216,6 +217,32 @@ export async function POST(request: NextRequest) {
     // "Ticket" vs "ticket" and we'd end up with both.
     const userTagsNoTicket = userTags.filter((t) => t.toLowerCase() !== 'ticket');
     const allTags = tagAsTicket ? ['ticket', ...userTagsNoTicket] : userTagsNoTicket;
+    // The type the caller chose, or the project's own default when it sent none.
+    //
+    // It used to fall back to 'Task', which is not the default for any process
+    // template this product supports: Agile and Basic default to Issue, Scrum
+    // to Product Backlog Item, the Support Ticket process to Ticket. So a
+    // caller that sent no type got a Task in a project whose own configuration
+    // says otherwise -- which is what #7379 was reporting.
+    //
+    // Reading the project's template costs a round trip, and only on the path
+    // that sent no type, which after this change is no ordinary one: all three
+    // ways into ticket creation in the app now send it.
+    let resolvedWorkItemType = typeof workItemType === 'string' ? workItemType.trim() : '';
+    if (!resolvedWorkItemType) {
+      let template: string | null = null;
+      try {
+        template = await devopsService.getProjectProcessTemplate(project);
+      } catch (error) {
+        // Not worth failing a ticket over: the default template's own default
+        // is still a better answer than a hardcoded Task, and the caller is
+        // about to be told either way if the create itself fails.
+        console.warn(`[Tickets] Could not read the process template for ${project}:`, error);
+      }
+      resolvedWorkItemType = getTemplateConfig(template ?? undefined).workItemTypes
+        .defaultTicketType;
+    }
+
     const workItem = await devopsService.createTicketWithAssignee(
       project,
       title,
@@ -224,7 +251,7 @@ export async function POST(request: NextRequest) {
         priority,
         tags: allTags,
         assigneeId: assignee,
-        workItemType: workItemType || 'Task',
+        workItemType: resolvedWorkItemType,
         hasPriority: Boolean(validatedFieldRef),
         priorityFieldRef: validatedFieldRef,
         additionalFields: validatedAdditionalFields,

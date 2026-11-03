@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { X, Loader2, Search } from 'lucide-react';
 import { useDevOpsApi } from '@/hooks';
 import { useClickOutside } from '@/hooks/useClickOutside';
-import type { TicketType } from '@/types';
 
 interface NewTicketModalProps {
   isOpen: boolean;
@@ -29,7 +28,18 @@ export function NewTicketModal({
 }: NewTicketModalProps) {
   const { get: devOpsGet, post: devOpsPost, hasOrganization } = useDevOpsApi();
 
-  const [ticketType, setTicketType] = useState<TicketType>('Feature');
+  /**
+   * The DevOps work item type, chosen by whoever is raising the ticket (#7379).
+   *
+   * Starts unchosen, like the other two ways into ticket creation. This dialog
+   * used to offer Bug or Feature, default Feature, and then not send the choice
+   * at all -- it went into the title as a prefix and into a tag, and the server,
+   * given no type, substituted Task. So every ticket raised here became a Task
+   * in DevOps whatever was picked, which is exactly what this item reported.
+   */
+  const [workItemType, setWorkItemType] = useState('');
+  const [workItemTypes, setWorkItemTypes] = useState<{ name: string }[]>([]);
+  const [isLoadingTypes, setIsLoadingTypes] = useState(false);
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState(3);
@@ -68,6 +78,39 @@ export function NewTicketModal({
     };
   }, [isOpen, projectName, hasOrganization, devOpsGet]);
 
+  // The project's own work item types, as the sidebar dialog does it. Which
+  // types a project offers depends on its process template, so they are read
+  // rather than assumed (#7379).
+  useEffect(() => {
+    if (!isOpen || !projectName || !hasOrganization) return;
+
+    let cancelled = false;
+    setIsLoadingTypes(true);
+    devOpsGet(`/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Failed to fetch work item types');
+        const data = (await response.json()) as { types?: { name: string }[] };
+        if (cancelled) return;
+        const types = data.types || [];
+        setWorkItemTypes(types);
+        // Keep a type already chosen only if this project has it, so the form
+        // can never submit one the project lacks.
+        setWorkItemType((current) =>
+          current && types.some((type) => type.name === current) ? current : ''
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setWorkItemTypes([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingTypes(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, projectName, hasOrganization, devOpsGet]);
+
   // Reset parent state whenever the modal closes or the project changes
   useEffect(() => {
     if (!isOpen) {
@@ -97,22 +140,30 @@ export function NewTicketModal({
       setError('Please enter a subject');
       return;
     }
+    if (!workItemType) {
+      setError('Please choose a type');
+      return;
+    }
 
     setIsSubmitting(true);
     setError(null);
 
     try {
-      const tags = ['ticket', ticketType.toLowerCase()];
+      const tags = ['ticket', workItemType.toLowerCase()];
 
-      // Strip any existing type prefix to prevent duplicates like "[Feature] [Feature]"
-      const cleanSubject = subject.trim().replace(/^\[(Bug|Feature)\]\s*/i, '');
-
+      // The type is no longer put in the title. It used to be, because it was
+      // nowhere else -- the server was never told it, so the prefix and the tag
+      // were the only record. Now that the work item carries its real type, a
+      // prefix would just repeat it, and repeat it in the one place people read
+      // most. Any prefix somebody types themselves is left alone: it is their
+      // text, and guessing at it is what produced "[Feature] [Feature]".
       const response = await devOpsPost('/api/devops/tickets', {
         project: projectName,
-        title: `[${ticketType}] ${cleanSubject}`,
+        title: subject.trim(),
         description: description.trim(),
         priority,
         tags,
+        workItemType,
         parentId: selectedParent?.id,
       });
 
@@ -125,7 +176,7 @@ export function NewTicketModal({
       setSubject('');
       setDescription('');
       setPriority(3);
-      setTicketType('Feature');
+      setWorkItemType('');
       setSelectedParent(null);
       setParentSearch('');
 
@@ -189,49 +240,41 @@ export function NewTicketModal({
 
           {/* Ticket Type */}
           <div className="mb-4">
-            <label className="mb-2 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-              Type
+            <label
+              htmlFor="checkpoint-ticket-type"
+              className="mb-2 block text-xs uppercase"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Type *
             </label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setError(null);
-                  setTicketType('Feature');
-                }}
-                className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                  ticketType === 'Feature' ? 'ring-2' : ''
-                }`}
-                style={{
-                  backgroundColor:
-                    ticketType === 'Feature'
-                      ? 'color-mix(in srgb, var(--color-brand) 20%, transparent)'
-                      : 'var(--background)',
-                  color: ticketType === 'Feature' ? 'var(--color-brand)' : 'var(--text-secondary)',
-                  borderColor: ticketType === 'Feature' ? 'var(--color-brand)' : 'transparent',
-                }}
+            {isLoadingTypes ? (
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
               >
-                Feature
-              </button>
-              <button
-                type="button"
-                onClick={() => {
+                <Loader2 className="animate-spin" size={14} />
+                Loading...
+              </div>
+            ) : (
+              <select
+                id="checkpoint-ticket-type"
+                value={workItemType}
+                onChange={(e) => {
                   setError(null);
-                  setTicketType('Bug');
+                  setWorkItemType(e.target.value);
                 }}
-                className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                  ticketType === 'Bug' ? 'ring-2' : ''
-                }`}
-                style={{
-                  backgroundColor:
-                    ticketType === 'Bug' ? 'rgba(239, 68, 68, 0.2)' : 'var(--background)',
-                  color: ticketType === 'Bug' ? '#ef4444' : 'var(--text-secondary)',
-                  borderColor: ticketType === 'Bug' ? '#ef4444' : 'transparent',
-                }}
+                className="input w-full"
+                disabled={workItemTypes.length === 0}
+                required
               >
-                Bug
-              </button>
-            </div>
+                <option value="">Select type...</option>
+                {workItemTypes.map((type) => (
+                  <option key={type.name} value={type.name}>
+                    {type.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Subject */}
@@ -347,7 +390,7 @@ export function NewTicketModal({
                 <div className="relative">
                   <Search
                     size={14}
-                    className="absolute top-1/2 left-3 -translate-y-1/2"
+                    className="absolute left-3 top-1/2 -translate-y-1/2"
                     style={{ color: 'var(--text-muted)' }}
                   />
                   <input
