@@ -44,9 +44,11 @@ const CLOSED_LOOKBACK_MS = CLOSED_WINDOW_DAYS * 24 * 60 * 60 * 1000;
  * The `since` bound for reading closed issues, or null for every one of them.
  *
  * Null is the "All" choice on the board (#6713). It is page-capped like any
- * other read here, so it means "as far back as the caps reach", which is what
- * the whole history of a repository's closed issues amounts to through this
- * API.
+ * other read here, so it means "as far back as the caps reach" and not
+ * literally every closed issue: 500 for a named repository, 1,000 for an
+ * `owner/*` entry, oldest lost first, with a warning in the log. The board's
+ * hint and the docs say so too -- a DevOps `All` really is unbounded, and the
+ * two must not be described as if they were the same thing.
  */
 export function closedIssuesSince(window: ClosedWindow = 'recent'): string | null {
   if (window === 'all') return null;

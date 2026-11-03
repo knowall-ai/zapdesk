@@ -41,7 +41,7 @@ import {
 } from '@/config/process-templates';
 
 import { configuredDevOpsOrg, devOpsOrgOrDefault } from './devops-org';
-import { ticketFieldsToRequest } from './work-item-fields';
+import { boardFieldsToRequest, ticketFieldsToRequest } from './work-item-fields';
 import { isPendingStateName, statusNamedByState } from './state-categories';
 
 /**
@@ -3175,19 +3175,15 @@ export class AzureDevOpsService {
     const allowedTypes = ['Task', 'Bug', 'Enhancement', 'Question', 'Issue', 'Risk'];
     const allowedTypesList = allowedTypes.map((t) => `'${t}'`).join(', ');
 
-    const fields = [
-      'System.Id',
-      'System.Title',
-      'System.State',
-      'System.WorkItemType',
-      'System.AssignedTo',
-      'System.ChangedDate',
-      'System.CreatedDate',
-      'System.TeamProject',
-      'System.Tags',
-      'Microsoft.VSTS.Common.Priority',
-      'Microsoft.VSTS.Common.ClosedDate',
-    ].join(', ');
+    // Ids only. Every one of these queries is read with
+    // `data.workItems.map((wi) => wi.id)` and the fields are then fetched by
+    // `fetchWorkItemBatch`, so naming any other column here changed nothing --
+    // except the ways it could fail. WIQL validates the SELECT list and
+    // answers `400 TF51005` for a field the organisation does not define, so
+    // the list was a standing risk of losing the whole board, and it already
+    // named `Microsoft.VSTS.Common.Priority`, which this project treats as a
+    // field not every process has.
+    const fields = 'System.Id';
 
     // Query 1: items in a closed state, bounded by when they last changed.
     //
@@ -3301,23 +3297,12 @@ export class AzureDevOpsService {
 
     const batchSize = 200;
     const allWorkItems: DevOpsWorkItem[] = [];
-    const fields = [
-      'System.Title',
-      'System.State',
-      'System.WorkItemType',
-      'System.AssignedTo',
-      'System.ChangedDate',
-      'System.CreatedDate',
-      'System.TeamProject',
-      'System.Tags',
-      'System.IterationPath',
-      'Microsoft.VSTS.Common.Priority',
-      'Microsoft.VSTS.Scheduling.RemainingWork',
-      // The date the closed columns are windowed on (#6713). Without it every
-      // item would fall back to ChangedDate and the window would be the old,
-      // wrong one -- silently, which is the failure worth naming here.
-      'Microsoft.VSTS.Common.ClosedDate',
-    ].join(',');
+    // Only the fields this organisation defines. The batch endpoint is
+    // all-or-nothing: one field it has never heard of answers
+    // `400 TF51535` and loses every item in the batch, which here would be
+    // the whole board rather than one column. The org's field list is cached,
+    // so the guard costs nothing after the first read.
+    const fields = boardFieldsToRequest(await this.availableFieldNames()).join(',');
 
     for (let i = 0; i < workItemIds.length; i += batchSize) {
       const batch = workItemIds.slice(i, i + batchSize);

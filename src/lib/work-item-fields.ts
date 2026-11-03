@@ -45,6 +45,7 @@ export const OPTIONAL_TICKET_FIELDS = [
   'Microsoft.VSTS.Scheduling.CompletedWork',
   'Microsoft.VSTS.Scheduling.RemainingWork',
   'Microsoft.VSTS.Scheduling.OriginalEstimate',
+  'Microsoft.VSTS.Common.ClosedDate',
 ] as const;
 
 /**
@@ -58,4 +59,44 @@ export function ticketFieldsToRequest(available: ReadonlySet<string> | null): st
   const core = [...CORE_TICKET_FIELDS];
   if (!available) return core;
   return [...core, ...OPTIONAL_TICKET_FIELDS.filter((field) => available.has(field))];
+}
+
+/**
+ * The Kanban board's own batch read asks for a different set: it needs the
+ * iteration path, and none of the long text the ticket list shows.
+ *
+ * It is split the same way and for the same reason. The board named its three
+ * non-`System.*` fields unconditionally, which is the mistake this module was
+ * written to stop -- two of them are already listed above as unsafe, so the
+ * board was exposed to a `400 TF51535` taking the whole board down, not just a
+ * column. Nothing had gone wrong only because every organisation reached so far
+ * happens to define them.
+ */
+export const CORE_BOARD_FIELDS = [
+  'System.Title',
+  'System.State',
+  'System.WorkItemType',
+  'System.AssignedTo',
+  'System.ChangedDate',
+  'System.CreatedDate',
+  'System.TeamProject',
+  'System.Tags',
+  'System.IterationPath',
+] as const;
+
+/** Each requested only when the organisation defines it. */
+export const OPTIONAL_BOARD_FIELDS = [
+  'Microsoft.VSTS.Common.Priority',
+  'Microsoft.VSTS.Scheduling.RemainingWork',
+  // Windows the closed columns (#6713). Left out, `closedDateOf` falls back to
+  // ChangedDate, so the board keeps working on the less precise date rather
+  // than failing.
+  'Microsoft.VSTS.Common.ClosedDate',
+] as const;
+
+/** The board fields to request from an organisation that defines `available`. */
+export function boardFieldsToRequest(available: ReadonlySet<string> | null): string[] {
+  const core = [...CORE_BOARD_FIELDS];
+  if (!available) return core;
+  return [...core, ...OPTIONAL_BOARD_FIELDS.filter((field) => available.has(field))];
 }

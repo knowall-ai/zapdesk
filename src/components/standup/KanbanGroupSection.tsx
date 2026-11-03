@@ -53,7 +53,7 @@ import {
  */
 function doneWindowHint(closedWindow: ClosedWindow): string {
   return closedWindow === 'all'
-    ? 'Showing every closed item, however long ago'
+    ? 'Showing closed items as far back as they go. Very old closed GitHub issues may be missing.'
     : `Showing items closed in the last ${CLOSED_WINDOW_DAYS} days`;
 }
 

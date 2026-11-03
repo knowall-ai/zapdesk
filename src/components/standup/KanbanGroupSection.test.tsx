@@ -92,7 +92,10 @@ describe('the Closed column hint', () => {
       />
     );
 
-    expect(screen.getByLabelText('Showing every closed item, however long ago')).toBeDefined();
+    // Not "every closed item": GitHub closed-issue reads are page-capped, so
+    // the hint must not promise more than the fetch can deliver (#603 review).
+    expect(screen.getByLabelText(/as far back as they go/)).toBeDefined();
+    expect(screen.queryByLabelText(/every closed item/)).toBeNull();
     // The fixed span must be gone, not merely joined by the new wording.
     expect(screen.queryByLabelText(/last 14 days/)).toBeNull();
   });

@@ -271,9 +271,23 @@ describe('getStandupData query flow', () => {
 
   // Answers each WIQL query with the ids listed for the first state it
   // mentions, and the batch fetch with the matching items.
-  function stubDevOps(idsByState: Record<string, number[]>, items: DevOpsWorkItem[]) {
+  function stubDevOps(
+    idsByState: Record<string, number[]>,
+    items: DevOpsWorkItem[],
+    /**
+     * What the organisation's field catalogue answers. The batch read is
+     * guarded against fields an organisation does not define, so a test that
+     * cares which fields are asked for has to say what this org has.
+     */
+    orgFields: string[] = []
+  ) {
     const wiqlBodies: string[] = [];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/_apis/wit/fields')) {
+        return new Response(
+          JSON.stringify({ value: orgFields.map((referenceName) => ({ referenceName })) })
+        );
+      }
       if (url.includes('/_apis/wit/wiql')) {
         const query = JSON.parse(String(init?.body)).query as string;
         wiqlBodies.push(query);
@@ -445,17 +459,58 @@ describe('getStandupData query flow', () => {
     expect(everything.items.map((item) => item.id)).toEqual([183]);
   });
 
+  /** The URL of the batch read, which is where the fields are actually asked for. */
+  function batchUrl(): string | undefined {
+    return vi
+      .mocked(globalThis.fetch)
+      .mock.calls.map(([url]) => String(url))
+      .find((url) => url.includes('/_apis/wit/workitems?ids='));
+  }
+
   // The field the per-item filter reads has to be fetched, or every item falls
   // back to ChangedDate and the window is silently the old, wrong one.
+  // A fresh organisation name per test: the field catalogue is cached per org
+  // for an hour and there is no reset, so a shared name would serve one test
+  // the other's answer.
   it('fetches the closed date it windows on', async () => {
-    stubDevOps({ Closed: [1] }, [workItem(1, 'Closed', '2026-10-08T10:00:00Z')]);
-    const fetchMock = vi.mocked(globalThis.fetch);
+    stubDevOps(
+      { Closed: [1] },
+      [workItem(1, 'Closed', '2026-10-08T10:00:00Z')],
+      ['Microsoft.VSTS.Common.ClosedDate']
+    );
 
-    await new AzureDevOpsService('token', 'org').getStandupData(target, FLAT, PER_TYPE);
+    await new AzureDevOpsService('token', 'has-closed-date').getStandupData(target, FLAT, PER_TYPE);
 
-    const batchUrl = fetchMock.mock.calls
-      .map(([url]) => String(url))
-      .find((url) => url.includes('/_apis/wit/workitems?ids='));
-    expect(batchUrl).toContain('Microsoft.VSTS.Common.ClosedDate');
+    expect(batchUrl()).toContain('Microsoft.VSTS.Common.ClosedDate');
+  });
+
+  // The other side of that guard. The batch endpoint is all-or-nothing: naming
+  // a field the organisation has never defined answers 400 TF51535 and loses
+  // every item in the batch -- the whole board, not one column. So the field
+  // must be left out, and the board must still come back.
+  it('leaves the closed date out for an organisation that does not define it', async () => {
+    stubDevOps({ Closed: [1] }, [workItem(1, 'Closed', '2026-10-08T10:00:00Z')], ['System.Title']);
+
+    const { items } = await new AzureDevOpsService('token', 'no-closed-date').getStandupData(
+      target,
+      FLAT,
+      PER_TYPE
+    );
+
+    expect(batchUrl()).not.toContain('Microsoft.VSTS.Common.ClosedDate');
+    expect(items.map((item) => item.id)).toEqual([1]);
+  });
+
+  // WIQL validates its SELECT list too (400 TF51005), and the ids are all that
+  // is ever read from it, so it names nothing but the id.
+  it('selects only the id in its WIQL, so no field can fail the query', async () => {
+    const wiql = stubDevOps({ Closed: [1] }, [workItem(1, 'Closed', '2026-10-08T10:00:00Z')]);
+
+    await new AzureDevOpsService('token', 'wiql-select').getStandupData(target, FLAT, PER_TYPE);
+
+    for (const query of wiql) {
+      expect(query).toContain('SELECT System.Id');
+      expect(query).not.toContain('Microsoft.VSTS.');
+    }
   });
 });
