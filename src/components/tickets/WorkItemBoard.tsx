@@ -159,6 +159,20 @@ interface Filters {
   customer: string[];
 }
 
+/**
+ * Whether the Tickets-only toggle keeps this item.
+ *
+ * A GitHub issue is listed because its repository is mapped to the project;
+ * a DevOps item needs the `ticket` tag, which is the convention. Shared so
+ * the filter options and the rows they filter are drawn from one rule: when
+ * they disagreed, a project present only as a non-ticket item was offered as
+ * a customer and picking it emptied the list.
+ */
+function passesTicketsOnly(item: WorkItem, ticketsOnly: boolean): boolean {
+  if (!ticketsOnly || isGitHubItem(item)) return true;
+  return item.tags?.some((tag) => tag.toLowerCase() === 'ticket') ?? false;
+}
+
 const EMPTY_FILTERS: Filters = {
   status: [],
   priority: [],
@@ -644,7 +658,7 @@ export default function WorkItemBoard({
       if (item.requester?.displayName) {
         requesters.add(item.requester.displayName);
       }
-      if (item.project) {
+      if (item.project && passesTicketsOnly(item, ticketsOnly)) {
         customers.add(item.project);
       }
       if (item.state) {
@@ -667,7 +681,17 @@ export default function WorkItemBoard({
       statuses: Array.from(statuses).sort(),
       types: typeOptions,
     };
-  }, [items, availableTypes, definedStates]);
+  }, [items, availableTypes, definedStates, ticketsOnly]);
+
+  // A customer can be chosen and then vanish from the options: the list
+  // narrows to one project, or a saved choice is restored on a board that
+  // no longer has it. The filter still applies, so hiding the control would
+  // empty the board with nothing on screen to say why, and Kanban has no
+  // Clear all. Keep the choice in the list so it can always be unticked.
+  const customerOptions = useMemo(
+    () => Array.from(new Set([...filterOptions.customers, ...filters.customer])).sort(),
+    [filterOptions.customers, filters.customer]
+  );
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -694,10 +718,7 @@ export default function WorkItemBoard({
       // Tickets only filter - check for "ticket" tag (case-insensitive). The tag
       // is a DevOps convention; a GitHub issue is listed because its repository
       // is mapped to the project.
-      if (ticketsOnly && !isGitHubItem(item)) {
-        const hasTicketTag = item.tags?.some((tag) => tag.toLowerCase() === 'ticket');
-        if (!hasTicketTag) return false;
-      }
+      if (!passesTicketsOnly(item, ticketsOnly)) return false;
       // Text search filter
       if (query) {
         const matchesSearch =
@@ -1033,11 +1054,11 @@ export default function WorkItemBoard({
 
                   {/* Who the ticket is for, next to who raised it (#7385). Only
                       worth offering when the list spans more than one. */}
-                  {filterOptions.customers.length > 1 && (
+                  {(customerOptions.length > 1 || filters.customer.length > 0) && (
                     <MultiSelectFilter
                       label="Customers"
                       selected={filters.customer}
-                      options={filterOptions.customers}
+                      options={customerOptions}
                       onToggle={(v) => toggleFilter('customer', v)}
                       onClear={() => setFilters((prev) => ({ ...prev, customer: [] }))}
                     />

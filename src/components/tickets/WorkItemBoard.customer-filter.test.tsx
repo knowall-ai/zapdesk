@@ -100,4 +100,46 @@ describe('WorkItemBoard: filtering by customer (#7385)', () => {
     expect(screen.getByText('Printer on fire')).toBeTruthy();
     expect(screen.getByText('Cannot sign in')).toBeTruthy();
   });
+
+  // The options came from every item while the rows came from the tickets,
+  // so a project present only as a non-ticket offered a customer whose
+  // every row was then filtered away.
+  it('does not offer a customer that only a non-ticket item belongs to', () => {
+    const nonTicket = { ...item(9, 'ABC Inc', 'Internal chore'), tags: [] };
+    render(
+      <WorkItemBoard
+        items={[item(1, 'Contoso Ltd', 'Printer on fire'), nonTicket]}
+        columns={TICKET_COLUMNS}
+        hideTicketsOnlyToggle
+        defaultTicketsOnly
+      />
+    );
+    expect(screen.queryByRole('button', { name: /Customers/ })).toBeNull();
+  });
+
+  // Hiding the control while the filter still applies empties the board with
+  // nothing on screen to say why -- and Kanban has no Clear all filters.
+  it('keeps a chosen customer on offer after it leaves the list', () => {
+    const { rerender } = board();
+    openFilter('Customers');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'ABC Inc' }));
+
+    rerender(
+      <WorkItemBoard
+        items={[item(1, 'Contoso Ltd', 'Printer on fire')]}
+        columns={TICKET_COLUMNS}
+        hideTicketsOnlyToggle
+        defaultTicketsOnly={false}
+      />
+    );
+
+    // The control is still there, and still says one customer is chosen.
+    expect(screen.getByRole('button', { name: /Customers \(1\)/ })).toBeTruthy();
+    // The dropdown is still open from above, so the choice is reachable.
+    const chosen = screen.getByRole('checkbox', { name: 'ABC Inc' }) as HTMLInputElement;
+    expect(chosen.checked).toBe(true);
+
+    fireEvent.click(chosen);
+    expect(screen.getByText('Printer on fire')).toBeTruthy();
+  });
 });
