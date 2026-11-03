@@ -4,7 +4,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { X, Loader2, Search } from 'lucide-react';
 import { useDevOpsApi } from '@/hooks';
 import { useClickOutside } from '@/hooks/useClickOutside';
-import type { TicketType } from '@/types';
+
+/**
+ * How long the work item type read may take before it is abandoned.
+ *
+ * The control is required, so the dialog cannot be used until the list arrives.
+ * A read that never settles would leave it spinning for as long as the runtime
+ * allowed, which for Node's fetch is minutes.
+ */
+const TYPES_TIMEOUT_MS = 15_000;
 
 interface NewTicketModalProps {
   isOpen: boolean;
@@ -29,7 +37,22 @@ export function NewTicketModal({
 }: NewTicketModalProps) {
   const { get: devOpsGet, post: devOpsPost, hasOrganization } = useDevOpsApi();
 
-  const [ticketType, setTicketType] = useState<TicketType>('Feature');
+  /**
+   * The DevOps work item type, chosen by whoever is raising the ticket (#7379).
+   *
+   * Starts unchosen, like the other two ways into ticket creation. This dialog
+   * used to offer Bug or Feature, default Feature, and then not send the choice
+   * at all -- it went into the title as a prefix and into a tag, and the server,
+   * given no type, substituted Task. So every ticket raised here became a Task
+   * in DevOps whatever was picked, which is exactly what this item reported.
+   */
+  const [workItemType, setWorkItemType] = useState('');
+  const [workItemTypes, setWorkItemTypes] = useState<{ name: string }[]>([]);
+  const [isLoadingTypes, setIsLoadingTypes] = useState(false);
+  /** The type list could not be read. The dialog says so and offers another go. */
+  const [typesFailed, setTypesFailed] = useState(false);
+  /** Bumped by "Try again", which is all that re-runs the read. */
+  const [typesAttempt, setTypesAttempt] = useState(0);
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState(3);
@@ -68,17 +91,62 @@ export function NewTicketModal({
     };
   }, [isOpen, projectName, hasOrganization, devOpsGet]);
 
+  // The project's own work item types, as the sidebar dialog does it. Which
+  // types a project offers depends on its process template, so they are read
+  // rather than assumed (#7379).
+  useEffect(() => {
+    if (!isOpen || !projectName || !hasOrganization) return;
+
+    let cancelled = false;
+    setIsLoadingTypes(true);
+    setTypesFailed(false);
+    devOpsGet(`/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`, {
+      // Bounded, so a response that never arrives cannot leave the dialog
+      // spinning with no way forward.
+      signal: AbortSignal.timeout(TYPES_TIMEOUT_MS),
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Failed to fetch work item types');
+        const data = (await response.json()) as { types?: { name: string }[] };
+        if (cancelled) return;
+        setWorkItemTypes(data.types || []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Without the list there is nothing to choose from, and the control is
+        // required -- so saying nothing would leave the dialog unusable with no
+        // explanation. Say so, and offer another go.
+        setWorkItemTypes([]);
+        setTypesFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingTypes(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, projectName, hasOrganization, devOpsGet, typesAttempt]);
+
   // Reset parent state whenever the modal closes or the project changes
   useEffect(() => {
     if (!isOpen) {
       setSelectedParent(null);
       setParentSearch('');
       setShowParentDropdown(false);
+      // A new session starts with nothing chosen, which is the whole point of
+      // #7379. Keeping the last choice because the list still contains it would
+      // let the next ticket be filed under a type nobody picked for it.
+      setWorkItemType('');
+      setTypesFailed(false);
     }
   }, [isOpen]);
   useEffect(() => {
     setSelectedParent(null);
     setParentSearch('');
+    // Another project has another set of types, so a choice made against the
+    // old one means nothing here.
+    setWorkItemType('');
   }, [projectName]);
 
   const filteredParents = useMemo(() => {
@@ -97,22 +165,30 @@ export function NewTicketModal({
       setError('Please enter a subject');
       return;
     }
+    if (!workItemType) {
+      setError('Please choose a type');
+      return;
+    }
 
     setIsSubmitting(true);
     setError(null);
 
     try {
-      const tags = ['ticket', ticketType.toLowerCase()];
+      const tags = ['ticket', workItemType.toLowerCase()];
 
-      // Strip any existing type prefix to prevent duplicates like "[Feature] [Feature]"
-      const cleanSubject = subject.trim().replace(/^\[(Bug|Feature)\]\s*/i, '');
-
+      // The type is no longer put in the title. It used to be, because it was
+      // nowhere else -- the server was never told it, so the prefix and the tag
+      // were the only record. Now that the work item carries its real type, a
+      // prefix would just repeat it, and repeat it in the one place people read
+      // most. Any prefix somebody types themselves is left alone: it is their
+      // text, and guessing at it is what produced "[Feature] [Feature]".
       const response = await devOpsPost('/api/devops/tickets', {
         project: projectName,
-        title: `[${ticketType}] ${cleanSubject}`,
+        title: subject.trim(),
         description: description.trim(),
         priority,
         tags,
+        workItemType,
         parentId: selectedParent?.id,
       });
 
@@ -125,7 +201,7 @@ export function NewTicketModal({
       setSubject('');
       setDescription('');
       setPriority(3);
-      setTicketType('Feature');
+      setWorkItemType('');
       setSelectedParent(null);
       setParentSearch('');
 
@@ -189,49 +265,59 @@ export function NewTicketModal({
 
           {/* Ticket Type */}
           <div className="mb-4">
-            <label className="mb-2 block text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-              Type
+            <label
+              htmlFor="checkpoint-ticket-type"
+              className="mb-2 block text-xs uppercase"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Type *
             </label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setError(null);
-                  setTicketType('Feature');
-                }}
-                className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                  ticketType === 'Feature' ? 'ring-2' : ''
-                }`}
-                style={{
-                  backgroundColor:
-                    ticketType === 'Feature'
-                      ? 'color-mix(in srgb, var(--color-brand) 20%, transparent)'
-                      : 'var(--background)',
-                  color: ticketType === 'Feature' ? 'var(--color-brand)' : 'var(--text-secondary)',
-                  borderColor: ticketType === 'Feature' ? 'var(--color-brand)' : 'transparent',
-                }}
+            {isLoadingTypes ? (
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
               >
-                Feature
-              </button>
-              <button
-                type="button"
-                onClick={() => {
+                <Loader2 className="animate-spin" size={14} />
+                Loading...
+              </div>
+            ) : typesFailed || workItemTypes.length === 0 ? (
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span style={{ color: 'var(--text-muted)' }}>
+                  {typesFailed
+                    ? 'The types for this project could not be loaded.'
+                    : 'This project offers no ticket types.'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTypesAttempt((attempt) => attempt + 1)}
+                  className="rounded-md border px-3 py-1.5 text-xs font-medium"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+                >
+                  Try again
+                </button>
+              </div>
+            ) : (
+              <select
+                id="checkpoint-ticket-type"
+                value={workItemType}
+                onChange={(e) => {
                   setError(null);
-                  setTicketType('Bug');
+                  setWorkItemType(e.target.value);
                 }}
-                className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                  ticketType === 'Bug' ? 'ring-2' : ''
-                }`}
-                style={{
-                  backgroundColor:
-                    ticketType === 'Bug' ? 'rgba(239, 68, 68, 0.2)' : 'var(--background)',
-                  color: ticketType === 'Bug' ? '#ef4444' : 'var(--text-secondary)',
-                  borderColor: ticketType === 'Bug' ? '#ef4444' : 'transparent',
-                }}
+                className="input w-full"
+                // No `disabled` for an empty list: an empty list never reaches this
+                // branch now, and a disabled control with nothing in it and nothing
+                // said is what made the dialog a dead end.
+                required
               >
-                Bug
-              </button>
-            </div>
+                <option value="">Select type...</option>
+                {workItemTypes.map((type) => (
+                  <option key={type.name} value={type.name}>
+                    {type.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Subject */}
