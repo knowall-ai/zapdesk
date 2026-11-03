@@ -196,7 +196,11 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
         ...workItem(42, 'Active', EMAIL_TAGS),
         fields: {
           ...workItem(42, 'Active', EMAIL_TAGS).fields,
-          'System.AssignedTo': { id: 'u2', displayName: 'Sam', uniqueName: 'engineer@example.test' },
+          'System.AssignedTo': {
+            id: 'u2',
+            displayName: 'Sam',
+            uniqueName: 'engineer@example.test',
+          },
         },
       };
       getWorkItem.mockResolvedValue(assigned);

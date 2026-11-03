@@ -12,6 +12,7 @@ import {
   isEmailTicket,
   sendAssignmentNotification,
   sendTicketUpdateNotification,
+  assigneeEmailFrom,
 } from '@/lib/email';
 import type { TicketFieldChange } from '@/lib/email-templates';
 import { titleProblem } from '@/lib/ticket-title';
@@ -363,7 +364,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     // Fire-and-forget: the assignment is already saved, and a slow mail server
     // must not turn a successful change into a reported failure.
     if (updates.assignee) {
-      const assigneeEmail = ticket.assignee?.email;
+      // Read the identity, not the mapped ticket: workItemToTicket goes through
+      // identityToUser, which only understands the object form and returns
+      // undefined for an identity DevOps gave us as a bare address -- which
+      // would warn and send nothing, the very silence #7374 was about.
+      const assigneeEmail = assigneeEmailFrom(updatedWorkItem.fields?.['System.AssignedTo']);
       if (!assigneeEmail) {
         // Same silence as the create path (#7374): an identity DevOps gave us
         // no address for is not a failure anybody can see without this line.
@@ -424,8 +429,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           requesterEmail,
           changes,
           // Part of the customer's thread, so the engineer who owns the
-          // ticket is copied on it as they are on a reply (#7384).
-          ticket.assignee?.email
+          // ticket is copied on it as they are on a reply (#7384). From the
+          // identity rather than the mapped ticket, for the same reason as
+          // the assignment mail above.
+          assigneeEmailFrom(updatedWorkItem.fields?.['System.AssignedTo'])
         );
       }
     }
