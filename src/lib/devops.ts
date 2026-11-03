@@ -806,9 +806,13 @@ export class AzureDevOpsService {
   async getProjectProcessTemplate(projectName: string): Promise<string | null> {
     try {
       // First get available processes to build a map of process IDs to names
+      // Bounded, like the other organisation-level lookups. Ticket creation
+      // waits on this when the caller named no work item type, so a stalled
+      // response would hold the create rather than just this read. An abort
+      // lands in the catch below and answers null, which is the fallback.
       const processesResponse = await fetch(
         `${this.baseUrl}/_apis/work/processes?api-version=7.1-preview.2`,
-        { headers: this.headers }
+        { headers: this.headers, signal: AbortSignal.timeout(ORG_LOOKUP_TIMEOUT_MS) }
       );
 
       const processMap = new Map<string, string>();
@@ -824,7 +828,7 @@ export class AzureDevOpsService {
       // Get project properties which includes process template info
       const propsResponse = await fetch(
         `${this.baseUrl}/_apis/projects/${encodeURIComponent(projectName)}/properties?api-version=7.1-preview.1`,
-        { headers: this.headers }
+        { headers: this.headers, signal: AbortSignal.timeout(ORG_LOOKUP_TIMEOUT_MS) }
       );
 
       if (!propsResponse.ok) {

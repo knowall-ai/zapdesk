@@ -44,12 +44,12 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-function open() {
+function open(projectName = 'Contoso Ltd') {
   return render(
     <NewTicketModal
       isOpen
       onClose={() => {}}
-      projectName="Contoso Ltd"
+      projectName={projectName}
       onTicketCreated={() => {}}
     />
   );
@@ -158,5 +158,95 @@ describe('what the dialog sends', () => {
     await waitFor(() => expect(screen.getByRole('option', { name: 'Bug' })).toBeDefined());
 
     expect(screen.getByLabelText(/^type/i)).toHaveProperty('required', true);
+  });
+});
+
+/**
+ * A dialog that cannot read the project's types has nothing to offer in a
+ * required control. Saying nothing would leave it unusable with no
+ * explanation and no way out.
+ */
+describe('when the type list cannot be read', () => {
+  beforeEach(() => {
+    devOpsGet.mockImplementation(async (url: string) => {
+      if (url.includes('/workitemtypes')) throw new Error('network down');
+      return { ok: true, json: async () => ({ candidates: [] }) } as Response;
+    });
+  });
+
+  it('says so instead of showing an empty disabled control', async () => {
+    open();
+    expect(await screen.findByText(/could not be loaded/i)).toBeDefined();
+  });
+
+  it('offers another go, and succeeds when the next read works', async () => {
+    open();
+    const retry = await screen.findByRole('button', { name: /try again/i });
+
+    devOpsGet.mockImplementation(async (url: string) => {
+      if (url.includes('/workitemtypes')) {
+        return { ok: true, json: async () => ({ types: TYPES }) } as Response;
+      }
+      return { ok: true, json: async () => ({ candidates: [] }) } as Response;
+    });
+    fireEvent.click(retry);
+
+    expect(await screen.findByRole('option', { name: 'Enhancement' })).toBeDefined();
+    expect(screen.queryByText(/could not be loaded/i)).toBeNull();
+  });
+
+  // The read is bounded, so a response that never arrives cannot leave the
+  // dialog spinning for as long as the runtime would allow.
+  it('bounds the read with a signal', async () => {
+    open();
+    await screen.findByText(/could not be loaded/i);
+
+    const call = devOpsGet.mock.calls.find(([url]) => String(url).includes('/workitemtypes'));
+    expect((call?.[1] as RequestInit | undefined)?.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe('across dialog sessions', () => {
+  // Pick a type, close, reopen: the next ticket must not inherit the choice
+  // merely because the fetched list still contains it (#7379 is about the type
+  // being chosen deliberately).
+  it('starts again with nothing chosen after a close', async () => {
+    const { rerender } = open();
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Bug' })).toBeDefined());
+    fireEvent.change(screen.getByLabelText(/^type/i), { target: { value: 'Bug' } });
+    expect((screen.getByLabelText(/^type/i) as HTMLSelectElement).value).toBe('Bug');
+
+    rerender(
+      <NewTicketModal
+        isOpen={false}
+        onClose={() => {}}
+        projectName="Contoso Ltd"
+        onTicketCreated={() => {}}
+      />
+    );
+    rerender(
+      <NewTicketModal
+        isOpen
+        onClose={() => {}}
+        projectName="Contoso Ltd"
+        onTicketCreated={() => {}}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Bug' })).toBeDefined());
+    expect((screen.getByLabelText(/^type/i) as HTMLSelectElement).value).toBe('');
+  });
+
+  it('clears the choice when the project changes', async () => {
+    const { rerender } = open('Contoso Ltd');
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Bug' })).toBeDefined());
+    fireEvent.change(screen.getByLabelText(/^type/i), { target: { value: 'Bug' } });
+
+    rerender(
+      <NewTicketModal isOpen onClose={() => {}} projectName="ABC Inc" onTicketCreated={() => {}} />
+    );
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Bug' })).toBeDefined());
+    expect((screen.getByLabelText(/^type/i) as HTMLSelectElement).value).toBe('');
   });
 });

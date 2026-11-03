@@ -8,9 +8,12 @@ import { getTemplateConfig } from '@/config/process-templates';
  * The report was "default is still task". The fix for it changed the sidebar
  * dialog to start with no type, but two things underneath still produced a
  * Task: the Monthly Checkpoint dialog never sent a type at all, and the server
- * substituted `'Task'` for a missing one -- a value that is not the default of
- * any process template this product supports. Agile and Basic default to
- * Issue, Scrum to Product Backlog Item, the Support Ticket process to Ticket.
+ * substituted a hard-coded `'Task'` for a missing one.
+ *
+ * Task is a real configured default -- it is T-Minus-15's, the KnowAll process
+ * -- but it is not every project's: Agile and Basic default to Issue, Scrum to
+ * Product Backlog Item, the Support Ticket process to Ticket. The value was
+ * never the mistake; applying one project's answer to all of them was.
  *
  * This covers the server half: given no type, the project's own configured
  * default is used, and a failure to read the project's template does not take
@@ -113,6 +116,19 @@ describe('the work item type a created ticket gets', () => {
     expect(typeCreated()).toBe('Product Backlog Item');
   });
 
+  // A type that was sent but is not a string is refused, not quietly replaced.
+  // Substituting a default for `workItemType: 123` would create a ticket of a
+  // type nobody asked for and report success.
+  it.each([123, true, { name: 'Bug' }, ['Bug'], null])(
+    'refuses %p rather than treating it as absent',
+    async (workItemType) => {
+      const response = await post({ project: 'Internal', title: 'Printer', workItemType });
+
+      expect(response.status).toBe(400);
+      expect(createTicketWithAssignee).not.toHaveBeenCalled();
+    }
+  );
+
   it.each(['', '   '])('treats %p as no type given', async (workItemType) => {
     getProjectProcessTemplate.mockResolvedValue('Agile');
     await post({ project: 'Internal', title: 'Printer', workItemType });
@@ -129,9 +145,9 @@ describe('the work item type a created ticket gets', () => {
     expect(response.status).toBe(200);
     expect(createTicketWithAssignee).toHaveBeenCalledTimes(1);
     // The default template's own configured default, read from the config
-    // rather than written out here. For KnowAll's process that happens to be
-    // 'Task' -- which is the point worth being precise about: 'Task' is right
-    // when a template says so, and wrong when it is assumed for every project.
+    // rather than written out here. For KnowAll's process that is 'Task' --
+    // which is the point worth being precise about: Task is right when a
+    // template says so, and wrong when it is assumed for every project.
     expect(typeCreated()).toBe(getTemplateConfig(undefined).workItemTypes.defaultTicketType);
   });
 });

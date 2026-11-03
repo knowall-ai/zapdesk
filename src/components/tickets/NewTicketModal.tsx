@@ -5,6 +5,15 @@ import { X, Loader2, Search } from 'lucide-react';
 import { useDevOpsApi } from '@/hooks';
 import { useClickOutside } from '@/hooks/useClickOutside';
 
+/**
+ * How long the work item type read may take before it is abandoned.
+ *
+ * The control is required, so the dialog cannot be used until the list arrives.
+ * A read that never settles would leave it spinning for as long as the runtime
+ * allowed, which for Node's fetch is minutes.
+ */
+const TYPES_TIMEOUT_MS = 15_000;
+
 interface NewTicketModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -40,6 +49,10 @@ export function NewTicketModal({
   const [workItemType, setWorkItemType] = useState('');
   const [workItemTypes, setWorkItemTypes] = useState<{ name: string }[]>([]);
   const [isLoadingTypes, setIsLoadingTypes] = useState(false);
+  /** The type list could not be read. The dialog says so and offers another go. */
+  const [typesFailed, setTypesFailed] = useState(false);
+  /** Bumped by "Try again", which is all that re-runs the read. */
+  const [typesAttempt, setTypesAttempt] = useState(0);
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState(3);
@@ -86,21 +99,25 @@ export function NewTicketModal({
 
     let cancelled = false;
     setIsLoadingTypes(true);
-    devOpsGet(`/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`)
+    setTypesFailed(false);
+    devOpsGet(`/api/devops/projects/${encodeURIComponent(projectName)}/workitemtypes`, {
+      // Bounded, so a response that never arrives cannot leave the dialog
+      // spinning with no way forward.
+      signal: AbortSignal.timeout(TYPES_TIMEOUT_MS),
+    })
       .then(async (response) => {
         if (!response.ok) throw new Error('Failed to fetch work item types');
         const data = (await response.json()) as { types?: { name: string }[] };
         if (cancelled) return;
-        const types = data.types || [];
-        setWorkItemTypes(types);
-        // Keep a type already chosen only if this project has it, so the form
-        // can never submit one the project lacks.
-        setWorkItemType((current) =>
-          current && types.some((type) => type.name === current) ? current : ''
-        );
+        setWorkItemTypes(data.types || []);
       })
       .catch(() => {
-        if (!cancelled) setWorkItemTypes([]);
+        if (cancelled) return;
+        // Without the list there is nothing to choose from, and the control is
+        // required -- so saying nothing would leave the dialog unusable with no
+        // explanation. Say so, and offer another go.
+        setWorkItemTypes([]);
+        setTypesFailed(true);
       })
       .finally(() => {
         if (!cancelled) setIsLoadingTypes(false);
@@ -109,7 +126,7 @@ export function NewTicketModal({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, projectName, hasOrganization, devOpsGet]);
+  }, [isOpen, projectName, hasOrganization, devOpsGet, typesAttempt]);
 
   // Reset parent state whenever the modal closes or the project changes
   useEffect(() => {
@@ -117,11 +134,19 @@ export function NewTicketModal({
       setSelectedParent(null);
       setParentSearch('');
       setShowParentDropdown(false);
+      // A new session starts with nothing chosen, which is the whole point of
+      // #7379. Keeping the last choice because the list still contains it would
+      // let the next ticket be filed under a type nobody picked for it.
+      setWorkItemType('');
+      setTypesFailed(false);
     }
   }, [isOpen]);
   useEffect(() => {
     setSelectedParent(null);
     setParentSearch('');
+    // Another project has another set of types, so a choice made against the
+    // old one means nothing here.
+    setWorkItemType('');
   }, [projectName]);
 
   const filteredParents = useMemo(() => {
@@ -254,6 +279,20 @@ export function NewTicketModal({
               >
                 <Loader2 className="animate-spin" size={14} />
                 Loading...
+              </div>
+            ) : typesFailed ? (
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span style={{ color: 'var(--text-muted)' }}>
+                  The types for this project could not be loaded.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTypesAttempt((attempt) => attempt + 1)}
+                  className="rounded-md border px-3 py-1.5 text-xs font-medium"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+                >
+                  Try again
+                </button>
               </div>
             ) : (
               <select

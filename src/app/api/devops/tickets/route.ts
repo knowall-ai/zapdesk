@@ -219,24 +219,34 @@ export async function POST(request: NextRequest) {
     const allTags = tagAsTicket ? ['ticket', ...userTagsNoTicket] : userTagsNoTicket;
     // The type the caller chose, or the project's own default when it sent none.
     //
-    // It used to fall back to 'Task', which is not the default for any process
-    // template this product supports: Agile and Basic default to Issue, Scrum
-    // to Product Backlog Item, the Support Ticket process to Ticket. So a
-    // caller that sent no type got a Task in a project whose own configuration
-    // says otherwise -- which is what #7379 was reporting.
+    // It used to fall back to a hard-coded 'Task'. Task is a real configured
+    // default -- it is T-Minus-15's, the KnowAll process -- but it is not every
+    // project's: Agile and Basic default to Issue, Scrum to Product Backlog
+    // Item, the Support Ticket process to Ticket. Assuming it for all of them
+    // meant a caller that sent no type got a Task in a project whose own
+    // configuration says otherwise, which is what #7379 was reporting. The
+    // value was not the mistake; applying one project's answer to all of them
+    // was.
     //
+    // A type that was sent but is not a string is refused rather than treated
+    // as absent. Quietly substituting a default for `workItemType: 123` would
+    // create a ticket of a type nobody asked for and report success.
+    if (workItemType !== undefined && typeof workItemType !== 'string') {
+      return NextResponse.json({ error: 'workItemType must be a string' }, { status: 400 });
+    }
+
     // Reading the project's template costs a round trip, and only on the path
     // that sent no type, which after this change is no ordinary one: all three
     // ways into ticket creation in the app now send it.
-    let resolvedWorkItemType = typeof workItemType === 'string' ? workItemType.trim() : '';
+    let resolvedWorkItemType = workItemType?.trim() ?? '';
     if (!resolvedWorkItemType) {
       let template: string | null = null;
       try {
         template = await devopsService.getProjectProcessTemplate(project);
       } catch (error) {
         // Not worth failing a ticket over: the default template's own default
-        // is still a better answer than a hardcoded Task, and the caller is
-        // about to be told either way if the create itself fails.
+        // is still the project configuration talking, rather than a guess, and
+        // the caller is told either way if the create itself fails.
         console.warn(`[Tickets] Could not read the process template for ${project}:`, error);
       }
       resolvedWorkItemType = getTemplateConfig(template ?? undefined).workItemTypes
