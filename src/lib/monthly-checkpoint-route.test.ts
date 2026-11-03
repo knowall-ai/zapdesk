@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Route-level coverage for the customer filter on
+// Route-level coverage for the requester filter on
 // GET /api/devops/monthly-checkpoint (#7385). DevOps is mocked at the service
 // boundary; the real workItemToTicket is kept, so requesters are read the way
 // the route reads them.
@@ -50,7 +50,7 @@ const get = async (query: string) => {
 
 const PERIOD = 'project=Internal&startDate=2026-10-01&endDate=2026-10-31';
 
-describe('GET /api/devops/monthly-checkpoint — customer filter (#7385)', () => {
+describe('GET /api/devops/monthly-checkpoint — requester filter (#7385)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getServerSession.mockResolvedValue({ accessToken: 'token' });
@@ -61,25 +61,25 @@ describe('GET /api/devops/monthly-checkpoint — customer filter (#7385)', () =>
     ]);
   });
 
-  it('lists every customer in the project with their ticket count', async () => {
+  it('lists every requester in the project with their ticket count', async () => {
     const { status, body } = await get(PERIOD);
     expect(status).toBe(200);
     expect(body.tickets).toHaveLength(3);
-    expect(body.customers).toEqual([
+    expect(body.requesters).toEqual([
       expect.objectContaining({ key: 'ann@example.test', ticketCount: 2 }),
       expect.objectContaining({ key: 'bo@example.test', ticketCount: 1 }),
     ]);
   });
 
-  it("narrows the report to one customer's tickets but keeps the full list", async () => {
-    const { status, body } = await get(`${PERIOD}&customer=ANN@example.test`);
+  it("narrows the report to one requester's tickets but keeps the full list", async () => {
+    const { status, body } = await get(`${PERIOD}&requester=ANN@example.test`);
     expect(status).toBe(200);
     expect(body.tickets.map((t: { id: number }) => t.id).sort()).toEqual([1, 2]);
-    expect(body.customers).toHaveLength(2);
+    expect(body.requesters).toHaveLength(2);
   });
 
-  it('rejects a customer the project has never had', async () => {
-    const { status } = await get(`${PERIOD}&customer=nobody@example.test`);
+  it('rejects a requester the project has never had', async () => {
+    const { status } = await get(`${PERIOD}&requester=nobody@example.test`);
     expect(status).toBe(400);
   });
 

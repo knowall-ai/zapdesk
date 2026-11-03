@@ -12,6 +12,7 @@ import {
   isEmailTicket,
   sendAssignmentNotification,
   sendTicketUpdateNotification,
+  assigneeEmailFrom,
 } from '@/lib/email';
 import type { TicketFieldChange } from '@/lib/email-templates';
 import { titleProblem } from '@/lib/ticket-title';
@@ -363,7 +364,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     // Fire-and-forget: the assignment is already saved, and a slow mail server
     // must not turn a successful change into a reported failure.
     if (updates.assignee) {
-      const assigneeEmail = ticket.assignee?.email;
+      // Read the identity, not the mapped ticket. workItemToTicket goes through
+      // identityToUser, which takes the address off an object's uniqueName.
+      // Handed a bare address it still returns a user -- one whose email is
+      // undefined -- so the ticket carries an assignee with no address, and
+      // reading it here would warn and send nothing: the silence #7374 was
+      // about, for one shape of the field.
+      const assigneeEmail = assigneeEmailFrom(updatedWorkItem.fields?.['System.AssignedTo']);
+      if (!assigneeEmail) {
+        // Same silence as the create path (#7374): an identity DevOps gave us
+        // no address for is not a failure anybody can see without this line.
+        console.warn(
+          `[Email] Ticket #${ticketId} reassigned, but DevOps returned no address for the assignee - not notifying.`
+        );
+      }
       if (assigneeEmail) {
         sendAssignmentNotification({
           ticketId,
@@ -415,7 +429,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           ticketId,
           { thread: threadTitle, current: ticket.title },
           requesterEmail,
-          changes
+          changes,
+          // Part of the customer's thread, so the engineer who owns the
+          // ticket is copied on it as they are on a reply (#7384). From the
+          // identity rather than the mapped ticket, for the same reason as
+          // the assignment mail above.
+          assigneeEmailFrom(updatedWorkItem.fields?.['System.AssignedTo'])
         );
       }
     }

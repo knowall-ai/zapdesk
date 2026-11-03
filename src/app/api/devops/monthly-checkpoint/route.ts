@@ -8,24 +8,24 @@ import type {
   MonthlyCheckpointStats,
   TicketTrendPoint,
   Organization,
-  CheckpointCustomer,
+  CheckpointRequester,
 } from '@/types';
 
 /** The query parameters this route reads; anything else is refused. */
-const ALLOWED_PARAMS = new Set(['project', 'startDate', 'endDate', 'customer']);
+const ALLOWED_PARAMS = new Set(['project', 'startDate', 'endDate', 'requester']);
 
 /**
  * Monthly checkpoint statistics for one project and period.
  *
  * Query: `project` is required. `startDate` and `endDate` default to the last
- * 30 days. `customer` (a key from `customers`) narrows every figure to that
- * customer's tickets (#7385).
+ * 30 days. `requester` (a key from `requesters`) narrows every figure to the
+ * tickets that one person raised (#7385).
  *
  * Returns the KPIs, daily trend points, the tickets created or resolved in the
- * period, and `customers`: everyone who has raised a ticket in the project,
+ * period, and `requesters`: everyone who has raised a ticket in the project,
  * so the filter can offer them.
  *
- * 400 for an unknown query parameter, without a project, or for a customer the
+ * 400 for an unknown query parameter, without a project, or for a requester the
  * project has never had; 401 without a session; 500 when Azure DevOps fails.
  */
 export async function GET(request: Request) {
@@ -38,9 +38,9 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
 
-    // Refuse parameters this route does not read. A misspelt `customer` would
+    // Refuse parameters this route does not read. A misspelt `requester` would
     // otherwise be ignored and the whole project's report returned as if it
-    // were one customer's.
+    // were one person's.
     const unknown = [...new Set(searchParams.keys())].filter((key) => !ALLOWED_PARAMS.has(key));
     if (unknown.length > 0) {
       return NextResponse.json(
@@ -52,8 +52,8 @@ export async function GET(request: Request) {
     const projectName = searchParams.get('project');
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');
-    // Optional: one customer's tickets only (#7385). Matched on customerKey.
-    const customerParam = (searchParams.get('customer') || '').trim().toLowerCase();
+    // Optional: one requester's tickets only (#7385). Matched on requesterKey.
+    const requesterParam = (searchParams.get('requester') || '').trim().toLowerCase();
 
     if (!projectName) {
       return NextResponse.json({ error: 'Project name is required' }, { status: 400 });
@@ -88,33 +88,33 @@ export async function GET(request: Request) {
 
     const projectTickets = workItems.map((wi) => workItemToTicket(wi, organization));
 
-    // The customers on offer come from the whole project, so picking one does
+    // The requesters on offer come from the whole project, so picking one does
     // not empty the list of the others.
-    const customerMap = new Map<string, CheckpointCustomer>();
+    const requesterMap = new Map<string, CheckpointRequester>();
     for (const t of projectTickets) {
-      const key = customerKey(t);
+      const key = requesterKey(t);
       if (!key) continue;
-      const existing = customerMap.get(key);
+      const existing = requesterMap.get(key);
       if (existing) existing.ticketCount += 1;
       else
-        customerMap.set(key, {
+        requesterMap.set(key, {
           key,
           displayName: t.requester?.displayName || key,
           ticketCount: 1,
         });
     }
-    const customers = [...customerMap.values()].sort((a, b) =>
+    const requesters = [...requesterMap.values()].sort((a, b) =>
       a.displayName.localeCompare(b.displayName)
     );
 
-    // A customer the project has never had is a bad request, not a report of
-    // zeroes that reads as "this customer raised nothing".
-    if (customerParam && !customerMap.has(customerParam)) {
-      return NextResponse.json({ error: 'Unknown customer for this project' }, { status: 400 });
+    // A requester the project has never had is a bad request, not a report of
+    // zeroes that reads as "this person raised nothing".
+    if (requesterParam && !requesterMap.has(requesterParam)) {
+      return NextResponse.json({ error: 'Unknown requester for this project' }, { status: 400 });
     }
 
-    const allTickets = customerParam
-      ? projectTickets.filter((t) => customerKey(t) === customerParam)
+    const allTickets = requesterParam
+      ? projectTickets.filter((t) => requesterKey(t) === requesterParam)
       : projectTickets;
 
     // Filter tickets created within the date range
@@ -153,7 +153,7 @@ export async function GET(request: Request) {
       tickets: relevantTickets.sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       ),
-      customers,
+      requesters,
     };
 
     return NextResponse.json(stats);
@@ -163,8 +163,8 @@ export async function GET(request: Request) {
   }
 }
 
-/** Who raised a ticket, as the customer filter knows them. */
-function customerKey(ticket: Ticket): string {
+/** Who raised a ticket, as the requester filter knows them. */
+function requesterKey(ticket: Ticket): string {
   // Email first; then the identity id, so two people who share a display name
   // are never merged; the name only as a last resort.
   const requester = ticket.requester;

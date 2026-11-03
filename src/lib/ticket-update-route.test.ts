@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { MAX_TITLE_LENGTH } from './ticket-title';
 
@@ -13,11 +13,12 @@ vi.mock('@/lib/server-session', () => ({
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
 const sendTicketUpdateNotification = vi.fn(async (..._args: unknown[]) => {});
+const sendAssignmentNotification = vi.fn(async (..._args: unknown[]) => {});
 vi.mock('@/lib/email', async () => {
   const actual = await vi.importActual<typeof import('./email')>('./email');
   return {
     ...actual,
-    sendAssignmentNotification: async () => {},
+    sendAssignmentNotification: (...args: unknown[]) => sendAssignmentNotification(...args),
     sendTicketUpdateNotification: (...args: unknown[]) => sendTicketUpdateNotification(...args),
   };
 });
@@ -72,6 +73,46 @@ describe('PATCH /api/devops/tickets/[id]', () => {
     getWorkItem.mockResolvedValue(workItem({}));
   });
 
+  // Same reason as the create-path suite: a spy restored at the end of its own
+  // test is not restored when an assertion throws first.
+  afterEach(() => vi.restoreAllMocks());
+
+  // The route decides whether to notify at all, before the sender's own
+  // guards run, and that branch was silent (#7374). `identityToUser` reads the
+  // address straight off `uniqueName`, so a DevOps identity without one -- a
+  // group, or an incomplete record -- reaches here with nothing to send to.
+  it('says why a reassignment notified nobody, when DevOps returns no address', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    updateTicketFields.mockResolvedValue(
+      workItem({
+        'System.AssignedTo': { id: 'u9', displayName: 'Triage Team', uniqueName: '' },
+      })
+    );
+
+    const { status } = await patch({ project: 'Internal', assignee: 'u9' });
+
+    expect(status).toBe(200);
+    expect(sendAssignmentNotification).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no address for the assignee'));
+    warn.mockRestore();
+  });
+
+  it('still notifies when DevOps does return an address', async () => {
+    updateTicketFields.mockResolvedValue(
+      workItem({
+        'System.AssignedTo': {
+          id: 'u9',
+          displayName: 'Sam Taylor',
+          uniqueName: 'sam@example.test',
+        },
+      })
+    );
+
+    await patch({ project: 'Internal', assignee: 'u9' });
+
+    expect(sendAssignmentNotification).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a field it does not handle, before touching DevOps', async () => {
     const { status, body } = await patch({ project: 'Internal', priorty: 2 });
     expect(status).toBe(400);
@@ -93,7 +134,8 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       7,
       { thread: 'Printer offline', current: 'Printer offline' },
       'customer@example.test',
-      [{ label: 'Priority', from: 'Normal', to: 'High' }]
+      [{ label: 'Priority', from: 'Normal', to: 'High' }],
+      undefined
     );
   });
 
@@ -104,7 +146,8 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       7,
       { thread: 'Printer offline', current: 'Printer still offline' },
       'customer@example.test',
-      [{ label: 'Title', from: 'Printer offline', to: 'Printer still offline' }]
+      [{ label: 'Title', from: 'Printer offline', to: 'Printer still offline' }],
+      undefined
     );
   });
 
@@ -119,7 +162,8 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       7,
       { thread: 'Cannot print', current: 'Printer still offline' },
       'customer@example.test',
-      expect.any(Array)
+      expect.any(Array),
+      undefined
     );
   });
 
@@ -172,7 +216,55 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       7,
       { thread: 'Printer offline', current: 'New title' },
       'customer@example.test',
-      expect.any(Array)
+      expect.any(Array),
+      undefined
+    );
+  });
+
+  // The customer's thread, so the engineer who owns the ticket belongs on it
+  // too (#7384). The route is what reads the assignee off the work item, so a
+  // test on the sender alone would not have caught it being left out.
+  it('copies the assigned engineer on the update', async () => {
+    getWorkItem.mockResolvedValue(
+      workItem({
+        'System.AssignedTo': { id: 'u2', displayName: 'Sam', uniqueName: 'engineer@example.test' },
+      })
+    );
+    updateTicketFields.mockResolvedValue(
+      workItem({
+        'Microsoft.VSTS.Common.Priority': 2,
+        'System.AssignedTo': { id: 'u2', displayName: 'Sam', uniqueName: 'engineer@example.test' },
+      })
+    );
+    await patch({ project: 'Internal', priority: 2 });
+    expect(sendTicketUpdateNotification).toHaveBeenCalledWith(
+      7,
+      expect.anything(),
+      'customer@example.test',
+      expect.any(Array),
+      'engineer@example.test'
+    );
+  });
+
+  // DevOps hands the identity back as an object or as a bare address,
+  // depending on how it was set. workItemToTicket only understands the
+  // object form, so reading the mapped ticket dropped the engineer here and
+  // sent no assignment mail at all -- the silence #7374 was raised about.
+  it('copies the engineer when DevOps gives the identity as a bare address', async () => {
+    getWorkItem.mockResolvedValue(workItem({ 'System.AssignedTo': 'engineer@example.test' }));
+    updateTicketFields.mockResolvedValue(
+      workItem({
+        'Microsoft.VSTS.Common.Priority': 2,
+        'System.AssignedTo': 'engineer@example.test',
+      })
+    );
+    await patch({ project: 'Internal', priority: 2 });
+    expect(sendTicketUpdateNotification).toHaveBeenCalledWith(
+      7,
+      expect.anything(),
+      'customer@example.test',
+      expect.any(Array),
+      'engineer@example.test'
     );
   });
 

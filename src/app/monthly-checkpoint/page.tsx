@@ -15,7 +15,7 @@ import type { MonthlyCheckpointStats, DevOpsProject, Ticket } from '@/types';
 type DatePreset = 'last30' | 'thisMonth' | 'lastMonth' | 'custom';
 
 /**
- * The checkpoint report: pick a project, a period and optionally one customer
+ * The checkpoint report: pick a customer, a period and optionally one requester
  * (#7385), then read the KPIs, trends and tickets, or export them as a PDF.
  */
 function MonthlyCheckpointContent() {
@@ -27,21 +27,21 @@ function MonthlyCheckpointContent() {
 
   const [projects, setProjects] = useState<DevOpsProject[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
-  // '' is every customer. Cleared when the project or the organisation changes,
-  // as customers belong to a project (#7385).
-  const [selectedCustomer, setSelectedCustomer] = useState<string>('');
+  // '' is every requester. Cleared when the customer or the organisation
+  // changes, as requesters belong to one project (#7385).
+  const [selectedRequester, setSelectedRequester] = useState<string>('');
 
-  // A customer key means nothing in another organisation or project, and the
+  // A requester key means nothing in another organisation or project, and the
   // API rejects one it does not know, so changing either clears it -- whether
   // the change came from the selectors or the URL. Done while rendering rather
   // than in an effect: an effect would let the report fetch run once with the
   // old key before the reset landed.
   const orgName = selectedOrganization?.accountName ?? null;
-  const customerScope = `${orgName ?? ''}|${selectedProject}`;
-  const [customerScopeSeen, setCustomerScopeSeen] = useState(customerScope);
-  if (customerScopeSeen !== customerScope) {
-    setCustomerScopeSeen(customerScope);
-    setSelectedCustomer('');
+  const requesterScope = `${orgName ?? ''}|${selectedProject}`;
+  const [requesterScopeSeen, setRequesterScopeSeen] = useState(requesterScope);
+  if (requesterScopeSeen !== requesterScope) {
+    setRequesterScopeSeen(requesterScope);
+    setSelectedRequester('');
   }
   const [datePreset, setDatePreset] = useState<DatePreset>('last30');
   const [startDate, setStartDate] = useState<string>('');
@@ -110,19 +110,19 @@ function MonthlyCheckpointContent() {
   }, [devOpsGet, hasOrganization]);
 
   // Only the latest request may update the report. Without this, a slow answer
-  // for an earlier project, period or customer could land last and be shown
+  // for an earlier customer, period or requester could land last and be shown
   // under the newer selection.
   const statsSeqRef = useRef(0);
 
   // Which organisation and project the report on screen belongs to. The
-  // customer list comes from that report, so until the new project's report
-  // arrives the old list must not be offered: a customer picked from it would
+  // requester list comes from that report, so until the new customer's report
+  // arrives the old list must not be offered: a requester picked from it would
   // be sent to a project that has never had them, and rejected.
   const [statsFor, setStatsFor] = useState<string | null>(null);
   const selectionKey = `${orgName ?? ''}|${selectedProject}`;
-  const customerOptions = statsFor === selectionKey ? (stats?.customers ?? []) : [];
+  const requesterOptions = statsFor === selectionKey ? (stats?.requesters ?? []) : [];
 
-  /** Load the report for the current project, period and customer. */
+  /** Load the report for the current customer, period and requester. */
   const fetchStats = useCallback(async () => {
     if (!hasOrganization) return;
     const seq = ++statsSeqRef.current;
@@ -135,7 +135,7 @@ function MonthlyCheckpointContent() {
         startDate,
         endDate,
       });
-      if (selectedCustomer) params.set('customer', selectedCustomer);
+      if (selectedRequester) params.set('requester', selectedRequester);
 
       const response = await devOpsGet(`/api/devops/monthly-checkpoint?${params}`);
       if (!isCurrent()) return;
@@ -160,7 +160,7 @@ function MonthlyCheckpointContent() {
     } finally {
       if (isCurrent()) setIsLoading(false);
     }
-  }, [selectedProject, selectedCustomer, startDate, endDate, devOpsGet, hasOrganization, orgName]);
+  }, [selectedProject, selectedRequester, startDate, endDate, devOpsGet, hasOrganization, orgName]);
 
   // Fetch projects
   // Keyed on a stable flag, not the session object NextAuth replaces on every
@@ -260,7 +260,7 @@ function MonthlyCheckpointContent() {
                 className="mb-1 block text-xs font-medium uppercase"
                 style={{ color: 'var(--text-muted)' }}
               >
-                Client / Project
+                Customer
               </label>
               {isLoadingProjects ? (
                 <div
@@ -275,11 +275,11 @@ function MonthlyCheckpointContent() {
                   value={selectedProject}
                   onChange={(e) => {
                     setSelectedProject(e.target.value);
-                    setSelectedCustomer('');
+                    setSelectedRequester('');
                   }}
                   className="input min-w-[200px]"
                 >
-                  <option value="">Select a project...</option>
+                  <option value="">Select a customer...</option>
                   {projects.map((project) => (
                     <option key={project.id} value={project.name}>
                       {project.name}
@@ -289,27 +289,28 @@ function MonthlyCheckpointContent() {
               )}
             </div>
 
-            {/* Customer filter (#7385) */}
+            {/* Who raised the tickets, within that customer (#7385). Not the
+                customer: that is the selector above, one project per client. */}
             {selectedProject && (
               <div>
                 <label
                   className="mb-1 block text-xs font-medium uppercase"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  Customer
+                  Requester
                 </label>
                 <select
-                  value={selectedCustomer}
-                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                  value={selectedRequester}
+                  onChange={(e) => setSelectedRequester(e.target.value)}
                   className="input min-w-[200px]"
-                  // Kept usable while a customer is chosen, so "All customers"
+                  // Kept usable while a requester is chosen, so "All requesters"
                   // can always be picked to get back to the full report.
-                  disabled={isLoading || (customerOptions.length === 0 && !selectedCustomer)}
+                  disabled={isLoading || (requesterOptions.length === 0 && !selectedRequester)}
                 >
-                  <option value="">All customers</option>
-                  {customerOptions.map((customer) => (
-                    <option key={customer.key} value={customer.key}>
-                      {customer.displayName} ({customer.ticketCount})
+                  <option value="">All requesters</option>
+                  {requesterOptions.map((requester) => (
+                    <option key={requester.key} value={requester.key}>
+                      {requester.displayName} ({requester.ticketCount})
                     </option>
                   ))}
                 </select>
@@ -402,13 +403,13 @@ function MonthlyCheckpointContent() {
           {/* Print header - only visible when printing */}
           <div className="mt-4 hidden print:block">
             <p style={{ color: 'var(--text-secondary)' }}>
-              <strong>Project:</strong> {selectedProject}
+              <strong>Customer:</strong> {selectedProject}
             </p>
-            {selectedCustomer && (
+            {selectedRequester && (
               <p style={{ color: 'var(--text-secondary)' }}>
-                <strong>Customer:</strong>{' '}
-                {stats?.customers?.find((c) => c.key === selectedCustomer)?.displayName ??
-                  selectedCustomer}
+                <strong>Requester:</strong>{' '}
+                {stats?.requesters?.find((c) => c.key === selectedRequester)?.displayName ??
+                  selectedRequester}
               </p>
             )}
             <p style={{ color: 'var(--text-secondary)' }}>

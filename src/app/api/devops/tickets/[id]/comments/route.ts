@@ -6,6 +6,7 @@ import {
   isEmailTicket,
   extractRequesterEmail,
   sendAgentReply,
+  assigneeEmailFrom,
   sendInternalNoteNotification,
 } from '@/lib/email';
 import { supportTeamRecipients } from '@/lib/support-team';
@@ -200,13 +201,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         // Fire-and-forget — never block the response on outbound mail.
         // Blind-copy the assigned engineer so the thread reaches the
         // person who owns the ticket, not only the customer (#7384).
-        // DevOps stores the identity as "Display Name <email>" or a bare
-        // address depending on how it was set, so take whichever is there.
-        const assignedTo = workItem.fields?.['System.AssignedTo'];
-        const assigneeEmail =
-          typeof assignedTo === 'string'
-            ? assignedTo
-            : (assignedTo as { uniqueName?: string } | undefined)?.uniqueName;
+        const assigneeEmail = assigneeEmailFrom(workItem.fields?.['System.AssignedTo']);
 
         sendAgentReply(
           ticketId,

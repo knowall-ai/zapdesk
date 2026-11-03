@@ -452,12 +452,12 @@ export interface MonthlyCheckpointStats {
   };
   trends: TicketTrendPoint[];
   tickets: Ticket[];
-  /** Everyone who raised a ticket in the project, for the customer filter (#7385). */
-  customers: CheckpointCustomer[];
+  /** Everyone who raised a ticket in the project, for the requester filter (#7385). */
+  requesters: CheckpointRequester[];
 }
 
-export interface CheckpointCustomer {
-  /** Requester email, lower-cased; the value the `customer` filter takes. */
+export interface CheckpointRequester {
+  /** Requester email, lower-cased; the value the `requester` filter takes. */
   key: string;
   displayName: string;
   ticketCount: number;

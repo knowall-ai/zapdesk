@@ -357,15 +357,45 @@ export async function sendAssignmentNotification(opts: {
   assignedByEmail?: string;
   requesterEmail?: string;
 }): Promise<void> {
-  if (!isEmailConfigured()) return;
+  // Every reason this returns early says so (#7374). The notification not
+  // arriving is the one symptom a reader reports, and it has five causes that
+  // used to look identical from outside: unconfigured mail, an assignee with
+  // no address, a group identity, a self-assignment, and the polled mailbox.
+  // Only the last one said anything, so three rounds of "not fixed" produced
+  // nothing anybody could act on. A deliberate silence is still worth a line
+  // in the log, because the person asking why cannot see the guard.
+  // Every reason this returns early says so (#7374). "No notification
+  // arrived" is the only symptom a reader reports, and it had five causes that
+  // looked identical from outside: unconfigured mail, an assignee with no
+  // address, a group identity, a self-assignment, and the polled mailbox. Only
+  // the last said anything, so two rounds of "not fixed" left nothing anybody
+  // could act on. A deliberate silence still earns a line, because the person
+  // asking why cannot see the guard that caused it.
+  if (!isEmailConfigured()) {
+    console.warn(
+      `[Email] Assignment of #${opts.ticketId} not notified: outbound email is not configured.`
+    );
+    return;
+  }
 
   const assignee = opts.assigneeEmail.trim();
-  if (!assignee || !assignee.includes('@')) return;
+  if (!assignee || !assignee.includes('@')) {
+    // A group or team identity carries a uniqueName like `[Project]\Team
+    // Name`, which is nobody's address. DevOps allows assigning to one; there
+    // is simply no inbox at the end of it.
+    console.warn(
+      `[Email] Assignment of #${opts.ticketId} not notified: assignee ${assignee || '(none)'} is not an email address.`
+    );
+    return;
+  }
 
   if (
     opts.assignedByEmail &&
     assignee.toLowerCase() === opts.assignedByEmail.trim().toLowerCase()
   ) {
+    console.log(
+      `[Email] Assignment of #${opts.ticketId} not notified: ${assignee} assigned it to themselves.`
+    );
     return;
   }
 
@@ -395,6 +425,28 @@ export async function sendAssignmentNotification(opts: {
   } catch (error) {
     console.error(`[Email] Failed to notify assignment of #${opts.ticketId}:`, error);
   }
+}
+
+/**
+ * The assignee's address from a work item's `System.AssignedTo`.
+ *
+ * DevOps stores the identity as an object carrying `uniqueName`, or as a
+ * bare string, depending on how it was set, and every caller that wanted
+ * it was unpicking that itself. One place to change when a fourth message
+ * needs the engineer on it.
+ *
+ * Returns whatever is there without judging it: a group or team identity
+ * has a uniqueName like `[Project]\Team Name` and is not an address at
+ * all. `copyRecipients` is what decides, and it drops anything without an
+ * `@`.
+ */
+export function assigneeEmailFrom(assignedTo: unknown): string | undefined {
+  if (typeof assignedTo === 'string') return assignedTo;
+  if (assignedTo && typeof assignedTo === 'object') {
+    const unique = (assignedTo as { uniqueName?: unknown }).uniqueName;
+    if (typeof unique === 'string') return unique;
+  }
+  return undefined;
 }
 
 /**
@@ -576,7 +628,9 @@ export async function sendStatusChangeNotification(
   requesterEmail: string,
   oldStatus: string,
   newStatus: string,
-  originalMessageId?: string
+  originalMessageId?: string,
+  /** Assigned engineer, blind-copied so this message joins their copy of the thread (#7384). */
+  assigneeEmail?: string
 ): Promise<void> {
   if (!isEmailConfigured()) return;
   try {
@@ -593,6 +647,7 @@ export async function sendStatusChangeNotification(
       subject: threadedSubject(ticketId, `Re: ${subject}`),
       html,
       messageId,
+      bcc: copyRecipients(assigneeEmail, requesterEmail),
       inReplyTo: originalMessageId,
     });
     console.log(
@@ -623,7 +678,9 @@ export async function sendTicketUpdateNotification(
     current: string;
   },
   requesterEmail: string,
-  changes: TicketFieldChange[]
+  changes: TicketFieldChange[],
+  /** Assigned engineer, blind-copied so this message joins their copy of the thread (#7384). */
+  assigneeEmail?: string
 ): Promise<void> {
   if (!isEmailConfigured() || changes.length === 0) return;
   if (isPolledMailbox(requesterEmail)) return;
@@ -638,6 +695,7 @@ export async function sendTicketUpdateNotification(
         changes,
       }),
       messageId: generateMessageId(ticketId),
+      bcc: copyRecipients(assigneeEmail, requesterEmail),
     });
     console.log(`[Email] Update notification sent for ticket #${ticketId} to ${requesterEmail}`);
   } catch (error) {

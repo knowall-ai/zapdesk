@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { sendAssignmentNotification, sendAgentReply, isPolledMailbox } from './email';
+import {
+  sendAssignmentNotification,
+  sendAgentReply,
+  sendStatusChangeNotification,
+  sendTicketUpdateNotification,
+  isPolledMailbox,
+} from './email';
 
 /** Captures what actually reaches Graph, which is the only thing that matters. */
 function stubGraph(): { sent: () => Record<string, unknown> } {
@@ -35,6 +41,10 @@ const configure = () => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  // Not only the per-test mockRestore calls: a failing assertion skips those,
+  // and a console spy that outlives its test silently swallows the next one's
+  // output. The config does not restore mocks automatically.
+  vi.restoreAllMocks();
 });
 
 describe('assignment notification (#7374)', () => {
@@ -88,6 +98,7 @@ describe('assignment notification (#7374)', () => {
   });
 
   it('sends nothing when the assignee is not an address', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await sendAssignmentNotification({
       ticketId: 7400,
       subject: 'x',
@@ -95,6 +106,65 @@ describe('assignment notification (#7374)', () => {
       assignedByName: 'Lead',
     });
     expect(graph.sent()).toEqual({});
+    warn.mockRestore();
+  });
+
+  /**
+   * Every silence says why (#7374).
+   *
+   * "No notification arrived" is the only symptom anybody reports, and it had
+   * five causes that looked identical from outside. The item came back twice
+   * with nothing but "not fixed" against it, because there was nothing in any
+   * log to tell one cause from another. These hold each reason in place: a
+   * deliberate silence that stops explaining itself is the same bug again.
+   */
+  describe('says why it stayed quiet', () => {
+    it('names self-assignment as the reason', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await sendAssignmentNotification({
+        ticketId: 7400,
+        subject: 'Printer jam',
+        assigneeEmail: 'Lead@Example.test',
+        assignedByName: 'Team Lead',
+        assignedByEmail: 'lead@example.test',
+      });
+      expect(graph.sent()).toEqual({});
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('assigned it to themselves'));
+      log.mockRestore();
+    });
+
+    // A group or team identity is a legitimate DevOps assignee with no inbox.
+    it('names an assignee that is not an address', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      await sendAssignmentNotification({
+        ticketId: 7400,
+        subject: 'Printer jam',
+        assigneeEmail: '[Support]\Triage Team',
+        assignedByName: 'Team Lead',
+      });
+      expect(graph.sent()).toEqual({});
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('not an email address'));
+      warn.mockRestore();
+    });
+
+    it('names unconfigured mail, rather than looking like a failed send', async () => {
+      // Both, or this proves nothing: mailClientSecret() falls back to
+      // AZURE_AD_CLIENT_SECRET, which the documented .env sets, so clearing
+      // only the MAIL_ one leaves outbound still configured and the helper
+      // sends through the Graph stub.
+      vi.stubEnv('MAIL_CLIENT_SECRET', '');
+      vi.stubEnv('AZURE_AD_CLIENT_SECRET', '');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      await sendAssignmentNotification({
+        ticketId: 7400,
+        subject: 'Printer jam',
+        assigneeEmail: 'engineer@example.test',
+        assignedByName: 'Team Lead',
+      });
+      expect(graph.sent()).toEqual({});
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('not configured'));
+      warn.mockRestore();
+    });
   });
 });
 
@@ -181,6 +251,86 @@ describe('assigned engineer is copied on a reply (#7384)', () => {
   it('sends with no bcc when the ticket is unassigned', async () => {
     await sendAgentReply(7400, 'x', 'customer@example.test', 'Agent', '<p>hi</p>');
     expect(bcc()).toEqual([]);
+  });
+});
+
+// The agent's reply was only one message in the thread. The customer also
+// gets a mail for every status change and every title or priority change,
+// and none of those reached the engineer who owns the ticket -- so their
+// mailbox held one side of half a conversation, which is what the report
+// meant by the thread being available only to the customer (#7384).
+describe('the rest of the customer thread reaches the engineer (#7384)', () => {
+  let graph: ReturnType<typeof stubGraph>;
+  beforeEach(() => {
+    configure();
+    graph = stubGraph();
+  });
+
+  const bcc = () => {
+    const message = graph.sent().message as Record<string, unknown>;
+    return ((message?.bccRecipients ?? []) as Array<{ emailAddress: { address: string } }>).map(
+      (r) => r.emailAddress.address
+    );
+  };
+
+  const statusChange = (assignee?: string) =>
+    sendStatusChangeNotification(
+      7400,
+      'Printer jam',
+      'customer@example.test',
+      'Active',
+      'Resolved',
+      undefined,
+      assignee
+    );
+
+  const fieldChange = (assignee?: string) =>
+    sendTicketUpdateNotification(
+      7400,
+      { thread: 'Printer jam', current: 'Printer jam' },
+      'customer@example.test',
+      [{ label: 'Priority', from: 'Normal', to: 'High' }],
+      assignee
+    );
+
+  describe.each([
+    ['a status change', statusChange],
+    ['a title or priority change', fieldChange],
+  ])('%s', (_name, send) => {
+    it('is blind-copied to the assigned engineer', async () => {
+      await send('engineer@example.test');
+      expect(bcc()).toEqual(['engineer@example.test']);
+    });
+
+    // Blind, not Cc, for the same reason as the reply: the customer has no
+    // reason to be shown an internal address, and a reply-all would land
+    // somewhere that is not the support mailbox.
+    it('never shows the engineer in a visible recipient field', async () => {
+      await send('engineer@example.test');
+      const message = graph.sent().message as Record<string, unknown>;
+      expect(message.ccRecipients).toBeUndefined();
+      expect(JSON.stringify(message.toRecipients)).not.toContain('engineer@');
+    });
+
+    it('does not copy an assignee who is also the customer', async () => {
+      await send('Customer@Example.test');
+      expect(bcc()).toEqual([]);
+    });
+
+    // Copying the polled mailbox would ingest the message and loop.
+    it('refuses to copy the mailbox ZapDesk polls', async () => {
+      vi.stubEnv('MAIL_POLL_MAILBOX', 'support@example.test');
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await send('support@example.test');
+      expect(bcc()).toEqual([]);
+      expect(err).toHaveBeenCalledWith(expect.stringContaining('would loop'));
+      err.mockRestore();
+    });
+
+    it('sends with no bcc when the ticket is unassigned', async () => {
+      await send(undefined);
+      expect(bcc()).toEqual([]);
+    });
   });
 });
 

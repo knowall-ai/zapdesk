@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
 // Route-level coverage for POST /api/devops/tickets: the email sent when a
@@ -88,6 +88,11 @@ describe('POST /api/devops/tickets — assignment email (#7374)', () => {
     createTicketWithAssignee.mockResolvedValue(createdWorkItem(assignee));
   });
 
+  // beforeEach only clears mocks. A console spy restored at the end of its own
+  // test is not restored when an assertion throws first, and the next test then
+  // runs with console.warn still mocked.
+  afterEach(() => vi.restoreAllMocks());
+
   it('emails the assignee when the ticket is created already assigned', async () => {
     const response = await post({ project: 'Internal', title: 'Printer', assignee: 'u2' });
 
@@ -126,6 +131,7 @@ describe('POST /api/devops/tickets — assignment email (#7374)', () => {
 
   it('sends nothing when DevOps returns no email for the assignee', async () => {
     // An identity with no address would otherwise mean emailing undefined.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     createTicketWithAssignee.mockResolvedValue(
       createdWorkItem({ id: 'u3', displayName: 'No Address' })
     );
@@ -133,6 +139,10 @@ describe('POST /api/devops/tickets — assignment email (#7374)', () => {
     await post({ project: 'Internal', title: 'Printer', assignee: 'u3' });
 
     expect(sendAssignmentNotification).not.toHaveBeenCalled();
+    // And says so (#7374): an assignment that notifies nobody is otherwise
+    // indistinguishable from one that did, long after the request is gone.
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no address for the assignee'));
+    warn.mockRestore();
   });
 
   it('still creates the ticket when the email fails', async () => {

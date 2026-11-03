@@ -241,6 +241,14 @@ export async function POST(request: NextRequest) {
     // Fire-and-forget; the self-assignment and polled-mailbox guards live in
     // sendAssignmentNotification.
     const assigneeEmail = ticket.assignee?.email;
+    if (assignee && !assigneeEmail) {
+      // DevOps returned an identity with no address (#7374). Saying so here
+      // is the difference between "the mail is broken" and "that assignee has
+      // no inbox", which from outside look the same.
+      console.warn(
+        `[Email] Ticket #${ticket.id} created assigned, but DevOps returned no address for the assignee - not notifying.`
+      );
+    }
     if (assignee && assigneeEmail) {
       sendAssignmentNotification({
         ticketId: ticket.id,
