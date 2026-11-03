@@ -204,14 +204,19 @@ The app version is displayed in the sidebar footer and is read from `package.jso
 
 === Manual Workflow Dispatch
 
-Dispatching the workflow against a *branch* runs the build and stops: the
-`production` environment accepts only `v*` tags, so the deploy job never
-reaches Azure. Useful for checking that a branch builds; it is not a
-release, and the run goes green either way.
+Dispatching the workflow against a *branch* does not release, and does not
+quietly half-succeed either. The build job runs; the deploy job is then
+refused by the `production` environment, which accepts only `v*` tags, and
+`notify` turns that into a failure. **The run goes red**, and the deploy
+job's log names the environment rule that stopped it.
+
+So a branch dispatch is a build check that reports failure at the end. If
+you want to know only whether a branch builds, read the build job rather
+than the run.
 
 1. Go to Actions > Deploy to Azure
 2. Click "Run workflow"
-3. Select a branch and run -- build only, nothing is deployed
+3. Select a branch and run -- builds, then fails at the deploy job
 
 To release without pushing a new tag, dispatch an existing one:
 

@@ -524,6 +524,6 @@ pushed -- not on a push to `main`:
 . Configures app settings
 
 The workflow can also be dispatched by hand, but the `production`
-environment accepts only `v*` tags: dispatch a branch and the build runs
-while the deploy job stops short of Azure. See
+environment accepts only `v*` tags: dispatch a branch and the build runs,
+the deploy job is refused by the environment rule, and the run fails. See
 xref:DEPLOYMENT.adoc[the deployment guide] for the release process.
