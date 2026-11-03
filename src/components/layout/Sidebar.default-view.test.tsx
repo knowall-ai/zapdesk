@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, within, fireEvent } from '@testing-library/react';
 import Sidebar from './Sidebar';
+import { STORAGE_KEY } from '@/lib/default-view';
 
 // The star that makes a view the default (#7729). It shipped hidden behind
 // `opacity-0 group-hover:opacity-100`, and the report it came back with was
@@ -56,7 +57,7 @@ describe('Sidebar: choosing the view that opens by default (#7729)', () => {
 
     fireEvent.click(button);
 
-    expect(window.localStorage.getItem('zapdesk:default-view')).toBe('your-active');
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('your-active');
     const pressed = screen.getByRole('button', {
       name: 'Stop opening "Your active tickets" by default',
     });
@@ -69,7 +70,7 @@ describe('Sidebar: choosing the view that opens by default (#7729)', () => {
     fireEvent.click(
       screen.getByRole('button', { name: 'Stop opening "Your active tickets" by default' })
     );
-    expect(window.localStorage.getItem('zapdesk:default-view')).toBeNull();
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
   // Two buttons sat beside the Views heading since the first commit with no

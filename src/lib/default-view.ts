@@ -8,7 +8,8 @@
  */
 import { useSyncExternalStore } from 'react';
 
-const STORAGE_KEY = 'zapdesk:default-view';
+/** Where the choice is kept. Exported so tests assert against this, not a copy. */
+export const STORAGE_KEY = 'zapdesk:default-view';
 const CHANGE_EVENT = 'zapdesk:default-view-change';
 
 /** The views that can be the default: the sidebar's ticket views. */
