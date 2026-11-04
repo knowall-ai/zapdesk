@@ -307,13 +307,18 @@ export default function WorkItemDetailDialog({
   // would have thrown the sender's words away.
   const handleZapSent = useCallback(
     async (amount: number, message: string) => {
-      if (!workItem) return;
+      // Thrown rather than returned: `handleAddComment` is a silent no-op
+      // without a work item or an organisation, so returning here would let
+      // the dialog report a zap recorded against nothing.
+      if (!workItem || !hasOrganization) {
+        throw new Error('No ticket to record the zap on');
+      }
       // Not caught here. `handleAddComment` has already logged and reported
       // it; swallowing the rejection as well would leave the dialog closing
       // on a write that never happened, taking the sender's message with it.
       await handleAddComment(message);
     },
-    [workItem, handleAddComment]
+    [workItem, hasOrganization, handleAddComment]
   );
 
   const handleUploadAttachment = useCallback(
@@ -584,7 +589,7 @@ export default function WorkItemDetailDialog({
           onAddComment={handleAddComment}
           onUploadAttachment={handleUploadAttachment}
           onUpdate={onUpdate ? handleUpdate : undefined}
-          onZapSent={handleZapSent}
+          onZapSent={hasOrganization ? handleZapSent : undefined}
           compact
         />
       </TicketDialogShell>

@@ -2157,7 +2157,7 @@ export default function TicketDetail({
           onClose={() => setIsZapDialogOpen(false)}
           agent={ticket.assignee}
           ticketId={ticket.workItemId}
-          onZapSent={handleZapSent}
+          onZapSent={onAddComment ? handleZapSent : undefined}
         />
       )}
 
