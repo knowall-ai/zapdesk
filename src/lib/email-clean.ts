@@ -167,6 +167,15 @@ function elementEnd(html: string, start: number, tag: string): number {
   return html.length;
 }
 
+/** A block's text, with its markup and encoded brackets flattened to spaces. */
+function blockText(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&lt;|&gt;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
  * Where the attribution line before `index` starts: the last block whose
  * text ends with ":" and names a sender (an address, or "wrote"). `index`
@@ -176,12 +185,7 @@ function attributionStart(html: string, index: number): number {
   const before = html.slice(0, index);
   const lastBlock = Math.max(before.lastIndexOf('<div'), before.lastIndexOf('<p'));
   if (lastBlock === -1) return index;
-  const text = before
-    .slice(lastBlock)
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&lt;|&gt;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const text = blockText(before.slice(lastBlock));
   return /:$/.test(text) && (/@/.test(text) || /wrote/i.test(text)) && text.length < 300
     ? lastBlock
     : index;
@@ -231,6 +235,48 @@ function insideTag(html: string, index: number): boolean {
 }
 
 /**
+ * Whether a block reads as an attribution line rather than as a sentence the
+ * sender wrote.
+ *
+ * `attributionStart` accepts any block ending in ":" that names an address,
+ * which is the right test for cutting: the block is removed either way, so
+ * taking one line too many costs nothing. It is the wrong test for labelling.
+ * `<div>Please reply to alex@example.test:</div>` ends in a colon and names an
+ * address, so pulling the divider back over it would file the sender's own
+ * instruction under "Earlier message" -- the one outcome this change exists to
+ * prevent.
+ *
+ * A real attribution says when: "On <date>, X <addr> wrote:", and the
+ * trailing-colon forms other languages use carry the date too. So this asks
+ * for a verb of writing, Outlook's header shape, or a date, rather than
+ * enumerating languages.
+ */
+function readsAsAttribution(text: string): boolean {
+  if (/^from:\s/i.test(text)) return true;
+  if (/\bwrote\s*:?\s*$/i.test(text)) return true;
+  return (
+    /\d{1,2}:\d{2}/.test(text) ||
+    /\b\d{4}-\d{1,2}-\d{1,2}\b/.test(text) ||
+    /\b\d{1,2}[./]\d{1,2}[./]\d{2,4}\b/.test(text) ||
+    /\b\d{1,2}\s+\p{L}{3,}\.?\s+\d{4}\b/u.test(text)
+  );
+}
+
+/**
+ * Where the label goes for a separator at `index`: above the attribution line
+ * when there really is one, otherwise at the separator itself.
+ *
+ * Settling for the separator leaves the divider one line lower than it might
+ * have been, which only looks slightly off. Guessing wrong the other way
+ * buries words the sender wrote.
+ */
+function labelAttributionStart(html: string, index: number): number {
+  const at = attributionStart(html, index);
+  if (at === index) return index;
+  return readsAsAttribution(blockText(html.slice(at, index))) ? at : index;
+}
+
+/**
  * Where to put the label, or null when there is no real separator to label.
  *
  * The element markers -- `divRplyFwdMsg`, `appendonsend`, `stopSpelling` -- are
@@ -240,8 +286,7 @@ function insideTag(html: string, index: number): boolean {
  * either would be worse than not labelling at all: one lands in the middle of
  * a tag, the other splits a sentence the sender wrote.
  *
- * So a text separator counts only when it stands as its own line of text:
- * nothing but markup and whitespace between it and the markup either side.
+ * So a text separator counts only when it stands as its own line.
  */
 function labelPosition(html: string, header: RegExp): number | null {
   for (const match of html.matchAll(header)) {
@@ -249,14 +294,22 @@ function labelPosition(html: string, header: RegExp): number | null {
     if (insideTag(html, start)) continue;
 
     // An element marker matched its own tag, which is separator enough.
-    if (match[0].startsWith('<')) return attributionStart(html, start);
+    if (match[0].startsWith('<')) return labelAttributionStart(html, start);
 
-    // A text separator: the surrounding text node must hold nothing else.
-    const before = html.lastIndexOf('>', start);
-    const after = html.indexOf('<', start + match[0].length);
-    const lead = html.slice(before + 1, start);
-    const trail = html.slice(start + match[0].length, after === -1 ? undefined : after);
-    if (lead.trim() === '' && trail.trim() === '') return attributionStart(html, start);
+    // A text separator: its own line. The line ends at a markup boundary or
+    // at a newline inside the text node, whichever is nearer -- a plain-text
+    // part kept in a `<pre>` separates its lines with newlines and no markup
+    // at all, and a separator there is as real as one between two `<br>`s.
+    const node = html.lastIndexOf('>', start) + 1;
+    const close = html.indexOf('<', start + match[0].length);
+    const lead = html.slice(node, start);
+    const trail = html.slice(start + match[0].length, close === -1 ? undefined : close);
+    const leadLine = lead.slice(lead.lastIndexOf('\n') + 1);
+    const breakAt = trail.indexOf('\n');
+    const trailLine = breakAt === -1 ? trail : trail.slice(0, breakAt);
+    if (leadLine.trim() === '' && trailLine.trim() === '') {
+      return labelAttributionStart(html, start);
+    }
   }
   return null;
 }

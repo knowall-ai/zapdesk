@@ -266,4 +266,62 @@ describe('the earlier message is labelled, not hidden', () => {
     expect(out).not.toContain('Earlier message');
     expect(out).not.toContain('We have raised your ticket');
   });
+
+  /**
+   * A plain-text part has no markup between its lines, so the text node
+   * either side of the separator still holds message text. The separator
+   * stands on its own line all the same (#614 review).
+   */
+  it('labels a separator standing on its own line inside a text node', () => {
+    const out = stripQuotedHtml(
+      '<pre>Please see the figures attached.\n' +
+        '-----Original Message-----\n' +
+        'From: Alex Morgan\nThe reconciliation is attached.</pre>'
+    );
+
+    expect(out).toContain('Earlier message');
+    expect(out.indexOf('figures attached')).toBeLessThan(out.indexOf('Earlier message'));
+  });
+
+  // Still not a separator: a newline on one side does not excuse text on the
+  // other.
+  it('ignores a separator with the sender own words still on its line', () => {
+    const out = stripQuotedHtml(
+      '<pre>Please see the figures attached.\n' +
+        'I pasted the -----Original Message----- header below.\nFrom: Alex Morgan</pre>'
+    );
+
+    expect(out).not.toContain('Earlier message');
+  });
+
+  /**
+   * A sentence that ends in a colon and names an address is not an
+   * attribution line. Pulling the divider back over it would file the
+   * sender's own instruction under "Earlier message" -- the one outcome this
+   * change exists to prevent (#614 review).
+   */
+  it('does not mistake the sender own closing line for an attribution', () => {
+    const out = stripQuotedHtml(
+      '<div>Please reply to alex@example.test:</div>' +
+        '<div id="divRplyFwdMsg">' +
+        '<div>From: Alex Morgan<br />Sent: 3 November 2026 14:02</div>' +
+        '<div>The reconciliation is attached.</div></div>'
+    );
+
+    expect(out).toContain('Earlier message');
+    expect(out.indexOf('Please reply to')).toBeLessThan(out.indexOf('Earlier message'));
+  });
+
+  // A real one still gets the divider above it, so the label does not land
+  // between the attribution and the message it introduces.
+  it('still puts the divider above a real attribution line', () => {
+    const out = stripQuotedHtml(
+      '<div>Thanks, noted.</div>' +
+        '<div>On 3 November 2026 at 14:02, Alex Morgan &lt;alex@example.test&gt; wrote:</div>' +
+        '<div id="divRplyFwdMsg"><div>The reconciliation is attached.</div></div>'
+    );
+
+    expect(out).toContain('Earlier message');
+    expect(out.indexOf('Earlier message')).toBeLessThan(out.indexOf('On 3 November 2026'));
+  });
 });
