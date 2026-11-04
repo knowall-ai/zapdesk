@@ -1,4 +1,6 @@
 import type { WorkItemUpdate } from '@/types';
+import { normalizeStateName } from './kanban-columns';
+import { PENDING_STATE_HINTS } from './state-categories';
 
 /**
  * An SLA clock that stops while nobody can act on the ticket (7386).
@@ -28,8 +30,21 @@ import type { WorkItemUpdate } from '@/types';
  * authoritative either way — so this takes the timeline and nothing else.
  */
 
-/** DevOps state names that stop the clock, lower-cased for comparison. */
-export const DEFAULT_PAUSING_STATES: readonly string[] = ['blocked', 'pending'];
+/**
+ * DevOps state names that stop the clock, normalised for comparison.
+ *
+ * Taken from `PENDING_STATE_HINTS` rather than written out again, because the
+ * two lists answering differently is a bug with no symptom: the ticket reads
+ * as `Pending` in the UI while its clock keeps running against the target.
+ * That is what happened to `On-hold` and `Waiting` -- both were hints, so both
+ * displayed as Pending, and neither was listed here, so neither paused. Only a
+ * state literally named `Blocked` or `Pending` ever stopped the clock.
+ *
+ * Compared with `normalizeStateName`, not `toLowerCase`, so the punctuation in
+ * a real state name cannot hide it: `On-hold` lower-cases to `on-hold`, which
+ * matches no hint, and the hints are normalised names like `onhold`.
+ */
+export const DEFAULT_PAUSING_STATES: readonly string[] = PENDING_STATE_HINTS;
 
 export interface StatePeriod {
   /** The DevOps state name, as spelled on the work item. */
@@ -94,10 +109,10 @@ export function pausedMillis(
   now: Date,
   pausingStates: readonly string[] = DEFAULT_PAUSING_STATES
 ): number {
-  const pausing = new Set(pausingStates.map((state) => state.toLowerCase()));
+  const pausing = new Set(pausingStates.map(normalizeStateName));
   let total = 0;
   for (const period of timeline) {
-    if (!pausing.has(period.state.toLowerCase())) continue;
+    if (!pausing.has(normalizeStateName(period.state))) continue;
     const from = period.from.getTime();
     const to = Math.min((period.to ?? now).getTime(), now.getTime());
     if (to > from) total += to - from;
@@ -112,7 +127,7 @@ export function isPaused(
 ): boolean {
   const open = timeline.find((period) => period.to === undefined);
   if (!open) return false;
-  return pausingStates.map((s) => s.toLowerCase()).includes(open.state.toLowerCase());
+  return pausingStates.map(normalizeStateName).includes(normalizeStateName(open.state));
 }
 
 /**
