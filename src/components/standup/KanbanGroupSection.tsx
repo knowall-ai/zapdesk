@@ -22,6 +22,7 @@ import StandupKanbanCard from './StandupKanbanCard';
 import ActivitySummaryBar, { type PullRequestLoadState } from './ActivitySummaryBar';
 import { getColumnIcon, getColumnColor } from './columnConfig';
 import { highlightedFirst } from '@/lib/highlight-order';
+import { isInHandColumn } from '@/lib/in-hand-columns';
 import {
   canTypeEnterColumn,
   resolveStateForColumn,
@@ -92,7 +93,15 @@ function DroppableColumn({
   // Highlighted cards first while highlighting is on (#503). One array for both
   // the rendered list and the SortableContext below: if those two disagree, a
   // drag lands on the wrong card.
-  const ordered = useMemo(() => highlightedFirst(items, highlights), [items, highlights]);
+  // To Do and Active are the work in hand: never faded, never ringed (#619).
+  // Taking `highlights` away for this column handles all three at once -- the
+  // fade, the ring and the reason badges all derive from it -- and keeps the
+  // card order stable, since `highlightedFirst` is a no-op without it.
+  const columnHighlights = isInHandColumn(name) ? undefined : highlights;
+  const ordered = useMemo(
+    () => highlightedFirst(items, columnHighlights),
+    [items, columnHighlights]
+  );
 
   return (
     <div
@@ -131,8 +140,8 @@ function DroppableColumn({
               key={item.id}
               item={item}
               isDragging={activeId === item.id}
-              highlight={highlights?.get(item.id)}
-              dimmed={highlights !== undefined && !highlights.has(item.id)}
+              highlight={columnHighlights?.get(item.id)}
+              dimmed={columnHighlights !== undefined && !columnHighlights.has(item.id)}
               onClick={onItemClick}
             />
           ))}
@@ -352,7 +361,24 @@ export default function KanbanGroupSection({
       }
 
       const activeItemId = active.id as number;
-      const targetCol = findColumn(activeItemId);
+      // Where dnd-kit says the card was dropped, in preference to where
+      // `handleDragOver` happened to have moved it (#620).
+      //
+      // This used to read `findColumn(activeItemId)` alone -- the card's
+      // position in `localItems`, which only `handleDragOver` writes. dnd-kit
+      // does not promise a dragOver for the final position of every drag, so
+      // when none arrived for the column under the pointer the card was still
+      // in its source column, `originalCol?.name === targetCol` matched, and
+      // the function returned having done nothing at all: no state write, no
+      // toast, no log. The card sprang back to New and nothing said why,
+      // which is exactly what was reported.
+      //
+      // `over.id` is a column name when the pointer is over the column's own
+      // space and a card id when it is over a card, so both resolve through
+      // the same lookup the drag-over path uses.
+      const overId = String(event.over.id);
+      const droppedOn = columnNames.includes(overId) ? overId : findColumn(overId);
+      const targetCol = droppedOn ?? findColumn(activeItemId);
       if (!targetCol) {
         // Not gated: the dragged card is in no column at all, which means our
         // local state and the columns disagree. That is a real fault, not a
@@ -447,7 +473,15 @@ export default function KanbanGroupSection({
         setIsUpdating(false);
       }
     },
-    [onStateChange, findColumn, columns, allowedStatesByProjectType, syncFromProps, blockedColumns]
+    [
+      onStateChange,
+      findColumn,
+      columnNames,
+      columns,
+      allowedStatesByProjectType,
+      syncFromProps,
+      blockedColumns,
+    ]
   );
 
   const handleDragCancel = useCallback(() => {
