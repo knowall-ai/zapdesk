@@ -209,12 +209,11 @@ export default function TicketDetail({
   // arrives here is already what should be posted -- the app no longer writes
   // the note itself.
   const handleZapSent = async (amount: number, message: string) => {
+    // The rejection is left to travel for the same reason as in the quick
+    // view: the dialog holds the sender's message, and only it can keep that
+    // on screen when the write fails.
     if (onAddComment) {
-      try {
-        await onAddComment(message);
-      } catch (err) {
-        console.error('[TicketDetail] Failed to post zap comment:', err);
-      }
+      await onAddComment(message);
     }
   };
 

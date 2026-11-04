@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
-import { X, Copy, Check, Zap, ExternalLink, Loader2 } from 'lucide-react';
+import { X, Copy, Check, Zap, ExternalLink, Loader2, AlertTriangle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { User } from '@/types';
 import { DEFAULT_ZAP_PRESETS } from '@/types';
@@ -35,7 +35,7 @@ interface ZapDialogProps {
   onClose: () => void;
   agent: User;
   ticketId: number;
-  onZapSent?: (amount: number, message: string) => void;
+  onZapSent?: (amount: number, message: string) => void | Promise<void>;
 }
 
 interface ZapDialogContentProps {
@@ -44,7 +44,7 @@ interface ZapDialogContentProps {
   ticketId: number;
   lightningAddress: string | null;
   isLoadingAddress: boolean;
-  onZapSent?: (amount: number, message: string) => void;
+  onZapSent?: (amount: number, message: string) => void | Promise<void>;
 }
 
 function ZapDialogContent({
@@ -75,6 +75,14 @@ function ZapDialogContent({
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [copiedInvoice, setCopiedInvoice] = useState(false);
   const [zapConfirmed, setZapConfirmed] = useState(false);
+  /**
+   * The zap went through but recording it on the ticket did not, so the
+   * dialog stays open with the message still on screen. Before #330 the note
+   * was the app's own wording and could always be written again; now it may
+   * be the sender's, and closing on the failure would take it with us.
+   */
+  const [recordFailed, setRecordFailed] = useState(false);
+  const [copiedMessage, setCopiedMessage] = useState(false);
 
   // Invoice fetching state
   const [invoice, setInvoice] = useState<string | null>(null);
@@ -245,6 +253,16 @@ function ZapDialogContent({
     }
   };
 
+  const handleCopyMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(message);
+      setCopiedMessage(true);
+      setTimeout(() => setCopiedMessage(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy message:', err);
+    }
+  };
+
   const handleConfirmZap = async () => {
     if (!actualAmount || actualAmount <= 0) return;
 
@@ -264,9 +282,11 @@ function ZapDialogContent({
         await onZapSent(actualAmount, zapCommentHtml(message, agent.displayName, actualAmount));
       } catch (err) {
         console.error('[ZapDialog] Failed to post zap comment:', err);
-        toast.error(
-          'Zap sent, but failed to record it on the ticket — you may want to add a comment manually.'
-        );
+        // Said in the dialog rather than in a toast: the dialog is staying
+        // open to hold the message, so there is somewhere better to say it,
+        // and the caller has already reported the failure of its own write.
+        setRecordFailed(true);
+        return;
       }
     }
 
@@ -314,15 +334,49 @@ function ZapDialogContent({
         </div>
       ) : zapConfirmed ? (
         <div className="rounded-lg p-6 text-center" style={{ backgroundColor: 'var(--surface)' }}>
-          <div className="bg-success/20 mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full">
-            <Check size={32} className="text-success" />
-          </div>
-          <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
-            Zap recorded!
-          </p>
-          <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-            {actualAmount.toLocaleString()} sats sent to {agent.displayName}
-          </p>
+          {recordFailed ? (
+            <>
+              <div
+                className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full"
+                style={{ backgroundColor: 'var(--warning-bg)' }}
+              >
+                <AlertTriangle size={32} style={{ color: 'var(--warning)' }} />
+              </div>
+              <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                Zap sent, but not recorded
+              </p>
+              <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
+                {actualAmount.toLocaleString()} sats went to {agent.displayName}. Adding the comment
+                to this ticket failed, so the message is still here — copy it and post it yourself.
+              </p>
+              <p
+                className="mt-3 rounded p-3 text-left text-sm whitespace-pre-wrap"
+                style={{ backgroundColor: 'var(--background)', color: 'var(--text-secondary)' }}
+              >
+                {message}
+              </p>
+              <button
+                onClick={handleCopyMessage}
+                className="mt-3 inline-flex items-center gap-1.5 text-xs underline"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                {copiedMessage ? <Check size={12} /> : <Copy size={12} />}
+                {copiedMessage ? 'Copied' : 'Copy message'}
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="bg-success/20 mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full">
+                <Check size={32} className="text-success" />
+              </div>
+              <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                Zap recorded!
+              </p>
+              <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
+                {actualAmount.toLocaleString()} sats sent to {agent.displayName}
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <>

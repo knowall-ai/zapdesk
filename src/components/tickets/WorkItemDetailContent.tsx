@@ -31,7 +31,7 @@ interface WorkItemDetailContentProps {
     resolution?: string;
     mitigation?: string;
   }) => Promise<void>;
-  onZapSent?: (amount: number, message: string) => void;
+  onZapSent?: (amount: number, message: string) => void | Promise<void>;
   showRequester?: boolean;
   compact?: boolean;
   processTemplate?: string;
@@ -329,8 +329,10 @@ export default function WorkItemDetailContent({
   // The message the sender wrote travels with the amount (#330). Dropping it
   // here would quietly post the app's own wording instead of theirs.
   const handleZapSent = async (amount: number, message: string) => {
+    // Awaited, and the rejection left to travel: the dialog decides what to
+    // do about a failed write, and it cannot if this resolves first.
     if (onZapSent) {
-      onZapSent(amount, message);
+      await onZapSent(amount, message);
     }
   };
 

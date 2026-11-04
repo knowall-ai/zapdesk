@@ -308,11 +308,10 @@ export default function WorkItemDetailDialog({
   const handleZapSent = useCallback(
     async (amount: number, message: string) => {
       if (!workItem) return;
-      try {
-        await handleAddComment(message);
-      } catch (err) {
-        console.error('[WorkItemDetailDialog] Failed to post zap comment:', err);
-      }
+      // Not caught here. `handleAddComment` has already logged and reported
+      // it; swallowing the rejection as well would leave the dialog closing
+      // on a write that never happened, taking the sender's message with it.
+      await handleAddComment(message);
     },
     [workItem, handleAddComment]
   );
