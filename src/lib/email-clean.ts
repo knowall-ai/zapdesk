@@ -167,6 +167,15 @@ function elementEnd(html: string, start: number, tag: string): number {
   return html.length;
 }
 
+/** A block's text, with its markup and encoded brackets flattened to spaces. */
+function blockText(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&lt;|&gt;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
  * Where the attribution line before `index` starts: the last block whose
  * text ends with ":" and names a sender (an address, or "wrote"). `index`
@@ -176,12 +185,7 @@ function attributionStart(html: string, index: number): number {
   const before = html.slice(0, index);
   const lastBlock = Math.max(before.lastIndexOf('<div'), before.lastIndexOf('<p'));
   if (lastBlock === -1) return index;
-  const text = before
-    .slice(lastBlock)
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&lt;|&gt;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const text = blockText(before.slice(lastBlock));
   return /:$/.test(text) && (/@/.test(text) || /wrote/i.test(text)) && text.length < 300
     ? lastBlock
     : index;
@@ -200,6 +204,146 @@ function attributionStart(html: string, index: number): number {
  * block, a `stopSpelling` rule or "-----Original Message-----", so those are
  * cut to the end when their header block names ZapDesk.
  */
+/**
+ * Marks where the sender's own words end and the message they replied to or
+ * forwarded begins (#7769).
+ *
+ * Plain `hr` and `strong` with an inline style, because those are what the
+ * sanitiser allows: `class`, `id` and `data-*` attributes are all refused by
+ * design, so a marker for the browser to act on could not survive storage.
+ */
+const EARLIER_MESSAGE_LABEL =
+  '<hr /><p style="margin:0 0 8px 0;"><strong>Earlier message</strong></p>';
+
+/**
+ * Walks the document once, keeping the state needed to judge each match:
+ * whether the index falls inside a tag, judged with the quoting rules of one,
+ * and whether it falls inside preformatted content.
+ *
+ * Incremental because `labelPosition` asks about matches in ascending order.
+ * Rescanning from the start for each one made the work the body length times
+ * the number of matches, and a body can carry as many copies of the plain-text
+ * separator as somebody cares to paste.
+ */
+function tagScanner(html: string): (index: number) => { inTag: boolean; inPre: boolean } {
+  let at = 0;
+  let inTag = false;
+  let quote: string | null = null;
+  let tagStart = -1;
+  let preDepth = 0;
+
+  return (index: number) => {
+    for (; at < index; at++) {
+      const c = html[at];
+      if (quote) {
+        if (c === quote) quote = null;
+      } else if (inTag) {
+        // An attribute value may be quoted either way, and the other
+        // character is ordinary text inside it.
+        if (c === '"' || c === "'") {
+          quote = c;
+        } else if (c === '>') {
+          const closing = html[tagStart + 1] === '/';
+          const name = /^<\/?\s*([a-z]+)/i.exec(html.slice(tagStart, at));
+          if (name && name[1].toLowerCase() === 'pre') {
+            preDepth = Math.max(0, preDepth + (closing ? -1 : 1));
+          }
+          inTag = false;
+        }
+      } else if (c === '<') {
+        inTag = true;
+        tagStart = at;
+      }
+    }
+    return { inTag, inPre: preDepth > 0 };
+  };
+}
+
+/**
+ * Whether a block reads as an attribution line rather than as a sentence the
+ * sender wrote.
+ *
+ * `attributionStart` accepts any block ending in ":" that names an address,
+ * which is the right test for cutting: the block is removed either way, so
+ * taking one line too many costs nothing. It is the wrong test for labelling.
+ * `<div>Please reply to alex@example.test:</div>` ends in a colon and names an
+ * address, so pulling the divider back over it would file the sender's own
+ * instruction under "Earlier message" -- the one outcome this change exists to
+ * prevent.
+ *
+ * A real attribution says when: "On <date>, X <addr> wrote:", and the
+ * trailing-colon forms other languages use carry the date too. So this asks
+ * for a verb of writing, Outlook's header shape, or a date, rather than
+ * enumerating languages.
+ */
+function readsAsAttribution(text: string): boolean {
+  if (/^from:\s/i.test(text)) return true;
+  if (/\bwrote\s*:?\s*$/i.test(text)) return true;
+  return (
+    /\d{1,2}:\d{2}/.test(text) ||
+    /\b\d{4}-\d{1,2}-\d{1,2}\b/.test(text) ||
+    /\b\d{1,2}[./]\d{1,2}[./]\d{2,4}\b/.test(text) ||
+    /\b\d{1,2}\s+\p{L}{3,}\.?\s+\d{4}\b/u.test(text)
+  );
+}
+
+/**
+ * Where the label goes for a separator at `index`: above the attribution line
+ * when there really is one, otherwise at the separator itself.
+ *
+ * Settling for the separator leaves the divider one line lower than it might
+ * have been, which only looks slightly off. Guessing wrong the other way
+ * buries words the sender wrote.
+ */
+function labelAttributionStart(html: string, index: number): number {
+  const at = attributionStart(html, index);
+  if (at === index) return index;
+  return readsAsAttribution(blockText(html.slice(at, index))) ? at : index;
+}
+
+/**
+ * Where to put the label, or null when there is no real separator to label.
+ *
+ * The element markers -- `divRplyFwdMsg`, `appendonsend`, `stopSpelling` -- are
+ * structural and can be trusted. The `-----Original Message-----` form is
+ * plain text, and the pattern for it is unanchored, so it also matches inside
+ * an attribute value and inside an ordinary sentence. Inserting a divider at
+ * either would be worse than not labelling at all: one lands in the middle of
+ * a tag, the other splits a sentence the sender wrote.
+ *
+ * So a text separator counts only when it stands as its own line.
+ */
+function labelPosition(html: string, header: RegExp): number | null {
+  const contextAt = tagScanner(html);
+
+  for (const match of html.matchAll(header)) {
+    const start = match.index ?? 0;
+    const { inTag, inPre } = contextAt(start);
+    if (inTag) continue;
+
+    // An element marker matched its own tag, which is separator enough.
+    if (match[0].startsWith('<')) return labelAttributionStart(html, start);
+
+    // A text separator: its own line. The line ends at a markup boundary, or
+    // at a newline where a newline is rendered as a line break at all --
+    // inside an ordinary element the source newlines collapse, so a separator
+    // written on its own source line is still displayed mid-sentence. A
+    // plain-text part, which `renderEmailBody` wraps in a `<pre>`, has no
+    // markup between its lines and the newlines are all it has.
+    const node = html.lastIndexOf('>', start) + 1;
+    const close = html.indexOf('<', start + match[0].length);
+    const lead = html.slice(node, start);
+    const trail = html.slice(start + match[0].length, close === -1 ? undefined : close);
+    const leadLine = inPre ? lead.slice(lead.lastIndexOf('\n') + 1) : lead;
+    const breakAt = inPre ? trail.indexOf('\n') : -1;
+    const trailLine = breakAt === -1 ? trail : trail.slice(0, breakAt);
+    if (leadLine.trim() === '' && trailLine.trim() === '') {
+      return labelAttributionStart(html, start);
+    }
+  }
+  return null;
+}
+
 export function stripQuotedHtml(html: string): string {
   if (!html) return '';
   let out = html;
@@ -243,8 +387,11 @@ export function stripQuotedHtml(html: string): string {
   out = out.replace(/ data-zapdesk-kept/g, '');
 
   // Outlook headers: everything below them is the earlier message.
+  // `[\s"']` before `id`, so `data-id="divRplyFwdMsg"` is not read as the
+  // marker: `[^>]*id=` matched the tail of any attribute ending in `id`, and a
+  // plain message carrying such an element would be cut, or labelled.
   const header =
-    /<div[^>]*id="?(?:divRplyFwdMsg|appendonsend)"?[^>]*>|<hr[^>]*id="?stopSpelling"?[^>]*>|-{2,}\s*Original Message\s*-{2,}/gi;
+    /<div[^>]*[\s"']id="?(?:divRplyFwdMsg|appendonsend)"?[^>]*>|<hr[^>]*[\s"']id="?stopSpelling"?[^>]*>|-{2,}\s*Original Message\s*-{2,}/gi;
   for (const match of out.matchAll(header)) {
     const start = match.index ?? 0;
     // Judged on the From/Sent/To/Subject fields only, not the quoted message.
@@ -253,6 +400,29 @@ export function stripQuotedHtml(html: string): string {
       out = out.slice(0, attributionStart(out, start));
       break;
     }
+  }
+
+  // Whatever earlier message survives is labelled, so the sender's own words
+  // lead and the rest reads as history rather than as part of the request
+  // (#7769). A reply or forward from someone other than ZapDesk is kept on
+  // purpose -- see isZapDeskQuote -- and a ticket raised from such a mail was
+  // reported as "capturing old conversations", which it was: the quote sat
+  // directly under one new sentence with nothing to separate them.
+  //
+  // Labelled rather than cut. A forwarded mail is often the request itself,
+  // and its forwarded body the only description of it, so cutting would throw
+  // away the very thing the ticket is about. Labelled rather than collapsed in
+  // the browser, too: that would need a marker to survive into the stored HTML,
+  // and the sanitiser deliberately allows neither class nor id nor data-*.
+  // A divider works in Azure DevOps and in ZapDesk alike, with no exception
+  // carved into the allowlist.
+  //
+  // Only the first separator is labelled: everything after it is already part
+  // of the same earlier message. And only a separator that is really one --
+  // see labelPosition, which refuses a match inside a tag or mid-sentence.
+  const at = labelPosition(out, header);
+  if (at !== null) {
+    out = out.slice(0, at) + EARLIER_MESSAGE_LABEL + out.slice(at);
   }
 
   return out.trimEnd();
@@ -276,9 +446,16 @@ export function renderEmailBody(rawText: string): string {
       ? stripped.slice(0, MAX_BODY_CHARS) + '\n\n[truncated]'
       : stripped;
   if (!truncated.trim()) return '<em>No content</em>';
-  return `<pre style="white-space: pre-wrap; font-family: inherit; margin: 0;">${escapeHtml(
-    truncated
-  )}</pre>`;
+  // Through the same labelling as an HTML body (#7769). A plain-text reply
+  // whose quote was kept -- somebody else's mail, not ZapDesk's -- showed the
+  // bare separator and no divider, because this path never went near
+  // `stripQuotedHtml`. The `<pre>` is what makes its newlines real line
+  // breaks, which is how the separator is recognised there.
+  return stripQuotedHtml(
+    `<pre style="white-space: pre-wrap; font-family: inherit; margin: 0;">${escapeHtml(
+      truncated
+    )}</pre>`
+  );
 }
 
 /**

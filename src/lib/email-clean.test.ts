@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   sanitizeEmailHtml,
   renderEmailBodyHtml,
+  renderEmailBody,
   rewriteCidReferences,
   collectReferencedCids,
+  stripQuotedHtml,
 } from './email-clean';
 
 describe('sanitizeEmailHtml', () => {
@@ -140,5 +142,284 @@ describe('renderEmailBodyHtml — truncation', () => {
     const out = renderEmailBodyHtml('<p>hello</p>');
     expect(out).toContain('<p>hello</p>');
     expect(out).not.toContain('[truncated]');
+  });
+});
+
+/**
+ * The earlier message, labelled (#7769).
+ *
+ * Reported from the Testing 2.0 pass as "Message shows irrelevant information
+ * if there is another attachment rather than screenshot", resolved once, and
+ * returned: "still the same - in this mail it was only attachment. It captures
+ * old converstions".
+ *
+ * The title is misleading and that is worth recording, because it sent the
+ * first attempt to the wrong place: the attachment has nothing to do with it.
+ * What the reporter saw was an Outlook reply whose quoted thread sat directly
+ * beneath one new sentence, with nothing between them, so the ticket read as
+ * though the old conversation were part of the request.
+ *
+ * It is labelled rather than cut: a forwarded mail is often the request
+ * itself, and its forwarded body the only description of it.
+ */
+describe('the earlier message is labelled, not hidden', () => {
+  const reply = (separator: string) =>
+    `<div>Please see the figures attached.</div>${separator}` +
+    '<div>From: Alex Morgan&lt;alex@example.test&gt;<br />' +
+    'Sent: 14 October 2026 09:12<br />To: Sam Taylor&lt;sam@example.test&gt;<br />' +
+    'Subject: Q3 reconciliation</div>' +
+    '<div>Sam, the Q3 numbers still do not tie out.</div>';
+
+  it.each([
+    ['divRplyFwdMsg', '<div id="divRplyFwdMsg">'],
+    ['appendonsend', '<div id="appendonsend"></div>'],
+    ['Original Message', '<div>-----Original Message-----</div>'],
+  ])('labels the boundary at an %s separator', (_name, separator) => {
+    const out = stripQuotedHtml(reply(separator));
+
+    expect(out).toContain('Earlier message');
+    // The sender's own words come first, the label after them.
+    expect(out.indexOf('figures attached')).toBeLessThan(out.indexOf('Earlier message'));
+  });
+
+  // The whole point of labelling rather than cutting: a forward's body is
+  // often the only description of what is being asked for.
+  it('keeps every word of the earlier message', () => {
+    const out = stripQuotedHtml(reply('<div id="divRplyFwdMsg">'));
+
+    expect(out).toContain('Q3 numbers still do not tie out');
+    expect(out).toContain('Subject: Q3 reconciliation');
+  });
+
+  // Only allowed markup: the sanitiser refuses class, id and data-*, so a
+  // marker for the browser could not have survived storage anyway.
+  it('uses only markup the sanitiser allows', () => {
+    const out = stripQuotedHtml(reply('<div id="divRplyFwdMsg">'));
+    const label = out.slice(out.indexOf('<hr'), out.indexOf('Earlier message'));
+
+    expect(label).not.toMatch(/class=|data-|id=/);
+  });
+
+  it('labels the boundary once, however many separators follow', () => {
+    const out = stripQuotedHtml(
+      reply('<div id="divRplyFwdMsg">') + '<div id="appendonsend"></div><div>older still</div>'
+    );
+
+    expect(out.match(/Earlier message/g) ?? []).toHaveLength(1);
+  });
+
+  /**
+   * The `-----Original Message-----` pattern is plain text and unanchored, so
+   * it matches inside an attribute value and inside an ordinary sentence too.
+   * Labelling either would be worse than not labelling: one divider lands in
+   * the middle of a tag, the other splits a sentence the sender wrote (#614
+   * review).
+   */
+  it('ignores the separator inside an attribute value', () => {
+    const html = '<div title="-----Original Message-----">Please see the figures attached.</div>';
+
+    const out = stripQuotedHtml(html);
+
+    expect(out).not.toContain('Earlier message');
+    // And the tag survives intact, rather than being cut open by a divider.
+    expect(out).toContain('<div title="-----Original Message-----">');
+  });
+
+  it('ignores the separator written inside a sentence', () => {
+    const html = '<div>I pasted the -----Original Message----- header below for reference.</div>';
+
+    const out = stripQuotedHtml(html);
+
+    expect(out).not.toContain('Earlier message');
+    expect(out).toContain('I pasted the -----Original Message----- header below');
+  });
+
+  // Standing on its own, as Outlook writes it, it is a real separator.
+  it('labels the separator when it stands as its own line', () => {
+    const out = stripQuotedHtml(
+      '<div>Please see the figures attached.</div>' +
+        '<div>-----Original Message-----</div>' +
+        '<div>From: Alex Morgan<br />Subject: Q3 reconciliation</div>'
+    );
+
+    expect(out).toContain('Earlier message');
+    expect(out.indexOf('figures attached')).toBeLessThan(out.indexOf('Earlier message'));
+  });
+
+  // A mail with nothing quoted must not grow a divider out of nowhere.
+  it('says nothing when there is no earlier message', () => {
+    const out = stripQuotedHtml('<div>Just the one message, nothing quoted.</div>');
+
+    expect(out).not.toContain('Earlier message');
+    expect(out).not.toContain('<hr');
+  });
+
+  // ZapDesk quoting itself is still removed outright (#7720), so there is no
+  // boundary left to label.
+  it('does not label a quote of ZapDesk its own mail, which is removed', () => {
+    const out = stripQuotedHtml(
+      '<div>Thanks.</div><div id="divRplyFwdMsg">' +
+        '<div>From: ZapDesk Support&lt;support@example.test&gt;<br />' +
+        'Sent: 14 October 2026 09:12<br />Subject: [ZapDesk #42] Printer</div>' +
+        '<div>We have raised your ticket.</div>'
+    );
+
+    expect(out).not.toContain('Earlier message');
+    expect(out).not.toContain('We have raised your ticket');
+  });
+
+  /**
+   * A plain-text part has no markup between its lines, so the text node
+   * either side of the separator still holds message text. The separator
+   * stands on its own line all the same (#614 review).
+   */
+  it('labels a separator standing on its own line inside a text node', () => {
+    const out = stripQuotedHtml(
+      '<pre>Please see the figures attached.\n' +
+        '-----Original Message-----\n' +
+        'From: Alex Morgan\nThe reconciliation is attached.</pre>'
+    );
+
+    expect(out).toContain('Earlier message');
+    expect(out.indexOf('figures attached')).toBeLessThan(out.indexOf('Earlier message'));
+  });
+
+  // Still not a separator: a newline on one side does not excuse text on the
+  // other.
+  it('ignores a separator with the sender own words still on its line', () => {
+    const out = stripQuotedHtml(
+      '<pre>Please see the figures attached.\n' +
+        'I pasted the -----Original Message----- header below.\nFrom: Alex Morgan</pre>'
+    );
+
+    expect(out).not.toContain('Earlier message');
+  });
+
+  /**
+   * A sentence that ends in a colon and names an address is not an
+   * attribution line. Pulling the divider back over it would file the
+   * sender's own instruction under "Earlier message" -- the one outcome this
+   * change exists to prevent (#614 review).
+   */
+  it('does not mistake the sender own closing line for an attribution', () => {
+    const out = stripQuotedHtml(
+      '<div>Please reply to alex@example.test:</div>' +
+        '<div id="divRplyFwdMsg">' +
+        '<div>From: Alex Morgan<br />Sent: 3 November 2026 14:02</div>' +
+        '<div>The reconciliation is attached.</div></div>'
+    );
+
+    expect(out).toContain('Earlier message');
+    expect(out.indexOf('Please reply to')).toBeLessThan(out.indexOf('Earlier message'));
+  });
+
+  // A real one still gets the divider above it, so the label does not land
+  // between the attribution and the message it introduces.
+  it('still puts the divider above a real attribution line', () => {
+    const out = stripQuotedHtml(
+      '<div>Thanks, noted.</div>' +
+        '<div>On 3 November 2026 at 14:02, Alex Morgan &lt;alex@example.test&gt; wrote:</div>' +
+        '<div id="divRplyFwdMsg"><div>The reconciliation is attached.</div></div>'
+    );
+
+    expect(out).toContain('Earlier message');
+    expect(out.indexOf('Earlier message')).toBeLessThan(out.indexOf('On 3 November 2026'));
+  });
+
+  /**
+   * `[^>]*id=` matched the tail of any attribute ending in `id`, so a plain
+   * message carrying `data-id="divRplyFwdMsg"` was read as having an Outlook
+   * header: labelled here, and cut where the header names ZapDesk (#615
+   * review).
+   */
+  it('does not read data-id as the element own id', () => {
+    const html = '<div data-id="divRplyFwdMsg">Please see the figures attached.</div>';
+
+    const out = stripQuotedHtml(html);
+
+    expect(out).not.toContain('Earlier message');
+    expect(out).toContain('figures attached');
+  });
+
+  // The marker itself is unaffected by the tightening.
+  it('still reads the element own id', () => {
+    const out = stripQuotedHtml(
+      '<div>Please see the figures attached.</div>' +
+        '<div id="divRplyFwdMsg"><div>From: Alex Morgan</div></div>'
+    );
+
+    expect(out).toContain('Earlier message');
+  });
+
+  /**
+   * A newline is a line boundary only where it is rendered as one. Inside an
+   * ordinary element the source newlines collapse, so a separator written on
+   * its own source line is still displayed in the middle of the sentence --
+   * and a divider there splits words the sender wrote (#615 review).
+   */
+  it('does not treat a collapsed newline as a line boundary', () => {
+    const out = stripQuotedHtml(
+      '<div>Read this example:\n-----Original Message-----\nnot a quoted email</div>'
+    );
+
+    expect(out).not.toContain('Earlier message');
+    expect(out).toContain('not a quoted email');
+  });
+
+  /**
+   * The scan now carries its tag state from one match to the next instead of
+   * starting over, so a body holding many copies of the separator costs the
+   * body length rather than the body length times the copies. What that must
+   * not do is lose the state: an earlier match inside a tag has to leave the
+   * scan able to judge a later real one.
+   */
+  it('still finds the real separator after matches it had to skip', () => {
+    const out = stripQuotedHtml(
+      '<div title="-----Original Message-----">Noise.</div>' +
+        '<div>I pasted the -----Original Message----- header once.</div>' +
+        '<div>Please see the figures attached.</div>' +
+        '<div>-----Original Message-----</div>' +
+        '<div>From: Alex Morgan</div>'
+    );
+
+    expect(out).toContain('Earlier message');
+    expect(out.indexOf('figures attached')).toBeLessThan(out.indexOf('Earlier message'));
+    // And the two it skipped are untouched.
+    expect(out).toContain('<div title="-----Original Message-----">');
+    expect(out).toContain('I pasted the -----Original Message----- header once.');
+  });
+});
+
+/**
+ * Plain-text mail never went near `stripQuotedHtml`, so a quote it kept --
+ * somebody else's mail rather than ZapDesk's -- showed the bare separator and
+ * no divider. The same fix, through the other door (#615 review).
+ */
+describe('a plain-text body is labelled too', () => {
+  it('labels a separator the plain-text strip kept', () => {
+    const out = renderEmailBody(
+      'Please see the figures attached.\n' +
+        '-----Original Message-----\n' +
+        'From: Alex Morgan\nThe reconciliation is attached.'
+    );
+
+    expect(out).toContain('Earlier message');
+    expect(out.indexOf('figures attached')).toBeLessThan(out.indexOf('Earlier message'));
+  });
+
+  it('says nothing when a plain-text body quotes nothing', () => {
+    const out = renderEmailBody('Just the one message, nothing quoted.');
+
+    expect(out).not.toContain('Earlier message');
+    expect(out).not.toContain('<hr');
+  });
+
+  // The escaping still happens, and before the labelling, so a separator
+  // written in text cannot arrive as markup.
+  it('escapes the body before labelling it', () => {
+    const out = renderEmailBody('a < b and <script>alert(1)</script>');
+
+    expect(out).toContain('&lt;script&gt;');
+    expect(out).not.toContain('<script>');
   });
 });
