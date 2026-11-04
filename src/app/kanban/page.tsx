@@ -1278,89 +1278,94 @@ function StandupPageContent() {
         </div>
 
         {/* Content */}
-        <div
-          ref={boardRef}
-          onScroll={handleBoardScroll}
-          className="flex-1 overflow-auto p-4 md:p-6"
-        >
-          {loading ? (
-            <LoadingSpinner />
-          ) : error ? (
-            <div
-              className="card flex flex-col items-center gap-4 p-8 text-center"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              <p className="text-sm">{error}</p>
-              <button
-                onClick={() => fetchStandupData()}
-                className="rounded-md px-4 py-2 text-sm"
-                style={{
-                  backgroundColor: 'var(--color-brand)',
-                  color: 'var(--color-brand-foreground)',
-                }}
+        {/* The scroller carries no padding of its own (#622). A sticky
+            element sticks to its scrolling ancestor's *padding* edge, so
+            `p-4 md:p-6` here left the state headers hanging 16px -- 24px on
+            desktop -- below the toolbar, with a strip of cards scrolling
+            through the gap above them. The padding lives on the wrapper
+            inside instead, which spaces the content identically while
+            leaving the scroller's top edge where the headers can reach it. */}
+        <div ref={boardRef} onScroll={handleBoardScroll} className="flex-1 overflow-auto">
+          <div className="p-4 md:p-6">
+            {loading ? (
+              <LoadingSpinner />
+            ) : error ? (
+              <div
+                className="card flex flex-col items-center gap-4 p-8 text-center"
+                style={{ color: 'var(--text-muted)' }}
               >
-                Retry
-              </button>
-            </div>
-          ) : standupData ? (
-            <div className="space-y-6">
-              <StandupSummaryCards
-                columns={standupData.columns}
-                summary={(boardData ?? standupData).summary}
-                activeColumn={focusedColumn}
-                onColumnClick={handleColumnClick}
-              />
-
-              {focusedColumn && (
-                <div
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
-                  style={{ color: 'var(--text-secondary)' }}
-                  role="status"
+                <p className="text-sm">{error}</p>
+                <button
+                  onClick={() => fetchStandupData()}
+                  className="rounded-md px-4 py-2 text-sm"
+                  style={{
+                    backgroundColor: 'var(--color-brand)',
+                    color: 'var(--color-brand-foreground)',
+                  }}
                 >
-                  <span>
-                    Showing {visibleGroups.length} of {groups.length}{' '}
-                    {groupBy === 'person' ? 'people' : 'projects'}: those with {focusedColumn}{' '}
-                    items.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleColumnClick(focusedColumn)}
-                    className="underline"
-                    style={{ color: 'var(--color-brand)' }}
+                  Retry
+                </button>
+              </div>
+            ) : standupData ? (
+              <div className="space-y-6">
+                <StandupSummaryCards
+                  columns={standupData.columns}
+                  summary={(boardData ?? standupData).summary}
+                  activeColumn={focusedColumn}
+                  onColumnClick={handleColumnClick}
+                />
+
+                {focusedColumn && (
+                  <div
+                    className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
+                    style={{ color: 'var(--text-secondary)' }}
+                    role="status"
                   >
-                    Show all
-                  </button>
-                </div>
-              )}
+                    <span>
+                      Showing {visibleGroups.length} of {groups.length}{' '}
+                      {groupBy === 'person' ? 'people' : 'projects'}: those with {focusedColumn}{' '}
+                      items.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleColumnClick(focusedColumn)}
+                      className="underline"
+                      style={{ color: 'var(--color-brand)' }}
+                    >
+                      Show all
+                    </button>
+                  </div>
+                )}
 
-              {visibleGroups.length > 0 ? (
-                visibleGroups.map((group) => (
-                  <KanbanGroupSection
-                    // The narrowed state is part of the key: a group opens
-                    // itself when the board is narrowed, and goes back to how
-                    // the user left it when the board is whole again.
-                    key={`${groupScope}:${focusedColumn ?? ''}:${group.groupName}`}
-                    groupName={group.groupName}
-                    positionScope={groupScope}
-                    focusedColumn={focusedColumn}
-                    columns={group.columns}
-                    allowedStatesByProjectType={standupData.allowedStatesByProjectType}
-                    onStateChange={handleStateChange}
-                    onItemClick={handleItemClick}
-                    activity={groupActivity.get(group.groupName)}
-                    closedWindow={closedWindow}
-                  />
-                ))
-              ) : (
-                <div
-                  className="card p-8 text-center text-sm"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  {focusedColumn ? `No ${focusedColumn} items.` : 'No work items found.'}
-                </div>
-              )}
-            </div>
-          ) : null}
+                {visibleGroups.length > 0 ? (
+                  visibleGroups.map((group) => (
+                    <KanbanGroupSection
+                      // The narrowed state is part of the key: a group opens
+                      // itself when the board is narrowed, and goes back to how
+                      // the user left it when the board is whole again.
+                      key={`${groupScope}:${focusedColumn ?? ''}:${group.groupName}`}
+                      groupName={group.groupName}
+                      positionScope={groupScope}
+                      focusedColumn={focusedColumn}
+                      columns={group.columns}
+                      allowedStatesByProjectType={standupData.allowedStatesByProjectType}
+                      onStateChange={handleStateChange}
+                      onItemClick={handleItemClick}
+                      activity={groupActivity.get(group.groupName)}
+                      closedWindow={closedWindow}
+                    />
+                  ))
+                ) : (
+                  <div
+                    className="card p-8 text-center text-sm"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {focusedColumn ? `No ${focusedColumn} items.` : 'No work items found.'}
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {/* Loading indicator while fetching the clicked ticket */}
