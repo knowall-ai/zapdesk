@@ -31,7 +31,7 @@ interface WorkItemDetailContentProps {
     resolution?: string;
     mitigation?: string;
   }) => Promise<void>;
-  onZapSent?: (amount: number) => void;
+  onZapSent?: (amount: number, message: string) => void | Promise<void>;
   showRequester?: boolean;
   compact?: boolean;
   processTemplate?: string;
@@ -326,12 +326,6 @@ export default function WorkItemDetailContent({
     }
   };
 
-  const handleZapSent = async (amount: number) => {
-    if (onZapSent) {
-      onZapSent(amount);
-    }
-  };
-
   return (
     <div className="min-w-0 flex-1 overflow-auto p-4">
       {/* Title with edit controls */}
@@ -515,7 +509,11 @@ export default function WorkItemDetailContent({
           onClose={() => setIsZapDialogOpen(false)}
           agent={workItem.assignee}
           ticketId={workItem.id}
-          onZapSent={handleZapSent}
+          /* The callback itself, not a wrapper around it. A wrapper is a
+             function and so always truthy, which defeated the dialog's own
+             check that there is somewhere to post a message before it offers
+             one -- and it only forwarded (#330). */
+          onZapSent={onZapSent}
         />
       )}
     </div>

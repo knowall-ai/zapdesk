@@ -301,18 +301,24 @@ export default function WorkItemDetailDialog({
     [workItem, gitHubRef, fetchComments, fetchAttachments, fetchDevOps, hasOrganization]
   );
 
+  // The dialog offers the wording and the sender may change it (#330), so what
+  // arrives here is already what should be posted. This used to write its own
+  // copy of the note -- a third place saying the same thing, and the one that
+  // would have thrown the sender's words away.
   const handleZapSent = useCallback(
-    async (amount: number) => {
-      if (!workItem) return;
-      const assigneeName = workItem.assignee?.displayName || 'the agent';
-      const zapMessage = `⚡ Sent a ${amount.toLocaleString()} sat zap to ${assigneeName} for great support!`;
-      try {
-        await handleAddComment(zapMessage);
-      } catch (err) {
-        console.error('[WorkItemDetailDialog] Failed to post zap comment:', err);
+    async (amount: number, message: string) => {
+      // Thrown rather than returned: `handleAddComment` is a silent no-op
+      // without a work item or an organisation, so returning here would let
+      // the dialog report a zap recorded against nothing.
+      if (!workItem || !hasOrganization) {
+        throw new Error('No ticket to record the zap on');
       }
+      // Not caught here. `handleAddComment` has already logged and reported
+      // it; swallowing the rejection as well would leave the dialog closing
+      // on a write that never happened, taking the sender's message with it.
+      await handleAddComment(message);
     },
-    [workItem, handleAddComment]
+    [workItem, hasOrganization, handleAddComment]
   );
 
   const handleUploadAttachment = useCallback(
@@ -583,7 +589,7 @@ export default function WorkItemDetailDialog({
           onAddComment={handleAddComment}
           onUploadAttachment={handleUploadAttachment}
           onUpdate={onUpdate ? handleUpdate : undefined}
-          onZapSent={handleZapSent}
+          onZapSent={hasOrganization ? handleZapSent : undefined}
           compact
         />
       </TicketDialogShell>

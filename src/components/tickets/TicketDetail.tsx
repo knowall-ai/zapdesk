@@ -205,14 +205,15 @@ export default function TicketDetail({
   const [isLoadingStates, setIsLoadingStates] = useState(false);
   const [isUpdatingState, setIsUpdatingState] = useState(false);
 
-  const handleZapSent = async (amount: number) => {
+  // The dialog offers the wording and the sender may change it (#330), so what
+  // arrives here is already what should be posted -- the app no longer writes
+  // the note itself.
+  const handleZapSent = async (amount: number, message: string) => {
+    // The rejection is left to travel for the same reason as in the quick
+    // view: the dialog holds the sender's message, and only it can keep that
+    // on screen when the write fails.
     if (onAddComment) {
-      const zapMessage = `⚡ Sent a ${amount.toLocaleString()} sat zap to ${ticket.assignee?.displayName || 'the agent'} for great support!`;
-      try {
-        await onAddComment(zapMessage);
-      } catch (err) {
-        console.error('[TicketDetail] Failed to post zap comment:', err);
-      }
+      await onAddComment(message);
     }
   };
 
@@ -2156,7 +2157,7 @@ export default function TicketDetail({
           onClose={() => setIsZapDialogOpen(false)}
           agent={ticket.assignee}
           ticketId={ticket.workItemId}
-          onZapSent={handleZapSent}
+          onZapSent={onAddComment ? handleZapSent : undefined}
         />
       )}
 

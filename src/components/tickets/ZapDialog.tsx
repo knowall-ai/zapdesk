@@ -2,15 +2,37 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
-import { X, Copy, Check, Zap, ExternalLink, Loader2 } from 'lucide-react';
+import { X, Copy, Check, Zap, ExternalLink, Loader2, AlertTriangle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { User } from '@/types';
 import { DEFAULT_ZAP_PRESETS } from '@/types';
+import { defaultZapMessage, zapCommentHtml, zapCommentToPost } from '@/lib/zap-message';
 import Avatar from '../common/Avatar';
 import { lightningUri } from '@/lib/lnurl';
 
 /** Bounds for a custom zap amount, in whole sats. */
 const MIN_ZAP_SATS = 1;
+
+/**
+ * How long to wait for the ticket comment before calling the write failed.
+ *
+ * A write that never settles would otherwise leave the dialog saying it is
+ * recording for as long as the page is open, with the sender's message behind
+ * a state there is no way out of. Failing is the outcome that keeps the
+ * message reachable.
+ */
+const RECORD_TIMEOUT_MS = 15_000;
+
+/** `promise`, rejecting if it has not settled within `ms`. */
+function withinTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    promise,
+    new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error('Timed out recording the zap')), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
 const MAX_ZAP_SATS = 1_000_000;
 
 /**
@@ -34,7 +56,7 @@ interface ZapDialogProps {
   onClose: () => void;
   agent: User;
   ticketId: number;
-  onZapSent?: (amount: number) => void;
+  onZapSent?: (amount: number, message: string) => void | Promise<void>;
 }
 
 interface ZapDialogContentProps {
@@ -43,7 +65,7 @@ interface ZapDialogContentProps {
   ticketId: number;
   lightningAddress: string | null;
   isLoadingAddress: boolean;
-  onZapSent?: (amount: number) => void;
+  onZapSent?: (amount: number, message: string) => void | Promise<void>;
 }
 
 function ZapDialogContent({
@@ -55,11 +77,41 @@ function ZapDialogContent({
   onZapSent,
 }: ZapDialogContentProps) {
   const [selectedAmount, setSelectedAmount] = useState<number>(DEFAULT_ZAP_PRESETS[1]);
+  /**
+   * The note that goes on the ticket, offered rather than imposed (#330).
+   *
+   * Only what the sender typed is held in state. While they have typed
+   * nothing, the note is *derived* from the amount actually in force, so the
+   * two can never disagree.
+   *
+   * Pushing it on each control's handler was wrong, and wrong in a way that
+   * could post a false statement: focusing the custom field again after
+   * choosing a preset switches the amount back to the custom one without any
+   * change event, so the note went on naming the preset while the zap sent the
+   * custom amount. Derivation has no such gap.
+   */
+  const [editedMessage, setEditedMessage] = useState<string | null>(null);
   const [customAmount, setCustomAmount] = useState<string>('');
   const [isCustom, setIsCustom] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [copiedInvoice, setCopiedInvoice] = useState(false);
   const [zapConfirmed, setZapConfirmed] = useState(false);
+  /**
+   * The zap went through but recording it on the ticket did not, so the
+   * dialog stays open with the message still on screen. Before #330 the note
+   * was the app's own wording and could always be written again; now it may
+   * be the sender's, and closing on the failure would take it with us.
+   */
+  const [recordFailed, setRecordFailed] = useState(false);
+  /**
+   * The write is in flight. `zapConfirmed` turns true the moment the sender
+   * confirms, which is before the comment has been posted -- so without this
+   * the card said "Zap recorded!" over a pending request, and a sender who
+   * closed the dialog in that window lost an edited message to a failure that
+   * had not happened yet.
+   */
+  const [recording, setRecording] = useState(false);
+  const [copiedMessage, setCopiedMessage] = useState(false);
 
   // Invoice fetching state
   const [invoice, setInvoice] = useState<string | null>(null);
@@ -67,6 +119,14 @@ function ZapDialogContent({
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
 
   const actualAmount = isCustom ? parseZapAmount(customAmount) : selectedAmount;
+  /** What the sender typed, or the note offered for the amount in force. */
+  const message = editedMessage ?? defaultZapMessage(agent.displayName, actualAmount);
+  /**
+   * What is actually posted, as text. Cleared the field, the sender still gets
+   * a record of the zap rather than an empty comment -- so an empty field is
+   * not what to show them, or copy for them, when the write fails.
+   */
+  const recorded = zapCommentToPost(message, agent.displayName, actualAmount);
 
   // Fetch actual BOLT11 invoice from LNURL-pay endpoint
   const fetchInvoice = useCallback(async () => {
@@ -228,6 +288,16 @@ function ZapDialogContent({
     }
   };
 
+  const handleCopyMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(recorded);
+      setCopiedMessage(true);
+      setTimeout(() => setCopiedMessage(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy message:', err);
+    }
+  };
+
   const handleConfirmZap = async () => {
     if (!actualAmount || actualAmount <= 0) return;
 
@@ -243,14 +313,24 @@ function ZapDialogContent({
     // perspective — but surface the comment failure so the user knows it
     // wasn't logged on the ticket and can retry / add it manually.
     if (onZapSent) {
+      setRecording(true);
       try {
-        await onZapSent(actualAmount);
+        await withinTimeout(
+          Promise.resolve(
+            onZapSent(actualAmount, zapCommentHtml(message, agent.displayName, actualAmount))
+          ),
+          RECORD_TIMEOUT_MS
+        );
       } catch (err) {
         console.error('[ZapDialog] Failed to post zap comment:', err);
-        toast.error(
-          'Zap sent, but failed to record it on the ticket — you may want to add a comment manually.'
-        );
+        // Said in the dialog rather than in a toast: the dialog is staying
+        // open to hold the message, so there is somewhere better to say it,
+        // and the caller has already reported the failure of its own write.
+        setRecording(false);
+        setRecordFailed(true);
+        return;
       }
+      setRecording(false);
     }
 
     // Close dialog after brief delay
@@ -297,15 +377,69 @@ function ZapDialogContent({
         </div>
       ) : zapConfirmed ? (
         <div className="rounded-lg p-6 text-center" style={{ backgroundColor: 'var(--surface)' }}>
-          <div className="bg-success/20 mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full">
-            <Check size={32} className="text-success" />
-          </div>
-          <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
-            Zap recorded!
-          </p>
-          <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-            {actualAmount.toLocaleString()} sats sent to {agent.displayName}
-          </p>
+          {recording ? (
+            <>
+              <div
+                className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full"
+                style={{ backgroundColor: 'var(--surface-hover)' }}
+              >
+                <Loader2
+                  size={32}
+                  className="animate-spin"
+                  style={{ color: 'var(--text-muted)' }}
+                />
+              </div>
+              <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                Recording on the ticket…
+              </p>
+              <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
+                {actualAmount.toLocaleString()} sats sent to {agent.displayName}. Leaving now may
+                lose your message, so give this a moment.
+              </p>
+            </>
+          ) : recordFailed ? (
+            <>
+              <div
+                className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full"
+                style={{ backgroundColor: 'var(--warning-bg)' }}
+              >
+                <AlertTriangle size={32} style={{ color: 'var(--warning)' }} />
+              </div>
+              <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                Zap sent, but not recorded
+              </p>
+              <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
+                {actualAmount.toLocaleString()} sats went to {agent.displayName}. Adding the comment
+                to this ticket failed, so the message is still here — copy it and post it yourself.
+              </p>
+              <p
+                className="mt-3 rounded p-3 text-left text-sm whitespace-pre-wrap"
+                style={{ backgroundColor: 'var(--background)', color: 'var(--text-secondary)' }}
+              >
+                {recorded}
+              </p>
+              <button
+                onClick={handleCopyMessage}
+                className="mt-3 inline-flex items-center gap-1.5 text-xs underline"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                {copiedMessage ? <Check size={12} /> : <Copy size={12} />}
+                {copiedMessage ? 'Copied' : 'Copy message'}
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="bg-success/20 mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full">
+                <Check size={32} className="text-success" />
+              </div>
+              <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                Zap recorded!
+              </p>
+              <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
+                {actualAmount.toLocaleString()} sats sent to {agent.displayName}
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <>
@@ -360,6 +494,38 @@ function ZapDialogContent({
               </span>
             </div>
           </div>
+
+          {/* The note that goes on the ticket (#330).
+
+              Offered, not imposed: the app used to write it and post it unasked,
+              in the third person and about the recipient rather than to them.
+              While the sender has typed nothing it is derived from the amount in
+              force, so the two cannot disagree. Cleared, the zap is still
+              recorded -- the comment is its only trace in the activity log.
+
+              Only offered where there is somewhere to post it: the list and
+              Kanban views open this dialog without onZapSent and record no
+              comment, so a message field there would invite somebody to write
+              one and then discard it. */}
+          {onZapSent && (
+            <div className="mb-6">
+              <label
+                htmlFor="zap-message"
+                className="mb-2 block text-xs uppercase"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Message on the ticket
+              </label>
+              <textarea
+                id="zap-message"
+                value={message}
+                onChange={(e) => setEditedMessage(e.target.value)}
+                rows={2}
+                className="input w-full"
+                placeholder="Leave empty to record the zap without a note"
+              />
+            </div>
+          )}
 
           {/* QR Code */}
           <div
@@ -509,7 +675,11 @@ export default function ZapDialog({ isOpen, onClose, agent, ticketId, onZapSent 
 
       {/* Dialog */}
       <div
-        className="relative z-10 w-full max-w-md overflow-hidden rounded-lg"
+        // Bounded and scrollable: the message field made the dialog tall enough
+        // to push the confirmation controls off a short phone, where they could
+        // not be reached at all. A dialog whose own buttons are unreachable is
+        // worse than one that scrolls.
+        className="relative z-10 max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg"
         style={{ backgroundColor: 'var(--background)', border: '1px solid var(--border)' }}
       >
         {/* Header */}
