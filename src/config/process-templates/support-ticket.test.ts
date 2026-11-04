@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { supportTicketConfig, SUPPORT_TICKET_STATES } from './support-ticket';
 import { getTemplateConfig, isTemplateSupported, getSupportedTemplates } from './index';
-import { resolveStateForStatus, statusNamedByState } from '@/lib/state-categories';
+import {
+  isPendingStateName,
+  resolveStateForStatus,
+  statusNamedByState,
+} from '@/lib/state-categories';
+import { normalizeStateName } from '@/lib/kanban-columns';
 import { DEFAULT_PAUSING_STATES } from '@/lib/sla-clock';
 import type { TicketStatus } from '@/types';
 
@@ -69,13 +74,23 @@ describe('status and state are the same thing here', () => {
 });
 
 describe('the SLA clock', () => {
-  it('stops on the state that means waiting on somebody else', () => {
+  it('stops on both states that mean waiting on somebody else', () => {
     const pausing = SUPPORT_TICKET_STATES.filter((s) => s.slaClock === 'paused');
 
-    expect(pausing.map((s) => s.name)).toEqual(['Pending']);
+    // Pending is the customer's move, On-hold is a third party's (#7378).
+    // Both stop the clock; the difference is who the client is waiting on,
+    // which is the whole reason for having two.
+    expect(pausing.map((s) => s.name)).toEqual(['Pending', 'On-hold']);
     for (const state of pausing) {
-      expect(DEFAULT_PAUSING_STATES).toContain(state.name.toLowerCase());
+      // Normalised, not lower-cased: `On-hold` lower-cases to `on-hold`, and
+      // the pausing list holds normalised names. Comparing the wrong way is
+      // how a state could be declared paused here and still run the clock.
+      expect(DEFAULT_PAUSING_STATES).toContain(normalizeStateName(state.name));
     }
+  });
+
+  it('reads On-hold back as Pending, since ZapDesk has no sixth status', () => {
+    expect(isPendingStateName('On-hold')).toBe(true);
   });
 
   it('keeps running on every state that is the team to move', () => {
@@ -83,7 +98,7 @@ describe('the SLA clock', () => {
 
     expect(running.map((s) => s.name)).toEqual(['New', 'Open', 'In Progress']);
     for (const state of running) {
-      expect(DEFAULT_PAUSING_STATES).not.toContain(state.name.toLowerCase());
+      expect(DEFAULT_PAUSING_STATES).not.toContain(normalizeStateName(state.name));
     }
   });
 });

@@ -939,8 +939,21 @@ export class AzureDevOpsService {
   ): Promise<DevOpsWorkItem[]> {
     const { additionalFilters, ticketsOnly = true, allowedTypes } = options || {};
 
-    // WIQL query - optionally filter by "ticket" tag
-    const ticketTagClause = ticketsOnly ? "AND [System.Tags] CONTAINS 'ticket'" : '';
+    // WIQL query - optionally filter to tickets.
+    //
+    // A ticket is either tagged `ticket` or *is* a `Ticket` work item type
+    // (#7774). The tag alone was the whole definition, and a tag is editable
+    // by anyone with the work item open: remove it by accident and the ticket
+    // vanishes from ZapDesk while still sitting in DevOps -- the risk raised
+    // on the board as AB#7774. A work item type cannot be edited away in the
+    // same breath, so on the Support Ticket process (#569) the type carries
+    // the meaning and the tag becomes belt-and-braces, not the only thread.
+    //
+    // Both halves are kept, not swapped: every project on a development
+    // process still identifies its tickets by tag, and must keep working.
+    const ticketTagClause = ticketsOnly
+      ? "AND ([System.Tags] CONTAINS 'ticket' OR [System.WorkItemType] = 'Ticket')"
+      : '';
     // Optionally restrict to specific work item types (e.g., exclude Epic, Feature, User Story)
     const typeClause = allowedTypes?.length
       ? `AND [System.WorkItemType] IN (${allowedTypes.map((t) => `'${escapeWiql(t)}'`).join(', ')})`

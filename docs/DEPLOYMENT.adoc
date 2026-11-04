@@ -244,9 +244,18 @@ with a `Ticket` work item type whose states _are_ ZapDesk's statuses:
 |New |Proposed |Raised, not yet triaged |running
 |Open |InProgress |Triaged or assigned, waiting on the support team |running
 |In Progress |InProgress |Being worked on |running
-|Pending |InProgress |Waiting on the customer or a third party |*paused*
+|Pending |InProgress |Waiting on the customer to answer |*paused*
+|On-hold |InProgress |Waiting on a third party, or on us |*paused*
 |Closed |Completed |Solved, or closed without being solved |stopped
 |===
+
+`Pending` and `On-hold` both stop the clock, and the difference is who the
+client is waiting on: their own answer, or somebody else's. A support desk
+needs both, because only one of them is a reason to chase the customer, and
+an SLA report that cannot tell them apart blames the client for a supplier's
+delay. ZapDesk has no sixth status to show `On-hold` in, so it reads back as
+`Pending` -- and that matches what Zendesk shows a requester, where `On-hold`
+appears as `Open`, since "on hold" reads as "shelved" to the person waiting.
 
 There is deliberately no `Resolved` state: a support desk closes a ticket when
 the customer is satisfied, and a separate Resolved is the state nobody moves

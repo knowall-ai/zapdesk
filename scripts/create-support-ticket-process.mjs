@@ -51,7 +51,11 @@ const STATES = [
   { name: 'Open', category: 'InProgress', color: '007acc', order: 2 },
   { name: 'In Progress', category: 'InProgress', color: '007acc', order: 3 },
   { name: 'Pending', category: 'InProgress', color: 'f5a623', order: 4 },
-  { name: 'Closed', category: 'Completed', color: '339933', order: 5 },
+  // Waiting on a third party rather than the customer (#7378). Same category
+  // and same paused clock as Pending; a duller amber, because it is not the
+  // one somebody needs to chase the customer about.
+  { name: 'On-hold', category: 'InProgress', color: 'c8a165', order: 5 },
+  { name: 'Closed', category: 'Completed', color: '339933', order: 6 },
 ];
 
 /** States the parent process brings that this one does not want. */

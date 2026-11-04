@@ -14,6 +14,15 @@
  *
  * On this template there is nothing to guess: the state *is* the status.
  *
+ * `On-hold` is the one state that is not also a ZapDesk status (#7378). It
+ * exists because "waiting on the customer" and "waiting on a supplier" are
+ * different conversations to have with a client, and only one of them is
+ * their move -- but ZapDesk has no sixth status to show it in, so it reads
+ * back as `Pending` through `PENDING_STATE_HINTS`. Both stop the clock. The
+ * distinction lives in the DevOps state, where the SLA report can see it,
+ * and is deliberately not surfaced to the customer: Zendesk does the same,
+ * because "on hold" reads to a requester as "shelved".
+ *
  * `Resolved` is deliberately not a state here. A support desk closes a
  * ticket when the customer is satisfied, and a separate Resolved state is
  * the thing nobody moves out of -- so tickets sit in it, and the SLA clock
@@ -58,8 +67,9 @@ export const supportTicketConfig: ProcessTemplateConfig = {
     new: ['New'],
     // Open and In Progress are both InProgress to DevOps. They are different
     // to a support desk: Open is waiting on the team, In Progress is being
-    // worked on now.
-    active: ['Open', 'In Progress', 'Pending'],
+    // worked on now. Pending and On-hold are both waiting, and both stop the
+    // clock -- but only one of them is the customer's to answer.
+    active: ['Open', 'In Progress', 'Pending', 'On-hold'],
     resolved: [],
     closed: ['Closed'],
     removed: ['Removed'],
@@ -104,7 +114,13 @@ export const SUPPORT_TICKET_STATES: ReadonlyArray<{
   {
     name: 'Pending',
     category: 'InProgress',
-    meaning: 'Waiting on the customer or a third party',
+    meaning: 'Waiting on the customer to answer',
+    slaClock: 'paused',
+  },
+  {
+    name: 'On-hold',
+    category: 'InProgress',
+    meaning: 'Waiting on a third party, or on us -- not on the customer',
     slaClock: 'paused',
   },
   {

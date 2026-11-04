@@ -7,6 +7,7 @@ import {
   workingMillis,
   type StatePeriod,
 } from './sla-clock';
+import { PENDING_STATE_HINTS } from './state-categories';
 import type { WorkItemUpdate } from '@/types';
 
 /**
@@ -188,11 +189,35 @@ describe('workingMillis', () => {
 describe('the default pausing states', () => {
   it('pauses on the states that mean nobody can be working on it', () => {
     // New, Todo and Active are ours to move; Resolved, Closed and Removed end
-    // the ticket and with it the SLA. These two are neither: Pending is the
-    // Support Ticket template's name for waiting on the customer (#569), and
-    // Blocked is what every development template calls the same thing --
-    // which is what ZapDesk writes when a ticket on one is set to Pending.
-    expect(DEFAULT_PAUSING_STATES).toEqual(['blocked', 'pending']);
+    // the ticket and with it the SLA. These are neither: Pending is the
+    // Support Ticket template's name for waiting on the customer (#569),
+    // On-hold is waiting on a third party (#7378), and Blocked is what every
+    // development template calls the same thing -- which is what ZapDesk
+    // writes when a ticket on one is set to Pending.
+    //
+    // The same list the UI reads a state's status from, so the two cannot
+    // disagree about whether a ticket is waiting.
+    expect(DEFAULT_PAUSING_STATES).toEqual(PENDING_STATE_HINTS);
+  });
+
+  it('pauses on a state whose name is punctuated, not only on Blocked', () => {
+    // The gap this closes: `onhold` and `waiting` were already hints, so a
+    // ticket in either read as Pending in the UI -- but neither was in the
+    // pausing list, so the clock kept running against the target. Worse,
+    // `On-hold` lower-cases to `on-hold`, which matches no hint at all, so
+    // adding it to the list without normalising would have changed nothing.
+    for (const state of ['On-hold', 'on hold', 'ON-HOLD', 'Waiting', 'Blocked', 'Pending']) {
+      expect(isPaused([{ state, from: new Date() }])).toBe(true);
+    }
+  });
+
+  it('counts time in a punctuated pausing state as paused', () => {
+    const from = new Date('2026-11-01T09:00:00Z');
+    const now = new Date('2026-11-01T11:00:00Z');
+
+    // Two hours on hold is two hours the customer's SLA must not be charged.
+    expect(pausedMillis([{ state: 'On-hold', from }], now)).toBe(2 * 60 * 60 * 1000);
+    expect(workingMillis(from, now, [{ state: 'On-hold', from }])).toBe(0);
   });
 
   it('does not pause on a state that is merely named like one', () => {
