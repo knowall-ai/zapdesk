@@ -86,6 +86,14 @@ export const supportTicketConfig: ProcessTemplateConfig = {
  * template agrees with `state-categories.ts` -- the reading half of the
  * round trip lives there, and two halves that disagree is exactly the bug
  * this template exists to remove.
+ *
+ * `slaClock` says what a state is *for*, and is read only by those tests. It
+ * is not a description of `calculateTicketSLA`, which still works from
+ * wall-clock time since the ticket was raised and does not subtract paused
+ * time. Paused time *is* measured, by `sla-clock.ts`, and shown on the ticket
+ * by `SlaPausedNote`; carrying it into the breach calculation needs each work
+ * item's update history where the SLA is computed, which is the open SLA
+ * tracker item rather than something to infer from this field.
  */
 export const SUPPORT_TICKET_STATES: ReadonlyArray<{
   name: string;

@@ -249,13 +249,35 @@ with a `Ticket` work item type whose states _are_ ZapDesk's statuses:
 |Closed |Completed |Solved, or closed without being solved |stopped
 |===
 
-`Pending` and `On-hold` both stop the clock, and the difference is who the
+`Pending` and `On-hold` are both waiting states, and the difference is who the
 client is waiting on: their own answer, or somebody else's. A support desk
 needs both, because only one of them is a reason to chase the customer, and
 an SLA report that cannot tell them apart blames the client for a supplier's
 delay. ZapDesk has no sixth status to show `On-hold` in, so it reads back as
 `Pending` -- and that matches what Zendesk shows a requester, where `On-hold`
 appears as `Open`, since "on hold" reads as "shelved" to the person waiting.
+
+[IMPORTANT]
+====
+The *SLA clock* column above states what each state is *for*, not what the
+breach calculation does today. Be precise about the difference:
+
+* *Paused time is measured and shown.* `src/lib/sla-clock.ts` builds a state
+  timeline from a work item's update history, and `SlaPausedNote` renders it on
+  the ticket -- "paused for 3h" and whether it is paused now. Those helpers read
+  the same list of waiting states as the status mapping, so `Pending`,
+  `On-hold`, `Blocked` and `Waiting` all count.
+* *It is not yet subtracted from the SLA status.* `calculateTicketSLA` in
+  `src/lib/sla.ts` works from wall-clock time since the ticket was raised, so a
+  ticket can age towards `at_risk` or `breached` while nobody could act on it.
+  This predates the `On-hold` state and applies to `Pending` just the same.
+
+Closing that gap means carrying each work item's update history into
+`getAllTickets` so the timeline is available where the SLA is computed. That is
+a deliberate piece of work with a cost -- history is a per-item read, and the
+board's request volume has been a problem before -- and it is tracked as the
+SLA tracker item on the board, not quietly folded in here.
+====
 
 There is deliberately no `Resolved` state: a support desk closes a ticket when
 the customer is satisfied, and a separate Resolved is the state nobody moves
