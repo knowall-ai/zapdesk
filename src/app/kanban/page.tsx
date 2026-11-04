@@ -492,7 +492,18 @@ function StandupPageContent() {
         setPrState('ready');
       } catch (err) {
         if (!isCurrent()) return;
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : 'Could not load pull request activity.';
         console.error('Failed to load pull request activity:', err);
+        // Say it, rather than only logging it. Extracting the status and the
+        // server's reason is pointless if the only place it lands is the
+        // console. Fixed id, like the board's own failures above: a poll that
+        // keeps failing replaces its message instead of stacking one per tick.
+        // The board itself is untouched -- only the activity strip goes to its
+        // error state, so a failure here never costs the cards on screen.
+        toast.error(message, { id: 'kanban-pr-activity-error' });
         setPrState('error');
       }
     },
