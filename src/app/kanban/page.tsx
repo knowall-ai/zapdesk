@@ -39,6 +39,7 @@ import { readScrollTop, sessionPositionStorage, writeScrollTop } from '@/lib/kan
 import { ticketToWorkItem } from '@/lib/devops';
 import { debugLog } from '@/lib/debug';
 import { groupsWithColumn } from '@/lib/kanban-summary';
+import { responseErrorMessage } from '@/lib/response-error';
 import { canonicalProject, filterStandupByProject } from '@/lib/kanban-project';
 import { createBoardCache } from '@/lib/standup-board-cache';
 import {
@@ -366,7 +367,11 @@ function StandupPageContent() {
           const url = `/api/devops/standup${queryString ? `?${queryString}` : ''}`;
           const response = await devOpsGet(url);
           if (!response.ok) {
-            throw new Error('Failed to fetch standup data');
+            // The status and the server's own message, not a fixed string
+            // (#606): this error is what the toast shows, and "Failed to
+            // fetch standup data" cannot tell an expired session from a
+            // gateway timeout.
+            throw new Error(await responseErrorMessage(response, 'the board'));
           }
           return (await response.json()) as StandupData;
         });
@@ -477,7 +482,9 @@ function StandupPageContent() {
           const response = await devOpsGet(
             `/api/devops/pr-activity?since=${encodeURIComponent(since)}${sources}`
           );
-          if (!response.ok) throw new Error('Failed to fetch pull request activity');
+          if (!response.ok) {
+            throw new Error(await responseErrorMessage(response, 'pull request activity'));
+          }
           return (await response.json()) as PullRequestActivityResponse;
         });
         if (!isCurrent()) return;
@@ -485,7 +492,18 @@ function StandupPageContent() {
         setPrState('ready');
       } catch (err) {
         if (!isCurrent()) return;
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : 'Could not load pull request activity.';
         console.error('Failed to load pull request activity:', err);
+        // Say it, rather than only logging it. Extracting the status and the
+        // server's reason is pointless if the only place it lands is the
+        // console. Fixed id, like the board's own failures above: a poll that
+        // keeps failing replaces its message instead of stacking one per tick.
+        // The board itself is untouched -- only the activity strip goes to its
+        // error state, so a failure here never costs the cards on screen.
+        toast.error(message, { id: 'kanban-pr-activity-error' });
         setPrState('error');
       }
     },
