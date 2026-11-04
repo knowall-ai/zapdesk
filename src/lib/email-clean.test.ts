@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   sanitizeEmailHtml,
   renderEmailBodyHtml,
+  renderEmailBody,
   rewriteCidReferences,
   collectReferencedCids,
   stripQuotedHtml,
@@ -323,5 +324,102 @@ describe('the earlier message is labelled, not hidden', () => {
 
     expect(out).toContain('Earlier message');
     expect(out.indexOf('Earlier message')).toBeLessThan(out.indexOf('On 3 November 2026'));
+  });
+
+  /**
+   * `[^>]*id=` matched the tail of any attribute ending in `id`, so a plain
+   * message carrying `data-id="divRplyFwdMsg"` was read as having an Outlook
+   * header: labelled here, and cut where the header names ZapDesk (#615
+   * review).
+   */
+  it('does not read data-id as the element own id', () => {
+    const html = '<div data-id="divRplyFwdMsg">Please see the figures attached.</div>';
+
+    const out = stripQuotedHtml(html);
+
+    expect(out).not.toContain('Earlier message');
+    expect(out).toContain('figures attached');
+  });
+
+  // The marker itself is unaffected by the tightening.
+  it('still reads the element own id', () => {
+    const out = stripQuotedHtml(
+      '<div>Please see the figures attached.</div>' +
+        '<div id="divRplyFwdMsg"><div>From: Alex Morgan</div></div>'
+    );
+
+    expect(out).toContain('Earlier message');
+  });
+
+  /**
+   * A newline is a line boundary only where it is rendered as one. Inside an
+   * ordinary element the source newlines collapse, so a separator written on
+   * its own source line is still displayed in the middle of the sentence --
+   * and a divider there splits words the sender wrote (#615 review).
+   */
+  it('does not treat a collapsed newline as a line boundary', () => {
+    const out = stripQuotedHtml(
+      '<div>Read this example:\n-----Original Message-----\nnot a quoted email</div>'
+    );
+
+    expect(out).not.toContain('Earlier message');
+    expect(out).toContain('not a quoted email');
+  });
+
+  /**
+   * The scan now carries its tag state from one match to the next instead of
+   * starting over, so a body holding many copies of the separator costs the
+   * body length rather than the body length times the copies. What that must
+   * not do is lose the state: an earlier match inside a tag has to leave the
+   * scan able to judge a later real one.
+   */
+  it('still finds the real separator after matches it had to skip', () => {
+    const out = stripQuotedHtml(
+      '<div title="-----Original Message-----">Noise.</div>' +
+        '<div>I pasted the -----Original Message----- header once.</div>' +
+        '<div>Please see the figures attached.</div>' +
+        '<div>-----Original Message-----</div>' +
+        '<div>From: Alex Morgan</div>'
+    );
+
+    expect(out).toContain('Earlier message');
+    expect(out.indexOf('figures attached')).toBeLessThan(out.indexOf('Earlier message'));
+    // And the two it skipped are untouched.
+    expect(out).toContain('<div title="-----Original Message-----">');
+    expect(out).toContain('I pasted the -----Original Message----- header once.');
+  });
+});
+
+/**
+ * Plain-text mail never went near `stripQuotedHtml`, so a quote it kept --
+ * somebody else's mail rather than ZapDesk's -- showed the bare separator and
+ * no divider. The same fix, through the other door (#615 review).
+ */
+describe('a plain-text body is labelled too', () => {
+  it('labels a separator the plain-text strip kept', () => {
+    const out = renderEmailBody(
+      'Please see the figures attached.\n' +
+        '-----Original Message-----\n' +
+        'From: Alex Morgan\nThe reconciliation is attached.'
+    );
+
+    expect(out).toContain('Earlier message');
+    expect(out.indexOf('figures attached')).toBeLessThan(out.indexOf('Earlier message'));
+  });
+
+  it('says nothing when a plain-text body quotes nothing', () => {
+    const out = renderEmailBody('Just the one message, nothing quoted.');
+
+    expect(out).not.toContain('Earlier message');
+    expect(out).not.toContain('<hr');
+  });
+
+  // The escaping still happens, and before the labelling, so a separator
+  // written in text cannot arrive as markup.
+  it('escapes the body before labelling it', () => {
+    const out = renderEmailBody('a < b and <script>alert(1)</script>');
+
+    expect(out).toContain('&lt;script&gt;');
+    expect(out).not.toContain('<script>');
   });
 });
