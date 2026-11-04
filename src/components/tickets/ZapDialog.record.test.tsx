@@ -175,3 +175,73 @@ describe('without a comment callback', () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+/**
+ * `zapConfirmed` turns true the moment the sender confirms, which is before
+ * the comment has been posted. So the card claimed "Zap recorded!" over a
+ * pending request, and a sender who closed the dialog in that window lost an
+ * edited message to a failure that had not happened yet (#615 review).
+ */
+describe('while the write is still in flight', () => {
+  it('says it is recording rather than that it has recorded', async () => {
+    let release: (() => void) | undefined;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    open(() => pending);
+
+    await confirm();
+
+    expect(await screen.findByText(/recording on the ticket/i)).toBeDefined();
+    expect(screen.queryByText('Zap recorded!')).toBeNull();
+
+    release?.();
+    await waitFor(() => expect(screen.getByText('Zap recorded!')).toBeDefined());
+  });
+
+  // A write that never settles must not leave the dialog in a state with no
+  // way out, holding the sender's message where nobody can reach it.
+  it('gives up after the timeout and offers the message', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    open(() => new Promise<void>(() => {}));
+
+    await confirm();
+    await screen.findByText(/recording on the ticket/i);
+
+    await vi.advanceTimersByTimeAsync(16_000);
+
+    expect(await screen.findByText(/not recorded/i)).toBeDefined();
+    expect(screen.getByRole('button', { name: /copy message/i })).toBeDefined();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Clearing the field still records the zap: `zapCommentToPost` falls back to a
+ * plain record, because the comment is the zap's only trace in the activity
+ * log. The failure screen showed the empty field instead, and the copy button
+ * copied nothing (#615 review).
+ */
+describe('when the sender clears the message', () => {
+  it('offers the record that would have been posted, not an empty string', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+
+    open(async () => {
+      throw new Error('comment POST failed');
+    });
+
+    const field = await screen.findByLabelText(/message on the ticket/i);
+    fireEvent.change(field, { target: { value: '' } });
+    await confirm();
+
+    await screen.findByText(/not recorded/i);
+    expect(screen.getByText('Zapped 500 sats to Alex Morgan.')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: /copy message/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Zapped 500 sats to Alex Morgan.'));
+  });
+});

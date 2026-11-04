@@ -6,12 +6,33 @@ import { X, Copy, Check, Zap, ExternalLink, Loader2, AlertTriangle } from 'lucid
 import { QRCodeSVG } from 'qrcode.react';
 import type { User } from '@/types';
 import { DEFAULT_ZAP_PRESETS } from '@/types';
-import { defaultZapMessage, zapCommentHtml } from '@/lib/zap-message';
+import { defaultZapMessage, zapCommentHtml, zapCommentToPost } from '@/lib/zap-message';
 import Avatar from '../common/Avatar';
 import { lightningUri } from '@/lib/lnurl';
 
 /** Bounds for a custom zap amount, in whole sats. */
 const MIN_ZAP_SATS = 1;
+
+/**
+ * How long to wait for the ticket comment before calling the write failed.
+ *
+ * A write that never settles would otherwise leave the dialog saying it is
+ * recording for as long as the page is open, with the sender's message behind
+ * a state there is no way out of. Failing is the outcome that keeps the
+ * message reachable.
+ */
+const RECORD_TIMEOUT_MS = 15_000;
+
+/** `promise`, rejecting if it has not settled within `ms`. */
+function withinTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    promise,
+    new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error('Timed out recording the zap')), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
 const MAX_ZAP_SATS = 1_000_000;
 
 /**
@@ -82,6 +103,14 @@ function ZapDialogContent({
    * be the sender's, and closing on the failure would take it with us.
    */
   const [recordFailed, setRecordFailed] = useState(false);
+  /**
+   * The write is in flight. `zapConfirmed` turns true the moment the sender
+   * confirms, which is before the comment has been posted -- so without this
+   * the card said "Zap recorded!" over a pending request, and a sender who
+   * closed the dialog in that window lost an edited message to a failure that
+   * had not happened yet.
+   */
+  const [recording, setRecording] = useState(false);
   const [copiedMessage, setCopiedMessage] = useState(false);
 
   // Invoice fetching state
@@ -92,6 +121,12 @@ function ZapDialogContent({
   const actualAmount = isCustom ? parseZapAmount(customAmount) : selectedAmount;
   /** What the sender typed, or the note offered for the amount in force. */
   const message = editedMessage ?? defaultZapMessage(agent.displayName, actualAmount);
+  /**
+   * What is actually posted, as text. Cleared the field, the sender still gets
+   * a record of the zap rather than an empty comment -- so an empty field is
+   * not what to show them, or copy for them, when the write fails.
+   */
+  const recorded = zapCommentToPost(message, agent.displayName, actualAmount);
 
   // Fetch actual BOLT11 invoice from LNURL-pay endpoint
   const fetchInvoice = useCallback(async () => {
@@ -255,7 +290,7 @@ function ZapDialogContent({
 
   const handleCopyMessage = async () => {
     try {
-      await navigator.clipboard.writeText(message);
+      await navigator.clipboard.writeText(recorded);
       setCopiedMessage(true);
       setTimeout(() => setCopiedMessage(false), 2000);
     } catch (err) {
@@ -278,16 +313,24 @@ function ZapDialogContent({
     // perspective — but surface the comment failure so the user knows it
     // wasn't logged on the ticket and can retry / add it manually.
     if (onZapSent) {
+      setRecording(true);
       try {
-        await onZapSent(actualAmount, zapCommentHtml(message, agent.displayName, actualAmount));
+        await withinTimeout(
+          Promise.resolve(
+            onZapSent(actualAmount, zapCommentHtml(message, agent.displayName, actualAmount))
+          ),
+          RECORD_TIMEOUT_MS
+        );
       } catch (err) {
         console.error('[ZapDialog] Failed to post zap comment:', err);
         // Said in the dialog rather than in a toast: the dialog is staying
         // open to hold the message, so there is somewhere better to say it,
         // and the caller has already reported the failure of its own write.
+        setRecording(false);
         setRecordFailed(true);
         return;
       }
+      setRecording(false);
     }
 
     // Close dialog after brief delay
@@ -334,7 +377,27 @@ function ZapDialogContent({
         </div>
       ) : zapConfirmed ? (
         <div className="rounded-lg p-6 text-center" style={{ backgroundColor: 'var(--surface)' }}>
-          {recordFailed ? (
+          {recording ? (
+            <>
+              <div
+                className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full"
+                style={{ backgroundColor: 'var(--surface-hover)' }}
+              >
+                <Loader2
+                  size={32}
+                  className="animate-spin"
+                  style={{ color: 'var(--text-muted)' }}
+                />
+              </div>
+              <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                Recording on the ticket…
+              </p>
+              <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
+                {actualAmount.toLocaleString()} sats sent to {agent.displayName}. Leaving now may
+                lose your message, so give this a moment.
+              </p>
+            </>
+          ) : recordFailed ? (
             <>
               <div
                 className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full"
@@ -353,7 +416,7 @@ function ZapDialogContent({
                 className="mt-3 rounded p-3 text-left text-sm whitespace-pre-wrap"
                 style={{ backgroundColor: 'var(--background)', color: 'var(--text-secondary)' }}
               >
-                {message}
+                {recorded}
               </p>
               <button
                 onClick={handleCopyMessage}
