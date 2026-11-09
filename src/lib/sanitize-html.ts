@@ -269,14 +269,29 @@ const SHIFTING_PROPERTIES = ['margin', 'text-indent'];
  * an engine that does not expand the shorthand was not. This makes it
  * deliberate and the same everywhere.
  */
-const NON_WRAPPING_VALUES: Record<string, readonly string[]> = {
-  'white-space': ['nowrap', 'pre'],
-  'text-wrap': ['nowrap'],
-  'text-wrap-mode': ['nowrap'],
-  'word-break': ['keep-all'],
-  'overflow-wrap': ['normal'],
-  'word-wrap': ['normal'],
-};
+const NON_WRAPPING_VALUES = new Map<string, ReadonlySet<string>>([
+  // `white-space` takes more than one keyword in CSS Text 4 --
+  // `white-space: preserve nowrap` is a valid way to write the same thing --
+  // so the value is read as tokens rather than matched whole. `pre-wrap` is
+  // one token and is not `pre`, so it still survives.
+  ['white-space', new Set(['nowrap', 'pre'])],
+  ['text-wrap', new Set(['nowrap'])],
+  ['text-wrap-mode', new Set(['nowrap'])],
+  ['word-break', new Set(['keep-all'])],
+  ['overflow-wrap', new Set(['normal'])],
+  ['word-wrap', new Set(['normal'])],
+]);
+
+/** Whether a declaration's value stops the text it applies to from wrapping. */
+function stopsWrapping(name: string, value: string): boolean {
+  const rejected = NON_WRAPPING_VALUES.get(name);
+  if (!rejected) return false;
+  return value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .some((token) => rejected.has(token));
+}
 
 /**
  * An inert document used to parse untrusted CSS.
@@ -361,9 +376,7 @@ function sanitizeStyle(value: string): string {
       unsafe = true;
     }
 
-    if (!unsafe && NON_WRAPPING_VALUES[name]?.includes(parsed.trim().toLowerCase())) {
-      unsafe = true;
-    }
+    if (!unsafe && stopsWrapping(name, parsed)) unsafe = true;
 
     if (unsafe) probe.style.removeProperty(name);
   }

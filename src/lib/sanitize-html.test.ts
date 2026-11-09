@@ -474,11 +474,33 @@ describe('declarations that stop a comment wrapping', () => {
  * reasoning above is quietly wrong, with nothing failing to say so.
  */
 describe('globals.css keeps its side of the bargain', () => {
+  // Relative to the repository root, as `source-colors.test.ts` already reads
+  // this file; vitest runs from there.
   const css = readFileSync('src/app/globals.css', 'utf8');
+
+  /**
+   * The declarations of the rule with exactly this selector.
+   *
+   * Matched on the selector's tokens rather than its literal text, so
+   * reformatting the stylesheet -- or writing the selector list in another
+   * order -- does not turn a passing test into a failing one for no reason.
+   */
   const ruleFor = (selector: string) => {
-    const at = css.indexOf(`${selector} {`);
-    expect(at, `${selector} is not in globals.css`).toBeGreaterThan(-1);
-    return css.slice(at, css.indexOf('}', at));
+    // Comments are dropped first: one sitting above a selector would
+    // otherwise be read as part of it. These rules live inside `@layer`, so
+    // a selector runs from the enclosing brace, not from the start of a line.
+    const source = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    const normalise = (s: string) => s.trim().replace(/\s+/g, ' ');
+    const wanted = normalise(selector);
+    for (let brace = source.indexOf('{'); brace !== -1; brace = source.indexOf('{', brace + 1)) {
+      const from =
+        Math.max(source.lastIndexOf('{', brace - 1), source.lastIndexOf('}', brace - 1)) + 1;
+      const head = normalise(source.slice(from, brace));
+      if (head.split(',').map(normalise).includes(wanted)) {
+        return source.slice(brace + 1, source.indexOf('}', brace));
+      }
+    }
+    throw new Error(`no rule in globals.css has the selector ${selector}`);
   };
 
   it('breaks a long unbroken reference instead of letting it run out', () => {
@@ -492,4 +514,37 @@ describe('globals.css keeps its side of the bargain', () => {
   it('exempts tables, which scroll rather than squeeze their columns', () => {
     expect(ruleFor('.user-content table')).toContain('overflow-x: auto');
   });
+});
+
+/**
+ * Raised in review on #632: `white-space` takes more than one keyword in CSS
+ * Text 4, and an engine that does not expand the shorthand hands the whole
+ * value over as written.
+ */
+describe('a compound white-space value', () => {
+  const styleOf = (html: string) => sanitizeUserHtml(html).match(/style="([^"]*)"/)?.[1] ?? '';
+
+  // `pre nowrap` is deliberately not in this list: jsdom rejects it at the
+  // parser, so the declaration never reaches the policy and the test would
+  // assert nothing. These two do parse, and before the token split they came
+  // through intact.
+  it.each(['preserve nowrap', 'nowrap preserve'])(
+    'drops white-space: %s, which still stops the text wrapping',
+    (value) => {
+      expect(styleOf(`<span style="white-space: ${value}">x</span>`)).not.toContain('nowrap');
+    }
+  );
+
+  it('does not mistake pre-wrap for pre, which is one token not two', () => {
+    expect(styleOf('<span style="white-space: pre-wrap">a  b</span>')).toContain('pre-wrap');
+  });
+
+  // Also raised in review: the table is a Map now, so a property named after
+  // something on Object.prototype cannot reach a value by inheritance.
+  it.each(['constructor', '__proto__', 'toString'])(
+    'is not confused by a property called %s',
+    (name) => {
+      expect(() => sanitizeUserHtml(`<span style="${name}: nowrap">x</span>`)).not.toThrow();
+    }
+  );
 });
