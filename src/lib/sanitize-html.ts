@@ -426,28 +426,25 @@ function sanitizeStyle(value: string, tagName: string): string {
       unsafe = true;
     }
 
-    if (unsafe) probe.style.removeProperty(name);
-  }
+    if (unsafe) {
+      probe.style.removeProperty(name);
+      continue;
+    }
 
-  // Strip `!important` from whatever survived (#632).
-  //
-  // An inline `!important` outranks an `!important` rule in our own
-  // stylesheet -- it is the top of the cascade short of a transition -- so
-  // one pasted declaration overrides a containment rule written precisely to
-  // bound it. `max-width: 2000px !important` on a table beat
-  // `.user-content table { max-width: 100% !important }` and rendered 2000px
-  // wide in a 331px column; `color: red !important` likewise beat the rule
-  // that normalises colours pasted out of Outlook.
-  //
-  // Nothing a comment has to say needs this priority: it exists only to win
-  // against the page it lands in. The declaration is kept, its priority is
-  // not, so pasted formatting still shows and the stylesheet still decides
-  // where the content ends.
-  for (const name of names) {
-    if (!probe.style.getPropertyPriority(name)) continue;
-    const value = probe.style.getPropertyValue(name);
-    probe.style.removeProperty(name);
-    probe.style.setProperty(name, value);
+    // Keep the declaration, drop any `!important` (#632). An inline
+    // `!important` outranks an `!important` rule in our own stylesheet, so
+    // one pasted declaration overrides a containment rule written precisely
+    // to bound it: `max-width: 2000px !important` on a table beat
+    // `.user-content table { max-width: 100% !important }` and rendered
+    // 2000px wide in a 331px column. Nothing a comment has to say needs that
+    // priority -- it only wins against the page it lands in.
+    //
+    // Last, so the checks above have already had their say: a declaration
+    // they reject is gone before this runs, and cannot ride in on a priority.
+    if (probe.style.getPropertyPriority(name)) {
+      probe.style.removeProperty(name);
+      probe.style.setProperty(name, parsed);
+    }
   }
 
   const out = probe.style.cssText;
