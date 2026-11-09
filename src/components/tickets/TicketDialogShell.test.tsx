@@ -192,8 +192,29 @@ describe('the two columns hold their shape', () => {
     // width to a comment that would not wrap, which is how the comment ended
     // up under it.
     const { sidebar } = columns();
-    expect(sidebar.className).toContain('shrink-0');
-    expect(sidebar.className).toContain('w-72');
+    expect(sidebar.className).toContain('md:shrink-0');
+    expect(sidebar.className).toContain('md:w-72');
+  });
+
+  it('stacks the two rather than clipping itself on a phone', () => {
+    // 288px that cannot shrink is most of a 390px screen, so holding the
+    // width at every size trades one clipped column for another (#632).
+    // Below `md` the sidebar is full width, under the ticket, and capped so
+    // it cannot take the whole dialog.
+    const { sidebar, main } = columns();
+    expect(sidebar.className).toContain('w-full');
+    expect(sidebar.className).toContain('max-h-[45%]');
+    expect(sidebar.className).toContain('md:max-h-none');
+    // The row only starts at `md`; below it the dialog is a column.
+    expect(main.parentElement?.className).toContain('flex-col');
+    expect(main.parentElement?.className).toContain('md:flex-row');
+  });
+
+  it('keeps the width unshrinkable only where there is room for it', () => {
+    // The bare utilities would apply at every width, which is the bug above.
+    const { sidebar } = columns();
+    expect(sidebar.className).not.toMatch(/(^|\s)shrink-0/);
+    expect(sidebar.className).not.toMatch(/(^|\s)w-72/);
   });
 
   it('lets the main column shrink instead, so long content wraps in it', () => {
