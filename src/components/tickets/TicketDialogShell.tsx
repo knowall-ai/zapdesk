@@ -117,10 +117,13 @@ export default function TicketDialogShell({
           {/* Main content area */}
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
 
-          {/* Optional sidebar */}
+          {/* Optional sidebar. `shrink-0` so the Details column keeps its width
+              whatever the main column holds: without it a flex item is free to
+              shrink, so a wide comment moved the boundary rather than wrapping
+              (#468). */}
           {sidebar && (
             <div
-              className="w-72 overflow-auto border-l"
+              className="w-72 shrink-0 overflow-auto border-l"
               style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
             >
               {sidebar}

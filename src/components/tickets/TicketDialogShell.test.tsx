@@ -175,3 +175,33 @@ describe('focus', () => {
     expect(focus).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The Details sidebar keeps its width, so a wide comment wraps rather than
+ * moving the boundary between the two columns (#468).
+ */
+describe('the two columns hold their shape', () => {
+  const columns = () => {
+    open({ sidebar: <p>Details</p> });
+    const sidebar = screen.getByText('Details').parentElement as HTMLElement;
+    return { sidebar, main: screen.getByText('Body').parentElement as HTMLElement };
+  };
+
+  it('does not let the sidebar be squeezed by the content beside it', () => {
+    // A flex item shrinks by default: without this the Details column gave up
+    // width to a comment that would not wrap, which is how the comment ended
+    // up under it.
+    const { sidebar } = columns();
+    expect(sidebar.className).toContain('shrink-0');
+    expect(sidebar.className).toContain('w-72');
+  });
+
+  it('lets the main column shrink instead, so long content wraps in it', () => {
+    // `min-w-0` is the other half: a flex item's default minimum is its
+    // content, so without it the column grows to fit an unbreakable token
+    // rather than wrapping it.
+    const { main } = columns();
+    expect(main.className).toContain('min-w-0');
+    expect(main.className).toContain('overflow-hidden');
+  });
+});

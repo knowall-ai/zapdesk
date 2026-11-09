@@ -182,6 +182,14 @@ const CSS_FUNCTION = /([\w-]+)\s*\(/g;
  * `border-top-width`, `border-style`, `border-image` and a dozen more, all of
  * which this admits. `border-image-source: url(…)` is admitted here and then
  * rejected by {@link SAFE_CSS_FUNCTIONS}, which is the point of running both.
+ *
+ * `min-width` and `word-wrap` were here and are deliberately gone (#468). A
+ * `min-width` wider than the comment column is the one width that cannot be
+ * clamped by a stylesheet, so a pasted one pushed the comment out of its box
+ * and under the Details sidebar. `word-wrap` was already dead: the CSSOM
+ * renames it to `overflow-wrap`, which this list does not admit, so it only
+ * ever applied in an engine that keeps the alias. `max-width` and `width`
+ * stay -- pasted tables use them, and `.user-content` clamps the result.
  */
 const ALLOWED_CSS_PREFIXES = [
   'background-color',
@@ -197,7 +205,6 @@ const ALLOWED_CSS_PREFIXES = [
   'max-height',
   'max-width',
   'min-height',
-  'min-width',
   'padding',
   'text-align',
   'text-decoration',
@@ -208,7 +215,6 @@ const ALLOWED_CSS_PREFIXES = [
   'width',
   'word-break',
   'word-spacing',
-  'word-wrap',
 ];
 
 /**
@@ -241,6 +247,36 @@ const DEFERRED_VALUE = /var\s*\(/i;
 
 /** Properties where a negative value moves the element rather than sizing it. */
 const SHIFTING_PROPERTIES = ['margin', 'text-indent'];
+
+/**
+ * Values that stop text wrapping, by the property they appear on (#468).
+ *
+ * `.user-content` sets `overflow-wrap: anywhere` so a long reference or URL
+ * breaks instead of running out of the comment (#481). An inline style beats
+ * a stylesheet rule, so one pasted declaration undoes that for the element it
+ * sits on, and the long token runs out of the box and under the Details
+ * sidebar -- which is the reported defect.
+ *
+ * Only the values that prevent a break are rejected, not the properties:
+ * `white-space: pre-wrap` and `word-break: break-all` are how pasted content
+ * keeps its formatting *and* wraps, so both survive.
+ *
+ * The longhands are listed beside the shorthands because engines disagree
+ * about which arrives here. Chrome expands `white-space: nowrap` into
+ * `white-space-collapse: collapse` and `text-wrap-mode: nowrap`, and the
+ * second of those is already dropped for not being on
+ * {@link ALLOWED_CSS_PREFIXES} -- so Chrome was protected, by accident, and
+ * an engine that does not expand the shorthand was not. This makes it
+ * deliberate and the same everywhere.
+ */
+const NON_WRAPPING_VALUES: Record<string, readonly string[]> = {
+  'white-space': ['nowrap', 'pre'],
+  'text-wrap': ['nowrap'],
+  'text-wrap-mode': ['nowrap'],
+  'word-break': ['keep-all'],
+  'overflow-wrap': ['normal'],
+  'word-wrap': ['normal'],
+};
 
 /**
  * An inert document used to parse untrusted CSS.
@@ -322,6 +358,10 @@ function sanitizeStyle(value: string): string {
       SHIFTING_PROPERTIES.some((prefix) => name.startsWith(prefix)) &&
       (NEGATIVE_LENGTH.test(parsed) || DEFERRED_VALUE.test(parsed))
     ) {
+      unsafe = true;
+    }
+
+    if (!unsafe && NON_WRAPPING_VALUES[name]?.includes(parsed.trim().toLowerCase())) {
       unsafe = true;
     }
 

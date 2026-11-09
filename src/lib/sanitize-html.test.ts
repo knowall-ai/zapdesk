@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { sanitizeUserHtml, htmlToPlainText } from './sanitize-html';
 
 describe('sanitizeUserHtml', () => {
@@ -411,5 +412,84 @@ describe('htmlToPlainText is inert', () => {
 
     expect(assigned.some((v) => v.includes('onerror'))).toBe(false);
     expect(assigned.some((v) => v.includes('<img'))).toBe(false);
+  });
+});
+
+/**
+ * Containment: a comment stays inside the comment (#468).
+ *
+ * `.user-content` sets `overflow-wrap: anywhere` so a long reference breaks
+ * instead of running out of the box (#481), but an inline style beats a
+ * stylesheet rule — so one declaration pasted from Outlook or Word undid it
+ * for the element it sat on, and the text ran under the Details sidebar.
+ */
+describe('declarations that stop a comment wrapping', () => {
+  const styleOf = (html: string) => {
+    const match = sanitizeUserHtml(html).match(/style="([^"]*)"/);
+    return match?.[1] ?? '';
+  };
+
+  it.each([
+    ['white-space: nowrap', 'white-space'],
+    ['white-space: pre', 'white-space'],
+    ['word-break: keep-all', 'word-break'],
+  ])('drops %s, which stops a long reference breaking', (declaration, property) => {
+    const long = 'AB-1234-5678-9012-3456-7890-ABCD-EFGH';
+    expect(styleOf(`<span style="${declaration}">${long}</span>`)).not.toContain(property);
+  });
+
+  it('drops a min-width, the one width a stylesheet cannot clamp', () => {
+    // `max-width: 100%` on .user-content clamps a pasted `width`; it cannot
+    // clamp a min-width, which is why this one leaves by the sanitiser.
+    expect(styleOf('<div style="min-width: 900px">wide</div>')).not.toContain('min-width');
+  });
+
+  it('keeps the wrapping formatting pasted content legitimately uses', () => {
+    // Rejecting the property rather than the value would take these too, and
+    // they are how pasted content keeps its shape *and* still wraps.
+    expect(styleOf('<span style="white-space: pre-wrap">a  b</span>')).toContain('pre-wrap');
+    expect(styleOf('<span style="word-break: break-all">abc</span>')).toContain('break-all');
+  });
+
+  it('still keeps the width a pasted table lays its columns out with', () => {
+    // Tables get their own horizontal scroll in globals.css, so their widths
+    // are readable rather than overflowing, and are deliberately kept.
+    const table = '<table><tbody><tr><td style="width: 120px">cell</td></tr></tbody></table>';
+    expect(styleOf(table)).toContain('width: 120px');
+  });
+
+  it('leaves the rest of a style alone when it drops one declaration', () => {
+    const out = styleOf('<span style="color: #ff0000; white-space: nowrap">red</span>');
+    expect(out).toContain('rgb(255, 0, 0)');
+    expect(out).not.toContain('nowrap');
+  });
+});
+
+/**
+ * The stylesheet half of the same guarantee (#468, #481).
+ *
+ * The sanitiser only has to drop `min-width` because `.user-content` clamps
+ * everything else, and only has to drop the non-wrapping values because
+ * `.user-content` is what does the wrapping. Delete either rule and the
+ * reasoning above is quietly wrong, with nothing failing to say so.
+ */
+describe('globals.css keeps its side of the bargain', () => {
+  const css = readFileSync('src/app/globals.css', 'utf8');
+  const ruleFor = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} is not in globals.css`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('}', at));
+  };
+
+  it('breaks a long unbroken reference instead of letting it run out', () => {
+    expect(ruleFor('.user-content')).toContain('overflow-wrap: anywhere');
+  });
+
+  it('clamps a pasted width to the width of the comment', () => {
+    expect(ruleFor('.user-content :not(table):not(table *)')).toContain('max-width: 100%');
+  });
+
+  it('exempts tables, which scroll rather than squeeze their columns', () => {
+    expect(ruleFor('.user-content table')).toContain('overflow-x: auto');
   });
 });
