@@ -90,6 +90,28 @@ stopped it.
 * *Mentions* — that `@mentions` are wrapped in prose, that they are left alone
   inside links and code blocks, and that a mention inside an attribute value is
   no longer rewritten.
+* *Containment* — that a comment stays inside the comment. A pasted style can
+  undo the wrapping `.user-content` provides, because an inline declaration
+  beats a stylesheet rule, so these cover the declarations that do it:
+  `white-space: nowrap` and the compound forms of it, `word-break: keep-all`,
+  `min-width`, a fixed `width` or `height` on anything that is not a table or
+  an image, and `!important` on anything at all. The formatting that wraps
+  *and* keeps its shape — `white-space: pre-wrap`, `word-break: break-all`,
+  a table's own column widths, every maximum — is asserted to survive, because
+  this is the group where over-tightening would be invisible.
+
+The containment group pairs with rules in `src/app/globals.css`, which three
+tests read directly: the sanitiser only has to drop `min-width` because
+`.user-content` clamps the rest, so if a later edit deletes a rule the
+reasoning in the sanitiser goes quietly wrong. Those tests match a rule by its
+selector's tokens rather than its literal text, so reformatting the stylesheet
+does not fail them.
+
+NOTE: `jsdom` has no layout, so none of these assert a rendered width — they
+assert the declaration that would cause one. The widths quoted in their
+comments were measured in Chrome and recorded on the pull request that added
+them; CI runs `bun run test:unit` only, so a browser-rendered assertion would
+never execute there.
 
 When changing the allowlist, add a test to both of the first two groups: one
 proving the new vector is blocked, one proving the content you meant to keep

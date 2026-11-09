@@ -609,3 +609,55 @@ describe('a fixed size on a text block', () => {
     expect(out).not.toContain('900px');
   });
 });
+
+/**
+ * Raised in review on #632, and the sharpest one: an inline `!important`
+ * outranks an `!important` rule in our own stylesheet, so one pasted
+ * declaration overrides a containment rule written precisely to bound it.
+ */
+describe('!important in a pasted style', () => {
+  const styleOf = (html: string) => sanitizeUserHtml(html).match(/style="([^"]*)"/)?.[1] ?? '';
+
+  it('keeps the declaration but drops the priority', () => {
+    const out = styleOf('<p style="color: red !important">x</p>');
+    expect(out).toContain('red');
+    expect(out).not.toContain('important');
+  });
+
+  it('stops a table outranking the clamp meant to contain it', () => {
+    // Measured in Chrome: with the priority kept this rendered 2000px wide in
+    // a 331px column, because inline `!important` beats
+    // `.user-content table { max-width: 100% !important }`. Without it the
+    // stylesheet decides, and the table is 331px.
+    const html =
+      '<table style="width: 2000px; max-width: 2000px !important">' +
+      '<tbody><tr><td>cell</td></tr></tbody></table>';
+    const out = styleOf(html);
+    expect(out).not.toContain('important');
+    expect(out).toContain('max-width: 2000px');
+  });
+
+  it('stops a pasted colour outranking the rule that normalises it', () => {
+    // `.user-content [style*='color']` is itself `!important`, so before this
+    // a colour pasted out of Outlook won and was shown on the dark theme as
+    // it looked on white.
+    expect(styleOf('<span style="color: #ffffff !important">x</span>')).not.toContain('important');
+  });
+
+  it('leaves the declarations beside it alone', () => {
+    const out = styleOf('<p style="font-weight: bold; color: red !important; padding: 4px">x</p>');
+    expect(out).toContain('bold');
+    expect(out).toContain('padding: 4px');
+    expect(out).not.toContain('important');
+  });
+
+  it('drops an unsafe declaration whether or not it is important', () => {
+    // The priority is stripped after the policy runs, not before, so it
+    // cannot be used to smuggle anything past it.
+    expect(styleOf('<div style="position: fixed !important">x</div>')).not.toContain('position');
+    expect(styleOf('<div style="min-width: 900px !important">x</div>')).not.toContain('min-width');
+    expect(styleOf('<span style="white-space: nowrap !important">x</span>')).not.toContain(
+      'nowrap'
+    );
+  });
+});
