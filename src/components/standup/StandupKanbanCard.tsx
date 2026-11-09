@@ -8,6 +8,7 @@ import { Github } from 'lucide-react';
 import { Avatar, PriorityIndicator } from '@/components/common';
 import { isGitHubItem } from '@/lib/github-kanban';
 import { sourceAccentStyle } from '@/lib/source-colors';
+import { workItemTypeBadgeStyle } from '@/lib/work-item-type-colors';
 import type { HighlightReason } from '@/lib/activity-summary';
 import { HIGHLIGHT_COLORS, highlightRingColor } from '@/lib/activity-colors';
 import type { StandupWorkItem } from '@/types';
@@ -29,20 +30,6 @@ const highlightLabels: Record<HighlightReason, string> = {
   updated: 'Updated',
   closed: 'Closed',
   pr: 'PR',
-};
-
-/**
- * The work item type badge colours, exported so `source-colors.test.ts` can
- * check the source accents against the colours a card actually wears rather
- * than against a copy of them that can drift.
- */
-export const typeColors: Record<string, string> = {
-  Bug: '#cc293d',
-  Task: '#f2cb1d',
-  Enhancement: '#773b93',
-  Question: '#009ccc',
-  Issue: '#b4009e',
-  Risk: '#ff7b00',
 };
 
 export default function StandupKanbanCard({
@@ -76,7 +63,7 @@ export default function StandupKanbanCard({
     ...highlightStyle,
   };
 
-  const typeColor = typeColors[item.workItemType] || 'var(--text-muted)';
+  const typeBadge = workItemTypeBadgeStyle(item.workItemType);
 
   // Always show remaining effort, including when the field is unset — "0h" is a
   // reading, whereas a missing badge is indistinguishable from "not estimated"
@@ -97,13 +84,7 @@ export default function StandupKanbanCard({
           </span>
         ) : (
           <div className="flex items-center gap-1.5">
-            <span
-              className="rounded px-1 py-0.5 text-[10px] font-medium"
-              style={{
-                backgroundColor: `${typeColor}20`,
-                color: typeColor,
-              }}
-            >
+            <span className="rounded px-1 py-0.5 text-[10px] font-medium" style={typeBadge}>
               {item.workItemType}
             </span>
             <span className="text-xs text-[var(--text-muted)]">#{item.id}</span>
