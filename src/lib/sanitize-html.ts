@@ -188,8 +188,12 @@ const CSS_FUNCTION = /([\w-]+)\s*\(/g;
  * clamped by a stylesheet, so a pasted one pushed the comment out of its box
  * and under the Details sidebar. `word-wrap` was already dead: the CSSOM
  * renames it to `overflow-wrap`, which this list does not admit, so it only
- * ever applied in an engine that keeps the alias. `max-width` and `width`
- * stay -- pasted tables use them, and `.user-content` clamps the result.
+ * ever applied in an engine that keeps the alias.
+ *
+ * `width` and `height` are still admitted here, but only survive on an
+ * element that is allowed a fixed size -- see {@link SIZED_ELEMENTS}.
+ * `max-width` and `max-height` stay for everything, because a maximum can
+ * only make a box smaller than its column.
  */
 const ALLOWED_CSS_PREFIXES = [
   'background-color',
@@ -282,6 +286,41 @@ const NON_WRAPPING_VALUES = new Map<string, ReadonlySet<string>>([
   ['word-wrap', new Set(['normal'])],
 ]);
 
+/**
+ * Elements whose own size is part of how pasted content is laid out: a table
+ * and its parts, and an image.
+ *
+ * Everything else in a comment is a text block, and a text block has no
+ * business carrying a fixed size (#632). Two ways it escapes its box, both
+ * raised in review:
+ *
+ * - `width: 760px; margin-left: 80px` is still 80px too wide after
+ *   `.user-content` clamps it, because `max-width` bounds the box and the
+ *   margin sits outside it. Nothing in a stylesheet can clamp the pair.
+ * - `width: 760px; height: 20px` keeps its 20px once the clamp makes the text
+ *   wrap onto several lines, so the overflowing lines are drawn over whatever
+ *   follows.
+ *
+ * Dropping the fixed size removes both: a block with no width is as wide as
+ * the column leaves it, a margin then indents it rather than pushing it out,
+ * and a block with no height is as tall as its text.
+ */
+const SIZED_ELEMENTS = new Set([
+  'TABLE',
+  'THEAD',
+  'TBODY',
+  'TFOOT',
+  'TR',
+  'TH',
+  'TD',
+  'COL',
+  'COLGROUP',
+  'IMG',
+]);
+
+/** The fixed-size properties only a {@link SIZED_ELEMENTS} element may set. */
+const FIXED_SIZE_PROPERTIES = ['width', 'height'];
+
 /** Whether a declaration's value stops the text it applies to from wrapping. */
 function stopsWrapping(name: string, value: string): boolean {
   const rejected = NON_WRAPPING_VALUES.get(name);
@@ -335,17 +374,22 @@ function getCssProbe(): HTMLElement {
  *
  * Two allowlists run over the parsed declarations — {@link ALLOWED_CSS_PREFIXES}
  * for the property, {@link SAFE_CSS_FUNCTIONS} for any function in its value —
- * plus a check for the negative lengths that shift an element sideways.
+ * plus a check for the negative lengths that shift an element sideways, the
+ * values that stop text wrapping, and a fixed size on an element that is not
+ * allowed one.
  *
  * Colours, fonts, alignment, spacing, borders and cell widths — everything the
  * DevOps editor emits — survive, normalised by the parser (`#ff0000` comes back
  * as `rgb(255, 0, 0)`).
  *
  * @param value The raw `style` attribute value.
+ * @param tagName The element's tag name, upper-case as the DOM gives it.
+ *   Decides whether a fixed `width` or `height` is kept; see
+ *   {@link SIZED_ELEMENTS}.
  * @returns The parsed value with unsafe declarations removed — empty if none
  *   survive, so the caller can drop the attribute rather than leave it blank.
  */
-function sanitizeStyle(value: string): string {
+function sanitizeStyle(value: string, tagName: string): string {
   const probe = getCssProbe();
   probe.style.cssText = value;
 
@@ -377,6 +421,10 @@ function sanitizeStyle(value: string): string {
     }
 
     if (!unsafe && stopsWrapping(name, parsed)) unsafe = true;
+
+    if (!unsafe && FIXED_SIZE_PROPERTIES.includes(name) && !SIZED_ELEMENTS.has(tagName)) {
+      unsafe = true;
+    }
 
     if (unsafe) probe.style.removeProperty(name);
   }
@@ -416,7 +464,7 @@ function installHooks(): void {
     }
     const style = node.getAttribute?.('style');
     if (style) {
-      const safe = sanitizeStyle(style);
+      const safe = sanitizeStyle(style, node.tagName ?? '');
       if (safe) node.setAttribute('style', safe);
       else node.removeAttribute('style');
     }

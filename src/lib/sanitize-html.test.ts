@@ -207,7 +207,12 @@ describe('inline style', () => {
   });
 
   it('keeps calc, which computes locally', () => {
-    expect(sanitizeUserHtml('<span style="width: calc(100% - 10px)">x</span>')).toContain('calc');
+    // On `max-width` rather than `width`: this is about `calc()` surviving the
+    // function allowlist, and since #632 a fixed `width` on a span is dropped
+    // for its own reasons, which would make this pass for the wrong one.
+    expect(sanitizeUserHtml('<span style="max-width: calc(100% - 10px)">x</span>')).toContain(
+      'calc'
+    );
   });
 
   it('drops background-image outright — only the colour is formatting', () => {
@@ -547,4 +552,56 @@ describe('a compound white-space value', () => {
       expect(() => sanitizeUserHtml(`<span style="${name}: nowrap">x</span>`)).not.toThrow();
     }
   );
+});
+
+/**
+ * Raised in review on #632: a fixed size on a text block escapes the clamp
+ * two ways, so the sanitiser takes it off anything that is not laid out by
+ * its own size.
+ */
+describe('a fixed size on a text block', () => {
+  const styleOf = (html: string) => sanitizeUserHtml(html).match(/style="([^"]*)"/)?.[1] ?? '';
+
+  it('drops a width, which a margin would otherwise carry past the clamp', () => {
+    // `max-width: 100%` bounds the box; the margin sits outside it, so
+    // `width: 760px; margin-left: 80px` stayed 80px too wide. No stylesheet
+    // can clamp the pair, so the width goes instead -- and the margin then
+    // indents the block rather than pushing it out.
+    const out = styleOf('<div style="width: 760px; margin-left: 80px">x</div>');
+    expect(out).not.toContain('width');
+    expect(out).toContain('margin-left');
+  });
+
+  it('drops a height, which a wrapped block would otherwise overflow', () => {
+    // 20px tall is 20px tall even once the clamp makes the text take four
+    // lines, and the rest is drawn over whatever follows the comment.
+    expect(styleOf('<div style="height: 20px">x</div>')).not.toContain('height');
+  });
+
+  it.each(['table', 'tr', 'td', 'th'])('keeps a size on a %s, which lays itself out', (tag) => {
+    const inner = `<${tag} style="width: 120px; height: 40px">cell</${tag}>`;
+    const html = tag === 'table' ? inner : `<table><tbody><tr>${inner}</tr></tbody></table>`;
+    const out = styleOf(html);
+    expect(out).toContain('width: 120px');
+    expect(out).toContain('height: 40px');
+  });
+
+  it('keeps a size on an image, which has an aspect ratio to hold', () => {
+    const out = styleOf('<img src="https://example.com/a.png" style="width: 120px; height: 90px">');
+    expect(out).toContain('width: 120px');
+    expect(out).toContain('height: 90px');
+  });
+
+  it('keeps a maximum, which can only make a block smaller than its column', () => {
+    const out = styleOf('<div style="max-width: 300px; max-height: 80px">x</div>');
+    expect(out).toContain('max-width');
+    expect(out).toContain('max-height');
+  });
+
+  it('leaves the formatting beside it alone', () => {
+    const out = styleOf('<p style="color: #ff0000; width: 900px; font-weight: bold">x</p>');
+    expect(out).toContain('rgb(255, 0, 0)');
+    expect(out).toContain('bold');
+    expect(out).not.toContain('900px');
+  });
 });

@@ -388,13 +388,13 @@ body {
     overflow-x: auto;
   }
 
-  /* A pasted fixed width cannot make an element wider than the comment it is
-     in (#468). Outlook and Word paste `width` on wrappers around the text,
-     which pushed the comment out of its box and under the Details sidebar;
-     the sanitiser drops `min-width`, which this could not have clamped, and
-     this clamps the rest. Tables are exempt because the rule above already
-     gives them their own horizontal scroll, which is the readable way to show
-     a wide table rather than squeezing its columns. */
+  /* Nothing in a comment is wider than the comment (#468). The sanitiser
+     drops the sizes a stylesheet cannot clamp -- `min-width` anywhere, and a
+     fixed `width` or `height` on anything that is not a table or an image --
+     and this bounds what is left, including a table's own width. Tables are
+     exempt from the clamp itself because the rule above already gives them
+     their own horizontal scroll, which is the readable way to show a wide
+     table rather than squeezing its columns. */
   .user-content :not(table):not(table *) {
     max-width: 100%;
   }
