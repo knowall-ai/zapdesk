@@ -516,8 +516,12 @@ describe('globals.css keeps its side of the bargain', () => {
     expect(ruleFor('.user-content :not(table):not(table *)')).toContain('max-width: 100%');
   });
 
-  it('exempts tables, which scroll rather than squeeze their columns', () => {
-    expect(ruleFor('.user-content table')).toContain('overflow-x: auto');
+  it('keeps a wide table inside the comment, scrolling it if it cannot shrink', () => {
+    const rule = ruleFor('.user-content table');
+    expect(rule).toContain('overflow-x: auto');
+    // `!important`, or an inline `max-width` from pasted content wins and the
+    // table renders at its own width -- measured at 2000px in a 331px column.
+    expect(rule).toContain('max-width: 100% !important');
   });
 });
 

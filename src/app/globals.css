@@ -382,19 +382,25 @@ body {
     overflow-wrap: anywhere;
   }
 
+  /* `!important` because an inline `max-width` from pasted content beats a
+     plain rule and takes the clamp with it: a table carrying
+     `max-width: 2000px` rendered 2000px wide in a 331px column, overflowing
+     the comment entirely (#632). Clamped, it lays its columns out inside the
+     comment's width; `overflow-x: auto` is what lets it scroll in the cases
+     where its content cannot shrink any further. */
   .user-content table {
     display: block;
-    max-width: 100%;
+    max-width: 100% !important;
     overflow-x: auto;
   }
 
   /* Nothing in a comment is wider than the comment (#468). The sanitiser
      drops the sizes a stylesheet cannot clamp -- `min-width` anywhere, and a
      fixed `width` or `height` on anything that is not a table or an image --
-     and this bounds what is left, including a table's own width. Tables are
-     exempt from the clamp itself because the rule above already gives them
-     their own horizontal scroll, which is the readable way to show a wide
-     table rather than squeezing its columns. */
+     and this bounds what is left. Tables are exempt here because the rule
+     above clamps them on its own terms, giving them their own horizontal
+     scroll, which is the readable way to show a wide table rather than
+     squeezing its columns. */
   .user-content :not(table):not(table *) {
     max-width: 100%;
   }
