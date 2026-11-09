@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { SOURCE_COLORS, SOURCE_LABELS, sourceAccentStyle, sourceKindOf } from './source-colors';
 import { isGitHubItem } from './github-kanban';
-import { typeColors } from '@/components/standup/StandupKanbanCard';
+import { WORK_ITEM_TYPE_TEXT } from './work-item-type-colors';
 
 /**
  * The source colours on the combined boards (#465). The point of the module is
@@ -101,11 +101,15 @@ describe('the accents stay distinguishable from everything else on a card', () =
   const resolved = (kind: 'devops' | 'github') =>
     cssVar(SOURCE_COLORS[kind].replace(/^var\(|\)$/g, ''));
 
-  // Every other colour that can appear on one of these cards. The type badge
-  // colours come from the card itself, and the rest from the stylesheet, so
-  // moving one of them next to an accent fails here rather than shipping.
+  // Every other colour that can appear on one of these cards: the type badge
+  // text from `work-item-type-colors.ts` -- the colour a reader actually sees,
+  // where the badge's background is a 12.5% tint of the hue -- and the rest
+  // from the stylesheet. Moving one of them next to an accent fails here
+  // rather than shipping.
   const ALSO_ON_A_CARD: Record<string, string> = {
-    ...Object.fromEntries(Object.entries(typeColors).map(([type, hex]) => [`type ${type}`, hex])),
+    ...Object.fromEntries(
+      Object.entries(WORK_ITEM_TYPE_TEXT).map(([type, hex]) => [`type ${type}`, hex])
+    ),
     'priority urgent': cssVar('--priority-urgent'),
     'priority high': cssVar('--priority-high'),
     'priority normal': cssVar('--priority-normal'),

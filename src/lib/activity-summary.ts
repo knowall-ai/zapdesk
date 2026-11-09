@@ -133,15 +133,26 @@ export function summariseGroupActivity(
   };
 
   const cardIds = new Set<number>();
+  // GitHub issue cards, by the `owner/repo#123` they carry as `sourceRef`.
+  // A closing reference names that, not the negated global id a card is keyed
+  // by, so the two sources need two lookups (#583).
+  const cardsByRef = new Map<string, number>();
   for (const column of columns) {
     const inCompletedColumn = column.category === 'Completed';
     for (const item of column.items) {
       cardIds.add(item.id);
+      if (item.sourceRef) cardsByRef.set(item.sourceRef.toLowerCase(), item.id);
       const kinds = itemActivity(item, inCompletedColumn, since);
       for (const kind of kinds) summary.items[kind]++;
       if (kinds.length > 0) summary.highlights.set(item.id, [...kinds]);
     }
   }
+
+  const markHasPullRequest = (id: number) => {
+    const reasons = summary.highlights.get(id) ?? [];
+    if (!reasons.includes('pr')) reasons.push('pr');
+    summary.highlights.set(id, reasons);
+  };
 
   for (const pr of pullRequests) {
     for (const kind of pr.activity) summary.pullRequests[kind]++;
@@ -149,9 +160,15 @@ export function summariseGroupActivity(
     // assignee or project differs); there's no card to light up for that one.
     for (const id of pr.workItemIds) {
       if (!cardIds.has(id)) continue;
-      const reasons = summary.highlights.get(id) ?? [];
-      if (!reasons.includes('pr')) reasons.push('pr');
-      summary.highlights.set(id, reasons);
+      markHasPullRequest(id);
+    }
+    // The same, for a GitHub issue the pull request closes. Without this a
+    // GitHub card never got the ring, however the pull request referenced it,
+    // so a mixed board told two different stories about the same fact.
+    for (const ref of pr.issueRefs ?? []) {
+      const id = cardsByRef.get(ref);
+      if (id === undefined) continue;
+      markHasPullRequest(id);
     }
   }
 

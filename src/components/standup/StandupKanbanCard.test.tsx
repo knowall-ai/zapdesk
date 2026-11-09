@@ -66,3 +66,38 @@ describe('a GitHub card on the Kanban board', () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * The type badge's colours come from one table now, so this is only about the
+ * card asking for them -- `work-item-type-colors.test.ts` is where the
+ * contrast of each pair is measured (#575).
+ */
+describe('the work item type badge', () => {
+  const badgeOf = (type: string) => {
+    render(<StandupKanbanCard item={card({ id: 7616, source: undefined, workItemType: type })} />);
+    const badge = screen.getByText(type);
+    return badge.style;
+  };
+
+  it('draws the type in the lifted text colour, not the DevOps hue', () => {
+    const style = badgeOf('Enhancement');
+    // #c084fc lifted from #773b93, which measured 2.10:1 on a dark card.
+    expect(style.color).toBe('rgb(192, 132, 252)');
+    expect(style.color).not.toBe('rgb(119, 59, 147)');
+  });
+
+  it('still tints the background with the type’s own DevOps hue', () => {
+    // #773b93 at the 12.5% the `20` suffix means, which is what the contrast
+    // above is measured against.
+    expect(badgeOf('Enhancement').backgroundColor).toBe('rgba(119, 59, 147, 0.125)');
+  });
+
+  it('gives a custom work item type a real background, not a broken var()', () => {
+    // The old fallback built `var(--text-muted)20`, which is not a colour at
+    // all: the parser drops the whole declaration, so an unknown type was
+    // drawn with no tint. That it parses to an rgba() here is the fix.
+    const style = badgeOf('Impediment');
+    expect(style.backgroundColor).toBe('rgba(107, 114, 128, 0.125)');
+    expect(style.color).toBe('rgb(156, 163, 175)');
+  });
+});

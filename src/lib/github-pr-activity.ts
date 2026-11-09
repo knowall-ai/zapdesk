@@ -52,6 +52,56 @@ export function linkedWorkItemIds(pr: Pick<GitHubPullRequest, 'title' | 'body'>)
 }
 
 /**
+ * A GitHub closing reference: one of GitHub's own closing keywords followed
+ * by the issue, in any of the three forms it accepts (#583).
+ *
+ *   Fixes #123                                    same repository
+ *   Closes owner/repo#123                         another repository
+ *   Resolved: https://github.com/o/r/issues/123   the full link
+ *
+ * The keyword is required, and that is the whole design decision here. GitHub
+ * numbers issues and pull requests in one sequence per repository, so a bare
+ * `#123` in a description is as likely to be "follows on from pull request
+ * 123" as it is to name an issue -- and lighting up the wrong card is worse
+ * than lighting up none, because the ring is read as "somebody is on this".
+ * A closing keyword is GitHub's own statement that the pull request is for
+ * that issue, which is exactly what the highlight claims.
+ */
+const CLOSING_REFERENCE =
+  /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b\s*:?\s+(?:https?:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/(\d+)|([\w.-]+\/[\w.-]+)#(\d+)|#(\d+))/gi;
+
+/**
+ * GitHub issues a pull request closes, as `owner/repo#123`, lower-cased.
+ *
+ * The counterpart of {@link linkedWorkItemIds} for the other source. A GitHub
+ * issue's card id is GitHub's global database id negated, while a closing
+ * reference carries the per-repository *number* -- the two cannot be compared,
+ * which is why this returns the `owner/repo#number` form the card also carries
+ * as its `sourceRef` rather than a number.
+ *
+ * Lower-cased because GitHub treats repository names case-insensitively, and
+ * the mapping in `GITHUB_PROJECT_REPOS` need not match a reference's spelling.
+ *
+ * @param pr The pull request; title and description are both read, as they are
+ *   for `AB#`. GitHub itself only honours the keyword in the description.
+ * @param repo `owner/name` of the repository the pull request is in, which a
+ *   reference with no repository of its own means.
+ */
+export function linkedIssueRefs(
+  pr: Pick<GitHubPullRequest, 'title' | 'body'>,
+  repo: string
+): string[] {
+  const refs = new Set<string>();
+  for (const match of `${pr.title}\n${pr.body ?? ''}`.matchAll(CLOSING_REFERENCE)) {
+    const [, urlRepo, urlNumber, crossRepo, crossNumber, sameNumber] = match;
+    const target = urlRepo ?? crossRepo ?? repo;
+    const number = urlNumber ?? crossNumber ?? sameNumber;
+    if (target && number) refs.add(`${target.toLowerCase()}#${number}`);
+  }
+  return [...refs];
+}
+
+/**
  * What a pull request did since `since`: opened, merged, or (opened earlier,
  * still open, and changed) updated. Empty when nothing happened in the window.
  *
@@ -218,6 +268,7 @@ export async function getGitHubPullRequestActivity(
         closedAt: pr.merged_at ?? pr.pull_request?.merged_at ?? undefined,
         activity,
         workItemIds: linkedWorkItemIds(pr),
+        issueRefs: linkedIssueRefs(pr, prRepo),
         source: 'github',
       });
     }
