@@ -113,14 +113,25 @@ export default function TicketDialogShell({
         </div>
 
         {/* Content */}
-        <ContentWrapper {...contentProps} className="flex flex-1 overflow-hidden">
+        <ContentWrapper
+          {...contentProps}
+          className="flex flex-1 flex-col overflow-hidden md:flex-row"
+        >
           {/* Main content area */}
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
 
-          {/* Optional sidebar */}
+          {/* Optional sidebar.
+              `md:shrink-0` so the Details column keeps its width whatever the
+              main column holds: a flex item is otherwise free to shrink, so a
+              wide comment moved the boundary rather than wrapping (#468).
+              Only from `md`, because 288px that cannot shrink is most of a
+              390px phone -- the dialog would clip its own right edge and take
+              the controls with it (raised in review on #632). Below that the
+              two stack, and Details scrolls in the lower part of the dialog
+              rather than squeezing the ticket into what is left. */}
           {sidebar && (
             <div
-              className="w-72 overflow-auto border-l"
+              className="max-h-[45%] w-full overflow-auto border-t md:max-h-none md:w-72 md:shrink-0 md:border-t-0 md:border-l"
               style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
             >
               {sidebar}

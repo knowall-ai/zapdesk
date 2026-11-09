@@ -175,3 +175,54 @@ describe('focus', () => {
     expect(focus).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The Details sidebar keeps its width, so a wide comment wraps rather than
+ * moving the boundary between the two columns (#468).
+ */
+describe('the two columns hold their shape', () => {
+  const columns = () => {
+    open({ sidebar: <p>Details</p> });
+    const sidebar = screen.getByText('Details').parentElement as HTMLElement;
+    return { sidebar, main: screen.getByText('Body').parentElement as HTMLElement };
+  };
+
+  it('does not let the sidebar be squeezed by the content beside it', () => {
+    // A flex item shrinks by default: without this the Details column gave up
+    // width to a comment that would not wrap, which is how the comment ended
+    // up under it.
+    const { sidebar } = columns();
+    expect(sidebar.className).toContain('md:shrink-0');
+    expect(sidebar.className).toContain('md:w-72');
+  });
+
+  it('stacks the two rather than clipping itself on a phone', () => {
+    // 288px that cannot shrink is most of a 390px screen, so holding the
+    // width at every size trades one clipped column for another (#632).
+    // Below `md` the sidebar is full width, under the ticket, and capped so
+    // it cannot take the whole dialog.
+    const { sidebar, main } = columns();
+    expect(sidebar.className).toContain('w-full');
+    expect(sidebar.className).toContain('max-h-[45%]');
+    expect(sidebar.className).toContain('md:max-h-none');
+    // The row only starts at `md`; below it the dialog is a column.
+    expect(main.parentElement?.className).toContain('flex-col');
+    expect(main.parentElement?.className).toContain('md:flex-row');
+  });
+
+  it('keeps the width unshrinkable only where there is room for it', () => {
+    // The bare utilities would apply at every width, which is the bug above.
+    const { sidebar } = columns();
+    expect(sidebar.className).not.toMatch(/(^|\s)shrink-0/);
+    expect(sidebar.className).not.toMatch(/(^|\s)w-72/);
+  });
+
+  it('lets the main column shrink instead, so long content wraps in it', () => {
+    // `min-w-0` is the other half: a flex item's default minimum is its
+    // content, so without it the column grows to fit an unbreakable token
+    // rather than wrapping it.
+    const { main } = columns();
+    expect(main.className).toContain('min-w-0');
+    expect(main.className).toContain('overflow-hidden');
+  });
+});

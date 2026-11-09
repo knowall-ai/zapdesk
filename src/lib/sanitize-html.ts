@@ -182,6 +182,18 @@ const CSS_FUNCTION = /([\w-]+)\s*\(/g;
  * `border-top-width`, `border-style`, `border-image` and a dozen more, all of
  * which this admits. `border-image-source: url(…)` is admitted here and then
  * rejected by {@link SAFE_CSS_FUNCTIONS}, which is the point of running both.
+ *
+ * `min-width` and `word-wrap` were here and are deliberately gone (#468). A
+ * `min-width` wider than the comment column is the one width that cannot be
+ * clamped by a stylesheet, so a pasted one pushed the comment out of its box
+ * and under the Details sidebar. `word-wrap` was already dead: the CSSOM
+ * renames it to `overflow-wrap`, which this list does not admit, so it only
+ * ever applied in an engine that keeps the alias.
+ *
+ * `width` and `height` are still admitted here, but only survive on an
+ * element that is allowed a fixed size -- see {@link SIZED_ELEMENTS}.
+ * `max-width` and `max-height` stay for everything, because a maximum can
+ * only make a box smaller than its column.
  */
 const ALLOWED_CSS_PREFIXES = [
   'background-color',
@@ -197,7 +209,6 @@ const ALLOWED_CSS_PREFIXES = [
   'max-height',
   'max-width',
   'min-height',
-  'min-width',
   'padding',
   'text-align',
   'text-decoration',
@@ -208,7 +219,6 @@ const ALLOWED_CSS_PREFIXES = [
   'width',
   'word-break',
   'word-spacing',
-  'word-wrap',
 ];
 
 /**
@@ -241,6 +251,86 @@ const DEFERRED_VALUE = /var\s*\(/i;
 
 /** Properties where a negative value moves the element rather than sizing it. */
 const SHIFTING_PROPERTIES = ['margin', 'text-indent'];
+
+/**
+ * Values that stop text wrapping, by the property they appear on (#468).
+ *
+ * `.user-content` sets `overflow-wrap: anywhere` so a long reference or URL
+ * breaks instead of running out of the comment (#481). An inline style beats
+ * a stylesheet rule, so one pasted declaration undoes that for the element it
+ * sits on, and the long token runs out of the box and under the Details
+ * sidebar -- which is the reported defect.
+ *
+ * Only the values that prevent a break are rejected, not the properties:
+ * `white-space: pre-wrap` and `word-break: break-all` are how pasted content
+ * keeps its formatting *and* wraps, so both survive.
+ *
+ * The longhands are listed beside the shorthands because engines disagree
+ * about which arrives here. Chrome expands `white-space: nowrap` into
+ * `white-space-collapse: collapse` and `text-wrap-mode: nowrap`, and the
+ * second of those is already dropped for not being on
+ * {@link ALLOWED_CSS_PREFIXES} -- so Chrome was protected, by accident, and
+ * an engine that does not expand the shorthand was not. This makes it
+ * deliberate and the same everywhere.
+ */
+const NON_WRAPPING_VALUES = new Map<string, ReadonlySet<string>>([
+  // `white-space` takes more than one keyword in CSS Text 4 --
+  // `white-space: preserve nowrap` is a valid way to write the same thing --
+  // so the value is read as tokens rather than matched whole. `pre-wrap` is
+  // one token and is not `pre`, so it still survives.
+  ['white-space', new Set(['nowrap', 'pre'])],
+  ['text-wrap', new Set(['nowrap'])],
+  ['text-wrap-mode', new Set(['nowrap'])],
+  ['word-break', new Set(['keep-all'])],
+  ['overflow-wrap', new Set(['normal'])],
+  ['word-wrap', new Set(['normal'])],
+]);
+
+/**
+ * Elements whose own size is part of how pasted content is laid out: a table
+ * and its parts, and an image.
+ *
+ * Everything else in a comment is a text block, and a text block has no
+ * business carrying a fixed size (#632). Two ways it escapes its box, both
+ * raised in review:
+ *
+ * - `width: 760px; margin-left: 80px` is still 80px too wide after
+ *   `.user-content` clamps it, because `max-width` bounds the box and the
+ *   margin sits outside it. Nothing in a stylesheet can clamp the pair.
+ * - `width: 760px; height: 20px` keeps its 20px once the clamp makes the text
+ *   wrap onto several lines, so the overflowing lines are drawn over whatever
+ *   follows.
+ *
+ * Dropping the fixed size removes both: a block with no width is as wide as
+ * the column leaves it, a margin then indents it rather than pushing it out,
+ * and a block with no height is as tall as its text.
+ */
+const SIZED_ELEMENTS = new Set([
+  'TABLE',
+  'THEAD',
+  'TBODY',
+  'TFOOT',
+  'TR',
+  'TH',
+  'TD',
+  'COL',
+  'COLGROUP',
+  'IMG',
+]);
+
+/** The fixed-size properties only a {@link SIZED_ELEMENTS} element may set. */
+const FIXED_SIZE_PROPERTIES = ['width', 'height'];
+
+/** Whether a declaration's value stops the text it applies to from wrapping. */
+function stopsWrapping(name: string, value: string): boolean {
+  const rejected = NON_WRAPPING_VALUES.get(name);
+  if (!rejected) return false;
+  return value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .some((token) => rejected.has(token));
+}
 
 /**
  * An inert document used to parse untrusted CSS.
@@ -284,17 +374,22 @@ function getCssProbe(): HTMLElement {
  *
  * Two allowlists run over the parsed declarations — {@link ALLOWED_CSS_PREFIXES}
  * for the property, {@link SAFE_CSS_FUNCTIONS} for any function in its value —
- * plus a check for the negative lengths that shift an element sideways.
+ * plus a check for the negative lengths that shift an element sideways, the
+ * values that stop text wrapping, and a fixed size on an element that is not
+ * allowed one.
  *
  * Colours, fonts, alignment, spacing, borders and cell widths — everything the
  * DevOps editor emits — survive, normalised by the parser (`#ff0000` comes back
  * as `rgb(255, 0, 0)`).
  *
  * @param value The raw `style` attribute value.
+ * @param tagName The element's tag name, upper-case as the DOM gives it.
+ *   Decides whether a fixed `width` or `height` is kept; see
+ *   {@link SIZED_ELEMENTS}.
  * @returns The parsed value with unsafe declarations removed — empty if none
  *   survive, so the caller can drop the attribute rather than leave it blank.
  */
-function sanitizeStyle(value: string): string {
+function sanitizeStyle(value: string, tagName: string): string {
   const probe = getCssProbe();
   probe.style.cssText = value;
 
@@ -325,7 +420,31 @@ function sanitizeStyle(value: string): string {
       unsafe = true;
     }
 
-    if (unsafe) probe.style.removeProperty(name);
+    if (!unsafe && stopsWrapping(name, parsed)) unsafe = true;
+
+    if (!unsafe && FIXED_SIZE_PROPERTIES.includes(name) && !SIZED_ELEMENTS.has(tagName)) {
+      unsafe = true;
+    }
+
+    if (unsafe) {
+      probe.style.removeProperty(name);
+      continue;
+    }
+
+    // Keep the declaration, drop any `!important` (#632). An inline
+    // `!important` outranks an `!important` rule in our own stylesheet, so
+    // one pasted declaration overrides a containment rule written precisely
+    // to bound it: `max-width: 2000px !important` on a table beat
+    // `.user-content table { max-width: 100% !important }` and rendered
+    // 2000px wide in a 331px column. Nothing a comment has to say needs that
+    // priority -- it only wins against the page it lands in.
+    //
+    // Last, so the checks above have already had their say: a declaration
+    // they reject is gone before this runs, and cannot ride in on a priority.
+    if (probe.style.getPropertyPriority(name)) {
+      probe.style.removeProperty(name);
+      probe.style.setProperty(name, parsed);
+    }
   }
 
   const out = probe.style.cssText;
@@ -363,7 +482,7 @@ function installHooks(): void {
     }
     const style = node.getAttribute?.('style');
     if (style) {
-      const safe = sanitizeStyle(style);
+      const safe = sanitizeStyle(style, node.tagName ?? '');
       if (safe) node.setAttribute('style', safe);
       else node.removeAttribute('style');
     }

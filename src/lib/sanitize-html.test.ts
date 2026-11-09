@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { sanitizeUserHtml, htmlToPlainText } from './sanitize-html';
 
 describe('sanitizeUserHtml', () => {
@@ -206,7 +207,12 @@ describe('inline style', () => {
   });
 
   it('keeps calc, which computes locally', () => {
-    expect(sanitizeUserHtml('<span style="width: calc(100% - 10px)">x</span>')).toContain('calc');
+    // On `max-width` rather than `width`: this is about `calc()` surviving the
+    // function allowlist, and since #632 a fixed `width` on a span is dropped
+    // for its own reasons, which would make this pass for the wrong one.
+    expect(sanitizeUserHtml('<span style="max-width: calc(100% - 10px)">x</span>')).toContain(
+      'calc'
+    );
   });
 
   it('drops background-image outright — only the colour is formatting', () => {
@@ -411,5 +417,247 @@ describe('htmlToPlainText is inert', () => {
 
     expect(assigned.some((v) => v.includes('onerror'))).toBe(false);
     expect(assigned.some((v) => v.includes('<img'))).toBe(false);
+  });
+});
+
+/**
+ * Containment: a comment stays inside the comment (#468).
+ *
+ * `.user-content` sets `overflow-wrap: anywhere` so a long reference breaks
+ * instead of running out of the box (#481), but an inline style beats a
+ * stylesheet rule — so one declaration pasted from Outlook or Word undid it
+ * for the element it sat on, and the text ran under the Details sidebar.
+ */
+describe('declarations that stop a comment wrapping', () => {
+  const styleOf = (html: string) => {
+    const match = sanitizeUserHtml(html).match(/style="([^"]*)"/);
+    return match?.[1] ?? '';
+  };
+
+  it.each([
+    ['white-space: nowrap', 'white-space'],
+    ['white-space: pre', 'white-space'],
+    ['word-break: keep-all', 'word-break'],
+  ])('drops %s, which stops a long reference breaking', (declaration, property) => {
+    const long = 'AB-1234-5678-9012-3456-7890-ABCD-EFGH';
+    expect(styleOf(`<span style="${declaration}">${long}</span>`)).not.toContain(property);
+  });
+
+  it('drops a min-width, the one width a stylesheet cannot clamp', () => {
+    // `max-width: 100%` on .user-content clamps a pasted `width`; it cannot
+    // clamp a min-width, which is why this one leaves by the sanitiser.
+    expect(styleOf('<div style="min-width: 900px">wide</div>')).not.toContain('min-width');
+  });
+
+  it('keeps the wrapping formatting pasted content legitimately uses', () => {
+    // Rejecting the property rather than the value would take these too, and
+    // they are how pasted content keeps its shape *and* still wraps.
+    expect(styleOf('<span style="white-space: pre-wrap">a  b</span>')).toContain('pre-wrap');
+    expect(styleOf('<span style="word-break: break-all">abc</span>')).toContain('break-all');
+  });
+
+  it('still keeps the width a pasted table lays its columns out with', () => {
+    // Tables get their own horizontal scroll in globals.css, so their widths
+    // are readable rather than overflowing, and are deliberately kept.
+    const table = '<table><tbody><tr><td style="width: 120px">cell</td></tr></tbody></table>';
+    expect(styleOf(table)).toContain('width: 120px');
+  });
+
+  it('leaves the rest of a style alone when it drops one declaration', () => {
+    const out = styleOf('<span style="color: #ff0000; white-space: nowrap">red</span>');
+    expect(out).toContain('rgb(255, 0, 0)');
+    expect(out).not.toContain('nowrap');
+  });
+});
+
+/**
+ * The stylesheet half of the same guarantee (#468, #481).
+ *
+ * The sanitiser only has to drop `min-width` because `.user-content` clamps
+ * everything else, and only has to drop the non-wrapping values because
+ * `.user-content` is what does the wrapping. Delete either rule and the
+ * reasoning above is quietly wrong, with nothing failing to say so.
+ */
+describe('globals.css keeps its side of the bargain', () => {
+  // Relative to the repository root, as `source-colors.test.ts` already reads
+  // this file; vitest runs from there.
+  const css = readFileSync('src/app/globals.css', 'utf8');
+
+  /**
+   * The declarations of the rule with exactly this selector.
+   *
+   * Matched on the selector's tokens rather than its literal text, so
+   * reformatting the stylesheet -- or writing the selector list in another
+   * order -- does not turn a passing test into a failing one for no reason.
+   */
+  const ruleFor = (selector: string) => {
+    // Comments are dropped first: one sitting above a selector would
+    // otherwise be read as part of it. These rules live inside `@layer`, so
+    // a selector runs from the enclosing brace, not from the start of a line.
+    const source = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    const normalise = (s: string) => s.trim().replace(/\s+/g, ' ');
+    const wanted = normalise(selector);
+    for (let brace = source.indexOf('{'); brace !== -1; brace = source.indexOf('{', brace + 1)) {
+      const from =
+        Math.max(source.lastIndexOf('{', brace - 1), source.lastIndexOf('}', brace - 1)) + 1;
+      const head = normalise(source.slice(from, brace));
+      if (head.split(',').map(normalise).includes(wanted)) {
+        return source.slice(brace + 1, source.indexOf('}', brace));
+      }
+    }
+    throw new Error(`no rule in globals.css has the selector ${selector}`);
+  };
+
+  it('breaks a long unbroken reference instead of letting it run out', () => {
+    expect(ruleFor('.user-content')).toContain('overflow-wrap: anywhere');
+  });
+
+  it('clamps a pasted width to the width of the comment', () => {
+    expect(ruleFor('.user-content :not(table):not(table *)')).toContain('max-width: 100%');
+  });
+
+  it('keeps a wide table inside the comment, scrolling it if it cannot shrink', () => {
+    const rule = ruleFor('.user-content table');
+    expect(rule).toContain('overflow-x: auto');
+    // `!important`, or an inline `max-width` from pasted content wins and the
+    // table renders at its own width -- measured at 2000px in a 331px column.
+    expect(rule).toContain('max-width: 100% !important');
+  });
+});
+
+/**
+ * Raised in review on #632: `white-space` takes more than one keyword in CSS
+ * Text 4, and an engine that does not expand the shorthand hands the whole
+ * value over as written.
+ */
+describe('a compound white-space value', () => {
+  const styleOf = (html: string) => sanitizeUserHtml(html).match(/style="([^"]*)"/)?.[1] ?? '';
+
+  // `pre nowrap` is deliberately not in this list: jsdom rejects it at the
+  // parser, so the declaration never reaches the policy and the test would
+  // assert nothing. These two do parse, and before the token split they came
+  // through intact.
+  it.each(['preserve nowrap', 'nowrap preserve'])(
+    'drops white-space: %s, which still stops the text wrapping',
+    (value) => {
+      expect(styleOf(`<span style="white-space: ${value}">x</span>`)).not.toContain('nowrap');
+    }
+  );
+
+  it('does not mistake pre-wrap for pre, which is one token not two', () => {
+    expect(styleOf('<span style="white-space: pre-wrap">a  b</span>')).toContain('pre-wrap');
+  });
+
+  // Also raised in review: the table is a Map now, so a property named after
+  // something on Object.prototype cannot reach a value by inheritance.
+  it.each(['constructor', '__proto__', 'toString'])(
+    'is not confused by a property called %s',
+    (name) => {
+      expect(() => sanitizeUserHtml(`<span style="${name}: nowrap">x</span>`)).not.toThrow();
+    }
+  );
+});
+
+/**
+ * Raised in review on #632: a fixed size on a text block escapes the clamp
+ * two ways, so the sanitiser takes it off anything that is not laid out by
+ * its own size.
+ */
+describe('a fixed size on a text block', () => {
+  const styleOf = (html: string) => sanitizeUserHtml(html).match(/style="([^"]*)"/)?.[1] ?? '';
+
+  it('drops a width, which a margin would otherwise carry past the clamp', () => {
+    // `max-width: 100%` bounds the box; the margin sits outside it, so
+    // `width: 760px; margin-left: 80px` stayed 80px too wide. No stylesheet
+    // can clamp the pair, so the width goes instead -- and the margin then
+    // indents the block rather than pushing it out.
+    const out = styleOf('<div style="width: 760px; margin-left: 80px">x</div>');
+    expect(out).not.toContain('width');
+    expect(out).toContain('margin-left');
+  });
+
+  it('drops a height, which a wrapped block would otherwise overflow', () => {
+    // 20px tall is 20px tall even once the clamp makes the text take four
+    // lines, and the rest is drawn over whatever follows the comment.
+    expect(styleOf('<div style="height: 20px">x</div>')).not.toContain('height');
+  });
+
+  it.each(['table', 'tr', 'td', 'th'])('keeps a size on a %s, which lays itself out', (tag) => {
+    const inner = `<${tag} style="width: 120px; height: 40px">cell</${tag}>`;
+    const html = tag === 'table' ? inner : `<table><tbody><tr>${inner}</tr></tbody></table>`;
+    const out = styleOf(html);
+    expect(out).toContain('width: 120px');
+    expect(out).toContain('height: 40px');
+  });
+
+  it('keeps a size on an image, which has an aspect ratio to hold', () => {
+    const out = styleOf('<img src="https://example.com/a.png" style="width: 120px; height: 90px">');
+    expect(out).toContain('width: 120px');
+    expect(out).toContain('height: 90px');
+  });
+
+  it('keeps a maximum, which can only make a block smaller than its column', () => {
+    const out = styleOf('<div style="max-width: 300px; max-height: 80px">x</div>');
+    expect(out).toContain('max-width');
+    expect(out).toContain('max-height');
+  });
+
+  it('leaves the formatting beside it alone', () => {
+    const out = styleOf('<p style="color: #ff0000; width: 900px; font-weight: bold">x</p>');
+    expect(out).toContain('rgb(255, 0, 0)');
+    expect(out).toContain('bold');
+    expect(out).not.toContain('900px');
+  });
+});
+
+/**
+ * Raised in review on #632, and the sharpest one: an inline `!important`
+ * outranks an `!important` rule in our own stylesheet, so one pasted
+ * declaration overrides a containment rule written precisely to bound it.
+ */
+describe('!important in a pasted style', () => {
+  const styleOf = (html: string) => sanitizeUserHtml(html).match(/style="([^"]*)"/)?.[1] ?? '';
+
+  it('keeps the declaration but drops the priority', () => {
+    const out = styleOf('<p style="color: red !important">x</p>');
+    expect(out).toContain('red');
+    expect(out).not.toContain('important');
+  });
+
+  it('stops a table outranking the clamp meant to contain it', () => {
+    // Measured in Chrome: with the priority kept this rendered 2000px wide in
+    // a 331px column, because inline `!important` beats
+    // `.user-content table { max-width: 100% !important }`. Without it the
+    // stylesheet decides, and the table is 331px.
+    const html =
+      '<table style="width: 2000px; max-width: 2000px !important">' +
+      '<tbody><tr><td>cell</td></tr></tbody></table>';
+    const out = styleOf(html);
+    expect(out).not.toContain('important');
+    expect(out).toContain('max-width: 2000px');
+  });
+
+  it('stops a pasted colour outranking the rule that normalises it', () => {
+    // `.user-content [style*='color']` is itself `!important`, so before this
+    // a colour pasted out of Outlook won and was shown on the dark theme as
+    // it looked on white.
+    expect(styleOf('<span style="color: #ffffff !important">x</span>')).not.toContain('important');
+  });
+
+  it('leaves the declarations beside it alone', () => {
+    const out = styleOf('<p style="font-weight: bold; color: red !important; padding: 4px">x</p>');
+    expect(out).toContain('bold');
+    expect(out).toContain('padding: 4px');
+    expect(out).not.toContain('important');
+  });
+
+  it('drops an unsafe declaration whether or not it is important', () => {
+    // The priority is stripped after the policy runs, not before, so it
+    // cannot be used to smuggle anything past it.
+    expect(styleOf('<div style="position: fixed !important">x</div>')).not.toContain('position');
+    expect(styleOf('<div style="min-width: 900px !important">x</div>')).not.toContain('min-width');
+    expect(styleOf('<span style="white-space: nowrap !important">x</span>')).not.toContain(
+      'nowrap'
+    );
   });
 });
