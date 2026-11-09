@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   getGitHubPullRequestActivity,
   gitHubActivity,
+  linkedIssueRefs,
   linkedWorkItemIds,
   type GitHubPullRequest,
 } from './github-pr-activity';
@@ -188,5 +189,73 @@ describe('pullRequestsForGroup by person (#483)', () => {
       activity('Someone Else', 'x@y.test'),
     ];
     expect(pullRequestsForGroup(prs, 'person', 'Akash Jadhav', emails)).toHaveLength(1);
+  });
+});
+
+describe('linkedIssueRefs', () => {
+  const REPO = 'acme/desk';
+  const refs = (title: string, body: string | null = null) =>
+    linkedIssueRefs({ title, body }, REPO);
+
+  it.each(['Fixes', 'fixes', 'Fixed', 'fix', 'Closes', 'closed', 'Resolves', 'resolved'])(
+    'reads %s as a closing keyword, the way GitHub does',
+    (keyword) => {
+      expect(refs('feat: something', `${keyword} #123`)).toEqual(['acme/desk#123']);
+    }
+  );
+
+  it('resolves a bare number against the repository the pull request is in', () => {
+    expect(refs('fix: the thing', 'Fixes #12')).toEqual(['acme/desk#12']);
+  });
+
+  it('reads a reference to another repository', () => {
+    expect(refs('fix: the thing', 'Closes other-org/portal#45')).toEqual(['other-org/portal#45']);
+  });
+
+  it('reads the full link GitHub inserts when you paste an issue', () => {
+    expect(refs('fix: the thing', 'Resolved: https://github.com/acme/portal/issues/7')).toEqual([
+      'acme/portal#7',
+    ]);
+  });
+
+  it('reads the title as well as the description, as AB# does', () => {
+    expect(refs('fix: crash on save, fixes #88')).toEqual(['acme/desk#88']);
+  });
+
+  it('lower-cases the repository, which GitHub treats case-insensitively', () => {
+    expect(refs('fix: x', 'Closes Acme/Desk#5')).toEqual(['acme/desk#5']);
+  });
+
+  it('lists each issue once however many times it is named', () => {
+    expect(refs('fix: x', 'Fixes #3. Also closes #3, and resolves acme/desk#3.')).toEqual([
+      'acme/desk#3',
+    ]);
+  });
+
+  it('reads several issues from one pull request', () => {
+    expect(refs('fix: x', 'Fixes #3 and closes #9')).toEqual(['acme/desk#3', 'acme/desk#9']);
+  });
+
+  // The design decision, pinned: GitHub numbers issues and pull requests in
+  // one sequence, so a bare `#123` cannot be told from a reference to another
+  // pull request. Highlighting the wrong card reads as "somebody is on this".
+  it('ignores a reference with no closing keyword', () => {
+    expect(refs('fix: x', 'Follows on from #123, see also acme/desk#9.')).toEqual([]);
+    expect(refs('fix: x', 'Related: https://github.com/acme/desk/issues/4')).toEqual([]);
+  });
+
+  it('does not treat a word ending in a keyword as one', () => {
+    expect(refs('fix: x', 'Prefixes #12 are unchanged')).toEqual([]);
+  });
+
+  it('is empty for a pull request that references nothing', () => {
+    expect(refs('chore: bump deps', null)).toEqual([]);
+    expect(refs('chore: bump deps', '')).toEqual([]);
+  });
+
+  // The two sources are read separately and must not borrow each other's ids.
+  it('leaves AB# links to linkedWorkItemIds', () => {
+    expect(refs('fix: x', 'Fixes AB#7374')).toEqual([]);
+    expect(linkedWorkItemIds({ title: 'fix: x', body: 'Fixes #12' })).toEqual([]);
   });
 });
