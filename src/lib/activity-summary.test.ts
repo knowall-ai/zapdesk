@@ -176,3 +176,82 @@ describe('summariseGroupActivity', () => {
     expect(summary.highlights.get(5)).toEqual(['pr']);
   });
 });
+
+/**
+ * A GitHub issue with a pull request against it gets the same ring as a
+ * DevOps work item with one (#583).
+ *
+ * A GitHub card is keyed by GitHub's global database id, negated, and a
+ * closing reference names the per-repository number -- so the match is on the
+ * `owner/repo#n` the card carries as `sourceRef`, not on its id.
+ */
+describe('summariseGroupActivity, for a GitHub issue card', () => {
+  const gitHubItem = (id: number, sourceRef: string): StandupWorkItem => ({
+    ...item(id, OLD, OLD),
+    workItemType: 'Issue',
+    source: 'github',
+    sourceRef,
+    sourceUrl: `https://github.com/${sourceRef.replace('#', '/issues/')}`,
+  });
+
+  // Negative ids, as the real ones are: GitHub's id negated so it can never
+  // collide with a DevOps work item id.
+  const columns = [
+    column('Active', 'InProgress', [
+      gitHubItem(-9001, 'acme/portal#12'),
+      gitHubItem(-9002, 'acme/portal#13'),
+      item(7, OLD, OLD),
+    ]),
+  ];
+
+  const gitHubPr = (issueRefs: string[]) =>
+    pr(10, ['merged'], [], { repository: 'acme/portal', source: 'github', issueRefs });
+
+  it('rings the card its pull request closes', () => {
+    const summary = summariseGroupActivity(columns, [gitHubPr(['acme/portal#12'])], SINCE);
+    expect(summary.highlights.get(-9001)).toEqual(['pr']);
+  });
+
+  it('leaves the other GitHub cards alone', () => {
+    const summary = summariseGroupActivity(columns, [gitHubPr(['acme/portal#12'])], SINCE);
+    expect(summary.highlights.get(-9002)).toBeUndefined();
+    expect(summary.highlights.get(7)).toBeUndefined();
+  });
+
+  it('matches whatever case the card spells its repository in', () => {
+    // `linkedIssueRefs` lower-cases what it reads, but a card's `sourceRef` is
+    // spelled however `GITHUB_PROJECT_REPOS` spells the repository.
+    const mixedCase = [column('Active', 'InProgress', [gitHubItem(-9003, 'Acme/Portal#12')])];
+    const summary = summariseGroupActivity(mixedCase, [gitHubPr(['acme/portal#12'])], SINCE);
+    expect(summary.highlights.get(-9003)).toEqual(['pr']);
+  });
+
+  it('ignores a reference to an issue that is not on this board', () => {
+    const summary = summariseGroupActivity(columns, [gitHubPr(['acme/other#12'])], SINCE);
+    expect([...summary.highlights.keys()]).toEqual([]);
+  });
+
+  // The bug: a number that matches a card's *number* must not be read as its
+  // id, and a DevOps pull request has no issueRefs at all.
+  it('does not confuse an issue number with a work item id', () => {
+    const withDevOpsItem = [column('Active', 'InProgress', [item(12, OLD, OLD)])];
+    const summary = summariseGroupActivity(withDevOpsItem, [gitHubPr(['acme/portal#12'])], SINCE);
+    expect(summary.highlights.get(12)).toBeUndefined();
+  });
+
+  it('adds the reason once when a card is closed and has a pull request', () => {
+    const closing = [
+      column('Closed', 'Completed', [
+        { ...gitHubItem(-9001, 'acme/portal#12'), updatedAt: RECENT },
+      ]),
+    ];
+    const summary = summariseGroupActivity(closing, [gitHubPr(['acme/portal#12'])], SINCE);
+    expect(summary.highlights.get(-9001)).toEqual(['closed', 'pr']);
+  });
+
+  it('still counts an Azure DevOps pull request the old way', () => {
+    const devOpsPr = pr(11, ['merged'], [7]);
+    const summary = summariseGroupActivity(columns, [devOpsPr], SINCE);
+    expect(summary.highlights.get(7)).toEqual(['pr']);
+  });
+});

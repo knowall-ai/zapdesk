@@ -729,6 +729,17 @@ export interface PullRequestActivity {
   activity: PullRequestActivityKind[];
   /** Work items the pull request links to. */
   workItemIds: number[];
+  /**
+   * GitHub issues the pull request closes, as `owner/repo#123`, lower-cased
+   * (#583).
+   *
+   * Separate from `workItemIds` because the two sources cannot share a key: a
+   * GitHub issue card's id is GitHub's global database id negated, while a
+   * closing reference names the per-repository number. This is matched
+   * against a card's `sourceRef`. Absent on an Azure DevOps pull request,
+   * which has no way to close a GitHub issue.
+   */
+  issueRefs?: string[];
   /** Where it lives; Azure DevOps when absent (#483). */
   source?: WorkSource;
 }
