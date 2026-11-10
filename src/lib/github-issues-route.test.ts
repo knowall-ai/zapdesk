@@ -164,6 +164,35 @@ describe('GitHub issue routes', () => {
         'acme/portal#1',
       ]);
       expect(body.total).toBe(1);
+      // Counted before the label filter, so the page can tell the cases apart (#607)
+      expect(body).toMatchObject({ ticketLabel: 'ticket', fetchedCount: 3, labelledCount: 1 });
+    });
+
+    it('reports issues read but none labelled, naming the label (#607)', async () => {
+      vi.stubEnv('GITHUB_TICKET_LABEL', 'Support');
+      fetchMock.mockImplementation(async (input: string) => {
+        const url = new URL(input);
+        if (!url.pathname.startsWith('/repos/acme/portal')) return Response.json([]);
+        return Response.json(
+          url.search.includes('state=open')
+            ? [
+                gitHubIssue(1, 'open', 'acme/portal', ['ticket']),
+                gitHubIssue(2, 'open', 'acme/portal', []),
+              ]
+            : []
+        );
+      });
+
+      const { body } = await getIssues();
+
+      expect(body.tickets).toEqual([]);
+      expect(body).toMatchObject({ ticketLabel: 'support', fetchedCount: 2, labelledCount: 0 });
+    });
+
+    it('reports no issues at all as none read, not none labelled', async () => {
+      fetchMock.mockImplementation(async () => Response.json([]));
+      const { body } = await getIssues();
+      expect(body).toMatchObject({ fetchedCount: 0, labelledCount: 0, failedRepos: [] });
     });
 
     // The issues are read with the server's token, so this is the access check.
@@ -192,6 +221,8 @@ describe('GitHub issue routes', () => {
       expect(status).toBe(200);
       expect(body.tickets).toEqual([]);
       expect(body.failedRepos).toEqual(['acme/portal']);
+      // Nothing was read, so nothing may be blamed on the label
+      expect(body.fetchedCount).toBe(0);
     });
 
     it('returns 500 when the project list cannot be read', async () => {

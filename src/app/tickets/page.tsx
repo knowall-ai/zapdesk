@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, Suspense, useCallback } from 'react';
 import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
+import GitHubLabelNotice from '@/components/common/GitHubLabelNotice';
 import { TicketList } from '@/components/tickets';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
 import ZapDialog from '@/components/tickets/ZapDialog';
@@ -16,6 +17,7 @@ import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { useSourceFilter } from '@/components/providers/SourceProvider';
 import { ticketToWorkItem } from '@/lib/devops';
 import { useDefaultView, viewToShow } from '@/lib/default-view';
+import { readGitHubLabelSummary, type GitHubLabelSummary } from '@/lib/github-label-notice';
 import type { Ticket, WorkItem, User, WorkItemType, EffortHoursUpdate } from '@/types';
 
 type TicketJson = Ticket & { createdAt: string; updatedAt: string };
@@ -60,6 +62,8 @@ function TicketsPageContent() {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [zapTarget, setZapTarget] = useState<{ agent: User; ticketId: number } | null>(null);
   const [workItemTypes, setWorkItemTypes] = useState<WorkItemType[]>([]);
+  // What the GitHub read found before the ticket-label filter (#607)
+  const [gitHubLabelSummary, setGitHubLabelSummary] = useState<GitHubLabelSummary | null>(null);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -114,8 +118,13 @@ function TicketsPageContent() {
       const readSource = async (
         result: PromiseSettledResult<Response | null>,
         failure: string
-      ): Promise<{ tickets: Ticket[]; failedRepos: string[]; failedProjects: string[] }> => {
-        const nothing = { tickets: [], failedRepos: [], failedProjects: [] };
+      ): Promise<{
+        tickets: Ticket[];
+        failedRepos: string[];
+        failedProjects: string[];
+        labelSummary: GitHubLabelSummary | null;
+      }> => {
+        const nothing = { tickets: [], failedRepos: [], failedProjects: [], labelSummary: null };
         // Not asked for: the source toggle left this one out
         if (result.status === 'fulfilled' && !result.value) return nothing;
         try {
@@ -126,6 +135,7 @@ function TicketsPageContent() {
             tickets: reviveTicketDates(data.tickets || []),
             failedRepos: data.failedRepos || [],
             failedProjects: data.failedProjects || [],
+            labelSummary: readGitHubLabelSummary(data),
           };
         } catch (error) {
           console.error(`${failure}:`, error);
@@ -154,6 +164,7 @@ function TicketsPageContent() {
         toast.warning(`Could not load tickets from ${devOps.failedProjects.join(', ')}`);
       }
       setTickets([...devOpsTickets, ...gitHubTickets]);
+      setGitHubLabelSummary(gitHub.labelSummary);
       loadedKeyRef.current = loadKey;
 
       // Fetch work item types for type icons, filtered to only ticket types
@@ -609,6 +620,8 @@ function TicketsPageContent() {
   return (
     <MainLayout>
       <div className="flex h-full flex-col">
+        {/* No GitHub issue carries the ticket label: say so, naming it (#607) */}
+        <GitHubLabelNotice summary={gitHubLabelSummary} className="mx-4 mt-3" />
         {/* TicketList renders WorkItemBoard with built-in filters, group-by, and view toggle */}
         <div className="flex-1 overflow-hidden">
           <TicketList
