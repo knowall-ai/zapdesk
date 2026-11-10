@@ -192,7 +192,8 @@ another poller is running, stop it first and wait for its last poll to finish
   workflow definition, where anyone who can read the Logic App sees it. Read
   it from Key Vault with a *Get secret* action placed before the HTTP action,
   and turn on *Secure outputs* on that action. Alternatively, pass it in a
-  `securestring` workflow parameter with no default value. Either way, keep
+  `securestring` workflow parameter with an empty default value, and set its
+  actual value to the secret. Either way, keep
   *Secure inputs* on for the HTTP action. Secure inputs only hides the header
   in run history. It does not hide the value a *Get secret* action returned,
   and it does not protect a secret written into the definition.
