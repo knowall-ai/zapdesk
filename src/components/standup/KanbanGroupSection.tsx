@@ -68,6 +68,7 @@ function DroppableColumn({
   blockedReason,
   isFocused = false,
   highlights,
+  recent,
   onItemClick,
   closedWindow,
 }: {
@@ -82,6 +83,8 @@ function DroppableColumn({
   isFocused?: boolean;
   /** While highlighting: the cards to light up, and why. Everything else is dimmed. */
   highlights?: Map<number, HighlightReason[]>;
+  /** While highlighting: cards with only older (72-hour) activity, ringed amber (#586). */
+  recent?: Set<number>;
   onItemClick?: (item: StandupWorkItem) => void;
   /** How far back the Closed column reaches, for its hint (#6713). */
   closedWindow: ClosedWindow;
@@ -98,9 +101,11 @@ function DroppableColumn({
   // fade, the ring and the reason badges all derive from it -- and keeps the
   // card order stable, since `highlightedFirst` is a no-op without it.
   const columnHighlights = isInHandColumn(name) ? undefined : highlights;
+  // The amber tier follows the same rule, and sorts below the 24-hour cards.
+  const columnRecent = columnHighlights === undefined ? undefined : recent;
   const ordered = useMemo(
-    () => highlightedFirst(items, columnHighlights),
-    [items, columnHighlights]
+    () => highlightedFirst(highlightedFirst(items, columnRecent), columnHighlights),
+    [items, columnRecent, columnHighlights]
   );
 
   return (
@@ -141,7 +146,12 @@ function DroppableColumn({
               item={item}
               isDragging={activeId === item.id}
               highlight={columnHighlights?.get(item.id)}
-              dimmed={columnHighlights !== undefined && !columnHighlights.has(item.id)}
+              recent={columnRecent?.has(item.id)}
+              dimmed={
+                columnHighlights !== undefined &&
+                !columnHighlights.has(item.id) &&
+                !columnRecent?.has(item.id)
+              }
               onClick={onItemClick}
             />
           ))}
@@ -225,7 +235,8 @@ export default function KanbanGroupSection({
   // On by default (#498), so cards with activity stand out straight away.
   const [highlighting, setHighlighting] = useState(true);
   // A group with no activity has nothing to light up, so nothing is dimmed.
-  const hasHighlights = (activity?.summary.highlights.size ?? 0) > 0;
+  const hasHighlights =
+    (activity?.summary.highlights.size ?? 0) + (activity?.summary.recent.size ?? 0) > 0;
   const highlightOn = highlighting && hasHighlights;
   /**
    * Switch this group's highlight off or on. Highlighting a collapsed group
@@ -237,6 +248,7 @@ export default function KanbanGroupSection({
     if (next && !expanded) toggleExpanded();
   };
   const highlights = highlightOn ? activity?.summary.highlights : undefined;
+  const recentHighlights = highlightOn ? activity?.summary.recent : undefined;
   const [activeId, setActiveId] = useState<number | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -586,6 +598,7 @@ export default function KanbanGroupSection({
                     isBlocked={isBlocked}
                     isFocused={focusedColumn === col.name}
                     highlights={highlights}
+                    recent={recentHighlights}
                     blockedReason={
                       isBlocked && activeItem
                         ? `${activeItem.workItemType} work items have no "${col.name}" state`
