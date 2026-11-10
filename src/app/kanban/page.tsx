@@ -15,6 +15,7 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 import { isGitHubItem } from '@/lib/github-kanban';
+import { gitHubTruncationMessage } from '@/lib/github-truncation';
 import Link from 'next/link';
 import { RefreshCw, FolderOpen, User, Radio } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
@@ -388,6 +389,8 @@ function StandupPageContent() {
             id: 'kanban-github-failed',
           });
         }
+        const truncation = gitHubTruncationMessage(data.truncatedGitHubRepos ?? []);
+        if (truncation) toast.warning(truncation, { id: 'kanban-github-truncated' });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to load standup data';
         // `error` swaps the whole board out for the error screen, which is

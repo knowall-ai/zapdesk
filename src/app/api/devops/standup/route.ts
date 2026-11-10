@@ -248,6 +248,7 @@ export async function GET(request: NextRequest) {
     // board down with it.
     let projects = devOpsProjects;
     let failedGitHubRepos: string[] = [];
+    let truncatedGitHubRepos: string[] = [];
     if (includeGitHub && gitHubAvailable()) {
       let gitHubConfig: GitHubSource | null = null;
       try {
@@ -287,6 +288,7 @@ export async function GET(request: NextRequest) {
         );
         projects = addGitHubTicketsToStandup(devOpsProjects, displayColumns, boardTickets);
         failedGitHubRepos = [...gitHubConfig.failed, ...gitHub.failedRepos];
+        truncatedGitHubRepos = gitHub.truncatedRepos;
       } catch (error) {
         console.error('Error adding GitHub issues to the standup board:', error);
         failedGitHubRepos = gitHubConfig
@@ -312,6 +314,7 @@ export async function GET(request: NextRequest) {
       // of letting DevOps reject the PATCH and snapping the card back (#391).
       allowedStatesByProjectType: statesByProjectType,
       ...(failedGitHubRepos.length > 0 ? { failedGitHubRepos } : {}),
+      ...(truncatedGitHubRepos.length > 0 ? { truncatedGitHubRepos } : {}),
       summary: {
         columnCounts,
         projectCount: projects.length,
