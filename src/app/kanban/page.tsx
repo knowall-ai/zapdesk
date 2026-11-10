@@ -44,6 +44,7 @@ import { canonicalProject, filterStandupByProject } from '@/lib/kanban-project';
 import { createBoardCache } from '@/lib/standup-board-cache';
 import {
   activityWindowStart,
+  RECENT_ACTIVITY_WINDOW_MS,
   pullRequestsForGroup,
   assigneeEmails,
   summariseGroupActivity,
@@ -947,6 +948,11 @@ function StandupPageContent() {
     const map = new Map<string, GroupActivity>();
     if (!boardLoadedAt) return map;
     const since = activityWindowStart(new Date(boardLoadedAt)).getTime();
+    // The amber tier (#586): older activity, still inside 72 working hours.
+    const recentSince = activityWindowStart(
+      new Date(boardLoadedAt),
+      RECENT_ACTIVITY_WINDOW_MS
+    ).getTime();
     const allPullRequests = (prActivity?.pullRequests ?? []).filter(
       (pr) => !projectFilter || pr.project.toLowerCase() === projectFilter.toLowerCase()
     );
@@ -968,7 +974,7 @@ function StandupPageContent() {
         groupBy === 'person' ? assigneeEmails(group.columns) : undefined
       );
       map.set(group.groupName, {
-        summary: summariseGroupActivity(group.columns, pullRequests, since),
+        summary: summariseGroupActivity(group.columns, pullRequests, since, recentSince),
         since,
         pullRequests,
         pullRequestState: prState === 'ready' && incomplete(group.groupName) ? 'error' : prState,

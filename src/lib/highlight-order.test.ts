@@ -62,3 +62,15 @@ describe('highlightedFirst', () => {
     expect(result[0].id).toBe(3);
   });
 });
+
+describe('highlightedFirst with the amber tier (#586)', () => {
+  it('accepts a Set of ids', () => {
+    expect(highlightedFirst(items(1, 2, 3), new Set([2])).map((i) => i.id)).toEqual([2, 1, 3]);
+  });
+
+  it('puts 24-hour cards first, then amber, then the rest', () => {
+    // How the board applies it: amber lifted first, then the 24-hour cards.
+    const result = highlightedFirst(highlightedFirst(items(1, 2, 3, 4), new Set([3])), lit(4));
+    expect(result.map((i) => i.id)).toEqual([4, 3, 1, 2]);
+  });
+});

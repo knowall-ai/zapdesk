@@ -32,6 +32,12 @@
   /* Badge fill for white text: 6.9:1 contrast, where --pr-merged is 3.9:1 */
   --pr-badge: #7e22ce;
 
+  /* Kanban highlight for activity in the last 72 working hours but not the
+     last 24 (#586). Amber-500: the ring is 7.9:1 against --surface, and the
+     badge carries --highlight-recent-foreground at 9.4:1, never white (2.1:1). */
+  --highlight-recent: #f59e0b;
+  --highlight-recent-foreground: var(--color-gray-950);
+
   /* Where a card came from, on the boards that mix both (#465). Drawn only as
      a bar down a card's left edge, a position no other colour uses, and, once
      both sources are on the board, with `SourceLegend` saying which is which.

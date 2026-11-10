@@ -9,6 +9,13 @@ import type { PullRequestActivity, StandupColumn } from '@/types';
 
 export const ACTIVITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * The wider, quieter tier (#586): a card whose last activity is older than the
+ * 24-working-hour window but inside the last 72 working hours is ringed amber,
+ * so "moved this week" reads differently from "moved since yesterday".
+ */
+export const RECENT_ACTIVITY_WINDOW_MS = 72 * 60 * 60 * 1000;
+
 /** The furthest back the API will accept a window start, to bound its fan-out. */
 export const MAX_ACTIVITY_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -53,6 +60,12 @@ export interface GroupActivitySummary {
   items: Record<ItemActivityKind, number>;
   /** Work item id -> why it's highlighted. Only cards in this group. */
   highlights: Map<number, HighlightReason[]>;
+  /**
+   * Cards in this group with item activity in the 72-working-hour window but
+   * nothing in the 24-hour one (#586). Never overlaps `highlights`, and is not
+   * counted in `items`, which stay the 24-hour figures.
+   */
+  recent: Set<number>;
 }
 
 /**
@@ -109,6 +122,21 @@ export function pullRequestsForGroup(
   });
 }
 
+const plural = (n: number) => `${n} work item${n === 1 ? '' : 's'}`;
+
+/**
+ * The Highlight toggle's tooltip, which doubles as the legend for the ring
+ * colours: green (purple with a pull request) for the 24-hour window, amber for
+ * older activity inside 72 working hours (#586).
+ */
+export function highlightToggleTooltip(highlighted: number, recent: number): string {
+  const parts: string[] = [];
+  if (highlighted > 0) parts.push(`${plural(highlighted)} with activity in this window`);
+  if (recent > 0)
+    parts.push(`${plural(recent)} in amber, with activity in the last 72 working hours`);
+  return `Highlight ${parts.join(', and ')}`;
+}
+
 /** The email addresses of the people on a group's cards, in lower case. */
 export function assigneeEmails(columns: StandupColumn[]): Set<string> {
   const emails = new Set<string>();
@@ -124,12 +152,15 @@ export function assigneeEmails(columns: StandupColumn[]): Set<string> {
 export function summariseGroupActivity(
   columns: StandupColumn[],
   pullRequests: PullRequestActivity[],
-  since: number
+  since: number,
+  /** Start of the 72-working-hour window, epoch ms; omit for no amber tier. */
+  recentSince?: number
 ): GroupActivitySummary {
   const summary: GroupActivitySummary = {
     pullRequests: { created: 0, updated: 0, merged: 0 },
     items: { created: 0, updated: 0, closed: 0 },
     highlights: new Map(),
+    recent: new Set(),
   };
 
   const cardIds = new Set<number>();
@@ -145,6 +176,12 @@ export function summariseGroupActivity(
       const kinds = itemActivity(item, inCompletedColumn, since);
       for (const kind of kinds) summary.items[kind]++;
       if (kinds.length > 0) summary.highlights.set(item.id, [...kinds]);
+      else if (
+        recentSince !== undefined &&
+        itemActivity(item, inCompletedColumn, recentSince).length > 0
+      ) {
+        summary.recent.add(item.id);
+      }
     }
   }
 
@@ -152,6 +189,8 @@ export function summariseGroupActivity(
     const reasons = summary.highlights.get(id) ?? [];
     if (!reasons.includes('pr')) reasons.push('pr');
     summary.highlights.set(id, reasons);
+    // Pull request activity in the 24 hours outranks older activity of its own.
+    summary.recent.delete(id);
   };
 
   for (const pr of pullRequests) {

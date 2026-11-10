@@ -1,7 +1,11 @@
 'use client';
 
 import { Clock, GitPullRequest, Highlighter, ListChecks } from 'lucide-react';
-import { ACTIVITY_WINDOW_MS, type GroupActivitySummary } from '@/lib/activity-summary';
+import {
+  ACTIVITY_WINDOW_MS,
+  highlightToggleTooltip,
+  type GroupActivitySummary,
+} from '@/lib/activity-summary';
 import { PR_ACTIVITY_COLORS } from '@/lib/activity-colors';
 import type { PullRequestActivity } from '@/types';
 
@@ -78,7 +82,7 @@ export default function ActivitySummaryBar({
   onToggleHighlight,
 }: ActivitySummaryBarProps) {
   const { pullRequests: prs, items } = summary;
-  const highlightCount = summary.highlights.size;
+  const highlightCount = summary.highlights.size + summary.recent.size;
   const range = windowLabel(since);
 
   return (
@@ -142,10 +146,10 @@ export default function ActivitySummaryBar({
         style={highlighted ? undefined : { borderColor: 'var(--border)' }}
         title={
           highlightCount === 0
-            ? 'Nothing changed in this window'
+            ? 'Nothing changed in the last 72 working hours'
             : highlighted
               ? 'Stop highlighting'
-              : `Highlight the ${highlightCount} work item${highlightCount === 1 ? '' : 's'} with activity in this window`
+              : highlightToggleTooltip(summary.highlights.size, summary.recent.size)
         }
       >
         <Highlighter size={12} />

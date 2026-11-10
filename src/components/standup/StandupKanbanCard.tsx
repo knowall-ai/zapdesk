@@ -10,7 +10,12 @@ import { isGitHubItem } from '@/lib/github-kanban';
 import { sourceAccentStyle } from '@/lib/source-colors';
 import { workItemTypeBadgeStyle } from '@/lib/work-item-type-colors';
 import type { HighlightReason } from '@/lib/activity-summary';
-import { HIGHLIGHT_COLORS, highlightRingColor } from '@/lib/activity-colors';
+import {
+  HIGHLIGHT_COLORS,
+  RECENT_HIGHLIGHT_COLOR,
+  RECENT_HIGHLIGHT_TEXT_COLOR,
+  highlightRingColor,
+} from '@/lib/activity-colors';
 import type { StandupWorkItem } from '@/types';
 
 interface StandupKanbanCardProps {
@@ -21,9 +26,14 @@ interface StandupKanbanCardProps {
   onClick?: (item: StandupWorkItem) => void;
   /** Lit up by the 24-hour summary, labelled with why. */
   highlight?: HighlightReason[];
+  /** Activity in the last 72 working hours but not the last 24: ringed amber (#586). */
+  recent?: boolean;
   /** Highlighting is on and this card isn't part of it. */
   dimmed?: boolean;
 }
+
+const RECENT_LABEL = '72h';
+const RECENT_TITLE = 'Activity in the last 72 working hours, but not the last 24';
 
 const highlightLabels: Record<HighlightReason, string> = {
   created: 'Created',
@@ -37,6 +47,7 @@ export default function StandupKanbanCard({
   isDragging,
   onClick,
   highlight,
+  recent,
   dimmed,
 }: StandupKanbanCardProps) {
   // A GitHub issue is read-only here: it cannot be dragged, because a drop
@@ -52,9 +63,11 @@ export default function StandupKanbanCard({
 
   const highlightStyle: CSSProperties = highlight
     ? { boxShadow: `0 0 0 2px ${highlightRingColor(highlight)}` }
-    : dimmed
-      ? { opacity: 0.35 }
-      : {};
+    : recent
+      ? { boxShadow: `0 0 0 2px ${RECENT_HIGHLIGHT_COLOR}` }
+      : dimmed
+        ? { opacity: 0.35 }
+        : {};
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -116,6 +129,17 @@ export default function StandupKanbanCard({
               {highlightLabels[reason]}
             </span>
           ))}
+        </div>
+      )}
+      {!highlight && recent && (
+        <div className="mb-1.5 flex flex-wrap gap-1">
+          <span
+            className="rounded px-1 py-0.5 text-[10px] font-semibold"
+            style={{ backgroundColor: RECENT_HIGHLIGHT_COLOR, color: RECENT_HIGHLIGHT_TEXT_COLOR }}
+            title={RECENT_TITLE}
+          >
+            {RECENT_LABEL}
+          </span>
         </div>
       )}
 
