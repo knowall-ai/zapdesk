@@ -21,7 +21,12 @@ import {
   Zap,
 } from 'lucide-react';
 import { StatusBadge, Avatar } from '@/components/common';
-import { TicketVolumeChart, ResponseTimeChart, TeamPerformanceChart } from '@/components/reporting';
+import {
+  TicketVolumeChart,
+  ResponseTimeChart,
+  TeamPerformanceChart,
+  PullRequestHistoryCard,
+} from '@/components/reporting';
 import type { Ticket as TicketType } from '@/types';
 import FailedProjectsNotice from '@/components/common/FailedProjectsNotice';
 
@@ -485,6 +490,10 @@ export default function LiveDashboardPage() {
               </div>
             </div>
           )}
+
+          {/* Pull Requests: follows the date range above and the header's source toggle.
+              Outside the !loading branch so a ticket refresh doesn't remount it and refetch. */}
+          <PullRequestHistoryCard range={dateRange} />
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             {/* Recent Activity */}

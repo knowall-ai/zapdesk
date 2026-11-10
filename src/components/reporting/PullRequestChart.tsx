@@ -17,6 +17,11 @@ interface PullRequestChartProps {
   data: PullRequestHistoryPoint[];
   /** Shown instead of the chart while the request is in flight. */
   loading?: boolean;
+  /**
+   * The request failed, so there is nothing to chart. Said plainly rather
+   * than drawing an empty period, which would read as "no pull requests".
+   */
+  failed?: boolean;
 }
 
 const OPENED = '#3b82f6';
@@ -24,16 +29,24 @@ const OPENED = '#3b82f6';
 const MERGED = BRAND_COLORS.success;
 
 /**
- * Pull requests opened and merged over time on the Team page, as two
+ * Pull requests opened and merged over time (Team page, Live Dashboard), as two
  * smoothed lines with a faint fill, so the rhythm of the work reads as rises
  * and dips rather than a picket fence of bars. Same palette as the ticket
  * charts: blue for new work, green for finished.
  */
-export function PullRequestChart({ data, loading = false }: PullRequestChartProps) {
+export function PullRequestChart({ data, loading = false, failed = false }: PullRequestChartProps) {
   if (loading) {
     return (
       <div className="flex h-[300px] items-center justify-center">
         <p style={{ color: 'var(--text-muted)' }}>Loading pull requests…</p>
+      </div>
+    );
+  }
+
+  if (failed) {
+    return (
+      <div className="flex h-[300px] items-center justify-center" role="alert">
+        <p style={{ color: 'var(--text-muted)' }}>Couldn&apos;t load pull requests</p>
       </div>
     );
   }
