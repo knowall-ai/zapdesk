@@ -28,3 +28,11 @@ export const HIGHLIGHT_COLORS: Record<HighlightReason, string> = {
 export function highlightRingColor(reasons: readonly HighlightReason[]): string {
   return reasons.includes('pr') ? PR_ACTIVITY_COLORS.merged : 'var(--color-brand)';
 }
+
+/**
+ * A card with activity in the last 72 working hours but not the last 24
+ * (#586): an amber ring, and a badge in dark ink, since white on amber fails
+ * contrast.
+ */
+export const RECENT_HIGHLIGHT_COLOR = 'var(--highlight-recent)';
+export const RECENT_HIGHLIGHT_TEXT_COLOR = 'var(--highlight-recent-foreground)';
