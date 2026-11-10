@@ -117,6 +117,8 @@ function ZapDialogContent({
   const [invoice, setInvoice] = useState<string | null>(null);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
+  /** Bumped by "Try again", so a retry runs through the effect and can be aborted. */
+  const [invoiceAttempt, setInvoiceAttempt] = useState(0);
 
   const actualAmount = isCustom ? parseZapAmount(customAmount) : selectedAmount;
   /** What the sender typed, or the note offered for the amount in force. */
@@ -132,16 +134,21 @@ function ZapDialogContent({
   // round trip: the CSP (`connect-src 'self'`) blocks the browser from
   // calling the recipient's Lightning provider directly (#627).
   const fetchInvoice = useCallback(
-    async (signal?: AbortSignal) => {
+    async (signal: AbortSignal) => {
       setInvoiceError(null);
+      // An aborted request skips its own `finally`, so the early returns must
+      // clear loading themselves or the spinner stays on.
       if (!lightningAddress || actualAmount <= 0) {
         setInvoice(null);
+        setInvoiceLoading(false);
         return;
       }
 
-      // If it's already an LNURL or invoice, use it directly
-      if (lightningAddress.toLowerCase().startsWith('ln')) {
+      // If it's already an LNURL or invoice, use it directly. A Lightning
+      // address can start with "ln" too (lnfan@example.com), so not one with @.
+      if (!lightningAddress.includes('@') && lightningAddress.toLowerCase().startsWith('ln')) {
         setInvoice(lightningAddress);
+        setInvoiceLoading(false);
         return;
       }
 
@@ -163,29 +170,29 @@ function ZapDialogContent({
               : `Couldn't fetch a Lightning invoice (${res.status})`
           );
         }
-        if (signal?.aborted) return;
+        if (signal.aborted) return;
         setInvoice(`lightning:${data.invoice}`);
       } catch (err) {
-        if (signal?.aborted) return;
+        if (signal.aborted) return;
         console.error('[ZapDialog] Invoice fetch failed:', err);
         setInvoiceError(
           err instanceof Error && err.message ? err.message : "Couldn't fetch a Lightning invoice"
         );
         setInvoice(null);
       } finally {
-        if (!signal?.aborted) setInvoiceLoading(false);
+        if (!signal.aborted) setInvoiceLoading(false);
       }
     },
     [lightningAddress, actualAmount, ticketId]
   );
 
-  // Fetch invoice when address or amount changes. Changing either aborts the
-  // request in flight, so a slow reply can't show the wrong amount's QR.
+  // Fetch invoice when address or amount changes, or on "Try again". Each run
+  // aborts the request in flight, so a slow reply can't show the wrong QR.
   useEffect(() => {
     const controller = new AbortController();
     fetchInvoice(controller.signal);
     return () => controller.abort();
-  }, [fetchInvoice]);
+  }, [fetchInvoice, invoiceAttempt]);
 
   // QR code value is the fetched invoice
   const qrValue = invoice || '';
@@ -493,7 +500,7 @@ function ZapDialogContent({
                 </p>
                 <button
                   type="button"
-                  onClick={() => fetchInvoice()}
+                  onClick={() => setInvoiceAttempt((n) => n + 1)}
                   className="mt-2 text-xs underline"
                   style={{ color: 'var(--text-muted)' }}
                 >

@@ -69,6 +69,7 @@ describe('POST /api/lightning/invoice', () => {
     ['no amount', { lightningAddress: 'alex@example.com' }],
     ['string amount', { lightningAddress: 'alex@example.com', amountSats: '21' }],
     ['bad ticket', { lightningAddress: 'alex@example.com', amountSats: 21, ticketId: 'x' }],
+    ['unknown field', { lightningAddress: 'alex@example.com', amountSats: 21, callback: 'x' }],
   ])('rejects %s', async (_label, body) => {
     const response = await post(body);
     expect(response.status).toBe(400);

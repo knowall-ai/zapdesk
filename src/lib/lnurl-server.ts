@@ -228,6 +228,35 @@ export interface FetchInvoiceOptions {
 const BOLT11_PATTERN = /^ln[0-9a-z]{8,}$/;
 const MAX_INVOICE_LENGTH = 4096;
 
+/** BOLT11 human-readable part: `ln` + network + optional amount + multiplier. */
+const BOLT11_HRP_PATTERN = /^ln(?:bcrt|bc|tbs|tb|sb)(?:([1-9]\d*)([munp])?)?$/;
+/** Millisats per unit of each BOLT11 multiplier (none = whole bitcoin). */
+const MSAT_PER_UNIT: Record<string, bigint> = {
+  '': BigInt(100_000_000_000),
+  m: BigInt(100_000_000),
+  u: BigInt(100_000),
+  n: BigInt(100),
+};
+
+/**
+ * The amount a BOLT11 invoice asks for, in millisats; `null` when the
+ * invoice carries no amount, `undefined` when its prefix can't be read.
+ */
+export function bolt11AmountMsat(invoice: string): bigint | null | undefined {
+  const separator = invoice.lastIndexOf('1');
+  if (separator < 0) return undefined;
+  const match = invoice.slice(0, separator).match(BOLT11_HRP_PATTERN);
+  if (!match) return undefined;
+  const [, digits, multiplier = ''] = match;
+  if (!digits) return null;
+  const value = BigInt(digits);
+  if (multiplier === 'p') {
+    // Pico-bitcoin: 10 per millisat; anything finer can't be paid.
+    return value % BigInt(10) === BigInt(0) ? value / BigInt(10) : undefined;
+  }
+  return value * MSAT_PER_UNIT[multiplier];
+}
+
 /**
  * Fetch a BOLT11 invoice for `amountSats` from a Lightning address's
  * LNURL-pay service (LUD-06 / LUD-16). Throws `LnurlError` with a message
@@ -297,6 +326,16 @@ export async function fetchLnurlInvoice({
   const invoice = pr.trim().toLowerCase();
   if (invoice.length > MAX_INVOICE_LENGTH || !BOLT11_PATTERN.test(invoice)) {
     throw new LnurlError('The Lightning provider sent a malformed invoice');
+  }
+  // LUD-06: the wallet must check the invoice is for the amount asked. A
+  // provider that ignored it (or sent an open-amount invoice) would have the
+  // QR ask for something other than what the sender chose.
+  const invoiceMsat = bolt11AmountMsat(invoice);
+  if (invoiceMsat === undefined) {
+    throw new LnurlError('The Lightning provider sent a malformed invoice');
+  }
+  if (invoiceMsat !== BigInt(amountMsat)) {
+    throw new LnurlError("The Lightning provider's invoice is not for the amount you chose");
   }
   return invoice;
 }

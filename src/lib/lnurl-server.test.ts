@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  bolt11AmountMsat,
   fetchLnurlInvoice,
   isPrivateIp,
   parseLightningAddress,
@@ -10,7 +11,8 @@ import {
 // #627: the LNURL-pay round trip moved server-side, so it is guarded against
 // SSRF. DNS and fetch are injected; nothing here touches the network.
 
-const INVOICE = 'lnbc10u1pjexampleinvoicexyz';
+// 210n = 21,000 msat = 21 sats, the amount every test asks for unless it says otherwise.
+const INVOICE = 'lnbc210n1pjexampleinvoicexyz';
 const META = {
   tag: 'payRequest',
   callback: 'https://pay.example.com/lnurlp/callback/alex',
@@ -213,4 +215,29 @@ describe('fetchLnurlInvoice', () => {
       ).rejects.toBeInstanceOf(LnurlError);
     }
   );
+
+  it.each([
+    ['for another amount', 'lnbc10u1pjexampleinvoicexyz'],
+    ['with no amount', 'lnbc1pjexampleinvoicexyz'],
+  ])('rejects an invoice %s', async (_label, pr) => {
+    await expect(
+      run({ fetchImpl: provider(META, { pr }) as unknown as typeof fetch })
+    ).rejects.toThrow('not for the amount you chose');
+  });
+});
+
+describe('bolt11AmountMsat', () => {
+  it.each([
+    ['lnbc1pjexample', null],
+    ['lnbc21u1pjexample', BigInt(2_100_000)],
+    ['lnbc210n1pjexample', BigInt(21_000)],
+    ['lnbc2m1pjexample', BigInt(200_000_000)],
+    ['lnbc1p1pjexample', undefined], // finer than a millisat
+    ['lnbc10p1pjexample', BigInt(1)],
+    ['lntb5u1pjexample', BigInt(500_000)],
+    ['lnbcrt5u1pjexample', BigInt(500_000)],
+    ['lnxx5u1pjexample', undefined],
+  ])('reads %s', (invoice, expected) => {
+    expect(bolt11AmountMsat(invoice)).toBe(expected);
+  });
 });

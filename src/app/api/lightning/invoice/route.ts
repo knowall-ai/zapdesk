@@ -3,6 +3,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { fetchLnurlInvoice, LnurlError } from '@/lib/lnurl-server';
 
+/** The only fields the body may carry. */
+const BODY_KEYS = new Set(['lightningAddress', 'amountSats', 'ticketId']);
+
 /**
  * POST /api/lightning/invoice - Fetch a BOLT11 invoice for a Lightning address
  *
@@ -32,6 +35,10 @@ export async function POST(request: NextRequest) {
   }
   if (typeof body !== 'object' || body === null) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
+  const unknownKey = Object.keys(body).find((key) => !BODY_KEYS.has(key));
+  if (unknownKey) {
+    return NextResponse.json({ error: `Unknown field: ${unknownKey}` }, { status: 400 });
   }
   const { lightningAddress, amountSats, ticketId } = body as Record<string, unknown>;
 

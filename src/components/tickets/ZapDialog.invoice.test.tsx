@@ -25,15 +25,17 @@ const agent = {
 };
 
 let invoiceResponse: { ok: boolean; status: number; json: () => Promise<unknown> };
+let address = 'alex@example.test';
 const fetchMock = vi.fn(async (...[url]: [string, RequestInit?]) => {
   if (String(url).includes('/api/lightning/user/')) {
-    return { ok: true, json: async () => ({ lightningAddress: 'alex@example.test' }) };
+    return { ok: true, json: async () => ({ lightningAddress: address }) };
   }
   return invoiceResponse;
 });
 
 beforeEach(() => {
   fetchMock.mockClear();
+  address = 'alex@example.test';
   invoiceResponse = {
     ok: true,
     status: 200,
@@ -65,6 +67,15 @@ describe('ZapDialog invoice', () => {
       amountSats: 500,
       ticketId: 42,
     });
+  });
+
+  it('fetches an invoice for an address that starts with "ln"', async () => {
+    address = 'lnfan@example.test';
+    open();
+
+    const qr = await screen.findByTestId('qr');
+    expect(qr.getAttribute('data-value')).toBe('lightning:lnbc500n1testinvoice');
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/lightning/invoice')).toBe(true);
   });
 
   it('shows the error instead of an empty QR, and can try again', async () => {
