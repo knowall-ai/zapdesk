@@ -41,14 +41,8 @@ beforeEach(() => {
       if (at.includes('/api/lightning/user/')) {
         return { ok: true, json: async () => ({ lightningAddress: 'alex@example.test' }) };
       }
-      if (at.includes('/.well-known/lnurlp/')) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ callback: 'https://example.test/lnurl/callback' }),
-        };
-      }
-      return { ok: true, status: 200, json: async () => ({ pr: 'lnbc500n1testinvoice' }) };
+      // The invoice comes from our own API now (#627), not the LNURL provider.
+      return { ok: true, status: 200, json: async () => ({ invoice: 'lnbc500n1testinvoice' }) };
     })
   );
 });
