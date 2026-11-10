@@ -368,7 +368,10 @@ export default function FeatureTimechain({
     setIsDialogOpen(true);
   }, []);
 
-  const handleDialogStateChange = useCallback(
+  // Shared by the board and the dialog. It throws and leaves the message to
+  // the caller: the board already toasts its own failures, so a toast here
+  // showed the user two (#531).
+  const updateWorkItemState = useCallback(
     async (workItemId: number, newState: string) => {
       const headers: HeadersInit = { 'Content-Type': 'application/json' };
       if (organization) {
@@ -380,12 +383,7 @@ export default function FeatureTimechain({
         body: JSON.stringify({ state: newState, project: epic?.project }),
       });
       if (!response.ok) {
-        // Shown here: the dialog only resets its spinner on a rejection, so
-        // without a toast the reason never reached the user (#531). Still
-        // rethrown, like the other boards, so the dropdown stays open.
-        const message = await responseErrorMessage(response, 'the status', 'update');
-        toast.error(message);
-        throw new Error(message);
+        throw new Error(await responseErrorMessage(response, 'the status', 'update'));
       }
       // Update local state so dialog and feature work items reflect the change
       refreshCounts();
@@ -401,6 +399,26 @@ export default function FeatureTimechain({
       });
     },
     [organization, epic?.project, refreshCounts]
+  );
+
+  // The dialog only resets its spinner on a rejection, so the reason has to be
+  // shown here or it never reaches the user (#531). This also covers a network
+  // failure, where fetch itself rejects. Still rethrown so the dropdown behaves
+  // as it did before.
+  const handleDialogStateChange = useCallback(
+    async (workItemId: number, newState: string) => {
+      try {
+        await updateWorkItemState(workItemId, newState);
+      } catch (error) {
+        toast.error(
+          error instanceof Error && error.message
+            ? error.message
+            : 'Failed to update the status. Check your connection and try again.'
+        );
+        throw error;
+      }
+    },
+    [updateWorkItemState]
   );
 
   const handleBlockClick = (feature: Feature) => {
@@ -884,7 +902,7 @@ export default function FeatureTimechain({
               availableTypes={availableTypes}
               defaultTicketsOnly={false}
               onWorkItemClick={handleWorkItemClick}
-              onStatusChange={handleDialogStateChange}
+              onStatusChange={updateWorkItemState}
               project={epic?.project}
               organization={organization}
             />
