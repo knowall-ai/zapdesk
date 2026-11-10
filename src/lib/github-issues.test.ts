@@ -619,9 +619,83 @@ describe('fetching', () => {
         [inRepo('acme/api', { id: 3, state: 'closed' })]
       );
 
-      const issues = await fetchOrgIssues('acme/*', 'secret-token');
+      const { issues, truncated } = await fetchOrgIssues('acme/*', 'secret-token');
 
       expect(issues.map((i) => i.id)).toEqual([1, 3]);
+      expect(truncated).toBe(false);
+    });
+
+    // Private repositories do come back from the org endpoint (#621). What
+    // drops issues is the page cap: one newest-first budget for the whole
+    // organization, which the quieter repositories fall off the end of.
+    const fullPage = (page: number, repo = 'acme/busy') =>
+      Array.from({ length: 100 }, (_, i) => inRepo(repo, { id: page * 1000 + i }));
+
+    it('says when the page cap cut the organization short', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      gitHubOrg(Array.from({ length: 10 }, (_, i) => fullPage(i + 1)));
+
+      const { issues, truncated } = await fetchOrgIssues('acme/*', 'secret-token');
+
+      expect(issues).toHaveLength(1000);
+      expect(truncated).toBe(true);
+      // It stops at the cap rather than reading on
+      expect(calledUrls().filter((u) => u.searchParams.get('state') === 'open')).toHaveLength(10);
+    });
+
+    it('is not truncated when the last page is short', async () => {
+      gitHubOrg([fullPage(1), [inRepo('acme/quiet', { id: 5 })]]);
+
+      const { truncated } = await fetchOrgIssues('acme/*', 'secret-token');
+
+      expect(truncated).toBe(false);
+    });
+
+    it('reports a truncated organization, but not its failures, to the caller', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      gitHubOrg(Array.from({ length: 10 }, (_, i) => fullPage(i + 1)));
+
+      const { failedRepos, truncatedRepos } = await getGitHubTickets(
+        [project('Internal')],
+        'KnowAll',
+        { token: 'secret-token', projectRepos: { Internal: ['acme/*'] } }
+      );
+
+      expect(failedRepos).toEqual([]);
+      expect(truncatedRepos).toEqual(['acme/*']);
+
+      // The cached answer remembers it too
+      const again = await getGitHubTickets([project('Internal')], 'KnowAll', {
+        token: 'secret-token',
+        projectRepos: { Internal: ['acme/*'] },
+      });
+      expect(again.truncatedRepos).toEqual(['acme/*']);
+    });
+
+    // The remedy the notice points at: a repository named in the mapping is
+    // read on its own, so it is complete however busy the rest of the org is.
+    it('reads a named repository in full beside a truncated organization', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      fetchMock.mockImplementation(async (input: string) => {
+        const url = new URL(input);
+        const state = url.searchParams.get('state');
+        const page = Number(url.searchParams.get('page'));
+        if (url.pathname === '/orgs/acme/issues') {
+          return Response.json(state === 'open' ? fullPage(page) : []);
+        }
+        if (url.pathname === '/repos/acme/quiet/issues') {
+          return Response.json(state === 'open' && page === 1 ? [issue({ id: 7, number: 3 })] : []);
+        }
+        return new Response('Not Found', { status: 404 });
+      });
+
+      const { tickets, truncatedRepos } = await getGitHubTickets([project('Internal')], 'KnowAll', {
+        token: 'secret-token',
+        projectRepos: { Internal: ['acme/*', 'acme/quiet'] },
+      });
+
+      expect(truncatedRepos).toEqual(['acme/*']);
+      expect(tickets.map((t) => t.sourceRef)).toContain('acme/quiet#3');
     });
 
     it('lists each issue under the repository it belongs to', async () => {
@@ -792,6 +866,12 @@ describe('fetching', () => {
 
       expect(tickets).toHaveLength(1);
       expect(failedRepos).toEqual(['acme/api']);
+    });
+
+    it('never calls a single repository truncated', async () => {
+      gitHub({ 'acme/portal': { open: [[issue({ id: 1 })]] } });
+      const { truncatedRepos } = await getGitHubTickets([project('Internal')], 'KnowAll', config);
+      expect(truncatedRepos).toEqual([]);
     });
 
     it('lists a repository mapped to two projects once', async () => {
