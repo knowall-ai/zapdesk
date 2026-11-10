@@ -410,8 +410,12 @@ GitHub username. There are two ways to link them.
 
 Each person opens *Profile* and saves their GitHub username in the *GitHub*
 card, which appears once GitHub issues are configured. The username is stored
-in their Microsoft profile, in the same `zapdesk.knowall.ai` extension as
-their Lightning Address, so no admin step is needed when someone joins.
+in their Microsoft profile, in the `zapdesk.knowall.ai.github` open
+extension, next to the `zapdesk.knowall.ai` extension that holds their
+Lightning Address, so no admin step is needed when someone joins. Each field
+has its own extension so saving one never undoes the other. Usernames saved
+before the split, in the Lightning extension, are still read, and move to the
+GitHub extension on the person's next Lightning Address save.
 
 * ZapDesk reads the saved usernames with the app's Microsoft Graph
   *application* permission `User.ReadWrite.All` (admin consent), the one the
