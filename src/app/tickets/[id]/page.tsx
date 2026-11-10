@@ -11,6 +11,7 @@ import { TicketDetail } from '@/components/tickets';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { hasTicketTag } from '@/lib/tags';
+import { responseErrorMessage } from '@/lib/response-error';
 import type { Ticket, TicketComment, Attachment, WorkItemUpdate, EffortHoursUpdate } from '@/types';
 
 /** Full view of one ticket or work item. */
@@ -218,13 +219,15 @@ export default function TicketDetailPage() {
         headers: orgHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ state: newState }),
       });
-      if (!response.ok) throw new Error('Failed to update state');
+      if (!response.ok) {
+        throw new Error(await responseErrorMessage(response, 'the status', 'update'));
+      }
       await fetchTicket();
       refreshCounts();
       toast.success(`Status updated to "${newState}"`);
     } catch (error) {
       console.error('Failed to update state:', error);
-      toast.error('Failed to update status');
+      toast.error(error instanceof Error ? error.message : 'Failed to update status');
       throw error;
     }
   };
@@ -240,13 +243,15 @@ export default function TicketDetailPage() {
           project: ticket.project,
         }),
       });
-      if (!response.ok) throw new Error('Failed to update assignee');
+      if (!response.ok) {
+        throw new Error(await responseErrorMessage(response, 'the assignee', 'update'));
+      }
       await fetchTicket();
       refreshCounts();
       toast.success('Assignee updated');
     } catch (error) {
       console.error('Failed to update assignee:', error);
-      toast.error('Failed to update assignee');
+      toast.error(error instanceof Error ? error.message : 'Failed to update assignee');
       throw error;
     }
   };
@@ -262,12 +267,14 @@ export default function TicketDetailPage() {
           project: ticket.project,
         }),
       });
-      if (!response.ok) throw new Error('Failed to update priority');
+      if (!response.ok) {
+        throw new Error(await responseErrorMessage(response, 'the priority', 'update'));
+      }
       await fetchTicket();
       toast.success('Priority updated');
     } catch (error) {
       console.error('Failed to update priority:', error);
-      toast.error('Failed to update priority');
+      toast.error(error instanceof Error ? error.message : 'Failed to update priority');
       throw error;
     }
   };
@@ -304,12 +311,14 @@ export default function TicketDetailPage() {
           project: ticket.project,
         }),
       });
-      if (!response.ok) throw new Error('Failed to update description');
+      if (!response.ok) {
+        throw new Error(await responseErrorMessage(response, 'the description', 'update'));
+      }
       await fetchTicket();
       toast.success('Description updated');
     } catch (error) {
       console.error('Failed to update description:', error);
-      toast.error('Failed to update description');
+      toast.error(error instanceof Error ? error.message : 'Failed to update description');
       throw error;
     }
   };
@@ -323,8 +332,7 @@ export default function TicketDetailPage() {
         body: JSON.stringify({ title, project: ticket.project }),
       });
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to update title');
+        throw new Error(await responseErrorMessage(response, 'the title', 'update'));
       }
       await fetchTicket();
       toast.success('Title updated');
@@ -344,8 +352,7 @@ export default function TicketDetailPage() {
         body: JSON.stringify({ tags, project: ticket.project }),
       });
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to update tags');
+        throw new Error(await responseErrorMessage(response, 'the tags', 'update'));
       }
       await fetchTicket();
       toast.success('Tags updated');
@@ -368,12 +375,14 @@ export default function TicketDetailPage() {
           workItemType: ticket.workItemType,
         }),
       });
-      if (!response.ok) throw new Error('Failed to update resolution');
+      if (!response.ok) {
+        throw new Error(await responseErrorMessage(response, 'the resolution', 'update'));
+      }
       await fetchTicket();
       toast.success('Resolution updated');
     } catch (error) {
       console.error('Failed to update resolution:', error);
-      toast.error('Failed to update resolution');
+      toast.error(error instanceof Error ? error.message : 'Failed to update resolution');
       throw error;
     }
   };
@@ -390,12 +399,14 @@ export default function TicketDetailPage() {
           workItemType: ticket.workItemType,
         }),
       });
-      if (!response.ok) throw new Error('Failed to update mitigation');
+      if (!response.ok) {
+        throw new Error(await responseErrorMessage(response, 'the mitigation', 'update'));
+      }
       await fetchTicket();
       toast.success('Mitigation updated');
     } catch (error) {
       console.error('Failed to update mitigation:', error);
-      toast.error('Failed to update mitigation');
+      toast.error(error instanceof Error ? error.message : 'Failed to update mitigation');
       throw error;
     }
   };
@@ -409,8 +420,7 @@ export default function TicketDetailPage() {
         body: JSON.stringify({ ...hours, project: ticket.project }),
       });
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to update hours');
+        throw new Error(await responseErrorMessage(response, 'the hours', 'update'));
       }
       await fetchTicket();
       toast.success('Hours updated');

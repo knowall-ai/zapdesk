@@ -5,6 +5,7 @@ import { ExternalLink } from 'lucide-react';
 import type { Feature, WorkItem, WorkItemType, TicketPriority } from '@/types';
 import { WorkItemBoard, WORKITEM_COLUMNS, WorkItemDetailDialog } from '@/components/tickets';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
+import { responseErrorMessage } from '@/lib/response-error';
 
 // Format hours to avoid floating-point precision issues (e.g., 3.199999999 -> "3.2")
 function formatHours(value: number): string {
@@ -377,7 +378,9 @@ export default function FeatureTimechain({
         headers,
         body: JSON.stringify({ state: newState, project: epic?.project }),
       });
-      if (!response.ok) throw new Error('Failed to update state');
+      if (!response.ok) {
+        throw new Error(await responseErrorMessage(response, 'the status', 'update'));
+      }
       // Update local state so dialog and feature work items reflect the change
       refreshCounts();
       setSelectedWorkItem((prev) => (prev ? { ...prev, state: newState } : null));
