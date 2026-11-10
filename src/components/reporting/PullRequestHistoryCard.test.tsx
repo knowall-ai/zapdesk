@@ -76,6 +76,34 @@ describe('PullRequestHistoryCard', () => {
     expect(screen.queryByText('No pull requests in this period')).toBeNull();
   });
 
+  it('ignores a slow response for a range the page has since left', async () => {
+    const pending: Record<string, (value: unknown) => void> = {};
+    devOpsGet.mockImplementation(
+      (url: string) => new Promise((resolve) => (pending[url] = resolve))
+    );
+    const pr = (n: number) => ({
+      id: n,
+      source: 'devops',
+      createdAt: new Date().toISOString(),
+    });
+    const { rerender } = render(<PullRequestHistoryCard range={7} />);
+    await waitFor(() => expect(pending['/api/devops/pr-history?days=7']).toBeTruthy());
+    rerender(<PullRequestHistoryCard range={365} />);
+    await waitFor(() => expect(pending['/api/devops/pr-history?days=365']).toBeTruthy());
+
+    // The newer request lands first, then the stale one.
+    pending['/api/devops/pr-history?days=365'](
+      ok({ pullRequests: [pr(1), pr(2), pr(3)], since: new Date(Date.now() - 864e5).toISOString() })
+    );
+    expect(await screen.findByText('3 opened')).toBeTruthy();
+    pending['/api/devops/pr-history?days=7'](
+      ok({ pullRequests: [pr(9)], since: new Date(Date.now() - 864e5).toISOString() })
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByText('3 opened')).toBeTruthy();
+    expect(screen.queryByText('1 opened')).toBeNull();
+  });
+
   it('says it could not load when the request throws', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     devOpsGet.mockRejectedValue(new Error('network down'));

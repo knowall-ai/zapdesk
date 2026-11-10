@@ -488,11 +488,12 @@ export default function LiveDashboardPage() {
                   <TeamPerformanceChart data={chartData.teamData} />
                 </div>
               </div>
-
-              {/* Pull Requests: follows the date range above and the header's source toggle */}
-              <PullRequestHistoryCard range={dateRange} className="mt-4" />
             </div>
           )}
+
+          {/* Pull Requests: follows the date range above and the header's source toggle.
+              Outside the !loading branch so a ticket refresh doesn't remount it and refetch. */}
+          <PullRequestHistoryCard range={dateRange} />
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             {/* Recent Activity */}

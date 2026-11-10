@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GitPullRequest } from 'lucide-react';
 import { subDays } from 'date-fns';
 import { useDevOpsApi } from '@/hooks';
@@ -46,33 +46,48 @@ export function PullRequestHistoryCard({
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
+  // Each request gets an id; only the latest may write state, so a slow
+  // response for a range the user has since left can't replace the newer one.
+  const latestRequest = useRef(0);
+
   const fetchPullRequests = useCallback(async () => {
     if (!hasOrganization || !sourceReady) return;
+    const requestId = ++latestRequest.current;
+    const isCurrent = () => requestId === latestRequest.current;
     setLoading(true);
     try {
       const sources = sourceFilter === 'both' ? '' : `&sources=${sourceFilter}`;
       const response = await devOpsGet(`/api/devops/pr-history?days=${range}${sources}`);
       if (!response.ok) {
         console.error('Failed to fetch pull request history:', response.status);
-        setFailed(true);
+        if (isCurrent()) setFailed(true);
         return;
       }
       const data: PullRequestActivityResponse = await response.json();
+      if (!isCurrent()) return;
       setPullRequests(data.pullRequests);
       setSince(new Date(data.since));
       setFailedProjects(data.failedProjects ?? []);
       setFailed(false);
     } catch (error) {
       console.error('Failed to fetch pull request history:', error);
-      setFailed(true);
+      if (isCurrent()) setFailed(true);
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [hasOrganization, sourceReady, sourceFilter, range, devOpsGet]);
 
   useEffect(() => {
     fetchPullRequests();
   }, [fetchPullRequests]);
+
+  // Unmounting retires any request still in flight.
+  useEffect(
+    () => () => {
+      latestRequest.current++;
+    },
+    []
+  );
 
   // The route already honours `sources`; filtering again keeps the chart
   // right when the toggle changes before the new response lands.
