@@ -109,7 +109,13 @@ describe('GitHub issue routes', () => {
       vi.stubEnv('GITHUB_TOKEN', '');
       const { status, body } = await getIssues();
       expect(status).toBe(200);
-      expect(body).toEqual({ configured: false, tickets: [], total: 0, failedRepos: [] });
+      expect(body).toEqual({
+        configured: false,
+        tickets: [],
+        total: 0,
+        failedRepos: [],
+        truncatedRepos: [],
+      });
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -192,6 +198,33 @@ describe('GitHub issue routes', () => {
       expect(status).toBe(200);
       expect(body.tickets).toEqual([]);
       expect(body.failedRepos).toEqual(['acme/portal']);
+      expect(body.truncatedRepos).toEqual([]);
+    });
+
+    // An organization past the page cap loses its quieter repositories with
+    // no error. The response says so, so the page can tell the user (#621).
+    it('reports an organization mapping that was read only in part', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      vi.stubEnv('GITHUB_PROJECT_REPOS', JSON.stringify({ Internal: ['acme/*'] }));
+      fetchMock.mockImplementation(async (input: string) => {
+        const url = new URL(input);
+        if (url.pathname !== '/orgs/acme/issues') return new Response('Not Found', { status: 404 });
+        // Every open page is full, so the cap is reached
+        if (url.searchParams.get('state') === 'closed') return Response.json([]);
+        const page = Number(url.searchParams.get('page'));
+        return Response.json(
+          Array.from({ length: 100 }, (_, i) => ({
+            ...gitHubIssue(page * 1000 + i, 'open', 'acme/portal'),
+            repository: { full_name: 'acme/portal' },
+          }))
+        );
+      });
+
+      const { status, body } = await getIssues();
+
+      expect(status).toBe(200);
+      expect(body.failedRepos).toEqual([]);
+      expect(body.truncatedRepos).toEqual(['acme/*']);
     });
 
     it('returns 500 when the project list cannot be read', async () => {

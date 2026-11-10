@@ -27,7 +27,13 @@ export async function GET(request: NextRequest) {
     }
 
     if (!gitHubAvailable()) {
-      return NextResponse.json({ configured: false, tickets: [], total: 0, failedRepos: [] });
+      return NextResponse.json({
+        configured: false,
+        tickets: [],
+        total: 0,
+        failedRepos: [],
+        truncatedRepos: [],
+      });
     }
 
     const organization = request.headers.get('x-devops-org');
@@ -48,7 +54,13 @@ export async function GET(request: NextRequest) {
     // Server mapping and/or each project's connected GitHub App installation
     const config = await gitHubSourceFor(organization, projects, session.accessToken);
     if (!config) {
-      return NextResponse.json({ configured: false, tickets: [], total: 0, failedRepos: [] });
+      return NextResponse.json({
+        configured: false,
+        tickets: [],
+        total: 0,
+        failedRepos: [],
+        truncatedRepos: [],
+      });
     }
     // Show mapped and linked GitHub accounts as their DevOps user
     const { devOpsUsers, linkedAccounts } = await gitHubPeopleFor(
@@ -57,13 +69,11 @@ export async function GET(request: NextRequest) {
       () => devopsService.getOrganizationUsers(),
       session.tenantId
     );
-    const { tickets, failedRepos: failedReads } = await getGitHubTickets(
-      projects,
-      organization,
-      config,
-      devOpsUsers,
-      linkedAccounts
-    );
+    const {
+      tickets,
+      failedRepos: failedReads,
+      truncatedRepos,
+    } = await getGitHubTickets(projects, organization, config, devOpsUsers, linkedAccounts);
 
     const failedRepos = [...config.failed, ...failedReads];
 
@@ -83,6 +93,8 @@ export async function GET(request: NextRequest) {
       tickets: filtered,
       total: filtered.length,
       failedRepos,
+      // Organizations read only in part, so the page can say so (#621)
+      truncatedRepos,
     });
   } catch (error) {
     console.error('Error fetching GitHub issues:', error);
