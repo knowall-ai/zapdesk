@@ -10,7 +10,7 @@ import { isGitHubItem } from '@/lib/github-kanban';
 import { sourceAccentStyle } from '@/lib/source-colors';
 import { workItemTypeBadgeStyle } from '@/lib/work-item-type-colors';
 import type { HighlightReason } from '@/lib/activity-summary';
-import { HIGHLIGHT_COLORS, highlightRingColor } from '@/lib/activity-colors';
+import { highlightBadgeStyle, highlightRingColor } from '@/lib/activity-colors';
 import type { StandupWorkItem } from '@/types';
 
 interface StandupKanbanCardProps {
@@ -111,7 +111,7 @@ export default function StandupKanbanCard({
             <span
               key={reason}
               className="rounded px-1 py-0.5 text-[10px] font-semibold"
-              style={{ backgroundColor: HIGHLIGHT_COLORS[reason], color: 'white' }}
+              style={highlightBadgeStyle(reason)}
             >
               {highlightLabels[reason]}
             </span>
