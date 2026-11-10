@@ -90,6 +90,8 @@ describe('normalizeTimezone', () => {
     expect(normalizeTimezone('GMT Standard Time')).toBe('Europe/London');
     expect(normalizeTimezone('Pacific Standard Time')).toBe('America/Los_Angeles');
     expect(normalizeTimezone('India Standard Time')).toBe('Asia/Kolkata');
+    expect(normalizeTimezone('Ekaterinburg Standard Time')).toBe('Asia/Yekaterinburg');
+    expect(normalizeTimezone('UTC+12')).toBe('Etc/GMT-12');
   });
 
   it('maps every legacy name to a zone the runtime accepts', () => {

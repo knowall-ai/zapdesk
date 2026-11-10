@@ -136,6 +136,64 @@ export const LEGACY_TIMEZONE_MAP: Readonly<Record<string, string>> = {
   'Tonga Standard Time': 'Pacific/Tongatapu',
   'Samoa Standard Time': 'Pacific/Apia',
   'Line Islands Standard Time': 'Pacific/Kiritimati',
+  'Aleutian Standard Time': 'America/Adak',
+  'Marquesas Standard Time': 'Pacific/Marquesas',
+  'UTC-09': 'Etc/GMT+9',
+  'UTC-08': 'Etc/GMT+8',
+  'Mountain Standard Time (Mexico)': 'America/Mazatlan',
+  'Yukon Standard Time': 'America/Whitehorse',
+  'Easter Island Standard Time': 'Pacific/Easter',
+  'Eastern Standard Time (Mexico)': 'America/Cancun',
+  'Haiti Standard Time': 'America/Port-au-Prince',
+  'Cuba Standard Time': 'America/Havana',
+  'Turks And Caicos Standard Time': 'America/Grand_Turk',
+  'Paraguay Standard Time': 'America/Asuncion',
+  'Central Brazilian Standard Time': 'America/Cuiaba',
+  'Tocantins Standard Time': 'America/Araguaina',
+  'Montevideo Standard Time': 'America/Montevideo',
+  'Magallanes Standard Time': 'America/Punta_Arenas',
+  'Saint Pierre Standard Time': 'America/Miquelon',
+  'Bahia Standard Time': 'America/Bahia',
+  'Sao Tome Standard Time': 'Africa/Sao_Tome',
+  'Syria Standard Time': 'Asia/Damascus',
+  'West Bank Standard Time': 'Asia/Hebron',
+  'Kaliningrad Standard Time': 'Europe/Kaliningrad',
+  'Sudan Standard Time': 'Africa/Khartoum',
+  'South Sudan Standard Time': 'Africa/Juba',
+  'Libya Standard Time': 'Africa/Tripoli',
+  'Namibia Standard Time': 'Africa/Windhoek',
+  'Belarus Standard Time': 'Europe/Minsk',
+  'Volgograd Standard Time': 'Europe/Volgograd',
+  'Astrakhan Standard Time': 'Europe/Astrakhan',
+  'Russia Time Zone 3': 'Europe/Samara',
+  'Mauritius Standard Time': 'Indian/Mauritius',
+  'Saratov Standard Time': 'Europe/Saratov',
+  'Caucasus Standard Time': 'Asia/Yerevan',
+  'Ekaterinburg Standard Time': 'Asia/Yekaterinburg',
+  'Qyzylorda Standard Time': 'Asia/Qyzylorda',
+  'Omsk Standard Time': 'Asia/Omsk',
+  'Altai Standard Time': 'Asia/Barnaul',
+  'W. Mongolia Standard Time': 'Asia/Hovd',
+  'North Asia Standard Time': 'Asia/Krasnoyarsk',
+  'N. Central Asia Standard Time': 'Asia/Novosibirsk',
+  'Tomsk Standard Time': 'Asia/Tomsk',
+  'North Asia East Standard Time': 'Asia/Irkutsk',
+  'Ulaanbaatar Standard Time': 'Asia/Ulaanbaatar',
+  'Aus Central W. Standard Time': 'Australia/Eucla',
+  'Transbaikal Standard Time': 'Asia/Chita',
+  'North Korea Standard Time': 'Asia/Pyongyang',
+  'Yakutsk Standard Time': 'Asia/Yakutsk',
+  'Lord Howe Standard Time': 'Australia/Lord_Howe',
+  'Vladivostok Standard Time': 'Asia/Vladivostok',
+  'Bougainville Standard Time': 'Pacific/Bougainville',
+  'Russia Time Zone 10': 'Asia/Srednekolymsk',
+  'Magadan Standard Time': 'Asia/Magadan',
+  'Norfolk Standard Time': 'Pacific/Norfolk',
+  'Sakhalin Standard Time': 'Asia/Sakhalin',
+  'Russia Time Zone 11': 'Asia/Kamchatka',
+  'UTC+12': 'Etc/GMT-12',
+  'Chatham Islands Standard Time': 'Pacific/Chatham',
+  'UTC+13': 'Etc/GMT-13',
 };
 
 /**
@@ -316,7 +374,10 @@ export function filterTimezoneOptions(
   return options.filter((o) => o.label.toLowerCase().includes(needle));
 }
 
-/** Options grouped by region, in first-seen order, for `<optgroup>`s. */
+/**
+ * Options grouped by region for `<optgroup>`s. Regions are sorted
+ * alphabetically with `Other` last; options keep their input order in each group.
+ */
 export function groupTimezoneOptions(
   options: readonly TimezoneOption[]
 ): { region: string; options: TimezoneOption[] }[] {
