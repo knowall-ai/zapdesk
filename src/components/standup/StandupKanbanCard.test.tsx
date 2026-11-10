@@ -116,6 +116,22 @@ describe('the amber 72-hour highlight', () => {
     expect(badge.style.color).toBe('var(--highlight-recent-foreground)');
   });
 
+  it('describes the card to keyboard and screen-reader users, keeping its name', () => {
+    render(<StandupKanbanCard item={devOpsCard} recent onClick={vi.fn()} />);
+    const button = screen.getByRole('button', { name: 'Open Issue #7701' });
+    const describedBy = button.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)?.textContent).toBe(
+      'Activity in the last 72 working hours, but not the last 24'
+    );
+  });
+
+  it('adds no description to a card without the amber highlight', () => {
+    render(<StandupKanbanCard item={devOpsCard} onClick={vi.fn()} />);
+    const button = screen.getByRole('button', { name: 'Open Issue #7701' });
+    expect(button.getAttribute('aria-describedby')).toBeNull();
+  });
+
   it('gives way to a 24-hour highlight', () => {
     render(<StandupKanbanCard item={devOpsCard} recent highlight={['updated']} />);
     expect(screen.queryByText('72h')).toBeNull();

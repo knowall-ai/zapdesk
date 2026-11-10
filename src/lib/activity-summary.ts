@@ -6,6 +6,7 @@
  * Pure functions, so the counting rules are tested without a board.
  */
 import type { PullRequestActivity, StandupColumn } from '@/types';
+import { isInHandColumn } from '@/lib/in-hand-columns';
 
 export const ACTIVITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -170,6 +171,7 @@ export function summariseGroupActivity(
   const cardsByRef = new Map<string, number>();
   for (const column of columns) {
     const inCompletedColumn = column.category === 'Completed';
+    const inHandColumn = isInHandColumn(column.name);
     for (const item of column.items) {
       cardIds.add(item.id);
       if (item.sourceRef) cardsByRef.set(item.sourceRef.toLowerCase(), item.id);
@@ -178,6 +180,9 @@ export function summariseGroupActivity(
       if (kinds.length > 0) summary.highlights.set(item.id, [...kinds]);
       else if (
         recentSince !== undefined &&
+        // To Do and Active never wear a ring (#619), so a card there must not
+        // switch the Highlight toggle on and dim the rest for nothing.
+        !inHandColumn &&
         itemActivity(item, inCompletedColumn, recentSince).length > 0
       ) {
         summary.recent.add(item.id);

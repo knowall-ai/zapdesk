@@ -284,6 +284,16 @@ describe('the amber 72-hour tier (#586)', () => {
     expect(summary.highlights.get(2)).toEqual(['pr']);
   });
 
+  it('leaves out To Do and Active, which never wear a ring (#619)', () => {
+    const inHand = [
+      column('To Do', 'Proposed', [item(5, OLD, EARLIER)]),
+      column('Active', 'InProgress', [item(6, OLD, EARLIER)]),
+    ];
+    // Empty, so this group's Highlight toggle stays off rather than dimming
+    // the board without lighting anything.
+    expect(summariseGroupActivity(inHand, [], SINCE, RECENT_SINCE).recent.size).toBe(0);
+  });
+
   it('is empty without a 72-hour window start', () => {
     expect(summariseGroupActivity(columns, [], SINCE).recent.size).toBe(0);
   });

@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import { useId, type CSSProperties } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import Link from 'next/link';
@@ -57,6 +57,11 @@ export default function StandupKanbanCard({
     id: item.id,
     disabled: isGitHub,
   });
+
+  // The amber 72-hour badge, and the description that names it (#586).
+  const showRecent = !highlight && !!recent;
+  const recentId = useId();
+  const describedBy = showRecent ? recentId : undefined;
 
   // Where the card came from, down its left edge (#465).
   const accent = sourceAccentStyle(item);
@@ -131,14 +136,21 @@ export default function StandupKanbanCard({
           ))}
         </div>
       )}
-      {!highlight && recent && (
+      {showRecent && (
         <div className="mb-1.5 flex flex-wrap gap-1">
           <span
+            aria-hidden="true"
             className="rounded px-1 py-0.5 text-[10px] font-semibold"
             style={{ backgroundColor: RECENT_HIGHLIGHT_COLOR, color: RECENT_HIGHLIGHT_TEXT_COLOR }}
             title={RECENT_TITLE}
           >
             {RECENT_LABEL}
+          </span>
+          {/* The card's description for keyboard and screen-reader users: a
+              title is a hover hint only, and the card's "Open …" label hides
+              the badge text from its accessible name. */}
+          <span id={recentId} className="sr-only">
+            {RECENT_TITLE}
           </span>
         </div>
       )}
@@ -185,6 +197,7 @@ export default function StandupKanbanCard({
             onClick={() => onClick(item)}
             className="block w-full text-left"
             aria-label={`Open ${item.sourceRef ?? 'issue'}`}
+            aria-describedby={describedBy}
           >
             {cardBody}
           </button>
@@ -196,6 +209,7 @@ export default function StandupKanbanCard({
             rel="noopener noreferrer"
             className="block"
             aria-label={`Open ${item.sourceRef ?? 'issue'} on GitHub`}
+            aria-describedby={describedBy}
           >
             {cardBody}
           </a>
@@ -223,11 +237,12 @@ export default function StandupKanbanCard({
           onClick={() => onClick(item)}
           className="block w-full text-left"
           aria-label={`Open ${item.workItemType} #${item.id}`}
+          aria-describedby={describedBy}
         >
           {cardBody}
         </button>
       ) : (
-        <Link href={`/tickets/${item.id}`} className="block">
+        <Link href={`/tickets/${item.id}`} className="block" aria-describedby={describedBy}>
           {cardBody}
         </Link>
       )}
