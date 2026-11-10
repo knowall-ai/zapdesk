@@ -18,6 +18,7 @@ import { useSourceFilter } from '@/components/providers/SourceProvider';
 import { ticketToWorkItem } from '@/lib/devops';
 import { useDefaultView, viewToShow } from '@/lib/default-view';
 import { readGitHubLabelSummary, type GitHubLabelSummary } from '@/lib/github-label-notice';
+import { gitHubTruncationMessage } from '@/lib/github-truncation';
 import type { Ticket, WorkItem, User, WorkItemType, EffortHoursUpdate } from '@/types';
 
 type TicketJson = Ticket & { createdAt: string; updatedAt: string };
@@ -121,10 +122,17 @@ function TicketsPageContent() {
       ): Promise<{
         tickets: Ticket[];
         failedRepos: string[];
+        truncatedRepos: string[];
         failedProjects: string[];
         labelSummary: GitHubLabelSummary | null;
       }> => {
-        const nothing = { tickets: [], failedRepos: [], failedProjects: [], labelSummary: null };
+        const nothing = {
+          tickets: [],
+          failedRepos: [],
+          truncatedRepos: [],
+          failedProjects: [],
+          labelSummary: null,
+        };
         // Not asked for: the source toggle left this one out
         if (result.status === 'fulfilled' && !result.value) return nothing;
         try {
@@ -134,6 +142,7 @@ function TicketsPageContent() {
           return {
             tickets: reviveTicketDates(data.tickets || []),
             failedRepos: data.failedRepos || [],
+            truncatedRepos: data.truncatedRepos || [],
             failedProjects: data.failedProjects || [],
             labelSummary: readGitHubLabelSummary(data),
           };
@@ -157,6 +166,10 @@ function TicketsPageContent() {
       if (gitHub.failedRepos.length > 0) {
         toast.warning(`Could not load GitHub issues from ${gitHub.failedRepos.join(', ')}`);
       }
+      // An organization read only in part loses its quieter repositories with
+      // no error, so a short list would otherwise pass for a complete one (#621).
+      const truncation = gitHubTruncationMessage(gitHub.truncatedRepos);
+      if (truncation) toast.warning(truncation);
       // A project that failed contributes no tickets, so the list below is
       // short by an unknown amount. Naming the projects beats a list that
       // quietly reads as "nothing open" (#509).
