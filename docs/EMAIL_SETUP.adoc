@@ -177,6 +177,10 @@ x-webhook-secret: <EMAIL_WEBHOOK_SECRET>
 
 === Setting Up the Logic App
 
+The Logic App starts polling as soon as it is saved with its trigger. If
+another poller is running, stop it first and wait for its last poll to finish
+(see <<Run Exactly One Poller>>) before the save step below.
+
 . In the Azure portal, create a *Logic App* on the *Consumption* plan.
 . Add a *Recurrence* trigger: interval `1`, frequency `Minute`.
 . Add an *HTTP* action: method `POST`, URI
@@ -184,11 +188,14 @@ x-webhook-secret: <EMAIL_WEBHOOK_SECRET>
   `x-webhook-secret` holding the app's `EMAIL_WEBHOOK_SECRET`. Turn on
   *Secure inputs* in the action's settings so the secret stays out of run
   history.
-. Prefer reading the secret from Key Vault over pasting it in. If you add a
-  Key Vault *Get secret* action before the HTTP action, turn on *Secure
-  outputs* on that action too. Secure inputs on the HTTP action does not hide
-  the value the earlier action returned, and anyone who can read run history
-  would see it.
+. Never type the secret into the header as plain text: it would sit in the
+  workflow definition, where anyone who can read the Logic App sees it. Read
+  it from Key Vault with a *Get secret* action placed before the HTTP action,
+  and turn on *Secure outputs* on that action. Alternatively, pass it in a
+  `securestring` workflow parameter with no default value. Either way, keep
+  *Secure inputs* on for the HTTP action. Secure inputs only hides the header
+  in run history. It does not hide the value a *Get secret* action returned,
+  and it does not protect a secret written into the definition.
 . In the HTTP action's settings, set *Retry policy* to *None*. A retry after a
   timeout or `500` can file a message a second time if its ticket was created
   but the message was not yet marked read. The next scheduled poll picks up
@@ -197,15 +204,17 @@ x-webhook-secret: <EMAIL_WEBHOOK_SECRET>
 . In the trigger's settings, turn on *Concurrency control* with a degree of
   parallelism of `1`, so the Logic App never starts a run while the last one
   is still going. That does not cover a poll that carries on in the app after
-  the HTTP action timed out. If runs start timing out, disable the Logic App,
-  confirm in the App Service logs that the last poll has finished, and only
-  then enable it again.
+  the HTTP action timed out. If runs start timing out, disable the Logic App
+  and watch the App Service log stream. The app writes no single "poll
+  finished" line, so wait until `[Poll]` and `[Email]` lines have stopped for
+  a few minutes, then enable it again.
 . Add a *Condition* after the HTTP action that checks whether
   `body('HTTP')?['failed']` is greater than `0`. In its *True* branch, add a
   *Terminate* action with status *Failed*. A message that fails to ingest
   still comes back as `200`, so without this step the run is marked as
   succeeded.
-. Save, then open *Run history*: each run should show the HTTP action
+. Check that no other poller is running, as described at the top of this
+  section. Then save, and open *Run history*: each run should show the HTTP action
   returning `200` and the run as *Succeeded*.
 
 The Logic App raises no alert on its own. Add an Azure Monitor alert on the
