@@ -82,7 +82,7 @@ describe('describeUpdateFailure', () => {
 
   it('does not pass on the detail of an outage', () => {
     expect(describeUpdateFailure(503, 'internal stack trace')).toBe(
-      'Azure DevOps could not save the change right now (503). Try again shortly.'
+      'Azure DevOps could not save the change right now. Try again shortly.'
     );
   });
 });

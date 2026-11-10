@@ -70,7 +70,9 @@ export function describeUpdateFailure(status: number, detail: string | null): st
       return 'Azure DevOps is limiting requests right now. Wait a moment and try again.';
   }
   if (status >= 500) {
-    return `Azure DevOps could not save the change right now (${status}). Try again shortly.`;
+    // No status here: the client appends the route's own (502), and two
+    // different numbers in one toast would read as a contradiction.
+    return 'Azure DevOps could not save the change right now. Try again shortly.';
   }
   return detail
     ? `Azure DevOps rejected the change: ${detail}`
