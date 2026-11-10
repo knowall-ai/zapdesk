@@ -9,8 +9,10 @@ ZapDesk turns inbound email into Azure DevOps work items and emails the
 requester back when an agent replies or the ticket status, title or priority
 changes.
 
-* *Inbound*: a 1-minute cron polls the support mailbox via Microsoft Graph,
-  ingests each unread message, then marks it as read.
+* *Inbound*: a scheduler outside the app (a Logic App, see
+  <<Scheduling the Poll>>) calls ZapDesk once a minute; ZapDesk polls the
+  support mailbox via Microsoft Graph, ingests each unread message, then
+  marks it as read.
 * *Outbound*: confirmations, agent replies, status-change notifications and
   title/priority update notifications go out via Microsoft Graph `sendMail`
   from the same support mailbox.
@@ -122,22 +124,75 @@ Multiple domains can be listed comma-separated. The mapping is cached for
 
 == Scheduling the Poll
 
-Something outside the app has to call `POST /api/email/poll` with the
-`x-webhook-secret` header once a minute. The repository holds two ways of
-doing that, but the live KnowAll AI deployment uses neither:
+Something outside the app has to call `POST /api/email/poll` once a minute.
+The repository holds two ways of doing that, but the live KnowAll AI
+deployment uses neither: it runs a Logic App, which is the supported and
+recommended poller.
 
-* *Logic App (what production runs)*: a Consumption Logic App with a
-  one-minute Recurrence trigger and a single HTTP action that POSTs to
-  `https://zapdesk.yourdomain.com/api/email/poll` with the secret header.
-  Run history on the Logic App shows each call and its status code. Use the
-  custom domain, never the `*.azurewebsites.net` hostname: the App Service
-  only accepts traffic through Front Door (see `SETUP.adoc`).
-* *Azure Functions timer* (`azure/email-poll/`): a timer trigger doing the
-  same job, built and tested in CI. See its README for configuration and the
-  Application Insights alert. It is not deployed at present.
-* *GitHub Actions workflow* (`.github/workflows/email-poll.yml`): the original
-  poller. It is disabled; GitHub's schedule floor is five minutes and
-  scheduled workflows stop after 60 days without repository activity.
+[cols="2,2,3",options="header"]
+|===
+|Poller |Status |Notes
+
+|*Logic App* (no code in this repo)
+|Supported; what production runs
+|One-minute Recurrence trigger and one HTTP action. Run history shows each
+call and its status code. Set up below.
+
+|*Azure Functions timer* (`azure/email-poll/`)
+|Optional alternative; not deployed
+|Built and tested in CI. Brings an Application Insights alert the Logic App
+lacks. See its README for settings and cutover.
+
+|*GitHub Actions workflow* (`.github/workflows/email-poll.yml`)
+|Fallback; disabled
+|The original poller. GitHub's schedule floor is five minutes and scheduled
+workflows stop after 60 days without repository activity.
+|===
+
+=== The Poll Contract
+
+Every poller, whatever runs it, makes the same call:
+
+----
+POST https://zapdesk.yourdomain.com/api/email/poll
+x-webhook-secret: <EMAIL_WEBHOOK_SECRET>
+----
+
+* No body is needed. The header value must equal the app's
+  `EMAIL_WEBHOOK_SECRET` exactly.
+* Use the custom domain, never the `*.azurewebsites.net` hostname: the App
+  Service only accepts traffic through Front Door (see `SETUP.adoc`).
+* Allow up to 90 seconds for a response. A poll works through every unread
+  message before it answers.
+* `200` returns a summary: `mailbox`, `fetched`, `ingested`, `failed` and a
+  per-message `results` list. A non-zero `failed` still comes back as `200`,
+  so read the body, not just the status.
+* `401 Invalid webhook secret`: the header is missing or wrong.
+* `500 MAIL_POLL_MAILBOX not configured`, or `500` with an `error` message
+  when Graph or Azure DevOps fails.
+* `GET /api/email/poll` needs no secret and polls nothing. It reports whether
+  the mailbox and secret are configured, so use it to check settings.
+
+=== Setting Up the Logic App
+
+. In the Azure portal, create a *Logic App* on the *Consumption* plan.
+. Add a *Recurrence* trigger: interval `1`, frequency `Minute`.
+. Add an *HTTP* action: method `POST`, URI
+  `https://zapdesk.yourdomain.com/api/email/poll`, and a header
+  `x-webhook-secret` holding the app's `EMAIL_WEBHOOK_SECRET`. Prefer reading
+  the secret from Key Vault over pasting it in, and turn on *Secure inputs* in
+  the action's settings so it stays out of run history.
+. Give the HTTP action a timeout of at least 90 seconds.
+. In the trigger's settings, turn on *Concurrency control* with a degree of
+  parallelism of `1`, so a slow poll is never overlapped by the next tick.
+. Save, then open *Run history*: each run should show the HTTP action
+  returning `200`.
+
+The Logic App raises no alert on its own. Add an Azure Monitor alert on
+failed runs: a mailbox that has stopped being drained looks exactly like a
+mailbox with nothing in it.
+
+=== Run Exactly One Poller
 
 Whichever you pick, *run exactly one*. Each poll lists unread messages and
 only then marks them read, and the endpoint has no concurrency guard, so two

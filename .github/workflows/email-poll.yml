@@ -1,14 +1,19 @@
 name: Poll support mailbox
 
 # Inbound email is fetched by polling the support mailbox via Microsoft Graph.
-# This workflow asks the deployed app to drain the mailbox once a minute. Each
-# unread message is turned into a ticket (or appended as a comment if it's a
-# reply to an existing one) and then marked as read.
+# This workflow asks the deployed app to drain the mailbox. Each unread message
+# is turned into a ticket (or appended as a comment if it's a reply to an
+# existing one) and then marked as read.
+#
+# FALLBACK ONLY: this workflow is disabled in the repository settings. The
+# supported poller is a Logic App (see "Scheduling the Poll" in
+# docs/EMAIL_SETUP.adoc), and azure/email-poll/ is an optional alternative.
+# Run exactly one poller: two at once can file the same email twice.
 
 on:
   schedule:
-    # GitHub Actions cron runs every 5 minutes minimum on free tiers, but the
-    # workflow accepts as low as '* * * * *' on paid plans. Adjust to taste.
+    # Five minutes is GitHub's minimum schedule interval on every plan.
+    # Scheduled workflows also stop after 60 days without repository activity.
     - cron: '*/5 * * * *'
   workflow_dispatch:
 

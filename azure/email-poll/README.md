@@ -1,8 +1,16 @@
 # ZapDesk mailbox poller (Azure Functions)
 
 A timer trigger that asks the deployed app to drain the support mailbox, once a
-minute. It replaces `.github/workflows/email-poll.yml`, which did the same job
-on a schedule.
+minute.
+
+**This is an optional alternative, not what production runs.** The live
+deployment polls with a Logic App; this Function is built and tested in CI but
+not deployed. It was written to replace `.github/workflows/email-poll.yml`,
+which is now disabled and kept only as a fallback. See "Scheduling the Poll" in
+[`docs/EMAIL_SETUP.adoc`](../../docs/EMAIL_SETUP.adoc) for the supported setup
+and the request every poller makes. If you deploy this instead, cut over from
+whichever poller is running now, using the steps below in place of the
+workflow.
 
 ## Why it exists
 
