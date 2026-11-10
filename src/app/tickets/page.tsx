@@ -388,8 +388,7 @@ function TicketsPageContent() {
           body: JSON.stringify({ ...hours, project: ticket.project }),
         });
         if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || 'Failed to update hours');
+          throw new Error(await responseErrorMessage(response, 'the hours', 'update'));
         }
         const data = await response.json();
         const updated: Ticket | undefined = data.ticket;
@@ -516,8 +515,7 @@ function TicketsPageContent() {
           body: JSON.stringify({ tags, project: ticket.project }),
         });
         if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || 'Failed to update tags');
+          throw new Error(await responseErrorMessage(response, 'the tags', 'update'));
         }
         setTickets((prev) =>
           prev.map((t) => (t.id === workItemId && t.source !== 'github' ? { ...t, tags } : t))

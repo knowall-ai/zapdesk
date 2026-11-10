@@ -6,6 +6,7 @@ import type { Feature, WorkItem, WorkItemType, TicketPriority } from '@/types';
 import { WorkItemBoard, WORKITEM_COLUMNS, WorkItemDetailDialog } from '@/components/tickets';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { responseErrorMessage } from '@/lib/response-error';
+import { toast } from 'sonner';
 
 // Format hours to avoid floating-point precision issues (e.g., 3.199999999 -> "3.2")
 function formatHours(value: number): string {
@@ -379,7 +380,12 @@ export default function FeatureTimechain({
         body: JSON.stringify({ state: newState, project: epic?.project }),
       });
       if (!response.ok) {
-        throw new Error(await responseErrorMessage(response, 'the status', 'update'));
+        // Shown here: the dialog only resets its spinner on a rejection, so
+        // without a toast the reason never reached the user (#531). Still
+        // rethrown, like the other boards, so the dropdown stays open.
+        const message = await responseErrorMessage(response, 'the status', 'update');
+        toast.error(message);
+        throw new Error(message);
       }
       // Update local state so dialog and feature work items reflect the change
       refreshCounts();
