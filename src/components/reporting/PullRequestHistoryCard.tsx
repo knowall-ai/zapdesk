@@ -15,19 +15,36 @@ import {
 import type { PullRequestActivity, PullRequestActivityResponse } from '@/types';
 import { PullRequestChart } from './PullRequestChart';
 
+interface PullRequestHistoryCardProps {
+  /**
+   * The period to chart, when the page owns it (the Live Dashboard's date
+   * range, #537). The card then hides its own range buttons. Left out, the
+   * card keeps its own 7d / 30d / 90d / 365d choice, as on the Team page.
+   */
+  range?: PullRequestHistoryRange;
+  /** Classes for the card's outer box; spacing differs between pages. */
+  className?: string;
+}
+
 /**
- * The Team page's "Pull Requests" card: opened vs merged over the chosen
- * range, following the header's DevOps / GitHub toggle (#447). It fetches
- * for itself from `/api/devops/pr-history`, so the page only places it.
+ * The "Pull Requests" card: opened vs merged over the chosen range, following
+ * the header's DevOps / GitHub toggle (#447). It fetches for itself from
+ * `/api/devops/pr-history`, so the page only places it. Used on the Team page
+ * and the Live Dashboard.
  */
-export function PullRequestHistoryCard() {
+export function PullRequestHistoryCard({
+  range: controlledRange,
+  className = 'mb-6',
+}: PullRequestHistoryCardProps = {}) {
   const { get: devOpsGet, hasOrganization } = useDevOpsApi();
   const { sourceFilter, sourceReady } = useSourceFilter();
-  const [range, setRange] = useState<PullRequestHistoryRange>(90);
+  const [ownRange, setRange] = useState<PullRequestHistoryRange>(90);
+  const range = controlledRange ?? ownRange;
   const [pullRequests, setPullRequests] = useState<PullRequestActivity[]>([]);
   const [since, setSince] = useState<Date | null>(null);
   const [failedProjects, setFailedProjects] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   const fetchPullRequests = useCallback(async () => {
     if (!hasOrganization || !sourceReady) return;
@@ -37,14 +54,17 @@ export function PullRequestHistoryCard() {
       const response = await devOpsGet(`/api/devops/pr-history?days=${range}${sources}`);
       if (!response.ok) {
         console.error('Failed to fetch pull request history:', response.status);
+        setFailed(true);
         return;
       }
       const data: PullRequestActivityResponse = await response.json();
       setPullRequests(data.pullRequests);
       setSince(new Date(data.since));
       setFailedProjects(data.failedProjects ?? []);
+      setFailed(false);
     } catch (error) {
       console.error('Failed to fetch pull request history:', error);
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -75,7 +95,7 @@ export function PullRequestHistoryCard() {
   );
 
   return (
-    <div className="card mb-6">
+    <div className={`card ${className}`.trim()}>
       <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -83,7 +103,7 @@ export function PullRequestHistoryCard() {
               Pull Requests
             </h2>
             <p className="hidden text-sm sm:block" style={{ color: 'var(--text-muted)' }}>
-              {loading ? (
+              {loading || failed ? (
                 'Opened vs merged over time'
               ) : (
                 <>
@@ -97,30 +117,32 @@ export function PullRequestHistoryCard() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <div
-              className="flex rounded-lg p-1"
-              style={{ backgroundColor: 'var(--background)' }}
-              role="radiogroup"
-              aria-label="Pull request period"
-            >
-              {PR_HISTORY_RANGES.map((days) => (
-                <button
-                  key={days}
-                  type="button"
-                  role="radio"
-                  aria-checked={range === days}
-                  onClick={() => setRange(days)}
-                  className="rounded-md px-2 py-1 text-xs font-medium transition-colors"
-                  style={{
-                    backgroundColor: range === days ? 'var(--color-brand)' : 'transparent',
-                    color:
-                      range === days ? 'var(--color-brand-foreground)' : 'var(--text-secondary)',
-                  }}
-                >
-                  {days}d
-                </button>
-              ))}
-            </div>
+            {controlledRange === undefined && (
+              <div
+                className="flex rounded-lg p-1"
+                style={{ backgroundColor: 'var(--background)' }}
+                role="radiogroup"
+                aria-label="Pull request period"
+              >
+                {PR_HISTORY_RANGES.map((days) => (
+                  <button
+                    key={days}
+                    type="button"
+                    role="radio"
+                    aria-checked={range === days}
+                    onClick={() => setRange(days)}
+                    className="rounded-md px-2 py-1 text-xs font-medium transition-colors"
+                    style={{
+                      backgroundColor: range === days ? 'var(--color-brand)' : 'transparent',
+                      color:
+                        range === days ? 'var(--color-brand-foreground)' : 'var(--text-secondary)',
+                    }}
+                  >
+                    {days}d
+                  </button>
+                ))}
+              </div>
+            )}
             <div
               className="hidden rounded-lg p-3 sm:block"
               style={{ backgroundColor: 'rgba(59, 130, 246, 0.2)', color: '#3b82f6' }}
@@ -136,7 +158,7 @@ export function PullRequestHistoryCard() {
         </div>
       )}
       <div className="p-4">
-        <PullRequestChart data={data} loading={loading} />
+        <PullRequestChart data={data} loading={loading} failed={failed} />
       </div>
     </div>
   );

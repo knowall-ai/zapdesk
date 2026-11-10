@@ -21,7 +21,12 @@ import {
   Zap,
 } from 'lucide-react';
 import { StatusBadge, Avatar } from '@/components/common';
-import { TicketVolumeChart, ResponseTimeChart, TeamPerformanceChart } from '@/components/reporting';
+import {
+  TicketVolumeChart,
+  ResponseTimeChart,
+  TeamPerformanceChart,
+  PullRequestHistoryCard,
+} from '@/components/reporting';
 import type { Ticket as TicketType } from '@/types';
 import FailedProjectsNotice from '@/components/common/FailedProjectsNotice';
 
@@ -483,6 +488,9 @@ export default function LiveDashboardPage() {
                   <TeamPerformanceChart data={chartData.teamData} />
                 </div>
               </div>
+
+              {/* Pull Requests: follows the date range above and the header's source toggle */}
+              <PullRequestHistoryCard range={dateRange} className="mt-4" />
             </div>
           )}
 
