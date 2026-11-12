@@ -10,13 +10,23 @@
  *
  * Because the server now fetches URLs a user (or a remote LNURL service)
  * chooses, every request is guarded against SSRF: https only, no redirects,
- * no private / loopback / link-local hosts (checked on the literal hostname
- * and on what it resolves to), a timeout and a response size cap.
+ * no private / loopback / link-local hosts, a timeout and a response size cap.
+ *
+ * The host check happens twice, and that is deliberate. {@link assertSafeUrl}
+ * runs before the request, so a refusal can say which rule the provider broke.
+ * But a name resolved before a request is not the name the socket connects to:
+ * a host can answer the check with a public address and the connection with a
+ * private one, which is DNS rebinding, and the pre-flight check cannot see it.
+ * {@link refusePrivateAddresses} is therefore wired into the connection itself,
+ * where the address being used is the address being judged. That one is the
+ * real control; the pre-flight check is for the error message.
  *
  * Server only: imports `node:dns`.
  */
 import { lookup } from 'node:dns/promises';
+import { lookup as lookupCallback, type LookupAddress, type LookupOptions } from 'node:dns';
 import { isIP } from 'node:net';
+import { Agent, fetch as undiciFetch } from 'undici';
 
 /** How long each LNURL request may take. */
 export const LNURL_TIMEOUT_MS = 8_000;
@@ -100,6 +110,53 @@ export type HostResolver = (hostname: string) => Promise<string[]>;
 
 const defaultResolver: HostResolver = async (hostname) =>
   (await lookup(hostname, { all: true })).map((entry) => entry.address);
+
+/**
+ * A `net.connect` name lookup that refuses to hand back a private address.
+ *
+ * This is the SSRF control that cannot be side-stepped by timing. The check in
+ * {@link assertSafeUrl} resolves the name, approves it, and then `fetch`
+ * resolves it again when it opens the socket -- so a host that answers the
+ * first lookup with a public address and the second with a private one passes
+ * the check and still reaches an internal service. Judging the address at the
+ * point of connection closes that window, because there is no second lookup
+ * after it (raised in review on #642).
+ *
+ * Node calls this with `{ all: true }` and expects `(err, [{address, family}])`
+ * -- it uses several addresses at once for Happy Eyeballs, so every one of
+ * them has to be acceptable, not just the first.
+ */
+export function refusePrivateAddresses(
+  hostname: string,
+  options: LookupOptions,
+  callback: (
+    error: NodeJS.ErrnoException | null,
+    addresses: string | LookupAddress[],
+    family?: number
+  ) => void
+): void {
+  lookupCallback(hostname, { ...options, all: true }, (error, addresses) => {
+    // `net.connect`'s contract wants an address argument either way; callers
+    // read the error first, so an empty list is the honest thing to send with
+    // one.
+    if (error) {
+      callback(error, []);
+      return;
+    }
+    if (addresses.length === 0 || addresses.some((entry) => isPrivateIp(entry.address))) {
+      callback(new Error(`${hostname} is not a public host`), []);
+      return;
+    }
+    callback(null, addresses);
+  });
+}
+
+/**
+ * The dispatcher every LNURL request uses, so the address the socket connects
+ * to is the address that was judged. Scoped to this module on purpose: a
+ * global dispatcher would change every other outbound request in the app.
+ */
+const lnurlDispatcher = new Agent({ connect: { lookup: refusePrivateAddresses } });
 
 /**
  * `work`, or a rejection once `ms` has passed.
@@ -221,7 +278,11 @@ async function getJson(url: URL, fetchImpl: typeof fetch, resolve: HostResolver)
       redirect: 'error',
       signal: AbortSignal.timeout(LNURL_TIMEOUT_MS),
       cache: 'no-store',
-    });
+      // Not part of the DOM `RequestInit`, so it needs the cast; undici's own
+      // fetch reads it, which is why that is the default transport below. A
+      // test's injected fetch ignores it.
+      dispatcher: lnurlDispatcher,
+    } as RequestInit);
   } catch (err) {
     if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
       throw new LnurlError(`${url.hostname} took too long to respond`);
@@ -353,7 +414,10 @@ export async function fetchLnurlInvoice({
   lightningAddress,
   amountSats,
   comment,
-  fetchImpl = fetch,
+  // undici's fetch rather than the global one: it is the same implementation
+  // Node's `fetch` is built on, but it honours the `dispatcher` that carries
+  // the connect-time host check.
+  fetchImpl = undiciFetch as unknown as typeof fetch,
   resolve = defaultResolver,
 }: FetchInvoiceOptions): Promise<string> {
   const address = parseLightningAddress(lightningAddress);

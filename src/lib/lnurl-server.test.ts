@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { LookupAddress } from 'node:dns';
 import {
   bolt11AmountMsat,
   fetchLnurlInvoice,
@@ -7,6 +8,7 @@ import {
   LnurlError,
   LNURL_DNS_TIMEOUT_MS,
   LNURL_MAX_RESPONSE_BYTES,
+  refusePrivateAddresses,
 } from '@/lib/lnurl-server';
 
 // #627: the LNURL-pay round trip moved server-side, so it is guarded against
@@ -281,5 +283,36 @@ describe('bolt11AmountMsat', () => {
     ['lnxx5u1pjexample', undefined],
   ])('reads %s', (invoice, expected) => {
     expect(bolt11AmountMsat(invoice)).toBe(expected);
+  });
+});
+
+/**
+ * The connect-time host check (#642). `assertSafeUrl` resolves a name, approves
+ * it, and then the socket resolves it again -- so a host answering the first
+ * lookup publicly and the second privately passed the check and still reached
+ * an internal service. This judges the address at the point of connection,
+ * where there is no later lookup to disagree with it.
+ */
+describe('refusePrivateAddresses', () => {
+  const call = (hostname: string) =>
+    new Promise<{ error: Error | null; addresses: string | LookupAddress[] }>((resolve) => {
+      refusePrivateAddresses(hostname, { all: true }, (error, addresses) =>
+        resolve({ error, addresses })
+      );
+    });
+
+  it('refuses a name that resolves to loopback', async () => {
+    const { error, addresses } = await call('localhost');
+    expect(error).toBeInstanceOf(Error);
+    expect(error?.message).toMatch(/not a public host/);
+    // Nothing to connect to, so there is no address to misuse.
+    expect(addresses).toEqual([]);
+  });
+
+  it('passes an error from the lookup through rather than approving', async () => {
+    // Reserved by RFC 2606, so it cannot resolve.
+    const { error, addresses } = await call('nothing.invalid');
+    expect(error).toBeInstanceOf(Error);
+    expect(addresses).toEqual([]);
   });
 });
