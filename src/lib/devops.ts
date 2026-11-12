@@ -30,6 +30,7 @@ import type {
 } from '@/types';
 import { parseSLAFromDescription, calculateTicketSLA, DEFAULT_SLA_LEVEL } from './sla';
 import { debugLog } from './debug';
+import { describeUpdateFailure, devOpsErrorDetail } from './devops-error';
 import { historyFieldValue } from './history-values';
 // Server-only module, and devops.ts is too -- no client component imports it,
 // so pulling in the Graph helpers alongside the parser costs nothing here.
@@ -2038,7 +2039,16 @@ export class AzureDevOpsService {
     }
 
     if (patchDocument.length === 0) {
-      throw new Error('No updates provided');
+      // A 400 the user can read, not a bare Error the route turned into a 500
+      // "Failed to update" (#531). The likeliest way here is a mitigation for
+      // a type with no Mitigation field: the probe above dropped it, leaving
+      // nothing to send.
+      throw new DevOpsApiError(
+        400,
+        updates.mitigation !== undefined
+          ? `${updates.workItemType || 'This work item type'} has no Mitigation field, so the mitigation could not be saved.`
+          : 'There was nothing to update.'
+      );
     }
 
     const response = await fetch(
@@ -2054,8 +2064,23 @@ export class AzureDevOpsService {
     );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to update work item: ${response.statusText} - ${errorText}`);
+      // Keep the raw body in the server log only, and give the route a status
+      // and a sentence (#531). This used to throw the whole DevOps JSON body
+      // inside the message, and the route answered 500 whatever the cause, so
+      // a rule violation and an expired token looked the same to the user.
+      const errorText = await response.text().catch(() => '');
+      const excerpt = errorText.slice(0, 2000);
+      console.error('[devops.updateTicketFields] update refused', {
+        projectName,
+        workItemId,
+        fields: patchDocument.map((op) => op.path),
+        status: response.status,
+        body: excerpt + (errorText.length > excerpt.length ? '… [truncated]' : ''),
+      });
+      throw new DevOpsApiError(
+        response.status,
+        describeUpdateFailure(response.status, devOpsErrorDetail(errorText))
+      );
     }
 
     return response.json();
