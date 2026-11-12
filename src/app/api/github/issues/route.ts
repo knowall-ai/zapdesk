@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSessionWithToken } from '@/lib/server-session';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { AzureDevOpsService } from '@/lib/devops';
-import { getGitHubTickets, isGitHubSupportTicket } from '@/lib/github-issues';
+import { getGitHubTickets, gitHubTicketLabel, isGitHubSupportTicket } from '@/lib/github-issues';
 import { gitHubAvailable, gitHubSourceFor } from '@/lib/github-source';
 import { gitHubPeopleFor } from '@/lib/github-people';
 import { filterTicketsByView } from '@/lib/ticket-views';
@@ -93,6 +93,11 @@ export async function GET(request: NextRequest) {
       tickets: filtered,
       total: filtered.length,
       failedRepos,
+      // Lets the Tickets tab say "no issue carries the label" instead of
+      // showing an empty list that looks like a failed connection (#607).
+      ticketLabel: gitHubTicketLabel(),
+      fetchedCount: tickets.length,
+      labelledCount: supportTickets.length,
       // Organizations read only in part, so the page can say so (#621)
       truncatedRepos,
     });
