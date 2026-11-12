@@ -105,7 +105,7 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
         project: 'Internal',
       });
       expect(status).toBe(200);
-      expect(updateTicketState).toHaveBeenCalledWith('Internal', 2147483647, 'x'.repeat(128));
+      expect(updateTicketState).toHaveBeenCalledWith('Internal', 2147483647, 'x'.repeat(128), {});
     });
 
     it.each([
@@ -124,12 +124,92 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
     });
   });
 
+  // A process can make a field required only on certain transitions, and the
+  // rule is evaluated per revision -- so the values have to travel with the
+  // state, not in a second update (#651).
+  describe('fields the transition requires', () => {
+    it('sends them with the state, in one update', async () => {
+      const { status } = await patch('42', {
+        state: 'Todo',
+        project: 'Internal',
+        additionalFields: {
+          'Custom.ApprovedBy': 'Alex Morgan <alex@example.com>',
+          'Custom.ApprovedDate': '2026-11-12',
+        },
+      });
+
+      expect(status).toBe(200);
+      expect(updateTicketState).toHaveBeenCalledWith('Internal', 42, 'Todo', {
+        'Custom.ApprovedBy': 'Alex Morgan <alex@example.com>',
+        'Custom.ApprovedDate': '2026-11-12',
+      });
+    });
+
+    it.each([
+      ['not an object', 'nope'],
+      ['an array', ['Custom.ApprovedBy']],
+    ])('rejects additionalFields that is %s', async (_label, additionalFields) => {
+      const { status } = await patch('42', {
+        state: 'Todo',
+        project: 'Internal',
+        additionalFields,
+      });
+      expect(status).toBe(400);
+      expect(updateTicketState).not.toHaveBeenCalled();
+    });
+
+    it('rejects a key that is not a field reference name', async () => {
+      const { status, body } = await patch('42', {
+        state: 'Todo',
+        project: 'Internal',
+        additionalFields: { 'not a field': 'x' },
+      });
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/not a work item field name/i);
+      expect(updateTicketState).not.toHaveBeenCalled();
+    });
+
+    // Letting a caller set System.State here would move the ticket somewhere
+    // other than the state it asked for, and past the notification below,
+    // which reports the state it believes it set.
+    it.each(['System.State', 'System.Tags', 'System.WorkItemType'])(
+      'refuses to set %s through this route',
+      async (field) => {
+        const { status } = await patch('42', {
+          state: 'Todo',
+          project: 'Internal',
+          additionalFields: { [field]: 'Closed' },
+        });
+        expect(status).toBe(400);
+        expect(updateTicketState).not.toHaveBeenCalled();
+      }
+    );
+
+    it('rejects a non-string value', async () => {
+      const { status } = await patch('42', {
+        state: 'Todo',
+        project: 'Internal',
+        additionalFields: { 'Custom.ApprovedBy': 42 },
+      });
+      expect(status).toBe(400);
+    });
+
+    it('rejects a value past the length cap', async () => {
+      const { status } = await patch('42', {
+        state: 'Todo',
+        project: 'Internal',
+        additionalFields: { 'Custom.ApprovedBy': 'x'.repeat(1025) },
+      });
+      expect(status).toBe(400);
+    });
+  });
+
   describe('updating', () => {
     it('updates the state in the given project and returns the ticket', async () => {
       const { status, body } = await patch('42', { state: 'Resolved', project: ' Internal ' });
 
       expect(status).toBe(200);
-      expect(updateTicketState).toHaveBeenCalledWith('Internal', 42, 'Resolved');
+      expect(updateTicketState).toHaveBeenCalledWith('Internal', 42, 'Resolved', {});
       expect(getProjects).not.toHaveBeenCalled();
       expect(body.ticket.id).toBe(42);
       expect(body.ticket.title).toBe('Printer offline');
@@ -148,7 +228,7 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
       const { status } = await patch('42', { state: 'Resolved' });
 
       expect(status).toBe(200);
-      expect(updateTicketState).toHaveBeenCalledWith('Internal', 42, 'Resolved');
+      expect(updateTicketState).toHaveBeenCalledWith('Internal', 42, 'Resolved', {});
     });
 
     it('returns 404 for a ticket that exists in no project', async () => {

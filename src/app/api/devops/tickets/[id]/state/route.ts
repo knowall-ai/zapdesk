@@ -15,6 +15,26 @@ import { debugLog } from '@/lib/debug';
 const MAX_STATE_LENGTH = 128;
 /** Azure DevOps caps project names at 64 characters. */
 const MAX_PROJECT_LENGTH = 64;
+/** `Namespace.FieldName`, which is the shape of every work item field. */
+const FIELD_REFERENCE = /^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)+$/;
+/** No transition in any process requires anything like this many. */
+const MAX_ADDITIONAL_FIELDS = 20;
+/** Generous for an identity string or a date; short of a description. */
+const MAX_FIELD_VALUE_LENGTH = 1024;
+/**
+ * Fields this route decides for itself, or that belong to another one. A
+ * caller must not be able to move the ticket somewhere other than the state it
+ * named, nor rewrite the tags the notification below reads its recipient from.
+ */
+const RESERVED_FIELDS = new Set([
+  'System.State',
+  'System.Id',
+  'System.WorkItemType',
+  'System.TeamProject',
+  'System.Tags',
+  'System.CreatedBy',
+  'System.ChangedBy',
+]);
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -45,7 +65,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: 'Request body must be a JSON object' }, { status: 400 });
     }
 
-    const { state, project, ...unknownKeys } = rawBody as Record<string, unknown>;
+    const { state, project, additionalFields, ...unknownKeys } = rawBody as Record<string, unknown>;
 
     // Say what was ignored rather than dropping it silently — a caller sending
     // a key we do not honour should learn that, not assume it took effect.
@@ -62,6 +82,52 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     if (state.length > MAX_STATE_LENGTH) {
       return NextResponse.json({ error: 'State is too long' }, { status: 400 });
+    }
+
+    // Fields the process requires for this transition (#651). Validated here
+    // rather than trusted: the values are written straight into a work item,
+    // so the keys must look like field reference names and nothing may set a
+    // field this route is responsible for. `System.State` is the obvious one
+    // -- accepting it would let a caller move the ticket somewhere other than
+    // the state it asked for, and past the notification below, which reads the
+    // state it believes it set.
+    const extraFields: Record<string, string> = {};
+    if (additionalFields !== undefined) {
+      if (
+        typeof additionalFields !== 'object' ||
+        additionalFields === null ||
+        Array.isArray(additionalFields)
+      ) {
+        return NextResponse.json(
+          { error: 'additionalFields must be a JSON object' },
+          { status: 400 }
+        );
+      }
+      const entries = Object.entries(additionalFields as Record<string, unknown>);
+      if (entries.length > MAX_ADDITIONAL_FIELDS) {
+        return NextResponse.json({ error: 'Too many additional fields' }, { status: 400 });
+      }
+      for (const [field, value] of entries) {
+        if (!FIELD_REFERENCE.test(field)) {
+          return NextResponse.json(
+            { error: `Not a work item field name: ${field}` },
+            { status: 400 }
+          );
+        }
+        if (RESERVED_FIELDS.has(field)) {
+          return NextResponse.json(
+            { error: `${field} cannot be set through this route` },
+            { status: 400 }
+          );
+        }
+        if (typeof value !== 'string') {
+          return NextResponse.json({ error: `${field} must be a string` }, { status: 400 });
+        }
+        if (value.length > MAX_FIELD_VALUE_LENGTH) {
+          return NextResponse.json({ error: `${field} is too long` }, { status: 400 });
+        }
+        extraFields[field] = value;
+      }
     }
 
     // `project` is an optional hint that skips the cross-project scan. A blank
@@ -100,7 +166,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         // Continue without old state — the transition message will say "Unknown".
       }
 
-      const updatedWorkItem = await devopsService.updateTicketState(projectHint, ticketId, state);
+      const updatedWorkItem = await devopsService.updateTicketState(
+        projectHint,
+        ticketId,
+        state,
+        extraFields
+      );
       notifyStateChange(updatedWorkItem, ticketId, oldState || 'Unknown', state);
       const ticket = workItemToTicket(updatedWorkItem);
       return NextResponse.json({ ticket });
@@ -125,7 +196,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
       const oldState = workItem.fields?.['System.State'] || 'Unknown';
 
-      const updatedWorkItem = await devopsService.updateTicketState(project.name, ticketId, state);
+      const updatedWorkItem = await devopsService.updateTicketState(
+        project.name,
+        ticketId,
+        state,
+        extraFields
+      );
 
       notifyStateChange(updatedWorkItem, ticketId, oldState, state);
 

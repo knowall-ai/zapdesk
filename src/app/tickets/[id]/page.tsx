@@ -212,12 +212,12 @@ export default function TicketDetailPage() {
     }
   };
 
-  const handleStateChange = async (newState: string) => {
+  const handleStateChange = async (newState: string, additionalFields?: Record<string, string>) => {
     try {
       const response = await fetch(`/api/devops/tickets/${ticketId}/state`, {
         method: 'PATCH',
         headers: orgHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ state: newState }),
+        body: JSON.stringify({ state: newState, additionalFields }),
       });
       if (!response.ok) {
         throw new Error(await responseErrorMessage(response, 'the status', 'update'));

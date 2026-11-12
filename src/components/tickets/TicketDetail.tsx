@@ -60,8 +60,8 @@ import ZapDialog from './ZapDialog';
 import AttachmentList from './AttachmentList';
 import EffortHoursField from './EffortHoursField';
 import TicketHistory from './TicketHistory';
-import TypeChangeRequiredFields from './TypeChangeRequiredFields';
-import type { RequiredField } from '@/hooks/useWorkItemActions';
+import RequiredFieldsDialog from './RequiredFieldsDialog';
+import { fetchStateRequirements, type RequiredField } from '@/hooks/useWorkItemActions';
 import {
   getTemplateConfig,
   hasMitigationField,
@@ -81,7 +81,7 @@ interface TicketDetailProps {
   history?: WorkItemUpdate[];
   historyLoading?: boolean;
   onAddComment?: (comment: string, isInternal?: boolean) => Promise<void>;
-  onStateChange?: (state: string) => Promise<void>;
+  onStateChange?: (state: string, additionalFields?: Record<string, string>) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
   onTypeChange?: (type: string, additionalFields?: Record<string, string>) => Promise<void>;
@@ -240,11 +240,53 @@ export default function TicketDetail({
     requiredFields: RequiredField[];
   } | null>(null);
   const [pendingTypeFieldValues, setPendingTypeFieldValues] = useState<Record<string, string>>({});
-  const [pendingTypeMembers, setPendingTypeMembers] = useState<User[]>([]);
+  // Keyed by project, not cleared on change: a request already in flight could
+  // otherwise land afterwards and put one project's people in another's picker
+  // (raised in review on #652).
+  const [loadedMembers, setLoadedMembers] = useState<{ project: string; members: User[] }>({
+    project: '',
+    members: [],
+  });
+  const [isLoadingRequiredFieldMembers, setIsLoadingRequiredFieldMembers] = useState(false);
+  const requiredFieldMembers = useMemo(
+    () => (loadedMembers.project === (ticket.project ?? '') ? loadedMembers.members : []),
+    [loadedMembers, ticket.project]
+  );
   const [pendingTypeMemberSearch, setPendingTypeMemberSearch] = useState('');
 
+  // A state change waiting on fields the process requires (#651). The
+  // ticket page keeps its own copy of these controls rather than using
+  // useWorkItemActions, so the prompt lives here too; both ask the same
+  // question through the same helper.
+  const [pendingStateChange, setPendingStateChange] = useState<{
+    state: string;
+    requiredFields: RequiredField[];
+  } | null>(null);
+  const [pendingStateFieldValues, setPendingStateFieldValues] = useState<Record<string, string>>(
+    {}
+  );
+  const [pendingStateMemberSearch, setPendingStateMemberSearch] = useState('');
+
+  const filteredPendingStateMembers = useMemo(() => {
+    const needle = pendingStateMemberSearch.trim().toLowerCase();
+    return requiredFieldMembers
+      .filter((member) => {
+        const stakeholder =
+          member.accessLevel?.toLowerCase().includes('stakeholder') ||
+          member.licenseType?.toLowerCase().includes('stakeholder');
+        return !stakeholder;
+      })
+      .filter(
+        (member) =>
+          !needle ||
+          member.displayName.toLowerCase().includes(needle) ||
+          member.email?.toLowerCase().includes(needle)
+      )
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }, [requiredFieldMembers, pendingStateMemberSearch]);
+
   const filteredPendingTypeMembers = useMemo(() => {
-    return pendingTypeMembers
+    return requiredFieldMembers
       .filter((member) => {
         const isStakeholder =
           member.accessLevel?.toLowerCase().includes('stakeholder') ||
@@ -260,7 +302,7 @@ export default function TicketDetail({
         );
       })
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  }, [pendingTypeMembers, pendingTypeMemberSearch]);
+  }, [requiredFieldMembers, pendingTypeMemberSearch]);
 
   // Description editing state
   const [isEditingDescription, setIsEditingDescription] = useState(false);
@@ -374,8 +416,53 @@ export default function TicketDetail({
     }
   };
 
+  /** People for an identity field's picker, loaded once per ticket. */
+  const loadRequiredFieldMembers = useCallback(async () => {
+    if (!ticket.project) return;
+    const forProject = ticket.project;
+    setIsLoadingRequiredFieldMembers(true);
+    try {
+      const response = await devOpsGet(
+        `/api/devops/projects/${encodeURIComponent(forProject)}/members`,
+        // Nothing else bounds this, and the picker waits on it.
+        { signal: AbortSignal.timeout(10_000) }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setLoadedMembers({ project: forProject, members: data.members || [] });
+      }
+    } catch (err) {
+      console.error('Failed to fetch members:', err);
+    } finally {
+      setIsLoadingRequiredFieldMembers(false);
+    }
+  }, [ticket.project, devOpsGet]);
+
   const handleStateSelect = async (state: string) => {
     if (!onStateChange) return;
+
+    // A process can require fields only on certain transitions, and they have
+    // to go in the same revision as the state -- so ask before moving (#651).
+    if (ticket.project) {
+      setIsUpdatingState(true);
+      let fields: RequiredField[] = [];
+      try {
+        fields = await fetchStateRequirements(devOpsGet, ticket.id, ticket.project, state);
+      } finally {
+        setIsUpdatingState(false);
+      }
+      if (fields.length > 0) {
+        setIsStateDropdownOpen(false);
+        setPendingStateChange({ state, requiredFields: fields });
+        setPendingStateFieldValues({});
+        setPendingStateMemberSearch('');
+        if (fields.some((f) => f.isIdentity) && requiredFieldMembers.length === 0) {
+          void loadRequiredFieldMembers();
+        }
+        return;
+      }
+    }
+
     setIsUpdatingState(true);
     try {
       await onStateChange(state);
@@ -383,6 +470,25 @@ export default function TicketDetail({
     } finally {
       setIsUpdatingState(false);
     }
+  };
+
+  const handleConfirmPendingStateChange = async () => {
+    if (!pendingStateChange || !onStateChange) return;
+    setIsUpdatingState(true);
+    try {
+      await onStateChange(pendingStateChange.state, pendingStateFieldValues);
+      setPendingStateChange(null);
+      setPendingStateFieldValues({});
+      setPendingStateMemberSearch('');
+    } finally {
+      setIsUpdatingState(false);
+    }
+  };
+
+  const handleCancelPendingStateChange = () => {
+    setPendingStateChange(null);
+    setPendingStateFieldValues({});
+    setPendingStateMemberSearch('');
   };
 
   // Fetch available types when type dropdown opens
@@ -430,20 +536,12 @@ export default function TicketDetail({
             setPendingTypeMemberSearch('');
 
             // Pre-fetch team members for people picker fields
-            const hasPeopleField = fields.some((f) => f.referenceName === 'Custom.FoundBy');
-            if (hasPeopleField && pendingTypeMembers.length === 0) {
-              try {
-                const membersResponse = await devOpsGet(
-                  `/api/devops/projects/${encodeURIComponent(ticket.project)}/members`
-                );
-                if (membersResponse.ok) {
-                  const membersData = await membersResponse.json();
-                  setPendingTypeMembers(membersData.members || []);
-                }
-              } catch (err) {
-                console.error('Failed to fetch members:', err);
-              }
-            }
+            // Identity fields are now reported by the field itself; the name
+            // check stays for the type endpoint's older answers (#651).
+            const hasPeopleField = fields.some(
+              (f) => f.isIdentity || f.referenceName === 'Custom.FoundBy'
+            );
+            if (hasPeopleField) await loadRequiredFieldMembers();
             return;
           }
         }
@@ -2161,9 +2259,30 @@ export default function TicketDetail({
         />
       )}
 
+      {/* Required fields modal for a state change (#651) */}
+      {pendingStateChange && (
+        <RequiredFieldsDialog
+          targetType={pendingStateChange.state}
+          changing="state"
+          requiredFields={pendingStateChange.requiredFields}
+          fieldValues={pendingStateFieldValues}
+          onFieldChange={(ref, val) =>
+            setPendingStateFieldValues((prev) => ({ ...prev, [ref]: val }))
+          }
+          onConfirm={handleConfirmPendingStateChange}
+          onCancel={handleCancelPendingStateChange}
+          isUpdating={isUpdatingState}
+          members={requiredFieldMembers}
+          membersLoading={isLoadingRequiredFieldMembers}
+          memberSearch={pendingStateMemberSearch}
+          onMemberSearchChange={setPendingStateMemberSearch}
+          filteredMembers={filteredPendingStateMembers}
+        />
+      )}
+
       {/* Required fields modal for type change */}
       {pendingTypeChange && (
-        <TypeChangeRequiredFields
+        <RequiredFieldsDialog
           targetType={pendingTypeChange.type}
           requiredFields={pendingTypeChange.requiredFields}
           fieldValues={pendingTypeFieldValues}
@@ -2173,7 +2292,8 @@ export default function TicketDetail({
           onConfirm={handleConfirmPendingTypeChange}
           onCancel={handleCancelPendingTypeChange}
           isUpdating={isUpdatingType}
-          members={pendingTypeMembers}
+          members={requiredFieldMembers}
+          membersLoading={isLoadingRequiredFieldMembers}
           memberSearch={pendingTypeMemberSearch}
           onMemberSearchChange={setPendingTypeMemberSearch}
           filteredMembers={filteredPendingTypeMembers}
