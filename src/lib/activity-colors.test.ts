@@ -4,6 +4,8 @@ import {
   HIGHLIGHT_COLORS,
   HIGHLIGHT_TEXT_COLORS,
   PR_ACTIVITY_COLORS,
+  RECENT_HIGHLIGHT_COLOR,
+  RECENT_HIGHLIGHT_TEXT_COLOR,
   highlightBadgeStyle,
   highlightRingColor,
 } from './activity-colors';
@@ -133,5 +135,17 @@ describe('highlight reason badges clear WCAG AA (#587)', () => {
 
   it('keeps white text on the PR badge', () => {
     expect(HIGHLIGHT_TEXT_COLORS.pr).toBe('white');
+  });
+});
+
+describe('the 72-hour highlight (#586)', () => {
+  it('is amber, from a token, with dark ink on its badge', () => {
+    expect(RECENT_HIGHLIGHT_COLOR).toBe('var(--highlight-recent)');
+    expect(RECENT_HIGHLIGHT_TEXT_COLOR).toBe('var(--highlight-recent-foreground)');
+  });
+
+  it('is not the colour of either 24-hour ring', () => {
+    expect(RECENT_HIGHLIGHT_COLOR).not.toBe(highlightRingColor(['updated']));
+    expect(RECENT_HIGHLIGHT_COLOR).not.toBe(highlightRingColor(['pr']));
   });
 });

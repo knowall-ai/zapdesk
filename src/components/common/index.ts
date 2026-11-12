@@ -6,3 +6,4 @@ export { default as AzureDevOpsIcon } from './AzureDevOpsIcon';
 export { default as ProjectList } from './ProjectList';
 export { default as FileIcon } from './FileIcon';
 export { default as UserHtml } from './UserHtml';
+export { default as TimezoneSelect } from './TimezoneSelect';
