@@ -181,8 +181,13 @@ function TicketsPageContent() {
       setGitHubLabelSummary(gitHub.labelSummary);
       loadedKeyRef.current = loadKey;
 
-      // Fetch work item types for type icons, filtered to only ticket types
-      const ticketTypeNames = new Set(devOpsTickets.map((t) => t.workItemType).filter(Boolean));
+      // Every type the project defines, for the icons and colours on the
+      // board. This used to keep only the types already on it, which meant a
+      // ticket changed to a type nothing else had -- Bug, usually -- lost its
+      // icon and colour until a hard reload put a Bug in the first fetch
+      // (#647). The board narrows its own type *filter* to what it is showing,
+      // so excluding User Story, Feature and the rest is no longer this
+      // fetch's job.
       const firstProject = devOpsTickets.find((t) => t.project)?.project;
       if (firstProject) {
         fetch(`/api/devops/projects/${encodeURIComponent(firstProject)}/workitemtypes`, {
@@ -191,11 +196,7 @@ function TicketsPageContent() {
           .then((r) => (r.ok ? r.json() : null))
           .then((d) => {
             if (d && isCurrent()) {
-              // Only include types that appear in ticket data (excludes User Story, Feature, etc.)
-              const types = (d.types || []).filter((t: { name: string }) =>
-                ticketTypeNames.has(t.name)
-              );
-              setWorkItemTypes(types);
+              setWorkItemTypes(d.types || []);
             }
           })
           .catch(() => {});

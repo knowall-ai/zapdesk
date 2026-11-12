@@ -669,10 +669,13 @@ export default function WorkItemBoard({
       }
     });
 
-    // Use availableTypes from props if provided, otherwise use types from items
-    const typeOptions = availableTypes
-      ? availableTypes.map((t) => t.name)
-      : Array.from(types).sort();
+    // The types on the board, which is what a filter over the board should
+    // offer. `availableTypes` is every type the project defines, so it is the
+    // source for icons and colours (see `typeInfoMap`) but not for this: using
+    // it here listed types nothing on the board had -- User Story, Feature and
+    // the rest -- and tied the icons to the filter, so a type had to be
+    // present before it could be drawn (#647).
+    const typeOptions = Array.from(types).sort();
 
     return {
       assignees: Array.from(assignees).sort(),
@@ -681,7 +684,7 @@ export default function WorkItemBoard({
       statuses: Array.from(statuses).sort(),
       types: typeOptions,
     };
-  }, [items, availableTypes, definedStates, ticketsOnly]);
+  }, [items, definedStates, ticketsOnly]);
 
   // A customer can be chosen and then vanish from the options: the list
   // narrows to one project, or a saved choice is restored on a board that
@@ -691,6 +694,17 @@ export default function WorkItemBoard({
   const customerOptions = useMemo(
     () => Array.from(new Set([...filterOptions.customers, ...filters.customer])).sort(),
     [filterOptions.customers, filters.customer]
+  );
+
+  // The same trap for types, now that the options come from the board rather
+  // than from every type the project defines (#647): choose Bug, let a refresh
+  // empty the board, and the option it was chosen from is gone while the
+  // filter still applies. The control would then be hidden, and Kanban has no
+  // Clear all -- so the choice could not be undone without switching to list
+  // view (raised in review on #649).
+  const typeOptions = useMemo(
+    () => Array.from(new Set([...filterOptions.types, ...filters.type])).sort(),
+    [filterOptions.types, filters.type]
   );
 
   const handleSort = (field: SortField) => {
@@ -1016,11 +1030,11 @@ export default function WorkItemBoard({
                     onClear={() => setFilters((prev) => ({ ...prev, status: [] }))}
                   />
 
-                  {filterOptions.types.length > 0 && (
+                  {typeOptions.length > 0 && (
                     <MultiSelectFilter
                       label="Types"
                       selected={filters.type}
-                      options={filterOptions.types}
+                      options={typeOptions}
                       onToggle={(v) => toggleFilter('type', v)}
                       onClear={() => setFilters((prev) => ({ ...prev, type: [] }))}
                     />
