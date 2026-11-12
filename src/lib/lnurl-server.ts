@@ -254,9 +254,66 @@ export interface FetchInvoiceOptions {
   resolve?: HostResolver;
 }
 
-/** BOLT11-looking: `ln` prefix, bech32 characters only. */
+/**
+ * BOLT11-looking: `ln` prefix, lower-case alphanumerics, long enough to hold a
+ * separator and a checksum. A shape check only -- it admits `b`, `i`, `o` and
+ * `1`, which bech32's data part excludes, so {@link hasValidBech32Checksum}
+ * is what actually decides.
+ */
 const BOLT11_PATTERN = /^ln[0-9a-z]{8,}$/;
 const MAX_INVOICE_LENGTH = 4096;
+
+/** Bech32 data characters (BIP-173). `1` separates them from the prefix. */
+const BECH32_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+const BECH32_GENERATOR = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+
+/** BIP-173 checksum accumulator over 5-bit groups. */
+function bech32Polymod(values: readonly number[]): number {
+  let chk = 1;
+  for (const value of values) {
+    const top = chk >>> 25;
+    chk = ((chk & 0x1ffffff) << 5) ^ value;
+    for (let i = 0; i < 5; i++) {
+      if ((top >>> i) & 1) chk ^= BECH32_GENERATOR[i];
+    }
+  }
+  return chk;
+}
+
+/**
+ * Whether `invoice` carries a valid bech32 checksum.
+ *
+ * BOLT11 is bech32 as BIP-173 defines it -- not bech32m, and without bech32's
+ * 90-character ceiling, since an invoice routinely exceeds it.
+ *
+ * Without this, an invoice whose checksum is wrong passed the shape check and
+ * went to the dialog, which rendered a QR code no wallet can pay: the sender
+ * saw a code, scanned it, and got a failure in their wallet rather than an
+ * error and a Try again here (raised in review on #642).
+ *
+ * This is a transcription check, not an authenticity one. Verifying the
+ * provider's signature needs secp256k1 public-key recovery, which is not a
+ * dependency of this project, so it is deliberately not attempted.
+ */
+export function hasValidBech32Checksum(invoice: string): boolean {
+  // The data part runs from the *last* `1` to the end: the prefix may contain
+  // one, as `lnbc1p...` does when the invoice carries no amount.
+  const separator = invoice.lastIndexOf('1');
+  // At least one prefix character, and at least the six checksum characters.
+  if (separator < 1 || invoice.length - separator - 1 < 6) return false;
+  const prefix = invoice.slice(0, separator);
+  const data: number[] = [];
+  for (const character of invoice.slice(separator + 1)) {
+    const value = BECH32_CHARSET.indexOf(character);
+    if (value === -1) return false;
+    data.push(value);
+  }
+  const expandedPrefix: number[] = [];
+  for (const character of prefix) expandedPrefix.push(character.charCodeAt(0) >>> 5);
+  expandedPrefix.push(0);
+  for (const character of prefix) expandedPrefix.push(character.charCodeAt(0) & 31);
+  return bech32Polymod([...expandedPrefix, ...data]) === 1;
+}
 
 /** BOLT11 human-readable part: `ln` + network + optional amount + multiplier. */
 const BOLT11_HRP_PATTERN = /^ln(?:bcrt|bc|tbs|tb|sb)(?:([1-9]\d*)([munp])?)?$/;
@@ -354,7 +411,11 @@ export async function fetchLnurlInvoice({
     throw new LnurlError('The Lightning provider sent no invoice');
   }
   const invoice = pr.trim().toLowerCase();
-  if (invoice.length > MAX_INVOICE_LENGTH || !BOLT11_PATTERN.test(invoice)) {
+  if (
+    invoice.length > MAX_INVOICE_LENGTH ||
+    !BOLT11_PATTERN.test(invoice) ||
+    !hasValidBech32Checksum(invoice)
+  ) {
     throw new LnurlError('The Lightning provider sent a malformed invoice');
   }
   // LUD-06: the wallet must check the invoice is for the amount asked. A

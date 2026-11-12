@@ -13,7 +13,9 @@ import {
 // SSRF. DNS and fetch are injected; nothing here touches the network.
 
 // 210n = 21,000 msat = 21 sats, the amount every test asks for unless it says otherwise.
-const INVOICE = 'lnbc210n1pjexampleinvoicexyz';
+// A real bech32 checksum: the invoice is checked for one before the QR is
+// shown, so a placeholder would be rejected (raised in review on #642).
+const INVOICE = 'lnbc210n1pjexamplezapdesku7en7n';
 const META = {
   tag: 'payRequest',
   callback: 'https://pay.example.com/lnurlp/callback/alex',
@@ -239,9 +241,26 @@ describe('fetchLnurlInvoice', () => {
     }
   );
 
+  // The shape check admits `b`, `i` and `o`, which bech32 excludes, and says
+  // nothing about the checksum. An invoice that fails it reached the dialog,
+  // which drew a QR code no wallet can pay: the sender scanned it and got the
+  // failure in their wallet rather than an error and a Try again here
+  // (raised in review on #642).
   it.each([
-    ['for another amount', 'lnbc10u1pjexampleinvoicexyz'],
-    ['with no amount', 'lnbc1pjexampleinvoicexyz'],
+    ['one character altered', INVOICE.slice(0, -1) + (INVOICE.endsWith('q') ? 'p' : 'q')],
+    ['characters bech32 has no place for', 'lnbc210n1pjexampleinvoicexyz'],
+    // A valid prefix for the amount asked, so only the checksum's own length
+    // guard can reject it.
+    ['too few characters to hold a checksum', 'lnbc210n1qpzr'],
+  ])('rejects an invoice with %s', async (_label, pr) => {
+    await expect(
+      run({ fetchImpl: provider(META, { pr }) as unknown as typeof fetch })
+    ).rejects.toThrow('malformed invoice');
+  });
+
+  it.each([
+    ['for another amount', 'lnbc10u1pjexamplezapdeskl8kw8g'],
+    ['with no amount', 'lnbc1pjexamplezapdesk44qxd0'],
   ])('rejects an invoice %s', async (_label, pr) => {
     await expect(
       run({ fetchImpl: provider(META, { pr }) as unknown as typeof fetch })
