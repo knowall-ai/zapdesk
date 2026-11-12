@@ -275,6 +275,8 @@ function notifyStateChange(
     oldState,
     newState,
     undefined,
-    assigneeEmail
+    assigneeEmail,
+    // The customer's organisation, so their manager is copied if one is set.
+    String(workItem.fields?.['System.TeamProject'] ?? '')
   ).catch(() => {});
 }

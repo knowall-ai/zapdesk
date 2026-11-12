@@ -14,6 +14,10 @@ import {
   type OutboundAttachment,
 } from './email-attachments';
 import { escapeHtml, sanitizeEmailHtml } from './email-clean';
+import { managerEmailsFor } from './manager-cc';
+import { isOwnSender, isPolledMailbox, parseAddressList } from './mail-addresses';
+
+export { isOwnSender, isPolledMailbox, parseAddressList };
 import {
   assignmentNotificationTemplate,
   ticketConfirmationTemplate,
@@ -145,43 +149,6 @@ export function isEmailTicket(tags: string | string[]): boolean {
   return tagList.some((t) => t.trim().toLowerCase() === 'email');
 }
 
-/**
- * Is this the mailbox ZapDesk polls?
- *
- * Mail sent there is read straight back in, and every ZapDesk subject carries
- * `[ZapDesk #id]`, so it lands as a comment on the ticket that produced it --
- * which sends another. Unbounded, and it fills the ticket with its own noise.
- *
- * Lives here rather than beside one caller because both the ingest path and
- * the outbound copy need it, and two copies of a loop guard is one too many.
- */
-export function isPolledMailbox(address: string): boolean {
-  const polled = (process.env.MAIL_POLL_MAILBOX || '').trim().toLowerCase();
-  return polled !== '' && address.trim().toLowerCase() === polled;
-}
-
-/**
- * Mail from ZapDesk itself: the address it sends as (MAIL_FROM) or the mailbox
- * it polls. Such mail only reaches the polled mailbox through a list or a
- * forward -- a team list that includes the support mailbox, say -- and must not
- * be read back in as a customer message.
- */
-export function isOwnSender(address: string): boolean {
-  const own = (process.env.MAIL_FROM || '').trim().toLowerCase();
-  return isPolledMailbox(address) || (own !== '' && address.trim().toLowerCase() === own);
-}
-
-/**
- * The addresses in a setting that may hold one or several, separated by commas
- * or semicolons (#485). Blanks are dropped; order is kept.
- */
-export function parseAddressList(value: string | undefined): string[] {
-  return (value || '')
-    .split(/[;,]/)
-    .map((address) => address.trim())
-    .filter(Boolean);
-}
-
 export function extractRequesterEmail(tags: string | string[]): string | null {
   const tagList = Array.isArray(tags) ? tags : tags.split(';').map((t) => t.trim());
   for (const tag of tagList) {
@@ -224,6 +191,15 @@ interface GraphSendMailOptions {
   to: string;
   /** Blind copies. Blind so an internal address is never shown to a customer. */
   bcc?: string[];
+  /**
+   * Visible copies.
+   *
+   * Only the customer's own manager goes here. Everything internal is bcc'd,
+   * so a ZapDesk address is never shown to a customer -- but a manager at the
+   * customer's own organisation is meant to be seen, and blind-copying them
+   * would put them out of reach of a reply-all from their own colleague.
+   */
+  cc?: string[];
   subject: string;
   html: string;
   messageId?: string;
@@ -263,6 +239,10 @@ async function sendViaGraph(options: GraphSendMailOptions): Promise<void> {
     from: { emailAddress: { address: from, name: MAIL_FROM_NAME() } },
     toRecipients: parseAddressList(options.to).map((address) => ({ emailAddress: { address } })),
   };
+
+  if (options.cc?.length) {
+    message.ccRecipients = options.cc.map((address) => ({ emailAddress: { address } }));
+  }
 
   if (options.bcc?.length) {
     message.bccRecipients = options.bcc.map((address) => ({ emailAddress: { address } }));
@@ -315,7 +295,12 @@ async function sendViaGraph(options: GraphSendMailOptions): Promise<void> {
 export async function sendTicketConfirmation(
   ticketId: number,
   subject: string,
-  requesterEmail: string
+  requesterEmail: string,
+  /**
+   * The ticket's project -- the customer's organisation -- so their manager is
+   * copied, if one is configured for it.
+   */
+  project?: string
 ): Promise<string | null> {
   if (!isEmailConfigured()) return null;
   try {
@@ -330,6 +315,7 @@ export async function sendTicketConfirmation(
       subject: threadedSubject(ticketId, subject),
       html,
       messageId,
+      cc: managerEmailsFor(project, requesterEmail),
     });
     console.log(`[Email] Confirmation sent for ticket #${ticketId} to ${requesterEmail}`);
     return messageId;
@@ -581,7 +567,12 @@ export async function sendAgentReply(
    * than Cc: a customer has no reason to be shown an internal address, and a
    * reply-all would otherwise land somewhere that is not the support mailbox.
    */
-  assigneeEmail?: string
+  assigneeEmail?: string,
+  /**
+   * The ticket's project -- the customer's organisation -- so their manager is
+   * copied, if one is configured for it.
+   */
+  project?: string
 ): Promise<void> {
   if (!isEmailConfigured()) return;
   try {
@@ -612,6 +603,7 @@ export async function sendAgentReply(
       subject: threadedSubject(ticketId, `Re: ${subject}`),
       html,
       messageId,
+      cc: managerEmailsFor(project, requesterEmail),
       bcc: copyRecipients(assigneeEmail, requesterEmail),
       attachments,
       inReplyTo: originalMessageId,
@@ -630,7 +622,12 @@ export async function sendStatusChangeNotification(
   newStatus: string,
   originalMessageId?: string,
   /** Assigned engineer, blind-copied so this message joins their copy of the thread (#7384). */
-  assigneeEmail?: string
+  assigneeEmail?: string,
+  /**
+   * The ticket's project -- the customer's organisation -- so their manager is
+   * copied, if one is configured for it.
+   */
+  project?: string
 ): Promise<void> {
   if (!isEmailConfigured()) return;
   try {
@@ -647,6 +644,7 @@ export async function sendStatusChangeNotification(
       subject: threadedSubject(ticketId, `Re: ${subject}`),
       html,
       messageId,
+      cc: managerEmailsFor(project, requesterEmail),
       bcc: copyRecipients(assigneeEmail, requesterEmail),
       inReplyTo: originalMessageId,
     });
@@ -680,7 +678,12 @@ export async function sendTicketUpdateNotification(
   requesterEmail: string,
   changes: TicketFieldChange[],
   /** Assigned engineer, blind-copied so this message joins their copy of the thread (#7384). */
-  assigneeEmail?: string
+  assigneeEmail?: string,
+  /**
+   * The ticket's project -- the customer's organisation -- so their manager is
+   * copied, if one is configured for it.
+   */
+  project?: string
 ): Promise<void> {
   if (!isEmailConfigured() || changes.length === 0) return;
   if (isPolledMailbox(requesterEmail)) return;
@@ -695,6 +698,7 @@ export async function sendTicketUpdateNotification(
         changes,
       }),
       messageId: generateMessageId(ticketId),
+      cc: managerEmailsFor(project, requesterEmail),
       bcc: copyRecipients(assigneeEmail, requesterEmail),
     });
     console.log(`[Email] Update notification sent for ticket #${ticketId} to ${requesterEmail}`);
