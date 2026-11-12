@@ -669,10 +669,13 @@ export default function WorkItemBoard({
       }
     });
 
-    // Use availableTypes from props if provided, otherwise use types from items
-    const typeOptions = availableTypes
-      ? availableTypes.map((t) => t.name)
-      : Array.from(types).sort();
+    // The types on the board, which is what a filter over the board should
+    // offer. `availableTypes` is every type the project defines, so it is the
+    // source for icons and colours (see `typeInfoMap`) but not for this: using
+    // it here listed types nothing on the board had -- User Story, Feature and
+    // the rest -- and tied the icons to the filter, so a type had to be
+    // present before it could be drawn (#647).
+    const typeOptions = Array.from(types).sort();
 
     return {
       assignees: Array.from(assignees).sort(),
@@ -681,7 +684,7 @@ export default function WorkItemBoard({
       statuses: Array.from(statuses).sort(),
       types: typeOptions,
     };
-  }, [items, availableTypes, definedStates, ticketsOnly]);
+  }, [items, definedStates, ticketsOnly]);
 
   // A customer can be chosen and then vanish from the options: the list
   // narrows to one project, or a saved choice is restored on a board that
