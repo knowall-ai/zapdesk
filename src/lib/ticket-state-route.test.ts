@@ -299,8 +299,72 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
       );
     });
 
-    it('does not email for a ticket that did not come from email', async () => {
+    // #654: this used to be "does not email for a ticket that did not come
+    // from email". A ticket raised in ZapDesk or in DevOps has neither tag the
+    // ingest writes, so every status change on it was silent.
+    it('emails the creator when the ticket carries no email tags', async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Active'));
+      updateTicketState.mockResolvedValue(workItem(42, 'Resolved'));
+
       await patch('42', { state: 'Resolved', project: 'Internal' });
+
+      expect(sendStatusChangeNotification).toHaveBeenCalledWith(
+        42,
+        'Printer offline',
+        'dana@example.test',
+        'Active',
+        'Resolved',
+        undefined,
+        undefined
+      );
+    });
+
+    it.each(['New', 'Blocked', 'Pending', 'Removed'])(
+      'says nothing to the customer about %s',
+      async (state) => {
+        getWorkItem.mockResolvedValue(workItem(42, 'Active', EMAIL_TAGS));
+        updateTicketState.mockResolvedValue(workItem(42, state, EMAIL_TAGS));
+
+        await patch('42', { state, project: 'Internal' });
+
+        expect(sendStatusChangeNotification).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each(['Todo', 'Active', 'Resolved', 'Closed'])(
+      'tells the customer about %s',
+      async (state) => {
+        getWorkItem.mockResolvedValue(workItem(42, 'New', EMAIL_TAGS));
+        updateTicketState.mockResolvedValue(workItem(42, state, EMAIL_TAGS));
+
+        await patch('42', { state, project: 'Internal' });
+
+        expect(sendStatusChangeNotification).toHaveBeenCalledWith(
+          42,
+          'Printer offline',
+          'requester@example.test',
+          'New',
+          state,
+          undefined,
+          undefined
+        );
+      }
+    );
+
+    // Nothing to send to is not the same as nothing to say: it leaves a line
+    // in the log rather than passing for "told them".
+    it('sends nothing when there is no address at all', async () => {
+      const noAddress = workItem(42, 'Resolved');
+      noAddress.fields['System.CreatedBy'] = {
+        id: 'u2',
+        displayName: 'Build Service',
+        uniqueName: 'Build Service',
+      };
+      getWorkItem.mockResolvedValue(noAddress);
+      updateTicketState.mockResolvedValue(noAddress);
+
+      await patch('42', { state: 'Resolved', project: 'Internal' });
+
       expect(sendStatusChangeNotification).not.toHaveBeenCalled();
     });
   });
