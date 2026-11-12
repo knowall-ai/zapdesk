@@ -11,9 +11,9 @@ import { sourceAccentStyle } from '@/lib/source-colors';
 import { workItemTypeBadgeStyle } from '@/lib/work-item-type-colors';
 import type { HighlightReason } from '@/lib/activity-summary';
 import {
-  HIGHLIGHT_COLORS,
   RECENT_HIGHLIGHT_COLOR,
   RECENT_HIGHLIGHT_TEXT_COLOR,
+  highlightBadgeStyle,
   highlightRingColor,
 } from '@/lib/activity-colors';
 import type { StandupWorkItem } from '@/types';
@@ -129,7 +129,7 @@ export default function StandupKanbanCard({
             <span
               key={reason}
               className="rounded px-1 py-0.5 text-[10px] font-semibold"
-              style={{ backgroundColor: HIGHLIGHT_COLORS[reason], color: 'white' }}
+              style={highlightBadgeStyle(reason)}
             >
               {highlightLabels[reason]}
             </span>
