@@ -1,5 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
-import type { LookupAddress } from 'node:dns';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { lookup as nodeDnsLookup, type LookupAddress, type LookupOptions } from 'node:dns';
+
+// `refusePrivateAddresses` is the one thing here that reaches a real IO
+// boundary, so the resolver is mocked: what it decides must not depend on
+// what the runner's DNS happens to answer (raised in review on #642).
+vi.mock('node:dns', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:dns')>()),
+  lookup: vi.fn(),
+}));
 import {
   bolt11AmountMsat,
   fetchLnurlInvoice,
@@ -294,25 +302,78 @@ describe('bolt11AmountMsat', () => {
  * where there is no later lookup to disagree with it.
  */
 describe('refusePrivateAddresses', () => {
-  const call = (hostname: string) =>
-    new Promise<{ error: Error | null; addresses: string | LookupAddress[] }>((resolve) => {
-      refusePrivateAddresses(hostname, { all: true }, (error, addresses) =>
-        resolve({ error, addresses })
+  const lookup = vi.mocked(nodeDnsLookup) as unknown as Mock;
+
+  /** The resolver answers with `addresses`, or fails with `error`. */
+  const resolving = (addresses: LookupAddress[], error: NodeJS.ErrnoException | null = null) =>
+    lookup.mockImplementation(
+      (
+        _hostname: string,
+        _options: LookupOptions,
+        cb: (e: NodeJS.ErrnoException | null, a: LookupAddress[]) => void
+      ) => cb(error, addresses)
+    );
+
+  const call = (hostname: string, options: LookupOptions = { all: true }) =>
+    new Promise<{
+      error: Error | null;
+      addresses: string | LookupAddress[];
+      family?: number;
+    }>((resolve) => {
+      refusePrivateAddresses(hostname, options, (error, addresses, family) =>
+        resolve({ error, addresses, family })
       );
     });
 
+  // A block body on purpose: `mockReset()` returns the mock, and a value
+  // returned from `beforeEach` is treated as a teardown callback -- so the
+  // arrow form had Vitest calling the mock with no arguments after each test.
+  beforeEach(() => {
+    lookup.mockReset();
+  });
+
   it('refuses a name that resolves to loopback', async () => {
-    const { error, addresses } = await call('localhost');
+    resolving([{ address: '127.0.0.1', family: 4 }]);
+    const { error, addresses } = await call('rebind.example.com');
     expect(error).toBeInstanceOf(Error);
     expect(error?.message).toMatch(/not a public host/);
     // Nothing to connect to, so there is no address to misuse.
     expect(addresses).toEqual([]);
   });
 
+  // Happy Eyeballs hands several addresses to the socket at once, so one
+  // private address among public ones is still a way in.
+  it('refuses the whole answer when only one address is private', async () => {
+    resolving([
+      { address: '93.184.216.34', family: 4 },
+      { address: '169.254.169.254', family: 4 },
+    ]);
+    const { error } = await call('mixed.example.com');
+    expect(error?.message).toMatch(/not a public host/);
+  });
+
+  it('allows an answer that is public throughout', async () => {
+    const addresses = [{ address: '93.184.216.34', family: 4 }];
+    resolving(addresses);
+    expect(await call('pay.example.com')).toMatchObject({ error: null, addresses });
+  });
+
   it('passes an error from the lookup through rather than approving', async () => {
-    // Reserved by RFC 2606, so it cannot resolve.
+    resolving([], Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }));
     const { error, addresses } = await call('nothing.invalid');
     expect(error).toBeInstanceOf(Error);
     expect(addresses).toEqual([]);
+  });
+
+  // Node asks for every address while Happy Eyeballs is on, which is the
+  // default, but not under `autoSelectFamily: false`. A caller that did not
+  // ask for all of them cannot read an array.
+  it('answers in the single-address shape when all was not asked for', async () => {
+    resolving([{ address: '93.184.216.34', family: 4 }]);
+    expect(await call('pay.example.com', { all: false })).toMatchObject({
+      error: null,
+      addresses: '93.184.216.34',
+      family: 4,
+    });
   });
 });

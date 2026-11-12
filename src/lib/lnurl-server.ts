@@ -147,6 +147,17 @@ export function refusePrivateAddresses(
       callback(new Error(`${hostname} is not a public host`), []);
       return;
     }
+    // Every address is checked whatever the caller asked for, but the answer
+    // has to be in the shape it asked for: a caller that did not ask for all
+    // of them expects `(error, address, family)`, and would make nothing of an
+    // array. Node asks for all of them while Happy Eyeballs is on, which is
+    // the default; it is off under `autoSelectFamily: false`, and was the
+    // default on older Node, where returning an array would fail every LNURL
+    // connection (raised in review on #642).
+    if (options.all !== true) {
+      callback(null, addresses[0].address, addresses[0].family);
+      return;
+    }
     callback(null, addresses);
   });
 }
