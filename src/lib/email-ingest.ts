@@ -185,7 +185,7 @@ async function handleNewTicket(
   );
 
   // Fire-and-forget — never block ticket creation on email send.
-  sendTicketConfirmation(ticketId, email.subject, senderEmail).catch(() => {});
+  sendTicketConfirmation(ticketId, email.subject, senderEmail, projectName).catch(() => {});
   notifyTeamOfNewTicket(ticketId, email.subject, senderEmail, projectName, description);
 
   return { success: true, action: 'ticket_created', ticketId, project: projectName };

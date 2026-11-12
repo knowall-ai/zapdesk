@@ -135,7 +135,8 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       { thread: 'Printer offline', current: 'Printer offline' },
       'customer@example.test',
       [{ label: 'Priority', from: 'Normal', to: 'High' }],
-      undefined
+      undefined,
+      'Internal'
     );
   });
 
@@ -147,7 +148,8 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       { thread: 'Printer offline', current: 'Printer still offline' },
       'customer@example.test',
       [{ label: 'Title', from: 'Printer offline', to: 'Printer still offline' }],
-      undefined
+      undefined,
+      'Internal'
     );
   });
 
@@ -163,7 +165,8 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       { thread: 'Cannot print', current: 'Printer still offline' },
       'customer@example.test',
       expect.any(Array),
-      undefined
+      undefined,
+      'Internal'
     );
   });
 
@@ -217,7 +220,8 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       { thread: 'Printer offline', current: 'New title' },
       'customer@example.test',
       expect.any(Array),
-      undefined
+      undefined,
+      'Internal'
     );
   });
 
@@ -242,7 +246,8 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       expect.anything(),
       'customer@example.test',
       expect.any(Array),
-      'engineer@example.test'
+      'engineer@example.test',
+      'Internal'
     );
   });
 
@@ -264,7 +269,8 @@ describe('PATCH /api/devops/tickets/[id]', () => {
       expect.anything(),
       'customer@example.test',
       expect.any(Array),
-      'engineer@example.test'
+      'engineer@example.test',
+      'Internal'
     );
   });
 

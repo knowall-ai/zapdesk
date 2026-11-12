@@ -435,7 +435,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           // ticket is copied on it as they are on a reply (#7384). From the
           // identity rather than the mapped ticket, for the same reason as
           // the assignment mail above.
-          assigneeEmailFrom(updatedWorkItem.fields?.['System.AssignedTo'])
+          assigneeEmailFrom(updatedWorkItem.fields?.['System.AssignedTo']),
+          // The customer's organisation, so their manager is copied if set.
+          projectName
         );
       }
     }

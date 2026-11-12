@@ -211,7 +211,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           comment,
           undefined,
           priorHistory,
-          assigneeEmail
+          assigneeEmail,
+          // The customer's organisation, so their manager is copied if set.
+          String(workItem.fields?.['System.TeamProject'] ?? '')
         ).catch(() => {});
       }
     }

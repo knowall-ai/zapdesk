@@ -263,7 +263,8 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
         'Active',
         'Resolved',
         undefined,
-        undefined
+        undefined,
+        'Internal'
       );
     });
 
@@ -295,7 +296,8 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
         'Active',
         expect.any(String),
         undefined,
-        'engineer@example.test'
+        'engineer@example.test',
+        'Internal'
       );
     });
 
@@ -315,7 +317,8 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
         'Active',
         'Resolved',
         undefined,
-        undefined
+        undefined,
+        'Internal'
       );
     });
 
@@ -346,10 +349,31 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
           'New',
           state,
           undefined,
-          undefined
+          undefined,
+          'Internal'
         );
       }
     );
+
+    // The customer's organisation is the DevOps project, so the manager is
+    // looked up by it and passed through for the Cc.
+    it("passes the ticket's project so the manager can be copied", async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Active', EMAIL_TAGS));
+      updateTicketState.mockResolvedValue(workItem(42, 'Resolved', EMAIL_TAGS));
+
+      await patch('42', { state: 'Resolved', project: 'Internal' });
+
+      expect(sendStatusChangeNotification).toHaveBeenCalledWith(
+        42,
+        'Printer offline',
+        'requester@example.test',
+        'Active',
+        'Resolved',
+        undefined,
+        undefined,
+        'Internal'
+      );
+    });
 
     // Nothing to send to is not the same as nothing to say: it leaves a line
     // in the log rather than passing for "told them".
