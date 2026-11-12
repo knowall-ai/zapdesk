@@ -117,6 +117,8 @@ function ZapDialogContent({
   const [invoice, setInvoice] = useState<string | null>(null);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
+  /** Bumped by "Try again", so a retry runs through the effect and can be aborted. */
+  const [invoiceAttempt, setInvoiceAttempt] = useState(0);
 
   const actualAmount = isCustom ? parseZapAmount(customAmount) : selectedAmount;
   /** What the sender typed, or the note offered for the amount in force. */
@@ -128,127 +130,69 @@ function ZapDialogContent({
    */
   const recorded = zapCommentToPost(message, agent.displayName, actualAmount);
 
-  // Fetch actual BOLT11 invoice from LNURL-pay endpoint
-  const fetchInvoice = useCallback(async () => {
-    if (!lightningAddress || actualAmount <= 0) {
+  // Fetch a BOLT11 invoice for the amount. Our own API does the LNURL-pay
+  // round trip: the CSP (`connect-src 'self'`) blocks the browser from
+  // calling the recipient's Lightning provider directly (#627).
+  const fetchInvoice = useCallback(
+    async (signal: AbortSignal) => {
+      setInvoiceError(null);
+      // An aborted request skips its own `finally`, so the early returns must
+      // clear loading themselves or the spinner stays on.
+      if (!lightningAddress || actualAmount <= 0) {
+        setInvoice(null);
+        setInvoiceLoading(false);
+        return;
+      }
+
+      // If it's already an LNURL or invoice, use it directly. A Lightning
+      // address can start with "ln" too (lnfan@example.com), so not one with @.
+      if (!lightningAddress.includes('@') && lightningAddress.toLowerCase().startsWith('ln')) {
+        setInvoice(lightningAddress);
+        setInvoiceLoading(false);
+        return;
+      }
+
       setInvoice(null);
-      return;
-    }
+      setInvoiceLoading(true);
 
-    // If it's already an LNURL or invoice, use it directly
-    if (
-      lightningAddress.toLowerCase().startsWith('lnurl') ||
-      lightningAddress.toLowerCase().startsWith('ln')
-    ) {
-      setInvoice(lightningAddress);
-      return;
-    }
-
-    if (!lightningAddress.includes('@')) {
-      setInvoiceError('Invalid Lightning Address');
-      return;
-    }
-
-    // Validate Lightning address format: both name and domain must be non-empty
-    const [name, domain] = lightningAddress.split('@');
-    if (!name || !domain) {
-      setInvoiceError('Invalid Lightning Address format');
-      return;
-    }
-
-    setInvoiceLoading(true);
-    setInvoiceError(null);
-
-    try {
-      const lnurlpUrl = `https://${domain}/.well-known/lnurlp/${encodeURIComponent(name)}`;
-
-      const metaRes = await fetch(lnurlpUrl);
-
-      if (!metaRes.ok) {
-        throw new Error(`LNURL endpoint returned ${metaRes.status}`);
-      }
-
-      const meta = await metaRes.json();
-
-      if (!meta.callback) {
-        throw new Error('No LNURL callback found in response');
-      }
-
-      // Validate callback URL: must use HTTPS.
-      // The LNURL spec does not require the callback host to match the
-      // .well-known host, and legitimate providers (e.g. Wallet of Satoshi
-      // serves callbacks from livingroomofsatoshi.com) routinely split them.
       try {
-        const callbackUrlObj = new URL(meta.callback);
-        if (callbackUrlObj.protocol !== 'https:') {
-          throw new Error('Callback URL must use HTTPS');
+        const res = await fetch('/api/lightning/invoice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lightningAddress, amountSats: actualAmount, ticketId }),
+          signal,
+        });
+        const data: { invoice?: unknown; error?: unknown } = await res.json().catch(() => ({}));
+        if (!res.ok || typeof data.invoice !== 'string') {
+          throw new Error(
+            typeof data.error === 'string' && data.error
+              ? data.error
+              : `Couldn't fetch a Lightning invoice (${res.status})`
+          );
         }
-      } catch (urlErr) {
-        if (urlErr instanceof Error && urlErr.message.includes('Invalid URL')) {
-          throw new Error('Invalid callback URL format');
-        }
-        throw urlErr;
+        if (signal.aborted) return;
+        setInvoice(`lightning:${data.invoice}`);
+      } catch (err) {
+        if (signal.aborted) return;
+        console.error('[ZapDialog] Invoice fetch failed:', err);
+        setInvoiceError(
+          err instanceof Error && err.message ? err.message : "Couldn't fetch a Lightning invoice"
+        );
+        setInvoice(null);
+      } finally {
+        if (!signal.aborted) setInvoiceLoading(false);
       }
+    },
+    [lightningAddress, actualAmount, ticketId]
+  );
 
-      // Convert sats to millisats
-      const amountMsat = actualAmount * 1000;
-
-      // Build callback URL with amount
-      // Use & if callback already has query params, otherwise use ?
-      const separator = meta.callback.includes('?') ? '&' : '?';
-      let callbackUrl = `${meta.callback}${separator}amount=${amountMsat}`;
-
-      // Add comment if the service supports it (shows in recipient's wallet)
-      if (meta.commentAllowed && meta.commentAllowed > 0) {
-        const comment = `ZapDesk Ticket #${ticketId}`;
-        // Truncate if needed (commentAllowed is max length)
-        const truncatedComment = comment.slice(0, meta.commentAllowed);
-        callbackUrl += `&comment=${encodeURIComponent(truncatedComment)}`;
-      }
-
-      const invRes = await fetch(callbackUrl);
-      if (!invRes.ok) {
-        throw new Error(`Invoice callback returned ${invRes.status}`);
-      }
-
-      const invData = await invRes.json();
-
-      if (!invData.pr) {
-        throw new Error('No invoice (pr) received from server');
-      }
-
-      // Validate BOLT11 invoice format
-      const pr = invData.pr;
-      if (typeof pr !== 'string') {
-        throw new Error('Invalid invoice format received from server');
-      }
-
-      const normalizedPr = pr.toLowerCase();
-      // Basic BOLT11-style validation: must start with "ln" and be alphanumeric
-      const basicBolt11Pattern = /^[0-9a-zA-Z]+$/;
-      if (
-        !normalizedPr.startsWith('ln') ||
-        pr.length < 10 || // too short to be a valid invoice
-        !basicBolt11Pattern.test(pr)
-      ) {
-        throw new Error('Malformed Lightning invoice received from server');
-      }
-
-      const invoiceUri = `lightning:${pr}`;
-      setInvoice(invoiceUri);
-    } catch (err) {
-      console.error('[ZapDialog] Invoice fetch failed:', err);
-      setInvoiceError(err instanceof Error ? err.message : 'Failed to fetch invoice');
-      setInvoice(null);
-    } finally {
-      setInvoiceLoading(false);
-    }
-  }, [lightningAddress, actualAmount, ticketId]);
-
-  // Fetch invoice when address or amount changes
+  // Fetch invoice when address or amount changes, or on "Try again". Each run
+  // aborts the request in flight, so a slow reply can't show the wrong QR.
   useEffect(() => {
-    fetchInvoice();
-  }, [fetchInvoice]);
+    const controller = new AbortController();
+    fetchInvoice(controller.signal);
+    return () => controller.abort();
+  }, [fetchInvoice, invoiceAttempt]);
 
   // QR code value is the fetched invoice
   const qrValue = invoice || '';
@@ -542,12 +486,26 @@ function ZapDialogContent({
               </div>
             ) : invoiceError ? (
               <div
-                className="flex h-[160px] w-[160px] flex-col items-center justify-center rounded-lg p-4 text-center"
+                className="flex min-h-[160px] w-[200px] flex-col items-center justify-center rounded-lg p-4 text-center"
                 style={{ backgroundColor: 'var(--surface-hover)' }}
+                role="alert"
               >
+                <AlertTriangle
+                  size={20}
+                  className="mb-2 shrink-0"
+                  style={{ color: 'var(--text-muted)' }}
+                />
                 <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                   {invoiceError}
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setInvoiceAttempt((n) => n + 1)}
+                  className="mt-2 text-xs underline"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Try again
+                </button>
               </div>
             ) : qrValue ? (
               <div className="mb-3 rounded-lg bg-white p-3">
