@@ -76,6 +76,7 @@ export async function GET(
       alwaysRequired?: boolean;
       defaultValue?: string;
       allowedValues?: string[];
+      isIdentity?: boolean;
     })[] = data.value || [];
 
     // Filter to required fields we don't already handle, plus fields with
@@ -106,6 +107,9 @@ export async function GET(
           referenceName: field.referenceName,
           name: field.name,
           type: field.type || 'string',
+          // So the dialog picks a people picker from the field itself rather
+          // than a list of field names it has been told about (#651).
+          isIdentity: field.isIdentity === true,
           allowedValues: allowedValues.length > 0 ? allowedValues : undefined,
         };
       })

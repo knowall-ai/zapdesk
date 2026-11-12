@@ -14,7 +14,7 @@ import { GITHUB_WORK_ITEM_STATES } from '@/lib/github-process';
 import { fullViewHref } from '@/lib/full-view';
 import WorkItemDetailContent from './WorkItemDetailContent';
 import WorkItemDetailSidebar from './WorkItemDetailSidebar';
-import TypeChangeRequiredFields from './TypeChangeRequiredFields';
+import RequiredFieldsDialog from './RequiredFieldsDialog';
 
 interface WorkItemDetailDialogProps {
   workItem: WorkItem | null;
@@ -28,7 +28,11 @@ interface WorkItemDetailDialogProps {
    * ignores the request (#7727).
    */
   supportsReturn?: boolean;
-  onStateChange?: (workItemId: number, state: string) => Promise<void>;
+  onStateChange?: (
+    workItemId: number,
+    state: string,
+    additionalFields?: Record<string, string>
+  ) => Promise<void>;
   onAssigneeChange?: (workItemId: number, assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (workItemId: number, priority: number) => Promise<void>;
   onTypeChange?: (
@@ -163,9 +167,9 @@ export default function WorkItemDetailDialog({
 
   // Bind workItemId into callbacks for the hook
   const boundStateChange = useCallback(
-    async (state: string) => {
+    async (state: string, additionalFields?: Record<string, string>) => {
       if (onStateChange && workItem) {
-        await onStateChange(workItem.id, state);
+        await onStateChange(workItem.id, state, additionalFields);
       }
     },
     [onStateChange, workItem]
@@ -199,6 +203,7 @@ export default function WorkItemDetailDialog({
   );
 
   const actions = useWorkItemActions({
+    workItemId: workItem?.id,
     project: workItem?.project,
     workItemType: workItem?.workItemType,
     states: gitHubRef ? [...GITHUB_WORK_ITEM_STATES] : undefined,
@@ -596,7 +601,7 @@ export default function WorkItemDetailDialog({
 
       {/* Required fields modal for type change */}
       {actions.pendingTypeChange && (
-        <TypeChangeRequiredFields
+        <RequiredFieldsDialog
           targetType={actions.pendingTypeChange.type}
           requiredFields={actions.pendingTypeChange.requiredFields}
           fieldValues={actions.pendingTypeFieldValues}
@@ -604,10 +609,28 @@ export default function WorkItemDetailDialog({
           onConfirm={actions.confirmPendingTypeChange}
           onCancel={actions.cancelPendingTypeChange}
           isUpdating={actions.isUpdatingType}
-          members={actions.pendingTypeMembers}
+          members={actions.requiredFieldMembers}
           memberSearch={actions.pendingTypeMemberSearch}
           onMemberSearchChange={actions.setPendingTypeMemberSearch}
           filteredMembers={actions.filteredPendingTypeMembers}
+        />
+      )}
+
+      {/* Required fields modal for a state change (#651) */}
+      {actions.pendingStateChange && (
+        <RequiredFieldsDialog
+          targetType={actions.pendingStateChange.state}
+          changing="state"
+          requiredFields={actions.pendingStateChange.requiredFields}
+          fieldValues={actions.pendingStateFieldValues}
+          onFieldChange={actions.setPendingStateFieldValue}
+          onConfirm={actions.confirmPendingStateChange}
+          onCancel={actions.cancelPendingStateChange}
+          isUpdating={actions.isUpdatingState}
+          members={actions.requiredFieldMembers}
+          memberSearch={actions.pendingStateMemberSearch}
+          onMemberSearchChange={actions.setPendingStateMemberSearch}
+          filteredMembers={actions.filteredPendingStateMembers}
         />
       )}
     </>

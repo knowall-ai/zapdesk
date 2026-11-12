@@ -280,7 +280,7 @@ function TicketsPageContent() {
   );
 
   const handleTicketStateChange = useCallback(
-    async (ticketId: number, newState: string) => {
+    async (ticketId: number, newState: string, additionalFields?: Record<string, string>) => {
       try {
         const response = await fetch(`/api/devops/tickets/${ticketId}/state`, {
           method: 'PATCH',
@@ -290,7 +290,7 @@ function TicketsPageContent() {
               'x-devops-org': selectedOrganization.accountName,
             }),
           },
-          body: JSON.stringify({ state: newState }),
+          body: JSON.stringify({ state: newState, additionalFields }),
         });
         if (!response.ok) {
           throw new Error(await responseErrorMessage(response, 'the status', 'update'));

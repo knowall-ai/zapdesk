@@ -5,11 +5,71 @@ import type { User, WorkItemState, WorkItemType } from '@/types';
 import { ensureActiveState } from '@/types';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 
+/**
+ * Fields the process will demand for `state`, or none.
+ *
+ * Exported because the ticket page keeps its own copy of these controls rather
+ * than using this hook; both ask the same question and must get the same
+ * answer. An empty list also covers "the rules could not be read" -- the route
+ * says so with `unavailable`, and the caller's job either way is to go ahead
+ * and let the server's own error speak (#651).
+ */
+export async function fetchStateRequirements(
+  get: (url: string) => Promise<Response>,
+  workItemId: number,
+  project: string,
+  state: string
+): Promise<RequiredField[]> {
+  try {
+    const response = await get(
+      `/api/devops/tickets/${workItemId}/state-requirements?to=${encodeURIComponent(state)}&project=${encodeURIComponent(project)}`
+    );
+    if (!response.ok) return [];
+    const data = (await response.json()) as { fields?: RequiredField[] };
+    return data.fields ?? [];
+  } catch (err) {
+    console.error('Failed to read state requirements:', err);
+    return [];
+  }
+}
+
+/**
+ * Assignable people matching `search`, in name order.
+ *
+ * Stakeholders are dropped: they hold no work item licence, so DevOps refuses
+ * an assignment to one and the pick would fail after the fact. Shared by the
+ * assignee picker and both required-field dialogs, which had a copy each.
+ */
+function matchingMembers(members: User[], search: string): User[] {
+  const needle = search.trim().toLowerCase();
+  return members
+    .filter((member) => {
+      const stakeholder =
+        member.accessLevel?.toLowerCase().includes('stakeholder') ||
+        member.licenseType?.toLowerCase().includes('stakeholder');
+      return !stakeholder;
+    })
+    .filter((member) => {
+      if (!needle) return true;
+      return (
+        member.displayName.toLowerCase().includes(needle) ||
+        member.email?.toLowerCase().includes(needle)
+      );
+    })
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+}
+
 export interface RequiredField {
   referenceName: string;
   name: string;
   type: string;
   allowedValues?: string[];
+  /**
+   * The field holds a person, so it wants a picker rather than a text box.
+   * Read from the field itself (#651) instead of a list of known field names,
+   * which only ever covered the one field somebody had already hit.
+   */
+  isIdentity?: boolean;
 }
 
 interface UseWorkItemActionsOptions {
@@ -24,7 +84,9 @@ interface UseWorkItemActionsOptions {
    * the write would be refused after the user had already chosen one.
    */
   states?: WorkItemState[];
-  onStateChange?: (state: string) => Promise<void>;
+  /** The work item whose transition rules apply; without it none are read. */
+  workItemId?: number;
+  onStateChange?: (state: string, additionalFields?: Record<string, string>) => Promise<void>;
   onAssigneeChange?: (assigneeId: string | null) => Promise<void>;
   onPriorityChange?: (priority: number) => Promise<void>;
   onTypeChange?: (type: string, additionalFields?: Record<string, string>) => Promise<void>;
@@ -70,10 +132,20 @@ export interface WorkItemActions {
   setPendingTypeFieldValue: (fieldRef: string, value: string) => void;
   confirmPendingTypeChange: () => Promise<void>;
   cancelPendingTypeChange: () => void;
-  pendingTypeMembers: User[];
+  requiredFieldMembers: User[];
   pendingTypeMemberSearch: string;
   setPendingTypeMemberSearch: (search: string) => void;
   filteredPendingTypeMembers: User[];
+
+  /** A state change waiting on fields the process requires (#651). */
+  pendingStateChange: { state: string; requiredFields: RequiredField[] } | null;
+  pendingStateFieldValues: Record<string, string>;
+  setPendingStateFieldValue: (fieldRef: string, value: string) => void;
+  confirmPendingStateChange: () => Promise<void>;
+  cancelPendingStateChange: () => void;
+  pendingStateMemberSearch: string;
+  setPendingStateMemberSearch: (search: string) => void;
+  filteredPendingStateMembers: User[];
 
   // Reset all dropdowns
   resetAll: () => void;
@@ -85,6 +157,7 @@ export function useWorkItemActions({
   project,
   workItemType,
   states,
+  workItemId,
   onStateChange,
   onAssigneeChange,
   onPriorityChange,
@@ -121,8 +194,19 @@ export function useWorkItemActions({
   } | null>(null);
   const [isLoadingRequiredFields, setIsLoadingRequiredFields] = useState(false);
   const [pendingTypeFieldValues, setPendingTypeFieldValues] = useState<Record<string, string>>({});
-  const [pendingTypeMembers, setPendingTypeMembers] = useState<User[]>([]);
+  const [requiredFieldMembers, setRequiredFieldMembers] = useState<User[]>([]);
   const [pendingTypeMemberSearch, setPendingTypeMemberSearch] = useState('');
+  // The same shape for a state change (#651). Separate state rather than one
+  // shared pending-change object: both dialogs can be reached from the same
+  // screen, and sharing would let one cancel the other's half-filled form.
+  const [pendingStateChange, setPendingStateChange] = useState<{
+    state: string;
+    requiredFields: RequiredField[];
+  } | null>(null);
+  const [pendingStateFieldValues, setPendingStateFieldValues] = useState<Record<string, string>>(
+    {}
+  );
+  const [pendingStateMemberSearch, setPendingStateMemberSearch] = useState('');
 
   const { get: devOpsGet } = useDevOpsApi();
 
@@ -184,44 +268,23 @@ export function useWorkItemActions({
   }, [isAssigneeDropdownOpen, project]);
 
   // Filter members: exclude stakeholders, apply search
-  const filteredMembers = useMemo(() => {
-    return teamMembers
-      .filter((member) => {
-        const isStakeholder =
-          member.accessLevel?.toLowerCase().includes('stakeholder') ||
-          member.licenseType?.toLowerCase().includes('stakeholder');
-        return !isStakeholder;
-      })
-      .filter((member) => {
-        if (!assigneeSearch) return true;
-        const search = assigneeSearch.toLowerCase();
-        return (
-          member.displayName.toLowerCase().includes(search) ||
-          member.email?.toLowerCase().includes(search)
-        );
-      })
-      .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  }, [teamMembers, assigneeSearch]);
+  const filteredMembers = useMemo(
+    () => matchingMembers(teamMembers, assigneeSearch),
+    [teamMembers, assigneeSearch]
+  );
 
   // Filter members for pending type change (people picker fields like Found By)
-  const filteredPendingTypeMembers = useMemo(() => {
-    return pendingTypeMembers
-      .filter((member) => {
-        const isStakeholder =
-          member.accessLevel?.toLowerCase().includes('stakeholder') ||
-          member.licenseType?.toLowerCase().includes('stakeholder');
-        return !isStakeholder;
-      })
-      .filter((member) => {
-        if (!pendingTypeMemberSearch) return true;
-        const search = pendingTypeMemberSearch.toLowerCase();
-        return (
-          member.displayName.toLowerCase().includes(search) ||
-          member.email?.toLowerCase().includes(search)
-        );
-      })
-      .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  }, [pendingTypeMembers, pendingTypeMemberSearch]);
+  const filteredPendingTypeMembers = useMemo(
+    () => matchingMembers(requiredFieldMembers, pendingTypeMemberSearch),
+    [requiredFieldMembers, pendingTypeMemberSearch]
+  );
+
+  // The same list, searched separately: the state dialog and the type dialog
+  // each have their own search box (#651).
+  const filteredPendingStateMembers = useMemo(
+    () => matchingMembers(requiredFieldMembers, pendingStateMemberSearch),
+    [requiredFieldMembers, pendingStateMemberSearch]
+  );
 
   const setPendingTypeFieldValue = useCallback((fieldRef: string, value: string) => {
     setPendingTypeFieldValues((prev) => ({ ...prev, [fieldRef]: value }));
@@ -247,9 +310,55 @@ export function useWorkItemActions({
     }
   }, [pendingTypeChange, pendingTypeFieldValues, onTypeChange]);
 
+  /**
+   * Move to `state`, asking first for anything the process will demand.
+   *
+   * A rule can make a field required only on certain transitions -- "any state
+   * other than New requires Approved By and Approved Date" -- and the update
+   * has to carry those values in the same revision. Sending the state alone
+   * had the rule reject it, so the ticket silently stayed where it was (#651).
+   *
+   * When the rules cannot be read -- they need a permission not every user has
+   * -- the transition is attempted anyway and whatever the server says about
+   * it is what the user sees. Refusing to try would block transitions that are
+   * perfectly allowed.
+   */
   const handleStateSelect = useCallback(
     async (state: string) => {
       if (!onStateChange) return;
+
+      if (workItemId && project) {
+        setIsLoadingRequiredFields(true);
+        try {
+          {
+            const fields = await fetchStateRequirements(devOpsGet, workItemId, project, state);
+            if (fields.length > 0) {
+              setIsStateDropdownOpen(false);
+              setPendingStateChange({ state, requiredFields: fields });
+              setPendingStateFieldValues({});
+              setPendingStateMemberSearch('');
+              if (fields.some((f) => f.isIdentity) && requiredFieldMembers.length === 0) {
+                try {
+                  const members = await devOpsGet(
+                    `/api/devops/projects/${encodeURIComponent(project)}/members`
+                  );
+                  if (members.ok) {
+                    const data = await members.json();
+                    setRequiredFieldMembers(data.members || []);
+                  }
+                } catch {
+                  // The picker falls back to an empty list, which the dialog
+                  // says plainly rather than pretending nobody exists.
+                }
+              }
+              return;
+            }
+          }
+        } finally {
+          setIsLoadingRequiredFields(false);
+        }
+      }
+
       setIsUpdatingState(true);
       try {
         await onStateChange(state);
@@ -258,8 +367,32 @@ export function useWorkItemActions({
         setIsUpdatingState(false);
       }
     },
-    [onStateChange]
+    [onStateChange, workItemId, project, devOpsGet, requiredFieldMembers.length]
   );
+
+  const setPendingStateFieldValue = useCallback((fieldRef: string, value: string) => {
+    setPendingStateFieldValues((prev) => ({ ...prev, [fieldRef]: value }));
+  }, []);
+
+  const cancelPendingStateChange = useCallback(() => {
+    setPendingStateChange(null);
+    setPendingStateFieldValues({});
+    setPendingStateMemberSearch('');
+  }, []);
+
+  const confirmPendingStateChange = useCallback(async () => {
+    if (!pendingStateChange || !onStateChange) return;
+    setIsUpdatingState(true);
+    try {
+      await onStateChange(pendingStateChange.state, pendingStateFieldValues);
+      setPendingStateChange(null);
+      setPendingStateFieldValues({});
+      setPendingStateMemberSearch('');
+      setIsStateDropdownOpen(false);
+    } finally {
+      setIsUpdatingState(false);
+    }
+  }, [pendingStateChange, pendingStateFieldValues, onStateChange]);
 
   const handleAssigneeSelect = useCallback(
     async (memberId: string | null) => {
@@ -350,14 +483,14 @@ export function useWorkItemActions({
 
               // Pre-fetch team members for people picker fields (e.g., Found By)
               const hasPeopleField = fields.some((f) => f.referenceName === 'Custom.FoundBy');
-              if (hasPeopleField && pendingTypeMembers.length === 0) {
+              if (hasPeopleField && requiredFieldMembers.length === 0) {
                 try {
                   const membersResponse = await devOpsGet(
                     `/api/devops/projects/${encodeURIComponent(project)}/members`
                   );
                   if (membersResponse.ok) {
                     const membersData = await membersResponse.json();
-                    setPendingTypeMembers(membersData.members || []);
+                    setRequiredFieldMembers(membersData.members || []);
                   }
                 } catch (err) {
                   console.error('Failed to fetch members for type change:', err);
@@ -382,7 +515,7 @@ export function useWorkItemActions({
         setIsUpdatingType(false);
       }
     },
-    [onTypeChange, workItemType, project, devOpsGet, pendingTypeMembers.length]
+    [onTypeChange, workItemType, project, devOpsGet, requiredFieldMembers.length]
   );
 
   const resetAll = useCallback(() => {
@@ -435,10 +568,19 @@ export function useWorkItemActions({
     setPendingTypeFieldValue,
     confirmPendingTypeChange,
     cancelPendingTypeChange,
-    pendingTypeMembers,
+    requiredFieldMembers,
     pendingTypeMemberSearch,
     setPendingTypeMemberSearch,
     filteredPendingTypeMembers,
+
+    pendingStateChange,
+    pendingStateFieldValues,
+    setPendingStateFieldValue,
+    confirmPendingStateChange,
+    cancelPendingStateChange,
+    pendingStateMemberSearch,
+    setPendingStateMemberSearch,
+    filteredPendingStateMembers,
 
     resetAll,
     resetStates,

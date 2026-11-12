@@ -1835,14 +1835,34 @@ export class AzureDevOpsService {
   }
 
   // Update work item state
+  /**
+   * @param additionalFields Fields the process requires for this transition,
+   *   sent in the same revision as the state. A rule like "any state other
+   *   than New requires Approved By and Approved Date" is evaluated per
+   *   revision, so setting them in a second update would be rejected the same
+   *   way as not setting them at all (#651).
+   */
   async updateTicketState(
     projectName: string,
     workItemId: number,
-    state: string
+    state: string,
+    additionalFields?: Record<string, string>
   ): Promise<DevOpsWorkItem> {
-    const patchDocument = [{ op: 'add', path: '/fields/System.State', value: state }];
+    const patchDocument = [
+      { op: 'add', path: '/fields/System.State', value: state },
+      ...Object.entries(additionalFields ?? {}).map(([field, value]) => ({
+        op: 'add',
+        path: `/fields/${field}`,
+        value,
+      })),
+    ];
 
-    debugLog('[devops.updateTicketState] PATCH', { projectName, workItemId, state });
+    debugLog('[devops.updateTicketState] PATCH', {
+      projectName,
+      workItemId,
+      state,
+      additionalFields: Object.keys(additionalFields ?? {}),
+    });
 
     const response = await fetch(
       `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}?api-version=7.0`,

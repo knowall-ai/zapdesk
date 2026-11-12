@@ -5,8 +5,16 @@ import type { RequiredField } from '@/hooks/useWorkItemActions';
 import type { User } from '@/types';
 import { buildIdentityString, getDisplayNameFromIdentity } from '@/lib/identity';
 
-interface TypeChangeRequiredFieldsProps {
+interface RequiredFieldsDialogProps {
+  /** What the change is to: a work item type, or a state. */
   targetType: string;
+  /**
+   * What is being changed, for the heading and the sentence above the fields.
+   * A process can require fields on a state transition as well as on a type
+   * (#651), and "Change to Todo … required for Todo work items" would be a
+   * lie about what the user is doing.
+   */
+  changing?: 'type' | 'state';
   requiredFields: RequiredField[];
   fieldValues: Record<string, string>;
   onFieldChange: (fieldRef: string, value: string) => void;
@@ -22,8 +30,9 @@ interface TypeChangeRequiredFieldsProps {
 
 const PEOPLE_PICKER_FIELDS = new Set(['Custom.FoundBy']);
 
-export default function TypeChangeRequiredFields({
+export default function RequiredFieldsDialog({
   targetType,
+  changing = 'type',
   requiredFields,
   fieldValues,
   onFieldChange,
@@ -34,7 +43,7 @@ export default function TypeChangeRequiredFields({
   memberSearch,
   onMemberSearchChange,
   filteredMembers,
-}: TypeChangeRequiredFieldsProps) {
+}: RequiredFieldsDialogProps) {
   const allFieldsFilled = requiredFields.every((f) => {
     const value = fieldValues[f.referenceName];
     return !!value;
@@ -52,7 +61,7 @@ export default function TypeChangeRequiredFields({
           style={{ borderColor: 'var(--border)' }}
         >
           <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Change to {targetType}
+            {changing === 'state' ? `Move to ${targetType}` : `Change to ${targetType}`}
           </h3>
           <button
             onClick={onCancel}
@@ -66,11 +75,16 @@ export default function TypeChangeRequiredFields({
         {/* Body */}
         <div className="space-y-4 p-4">
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            The following fields are required for {targetType} work items:
+            {changing === 'state'
+              ? `${targetType} requires these before the ticket can move:`
+              : `The following fields are required for ${targetType} work items:`}
           </p>
 
           {requiredFields.map((field) => {
-            const isPeoplePicker = PEOPLE_PICKER_FIELDS.has(field.referenceName);
+            // The field says whether it holds a person. The name list is kept
+            // only for the type endpoint, which does not report it yet.
+            const isPeoplePicker =
+              field.isIdentity === true || PEOPLE_PICKER_FIELDS.has(field.referenceName);
 
             if (isPeoplePicker) {
               const selectedValue = fieldValues[field.referenceName];
@@ -186,6 +200,28 @@ export default function TypeChangeRequiredFields({
                       </option>
                     ))}
                   </select>
+                </div>
+              );
+            }
+
+            // A date field gets a date control. Typing one into a text box
+            // meant guessing the format DevOps would accept, and getting it
+            // wrong is only found out when the update is refused.
+            if (field.type === 'dateTime' || field.type === 'date') {
+              return (
+                <div key={field.referenceName}>
+                  <label
+                    className="mb-1 block text-xs uppercase"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {field.name} *
+                  </label>
+                  <input
+                    type="date"
+                    value={(fieldValues[field.referenceName] || '').slice(0, 10)}
+                    onChange={(e) => onFieldChange(field.referenceName, e.target.value)}
+                    className="input w-full text-sm"
+                  />
                 </div>
               );
             }
