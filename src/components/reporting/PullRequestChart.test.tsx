@@ -27,6 +27,12 @@ describe('PullRequestChart', () => {
     expect(screen.getByText('No pull requests in this period')).toBeTruthy();
   });
 
+  it('says the load failed, distinct from an empty period', () => {
+    render(<PullRequestChart data={[]} failed />);
+    expect(screen.getByText("Couldn't load pull requests")).toBeTruthy();
+    expect(screen.queryByText('No pull requests in this period')).toBeNull();
+  });
+
   it('draws the chart once there is something to show', () => {
     const { container } = render(
       <PullRequestChart data={[{ key: '2026-10-20', label: '20 Oct', opened: 2, merged: 1 }]} />

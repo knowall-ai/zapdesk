@@ -578,14 +578,21 @@ export async function fetchRepoIssues(
  * One request stream for the whole organization, rather than two requests per
  * repository: an organization can have more repositories than the token's
  * rate limit would stand. Each issue carries the repository it belongs to.
+ *
+ * The stream is newest first and capped at `MAX_ORG_PAGES` pages per state,
+ * shared by every repository in the organization. Past the cap, the quieter
+ * repositories drop off the end without any error, which looks exactly like a
+ * repository with no issues (#621). `truncated` says the cap was reached, so
+ * the caller can tell the user rather than show a short list as complete.
  */
 export async function fetchOrgIssues(
   wildcard: string,
   token: string,
   closedSince: string | null = closedIssuesSince()
-): Promise<GitHubIssue[]> {
+): Promise<{ issues: GitHubIssue[]; truncated: boolean }> {
   const issues: GitHubIssue[] = [];
   const sinceClause = closedSince ? `&since=${encodeURIComponent(closedSince)}` : '';
+  let truncated = false;
 
   for (const query of ['state=open', `state=closed${sinceClause}`]) {
     for (let page = 1; page <= MAX_ORG_PAGES; page++) {
@@ -597,6 +604,7 @@ export async function fetchOrgIssues(
       issues.push(...batch);
       if (batch.length < PAGE_SIZE) break;
       if (page === MAX_ORG_PAGES) {
+        truncated = true;
         console.warn(
           `[GitHub] ${wildcard} has more than ${MAX_ORG_PAGES * PAGE_SIZE} items (${query.split('&')[0]}); the rest are not shown.`
         );
@@ -604,7 +612,10 @@ export async function fetchOrgIssues(
     }
   }
 
-  return issues.filter((issue) => !issue.pull_request && issue.repository?.full_name);
+  return {
+    issues: issues.filter((issue) => !issue.pull_request && issue.repository?.full_name),
+    truncated,
+  };
 }
 
 /**
@@ -619,7 +630,13 @@ export async function fetchOrgIssues(
  * fetched (#6713). The board day is in it too, so a board asked for an earlier
  * date and today's board cannot answer for one another.
  */
-const issuesCache = new Map<string, { issues: GitHubIssue[]; timestamp: number }>();
+const issuesCache = new Map<string, CachedIssues & { timestamp: number }>();
+
+/** One repository's (or organization's) issues, and whether a page cap cut them short. */
+interface CachedIssues {
+  issues: GitHubIssue[];
+  truncated: boolean;
+}
 
 /** A token for reading a repository, and a stable name for it (e.g. `app:12`). */
 export interface GitHubCredential {
@@ -672,7 +689,7 @@ async function cachedRepoIssues(
   credential: string,
   closedWindow: ClosedWindow = 'recent',
   boardDate: Date = new Date()
-): Promise<GitHubIssue[]> {
+): Promise<CachedIssues> {
   // The board day is only part of the key for the bounded window. "All" has no
   // `since` bound at all, so its read is identical whatever day the board is
   // showing -- keying it by day would miss the cache on every step through a
@@ -681,13 +698,15 @@ async function cachedRepoIssues(
   const dayKey = closedWindow === 'all' ? 'any-day' : boardDayKey(boardDate);
   const key = `${credential}|${repo.toLowerCase()}|${closedWindow}|${dayKey}`;
   const cached = issuesCache.get(key);
-  if (cached && Date.now() - cached.timestamp < ISSUES_CACHE_TTL_MS) return cached.issues;
+  if (cached && Date.now() - cached.timestamp < ISSUES_CACHE_TTL_MS) {
+    return { issues: cached.issues, truncated: cached.truncated };
+  }
   const closedSince = closedIssuesSince(closedWindow, boardDate);
-  const issues = isOrgWildcard(repo)
+  const read: CachedIssues = isOrgWildcard(repo)
     ? await fetchOrgIssues(repo, token, closedSince)
-    : await fetchRepoIssues(repo, token, closedSince);
-  issuesCache.set(key, { issues, timestamp: Date.now() });
-  return issues;
+    : { issues: await fetchRepoIssues(repo, token, closedSince), truncated: false };
+  issuesCache.set(key, { ...read, timestamp: Date.now() });
+  return read;
 }
 
 /**
@@ -723,6 +742,12 @@ export interface GitHubTicketsResult {
   tickets: Ticket[];
   /** Repositories that could not be read; the rest are still returned. */
   failedRepos: string[];
+  /**
+   * `owner/*` entries whose organization has more issues than one read takes,
+   * so some of its repositories may be missing (#621). Repositories the mapping
+   * names are read on their own and are complete whatever this says.
+   */
+  truncatedRepos: string[];
 }
 
 /**
@@ -799,6 +824,7 @@ export async function getGitHubTickets(
 
   const tickets: Ticket[] = [];
   const failedRepos: string[] = [];
+  const truncatedRepos: string[] = [];
   settled.forEach((result, index) => {
     const { repo, project } = targets[index];
     if (result.status === 'rejected') {
@@ -806,6 +832,7 @@ export async function getGitHubTickets(
       failedRepos.push(repo);
       return;
     }
+    if (result.value.truncated) truncatedRepos.push(repo);
     const organization: Organization = {
       id: project.id,
       name: project.name,
@@ -816,7 +843,7 @@ export async function getGitHubTickets(
       updatedAt: new Date(),
     };
     const wholeOrg = isOrgWildcard(repo);
-    for (const issue of result.value) {
+    for (const issue of result.value.issues) {
       const issueRepo = wholeOrg ? issue.repository?.full_name : repo;
       if (!issueRepo) continue;
       const key = issueRepo.toLowerCase();
@@ -825,5 +852,5 @@ export async function getGitHubTickets(
     }
   });
 
-  return { tickets, failedRepos };
+  return { tickets, failedRepos, truncatedRepos };
 }

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+  RECENT_ACTIVITY_WINDOW_MS,
   activityWindowStart,
+  highlightToggleTooltip,
   itemActivity,
   pullRequestsForGroup,
   summariseGroupActivity,
@@ -253,5 +255,69 @@ describe('summariseGroupActivity, for a GitHub issue card', () => {
     const devOpsPr = pr(11, ['merged'], [7]);
     const summary = summariseGroupActivity(columns, [devOpsPr], SINCE);
     expect(summary.highlights.get(7)).toEqual(['pr']);
+  });
+});
+
+describe('the amber 72-hour tier (#586)', () => {
+  const RECENT_SINCE = NOW - 72 * 60 * 60 * 1000;
+  // Two days ago: outside the 24-hour window, inside the 72-hour one.
+  const EARLIER = '2026-10-14T09:00:00Z';
+  const columns = [
+    column('New', 'Proposed', [item(1, RECENT, RECENT), item(2, OLD, EARLIER)]),
+    column('Closed', 'Completed', [item(3, OLD, EARLIER), item(4, OLD, OLD)]),
+  ];
+
+  it('marks cards with only older activity, and nothing else', () => {
+    const summary = summariseGroupActivity(columns, [], SINCE, RECENT_SINCE);
+    expect([...summary.recent].sort()).toEqual([2, 3]);
+    expect([...summary.highlights.keys()]).toEqual([1]);
+  });
+
+  it('leaves the 24-hour counts alone', () => {
+    const summary = summariseGroupActivity(columns, [], SINCE, RECENT_SINCE);
+    expect(summary.items).toEqual({ created: 1, updated: 0, closed: 0 });
+  });
+
+  it('lets a 24-hour pull request take the card over', () => {
+    const summary = summariseGroupActivity(columns, [pr(10, ['merged'], [2])], SINCE, RECENT_SINCE);
+    expect(summary.recent.has(2)).toBe(false);
+    expect(summary.highlights.get(2)).toEqual(['pr']);
+  });
+
+  it('leaves out To Do and Active, which never wear a ring (#619)', () => {
+    const inHand = [
+      column('To Do', 'Proposed', [item(5, OLD, EARLIER)]),
+      column('Active', 'InProgress', [item(6, OLD, EARLIER)]),
+    ];
+    // Empty, so this group's Highlight toggle stays off rather than dimming
+    // the board without lighting anything.
+    expect(summariseGroupActivity(inHand, [], SINCE, RECENT_SINCE).recent.size).toBe(0);
+  });
+
+  it('is empty without a 72-hour window start', () => {
+    expect(summariseGroupActivity(columns, [], SINCE).recent.size).toBe(0);
+  });
+
+  it('starts 72 working hours back, skipping the weekend', () => {
+    // Monday 10:23 local -> the previous Wednesday 10:23.
+    const monday = new Date(2026, 9, 19, 10, 23);
+    expect(activityWindowStart(monday, RECENT_ACTIVITY_WINDOW_MS)).toEqual(
+      new Date(2026, 9, 14, 10, 23)
+    );
+  });
+});
+
+describe('highlightToggleTooltip', () => {
+  it('names both tiers, amber for the older one', () => {
+    expect(highlightToggleTooltip(2, 1)).toBe(
+      'Highlight 2 work items with activity in this window, and 1 work item in amber, with activity in the last 72 working hours'
+    );
+  });
+
+  it('names only the tier that has cards', () => {
+    expect(highlightToggleTooltip(1, 0)).toBe('Highlight 1 work item with activity in this window');
+    expect(highlightToggleTooltip(0, 3)).toBe(
+      'Highlight 3 work items in amber, with activity in the last 72 working hours'
+    );
   });
 });
