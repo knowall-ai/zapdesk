@@ -268,6 +268,42 @@ describe('PATCH /api/devops/tickets/[id]', () => {
     );
   });
 
+  // #531: every refusal came back as a 500, so the UI could only say "Failed
+  // to update". The status and the reason now reach the client.
+  it('passes a DevOps refusal through with its status and reason', async () => {
+    const { DevOpsApiError } = await import('./devops');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    updateTicketFields.mockRejectedValue(
+      new DevOpsApiError(400, 'Azure DevOps rejected the change: TF401320: Rule Error')
+    );
+
+    const { status, body } = await patch({ project: 'Internal', description: 'Updated' });
+
+    expect(status).toBe(400);
+    expect(body.error).toBe('Azure DevOps rejected the change: TF401320: Rule Error');
+  });
+
+  it('keeps an expired DevOps token a 401, so the UI can say to reload', async () => {
+    const { DevOpsApiError } = await import('./devops');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    updateTicketFields.mockRejectedValue(new DevOpsApiError(401, 'session expired'));
+
+    const { status } = await patch({ project: 'Internal', description: 'Updated' });
+
+    expect(status).toBe(401);
+  });
+
+  it('does not echo an unexpected error to the client', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    updateTicketFields.mockRejectedValue(new Error('connect ECONNREFUSED 10.0.0.1:443'));
+
+    const { status, body } = await patch({ project: 'Internal', description: 'Updated' });
+
+    expect(status).toBe(500);
+    expect(body.error).not.toContain('ECONNREFUSED');
+    expect(body.error).toMatch(/Could not save the change/);
+  });
+
   it('does not email when nothing the customer sees changed', async () => {
     updateTicketFields.mockResolvedValue(workItem({}));
     await patch({ project: 'Internal', priority: 3 });

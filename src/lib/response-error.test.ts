@@ -79,6 +79,26 @@ describe('responseErrorMessage', () => {
     );
   });
 
+  it('words a failed save as a save, not a load (#531)', async () => {
+    expect(await responseErrorMessage(res(500), 'the priority', 'update')).toBe(
+      'Could not update the priority (500).'
+    );
+    expect(await responseErrorMessage(res(504), 'the priority', 'update')).toBe(
+      'Timed out updating the priority (504).'
+    );
+    expect(await responseErrorMessage(res(403), 'the priority', 'update')).toBe(
+      'You do not have permission to update the priority.'
+    );
+    // The route's reason still wins, with the status.
+    expect(
+      await responseErrorMessage(
+        res(400, { error: 'Azure DevOps rejected the change: TF401320: Rule Error' }),
+        'the status',
+        'update'
+      )
+    ).toBe('Azure DevOps rejected the change: TF401320: Rule Error (400)');
+  });
+
   it('leaves the body readable for the caller', async () => {
     // `clone()` rather than `json()`: a caller that wants to inspect the body
     // after building the message must still be able to.

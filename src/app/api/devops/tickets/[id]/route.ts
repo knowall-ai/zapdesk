@@ -16,6 +16,7 @@ import {
 } from '@/lib/email';
 import type { TicketFieldChange } from '@/lib/email-templates';
 import { titleProblem } from '@/lib/ticket-title';
+import { updateFailureStatus } from '@/lib/devops-error';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -441,8 +442,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ ticket });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to update ticket';
-    console.error('Error updating ticket:', message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('Error updating ticket:', error);
+    // Say why, with a status the client can tell apart (#531): every refusal
+    // used to come back as a 500, so a DevOps rule violation, an expired
+    // token and a missing permission all reached the user as one "Failed to
+    // update" toast. DevOpsApiError messages are already written for the
+    // user; anything else is unexpected and its text is not.
+    if (error instanceof DevOpsApiError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: updateFailureStatus(error.status) }
+      );
+    }
+    return NextResponse.json(
+      { error: 'Could not save the change. Try again, or reload the page if it keeps failing.' },
+      { status: 500 }
+    );
   }
 }
