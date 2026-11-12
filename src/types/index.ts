@@ -789,6 +789,8 @@ export interface StandupData {
   allowedStatesByProjectType?: Record<string, Record<string, string[]>>;
   /** GitHub repositories whose issues could not be read; the board is shown without them. */
   failedGitHubRepos?: string[];
+  /** `owner/*` mappings whose organization has more issues than one read takes, so some may be missing (#621). */
+  truncatedGitHubRepos?: string[];
   summary: {
     columnCounts: Record<string, number>;
     projectCount: number;

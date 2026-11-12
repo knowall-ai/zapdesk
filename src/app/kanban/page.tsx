@@ -15,6 +15,7 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 import { isGitHubItem } from '@/lib/github-kanban';
+import { gitHubTruncationMessage } from '@/lib/github-truncation';
 import Link from 'next/link';
 import { RefreshCw, FolderOpen, User, Radio } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
@@ -44,6 +45,7 @@ import { canonicalProject, filterStandupByProject } from '@/lib/kanban-project';
 import { createBoardCache } from '@/lib/standup-board-cache';
 import {
   activityWindowStart,
+  RECENT_ACTIVITY_WINDOW_MS,
   pullRequestsForGroup,
   assigneeEmails,
   summariseGroupActivity,
@@ -388,6 +390,8 @@ function StandupPageContent() {
             id: 'kanban-github-failed',
           });
         }
+        const truncation = gitHubTruncationMessage(data.truncatedGitHubRepos ?? []);
+        if (truncation) toast.warning(truncation, { id: 'kanban-github-truncated' });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to load standup data';
         // `error` swaps the whole board out for the error screen, which is
@@ -947,6 +951,11 @@ function StandupPageContent() {
     const map = new Map<string, GroupActivity>();
     if (!boardLoadedAt) return map;
     const since = activityWindowStart(new Date(boardLoadedAt)).getTime();
+    // The amber tier (#586): older activity, still inside 72 working hours.
+    const recentSince = activityWindowStart(
+      new Date(boardLoadedAt),
+      RECENT_ACTIVITY_WINDOW_MS
+    ).getTime();
     const allPullRequests = (prActivity?.pullRequests ?? []).filter(
       (pr) => !projectFilter || pr.project.toLowerCase() === projectFilter.toLowerCase()
     );
@@ -968,7 +977,7 @@ function StandupPageContent() {
         groupBy === 'person' ? assigneeEmails(group.columns) : undefined
       );
       map.set(group.groupName, {
-        summary: summariseGroupActivity(group.columns, pullRequests, since),
+        summary: summariseGroupActivity(group.columns, pullRequests, since, recentSince),
         since,
         pullRequests,
         pullRequestState: prState === 'ready' && incomplete(group.groupName) ? 'error' : prState,

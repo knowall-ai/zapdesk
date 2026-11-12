@@ -24,8 +24,8 @@ function graph(linked: Array<{ upn: string; login: string }>) {
       });
     }
     if (init?.method === 'PATCH') return new Response(null, { status: 204 });
-    // The person's own extension, already holding a Lightning address that a
-    // GitHub save must keep (#552).
+    // The person's own Lightning extension, holding a Lightning address that a
+    // GitHub save must leave alone (#552, #554).
     if (input.includes('/extensions/zapdesk.knowall.ai')) {
       return Response.json({
         id: 'zapdesk.knowall.ai',
@@ -66,9 +66,12 @@ describe('POST /api/profile/github', () => {
     const { status, body } = await post('https://github.com/dana-dev');
     expect(status).toBe(200);
     expect(body.githubUsername).toBe('dana-dev');
+    // Only the GitHub extension is written, so the Lightning address in the
+    // other extension is never touched (#554)
+    expect(patches()).toHaveLength(1);
+    expect(patches()[0][0]).toMatch(/\/extensions\/zapdesk\.knowall\.ai\.github$/);
     expect(JSON.parse(String(patches()[0][1]?.body))).toEqual({
       '@odata.type': 'microsoft.graph.openTypeExtension',
-      lightningAddress: 'dana@getalby.example',
       githubUsername: 'dana-dev',
     });
   });

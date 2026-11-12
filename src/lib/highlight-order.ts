@@ -19,14 +19,15 @@ interface Identified {
 
 /**
  * `items` with the highlighted ones first, or unchanged when highlighting is
- * off (`highlights` undefined).
+ * off (`highlights` undefined). Takes a Map or a Set of ids, so the amber
+ * 72-hour tier (#586) can be lifted the same way.
  *
  * The same array must be given to both the rendered list and the drag-and-drop
  * `SortableContext`: if the two disagree, a drag targets the wrong card.
  */
 export function highlightedFirst<T extends Identified>(
   items: readonly T[],
-  highlights: ReadonlyMap<number, unknown> | undefined
+  highlights: { has(id: number): boolean } | undefined
 ): readonly T[] {
   if (!highlights) return items;
 
