@@ -5,6 +5,8 @@ import { ExternalLink } from 'lucide-react';
 import type { Feature, WorkItem, WorkItemType, TicketPriority } from '@/types';
 import { WorkItemBoard, WORKITEM_COLUMNS, WorkItemDetailDialog } from '@/components/tickets';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
+import { responseErrorMessage } from '@/lib/response-error';
+import { toast } from 'sonner';
 
 // Format hours to avoid floating-point precision issues (e.g., 3.199999999 -> "3.2")
 function formatHours(value: number): string {
@@ -366,7 +368,10 @@ export default function FeatureTimechain({
     setIsDialogOpen(true);
   }, []);
 
-  const handleDialogStateChange = useCallback(
+  // Shared by the board and the dialog. It throws and leaves the message to
+  // the caller: the board already toasts its own failures, so a toast here
+  // showed the user two (#531).
+  const updateWorkItemState = useCallback(
     async (workItemId: number, newState: string) => {
       const headers: HeadersInit = { 'Content-Type': 'application/json' };
       if (organization) {
@@ -377,7 +382,9 @@ export default function FeatureTimechain({
         headers,
         body: JSON.stringify({ state: newState, project: epic?.project }),
       });
-      if (!response.ok) throw new Error('Failed to update state');
+      if (!response.ok) {
+        throw new Error(await responseErrorMessage(response, 'the status', 'update'));
+      }
       // Update local state so dialog and feature work items reflect the change
       refreshCounts();
       setSelectedWorkItem((prev) => (prev ? { ...prev, state: newState } : null));
@@ -392,6 +399,26 @@ export default function FeatureTimechain({
       });
     },
     [organization, epic?.project, refreshCounts]
+  );
+
+  // The dialog only resets its spinner on a rejection, so the reason has to be
+  // shown here or it never reaches the user (#531). This also covers a network
+  // failure, where fetch itself rejects. Still rethrown so the dropdown behaves
+  // as it did before.
+  const handleDialogStateChange = useCallback(
+    async (workItemId: number, newState: string) => {
+      try {
+        await updateWorkItemState(workItemId, newState);
+      } catch (error) {
+        toast.error(
+          error instanceof Error && error.message
+            ? error.message
+            : 'Failed to update the status. Check your connection and try again.'
+        );
+        throw error;
+      }
+    },
+    [updateWorkItemState]
   );
 
   const handleBlockClick = (feature: Feature) => {
@@ -875,7 +902,7 @@ export default function FeatureTimechain({
               availableTypes={availableTypes}
               defaultTicketsOnly={false}
               onWorkItemClick={handleWorkItemClick}
-              onStatusChange={handleDialogStateChange}
+              onStatusChange={updateWorkItemState}
               project={epic?.project}
               organization={organization}
             />

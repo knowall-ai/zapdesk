@@ -35,19 +35,31 @@ async function serverMessage(response: Response): Promise<string | null> {
 /**
  * Describe a failed response.
  *
- * `what` names the thing being loaded, lower case and without an article:
- * `'the board'`, `'pull request activity'`.
+ * `what` names the thing being loaded or saved, lower case:
+ * `'the board'`, `'pull request activity'`, `'the priority'`.
+ *
+ * `verb` is what the request was doing. Reads say "load" (the default);
+ * writes pass `'update'`, so a failed save does not claim it was loading
+ * something (#531).
  */
-export async function responseErrorMessage(response: Response, what: string): Promise<string> {
+export async function responseErrorMessage(
+  response: Response,
+  what: string,
+  verb: 'load' | 'update' = 'load'
+): Promise<string> {
   if (response.status === 401) {
     return 'Your session has expired. Reload the page to sign in again.';
   }
   if (response.status === 403) {
     const server = await serverMessage(response);
-    return server ?? `You do not have access to ${what}.`;
+    if (server) return server;
+    return verb === 'load'
+      ? `You do not have access to ${what}.`
+      : `You do not have permission to update ${what}.`;
   }
   if (response.status === 408 || response.status === 504) {
-    return `Timed out loading ${what} (${response.status}).`;
+    const gerund = verb === 'load' ? 'loading' : 'updating';
+    return `Timed out ${gerund} ${what} (${response.status}).`;
   }
 
   const server = await serverMessage(response);
@@ -55,6 +67,6 @@ export async function responseErrorMessage(response: Response, what: string): Pr
 
   const statusText = response.statusText?.trim();
   return statusText
-    ? `Could not load ${what} (${response.status} ${statusText}).`
-    : `Could not load ${what} (${response.status}).`;
+    ? `Could not ${verb} ${what} (${response.status} ${statusText}).`
+    : `Could not ${verb} ${what} (${response.status}).`;
 }
