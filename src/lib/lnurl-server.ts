@@ -26,7 +26,8 @@
 import { lookup } from 'node:dns/promises';
 import { lookup as lookupCallback, type LookupAddress, type LookupOptions } from 'node:dns';
 import { isIP } from 'node:net';
-import { Agent, fetch as undiciFetch } from 'undici';
+// Imported where it is used, not here: see `guardedTransport`.
+import type { Agent } from 'undici';
 
 /** How long each LNURL request may take. */
 export const LNURL_TIMEOUT_MS = 8_000;
@@ -167,7 +168,45 @@ export function refusePrivateAddresses(
  * to is the address that was judged. Scoped to this module on purpose: a
  * global dispatcher would change every other outbound request in the app.
  */
-const lnurlDispatcher = new Agent({ connect: { lookup: refusePrivateAddresses } });
+/** undici's `fetch`, and the dispatcher that carries the host check. */
+interface GuardedTransport {
+  request: typeof fetch;
+  dispatcher: Agent;
+}
+
+let transport: Promise<GuardedTransport> | null = null;
+
+/**
+ * undici's fetch and the guarded dispatcher, loaded on first use.
+ *
+ * Deliberately not built at module scope. undici is the one part of this
+ * module that can refuse to load -- it declares a minimum Node version, and
+ * undici 8 (briefly shipped in v0.22.0) used `Promise.withResolvers`, which
+ * does not exist before Node 22. Built at import time, that threw while the
+ * module was initialising, so the route could not even reach its own auth
+ * check and every request to it answered 500 Internal Server Error (#646).
+ *
+ * Loading it here instead means such a failure is a handled error on one
+ * request rather than a dead route. It fails closed: if the dispatcher cannot
+ * be built there is no fallback to an unguarded `fetch`, because quietly
+ * dropping the SSRF control would be worse than refusing the zap.
+ */
+function guardedTransport(): Promise<GuardedTransport> {
+  transport ??= (async () => {
+    const { Agent, fetch: undiciFetch } = await import('undici');
+    return {
+      request: undiciFetch as unknown as typeof fetch,
+      dispatcher: new Agent({ connect: { lookup: refusePrivateAddresses } }),
+    };
+  })().catch((cause) => {
+    // Clear it so a later request can try again rather than being told no
+    // for the lifetime of the process.
+    transport = null;
+    console.error('[LNURL] Could not load the guarded HTTP transport:', cause);
+    throw new LnurlError('The server cannot reach Lightning providers safely right now', 500);
+  });
+  return transport;
+}
 
 /**
  * `work`, or a rejection once `ms` has passed.
@@ -280,19 +319,30 @@ function providerReason(body: unknown): string | null {
   return clean ? `The Lightning provider said: ${clean}` : 'The Lightning provider refused';
 }
 
-async function getJson(url: URL, fetchImpl: typeof fetch, resolve: HostResolver): Promise<unknown> {
+/**
+ * @param fetchImpl An injected transport, for tests. Given one, the guarded
+ *   dispatcher is not used -- a caller supplying its own transport is saying
+ *   it will not reach the network. Production passes nothing and gets the
+ *   guarded one.
+ */
+async function getJson(
+  url: URL,
+  fetchImpl: typeof fetch | undefined,
+  resolve: HostResolver
+): Promise<unknown> {
   await assertSafeUrl(url, resolve);
+  const guarded = fetchImpl ? null : await guardedTransport();
+  const request = fetchImpl ?? guarded!.request;
   let response: Response;
   try {
-    response = await fetchImpl(url, {
+    response = await request(url, {
       headers: { Accept: 'application/json' },
       redirect: 'error',
       signal: AbortSignal.timeout(LNURL_TIMEOUT_MS),
       cache: 'no-store',
       // Not part of the DOM `RequestInit`, so it needs the cast; undici's own
-      // fetch reads it, which is why that is the default transport below. A
-      // test's injected fetch ignores it.
-      dispatcher: lnurlDispatcher,
+      // fetch is what reads it.
+      dispatcher: guarded?.dispatcher,
     } as RequestInit);
   } catch (err) {
     if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
@@ -428,7 +478,9 @@ export async function fetchLnurlInvoice({
   // undici's fetch rather than the global one: it is the same implementation
   // Node's `fetch` is built on, but it honours the `dispatcher` that carries
   // the connect-time host check.
-  fetchImpl = undiciFetch as unknown as typeof fetch,
+  // No default: left unset, `getJson` loads undici's fetch together with the
+  // guarded dispatcher, which is the only pairing that applies the host check.
+  fetchImpl,
   resolve = defaultResolver,
 }: FetchInvoiceOptions): Promise<string> {
   const address = parseLightningAddress(lightningAddress);
