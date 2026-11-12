@@ -96,6 +96,49 @@ describe('WorkItemBoard: a type badge is drawn from the project, not the board (
     expect(badge.querySelector('img')).toBeNull();
   });
 
+  // Now that the options come from the board, a chosen type can vanish from
+  // them: pick Bug, let a refresh empty the board, and the filter still
+  // applies while the control that would clear it is gone. Kanban has no
+  // Clear all, so the choice would be stuck (raised in review on #649).
+  it('keeps a chosen type in the options after the board empties', () => {
+    const { rerender } = board([
+      item(1, 'Task', 'Printer on fire'),
+      item(2, 'Bug', 'Cannot sign in'),
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: /All Types/ }));
+    fireEvent.click(screen.getByLabelText('Bug'));
+
+    rerender(
+      <WorkItemBoard
+        items={[]}
+        columns={TICKET_COLUMNS}
+        availableTypes={PROJECT_TYPES}
+        hideTicketsOnlyToggle
+        defaultTicketsOnly={false}
+      />
+    );
+
+    // The control is still there and still says one type is chosen. That is
+    // the part that matters: before this change the option went with the
+    // items, so the control disappeared while the filter kept applying.
+    const control = screen.getByRole('button', { name: /Types \(1\)/ });
+    expect(control).toBeTruthy();
+
+    // Whether the panel survived the rerender is not what is being tested, so
+    // open it only if it is shut.
+    if (!screen.queryByLabelText('Bug')) fireEvent.click(control);
+
+    // Bug is still offered, and ticked, so the choice can be undone.
+    const bug = screen.getByLabelText('Bug') as HTMLInputElement;
+    expect(bug.checked).toBe(true);
+    fireEvent.click(bug);
+
+    // Undone. The control itself may now go -- with nothing on the board and
+    // nothing chosen there is no type to offer -- so what is asserted is that
+    // no type is filtered on any more, not that the control survives.
+    expect(screen.queryByRole('button', { name: /Types \(1\)/ })).toBeNull();
+  });
+
   it('offers only the types on the board in the type filter', () => {
     // The filter is over the board, so User Story -- which the project defines
     // but the board is not showing -- must not be offered. That narrowing is

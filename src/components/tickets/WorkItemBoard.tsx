@@ -696,6 +696,17 @@ export default function WorkItemBoard({
     [filterOptions.customers, filters.customer]
   );
 
+  // The same trap for types, now that the options come from the board rather
+  // than from every type the project defines (#647): choose Bug, let a refresh
+  // empty the board, and the option it was chosen from is gone while the
+  // filter still applies. The control would then be hidden, and Kanban has no
+  // Clear all -- so the choice could not be undone without switching to list
+  // view (raised in review on #649).
+  const typeOptions = useMemo(
+    () => Array.from(new Set([...filterOptions.types, ...filters.type])).sort(),
+    [filterOptions.types, filters.type]
+  );
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -1019,11 +1030,11 @@ export default function WorkItemBoard({
                     onClear={() => setFilters((prev) => ({ ...prev, status: [] }))}
                   />
 
-                  {filterOptions.types.length > 0 && (
+                  {typeOptions.length > 0 && (
                     <MultiSelectFilter
                       label="Types"
                       selected={filters.type}
-                      options={filterOptions.types}
+                      options={typeOptions}
                       onToggle={(v) => toggleFilter('type', v)}
                       onClear={() => setFilters((prev) => ({ ...prev, type: [] }))}
                     />
