@@ -59,6 +59,9 @@ function matchingMembers(members: User[], search: string): User[] {
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
+/** How long the members request may take before the picker gives up. */
+const MEMBERS_TIMEOUT_MS = 10_000;
+
 export interface RequiredField {
   referenceName: string;
   name: string;
@@ -195,8 +198,25 @@ export function useWorkItemActions({
   } | null>(null);
   const [isLoadingRequiredFields, setIsLoadingRequiredFields] = useState(false);
   const [pendingTypeFieldValues, setPendingTypeFieldValues] = useState<Record<string, string>>({});
-  const [requiredFieldMembers, setRequiredFieldMembers] = useState<User[]>([]);
+  /**
+   * People for an identity picker, with the project they came from.
+   *
+   * Keyed rather than cleared on change: clearing happened in an effect, which
+   * still left a request already in flight free to land afterwards and write
+   * one project's people into another project's picker. An identity from the
+   * wrong project does not resolve, so the update fails after the pick
+   * (raised in review on #652). Holding the project with the list makes a
+   * stale answer unusable instead of merely unlikely.
+   */
+  const [loadedMembers, setLoadedMembers] = useState<{ project: string; members: User[] }>({
+    project: '',
+    members: [],
+  });
   const [isLoadingRequiredFieldMembers, setIsLoadingRequiredFieldMembers] = useState(false);
+  const requiredFieldMembers = useMemo(
+    () => (loadedMembers.project === (project ?? '') ? loadedMembers.members : []),
+    [loadedMembers, project]
+  );
   /** Counts state selections, so only the newest one may act on its answer. */
   const stateSelectionRef = useRef(0);
   const [pendingTypeMemberSearch, setPendingTypeMemberSearch] = useState('');
@@ -204,6 +224,13 @@ export function useWorkItemActions({
   // shared pending-change object: both dialogs can be reached from the same
   // screen, and sharing would let one cancel the other's half-filled form.
   const [pendingStateChange, setPendingStateChange] = useState<{
+    /**
+     * The item this prompt is for. The dialog renders outside the shell, so
+     * closing it and opening another ticket left the prompt standing:
+     * confirming then sent one ticket's state and fields to a different one
+     * (raised in review on #652).
+     */
+    workItemId: number;
     state: string;
     requiredFields: RequiredField[];
   } | null>(null);
@@ -336,14 +363,18 @@ export function useWorkItemActions({
    */
   const loadRequiredFieldMembers = useCallback(async () => {
     if (!project) return;
+    const forProject = project;
     setIsLoadingRequiredFieldMembers(true);
     try {
       const response = await devOpsGet(
-        `/api/devops/projects/${encodeURIComponent(project)}/members`
+        `/api/devops/projects/${encodeURIComponent(forProject)}/members`,
+        // Neither this helper nor the members route bounds the wait, and the
+        // picker shows "Loading..." until it settles.
+        { signal: AbortSignal.timeout(MEMBERS_TIMEOUT_MS) }
       );
       if (response.ok) {
         const data = await response.json();
-        setRequiredFieldMembers(data.members || []);
+        setLoadedMembers({ project: forProject, members: data.members || [] });
       }
     } catch (err) {
       console.error('Failed to fetch members:', err);
@@ -351,13 +382,6 @@ export function useWorkItemActions({
       setIsLoadingRequiredFieldMembers(false);
     }
   }, [project, devOpsGet]);
-
-  // A list loaded for one project must not be offered for another: an identity
-  // from the old project does not resolve in the new one, so the update would
-  // fail after the pick (raised in review on #652).
-  useEffect(() => {
-    setRequiredFieldMembers([]);
-  }, [project]);
 
   const handleStateSelect = useCallback(
     async (state: string) => {
@@ -375,7 +399,7 @@ export function useWorkItemActions({
           if (selection !== stateSelectionRef.current) return;
           if (fields.length > 0) {
             setIsStateDropdownOpen(false);
-            setPendingStateChange({ state, requiredFields: fields });
+            setPendingStateChange({ workItemId, state, requiredFields: fields });
             setPendingStateFieldValues({});
             setPendingStateMemberSearch('');
             if (fields.some((f) => f.isIdentity)) await loadRequiredFieldMembers();
@@ -411,6 +435,12 @@ export function useWorkItemActions({
 
   const confirmPendingStateChange = useCallback(async () => {
     if (!pendingStateChange || !onStateChange) return;
+    // Belt and braces with the clearing below: never apply one item's answer
+    // to another.
+    if (pendingStateChange.workItemId !== workItemId) {
+      setPendingStateChange(null);
+      return;
+    }
     setIsUpdatingState(true);
     try {
       await onStateChange(pendingStateChange.state, pendingStateFieldValues);
@@ -421,7 +451,7 @@ export function useWorkItemActions({
     } finally {
       setIsUpdatingState(false);
     }
-  }, [pendingStateChange, pendingStateFieldValues, onStateChange]);
+  }, [pendingStateChange, pendingStateFieldValues, onStateChange, workItemId]);
 
   const handleAssigneeSelect = useCallback(
     async (memberId: string | null) => {
@@ -544,6 +574,14 @@ export function useWorkItemActions({
 
   const resetAll = useCallback(() => {
     setIsStateDropdownOpen(false);
+    // Including the state prompt: it renders outside the dialog shell, so a
+    // close that left it standing would carry it onto the next ticket
+    // (raised in review on #652).
+    setPendingStateChange(null);
+    setPendingStateFieldValues({});
+    setPendingStateMemberSearch('');
+    // Any requirements lookup still running belongs to the item being left.
+    stateSelectionRef.current += 1;
     setIsAssigneeDropdownOpen(false);
     setIsPriorityDropdownOpen(false);
     setIsTypeDropdownOpen(false);

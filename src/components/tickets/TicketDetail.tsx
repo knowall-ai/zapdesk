@@ -240,8 +240,18 @@ export default function TicketDetail({
     requiredFields: RequiredField[];
   } | null>(null);
   const [pendingTypeFieldValues, setPendingTypeFieldValues] = useState<Record<string, string>>({});
-  const [requiredFieldMembers, setRequiredFieldMembers] = useState<User[]>([]);
+  // Keyed by project, not cleared on change: a request already in flight could
+  // otherwise land afterwards and put one project's people in another's picker
+  // (raised in review on #652).
+  const [loadedMembers, setLoadedMembers] = useState<{ project: string; members: User[] }>({
+    project: '',
+    members: [],
+  });
   const [isLoadingRequiredFieldMembers, setIsLoadingRequiredFieldMembers] = useState(false);
+  const requiredFieldMembers = useMemo(
+    () => (loadedMembers.project === (ticket.project ?? '') ? loadedMembers.members : []),
+    [loadedMembers, ticket.project]
+  );
   const [pendingTypeMemberSearch, setPendingTypeMemberSearch] = useState('');
 
   // A state change waiting on fields the process requires (#651). The
@@ -409,14 +419,17 @@ export default function TicketDetail({
   /** People for an identity field's picker, loaded once per ticket. */
   const loadRequiredFieldMembers = useCallback(async () => {
     if (!ticket.project) return;
+    const forProject = ticket.project;
     setIsLoadingRequiredFieldMembers(true);
     try {
       const response = await devOpsGet(
-        `/api/devops/projects/${encodeURIComponent(ticket.project)}/members`
+        `/api/devops/projects/${encodeURIComponent(forProject)}/members`,
+        // Nothing else bounds this, and the picker waits on it.
+        { signal: AbortSignal.timeout(10_000) }
       );
       if (response.ok) {
         const data = await response.json();
-        setRequiredFieldMembers(data.members || []);
+        setLoadedMembers({ project: forProject, members: data.members || [] });
       }
     } catch (err) {
       console.error('Failed to fetch members:', err);
@@ -424,12 +437,6 @@ export default function TicketDetail({
       setIsLoadingRequiredFieldMembers(false);
     }
   }, [ticket.project, devOpsGet]);
-
-  // A list loaded for one project must not be offered for another (raised in
-  // review on #652).
-  useEffect(() => {
-    setRequiredFieldMembers([]);
-  }, [ticket.project]);
 
   const handleStateSelect = async (state: string) => {
     if (!onStateChange) return;

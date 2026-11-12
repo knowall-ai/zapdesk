@@ -358,7 +358,9 @@ export default function WorkItemDetailDialog({
     [workItem, onUpdate]
   );
 
-  // Reset state when dialog closes or workItem changes
+  // Reset when the dialog closes. Not on every `workItem` change: the object
+  // is replaced on each refresh, and resetting then would shut a dropdown
+  // under the user's hand.
   useEffect(() => {
     if (!isOpen || !workItem) {
       actions.resetAll();
@@ -367,6 +369,16 @@ export default function WorkItemDetailDialog({
     actions.resetStates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, workItem]);
+
+  // A required-fields prompt belongs to the ticket it was opened for. This
+  // dialog can be handed another ticket while it stays open, and the prompt
+  // renders outside the shell, so it would otherwise still be standing --
+  // showing one ticket's question above another ticket (raised in review on
+  // #652). Keyed on the id, so a refresh of the same ticket leaves it alone.
+  useEffect(() => {
+    actions.cancelPendingStateChange();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workItem?.id]);
 
   // Fetch comments when dialog opens with a work item
   useEffect(() => {
