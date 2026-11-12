@@ -18,6 +18,7 @@ import { useSourceFilter } from '@/components/providers/SourceProvider';
 import { ticketToWorkItem } from '@/lib/devops';
 import { useDefaultView, viewToShow } from '@/lib/default-view';
 import { readGitHubLabelSummary, type GitHubLabelSummary } from '@/lib/github-label-notice';
+import { responseErrorMessage } from '@/lib/response-error';
 import { gitHubTruncationMessage } from '@/lib/github-truncation';
 import type { Ticket, WorkItem, User, WorkItemType, EffortHoursUpdate } from '@/types';
 
@@ -290,7 +291,9 @@ function TicketsPageContent() {
           },
           body: JSON.stringify({ state: newState }),
         });
-        if (!response.ok) throw new Error('Failed to update state');
+        if (!response.ok) {
+          throw new Error(await responseErrorMessage(response, 'the status', 'update'));
+        }
         setTickets((prev) =>
           prev.map((t) => (t.id === ticketId ? { ...t, devOpsState: newState } : t))
         );
@@ -298,7 +301,7 @@ function TicketsPageContent() {
         toast.success(`Status updated to "${newState}"`);
       } catch (error) {
         console.error('Failed to update ticket state:', error);
-        toast.error('Failed to update status');
+        toast.error(error instanceof Error ? error.message : 'Failed to update status');
         throw error; // Re-throw so KanbanBoard can handle rollback
       }
     },
@@ -368,9 +371,7 @@ function TicketsPageContent() {
           body: JSON.stringify({ assignee: assigneeId, project: ticket.project }),
         });
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          console.error('Assignee change failed:', response.status, errorData);
-          throw new Error('Failed to update assignee');
+          throw new Error(await responseErrorMessage(response, 'the assignee', 'update'));
         }
         const data = await response.json();
         const updatedTicket = data.ticket;
@@ -388,7 +389,7 @@ function TicketsPageContent() {
         toast.success('Assignee updated');
       } catch (error) {
         console.error('Failed to update assignee:', error);
-        toast.error('Failed to update assignee');
+        toast.error(error instanceof Error ? error.message : 'Failed to update assignee');
         throw error;
       }
     },
@@ -411,8 +412,7 @@ function TicketsPageContent() {
           body: JSON.stringify({ ...hours, project: ticket.project }),
         });
         if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || 'Failed to update hours');
+          throw new Error(await responseErrorMessage(response, 'the hours', 'update'));
         }
         const data = await response.json();
         const updated: Ticket | undefined = data.ticket;
@@ -449,9 +449,7 @@ function TicketsPageContent() {
           body: JSON.stringify({ priority, project: ticket.project }),
         });
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          console.error('Priority change failed:', response.status, errorData);
-          throw new Error('Failed to update priority');
+          throw new Error(await responseErrorMessage(response, 'the priority', 'update'));
         }
         const data = await response.json();
         const updatedTicket = data.ticket;
@@ -468,7 +466,7 @@ function TicketsPageContent() {
         toast.success('Priority updated');
       } catch (error) {
         console.error('Failed to update priority:', error);
-        toast.error('Failed to update priority');
+        toast.error(error instanceof Error ? error.message : 'Failed to update priority');
         throw error;
       }
     },
@@ -541,8 +539,7 @@ function TicketsPageContent() {
           body: JSON.stringify({ tags, project: ticket.project }),
         });
         if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || 'Failed to update tags');
+          throw new Error(await responseErrorMessage(response, 'the tags', 'update'));
         }
         setTickets((prev) =>
           prev.map((t) => (t.id === workItemId && t.source !== 'github' ? { ...t, tags } : t))
@@ -583,7 +580,9 @@ function TicketsPageContent() {
             workItemType: ticket.workItemType,
           }),
         });
-        if (!response.ok) throw new Error('Failed to update work item');
+        if (!response.ok) {
+          throw new Error(await responseErrorMessage(response, 'the work item', 'update'));
+        }
         const applied: Partial<Ticket> = {};
         if (updates.title !== undefined) applied.title = updates.title;
         if (updates.description !== undefined) applied.description = updates.description;
@@ -606,7 +605,7 @@ function TicketsPageContent() {
         toast.success(`${field} updated`);
       } catch (error) {
         console.error('Failed to update work item:', error);
-        toast.error('Failed to update work item');
+        toast.error(error instanceof Error ? error.message : 'Failed to update work item');
         throw error;
       }
     },
