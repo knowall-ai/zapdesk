@@ -23,6 +23,12 @@ interface RequiredFieldsDialogProps {
   isUpdating: boolean;
   // People picker support
   members: User[];
+  /**
+   * Whether the member list is still being fetched. Without it an empty list
+   * was indistinguishable from a pending one, so a failed request showed
+   * "Loading..." for ever (raised in review on #652).
+   */
+  membersLoading?: boolean;
   memberSearch: string;
   onMemberSearchChange: (search: string) => void;
   filteredMembers: User[];
@@ -40,6 +46,7 @@ export default function RequiredFieldsDialog({
   onCancel,
   isUpdating,
   members,
+  membersLoading = false,
   memberSearch,
   onMemberSearchChange,
   filteredMembers,
@@ -96,7 +103,7 @@ export default function RequiredFieldsDialog({
                   >
                     {field.name} *
                   </label>
-                  {members.length === 0 ? (
+                  {members.length === 0 && membersLoading ? (
                     <div
                       className="flex items-center gap-2 text-sm"
                       style={{ color: 'var(--text-muted)' }}
@@ -104,6 +111,11 @@ export default function RequiredFieldsDialog({
                       <Loader2 className="animate-spin" size={14} />
                       Loading...
                     </div>
+                  ) : members.length === 0 ? (
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      Nobody could be loaded for this field. Close this and try again, or set{' '}
+                      {field.name} in Azure DevOps.
+                    </p>
                   ) : (
                     <div className="space-y-2">
                       {/* Search input */}

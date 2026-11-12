@@ -36,6 +36,12 @@ export interface RuleAction {
 
 export interface ProcessRule {
   name?: string;
+  /**
+   * A rule switched off in the process. The endpoint returns it alongside the
+   * live ones, and acting on it would demand a field the process does not --
+   * blocking a transition it actually permits (raised in review on #652).
+   */
+  isDisabled?: boolean;
   conditions?: RuleCondition[];
   actions?: RuleAction[];
 }
@@ -53,11 +59,25 @@ const SERVER_FILLS = new Set([
   'copyValue',
   'copyFromCurrentUser',
   'copyFromServerClock',
+  'copyFromClock',
   'copyFromField',
   'setDefaultValue',
   'setDefaultFromCurrentUser',
-  'setValueToEmpty',
+  'setDefaultFromClock',
+  'setDefaultFromField',
 ]);
+
+/**
+ * Identifiers are compared without a leading `$`.
+ *
+ * The endpoint this reads returns them bare -- `whenNot`, `makeRequired` --
+ * which is what the fixtures use. Microsoft's reference shows a `$`-prefixed
+ * form for the same names, so a response in that shape would otherwise match
+ * nothing: the approval rule would look inapplicable and the prompt would
+ * never appear, which is the bug this file exists to fix (raised in review on
+ * #652).
+ */
+const bare = (identifier: string | undefined): string => (identifier ?? '').replace(/^\$/, '');
 
 /**
  * Does this condition hold for `from` -> `to`?
@@ -73,7 +93,7 @@ const SERVER_FILLS = new Set([
 export function conditionHolds(condition: RuleCondition, from: string, to: string): boolean {
   if (condition.field !== 'System.State') return false;
   const value = condition.value ?? '';
-  switch (condition.conditionType) {
+  switch (bare(condition.conditionType)) {
     case 'when':
       return to === value;
     case 'whenNot':
@@ -149,12 +169,14 @@ export function requiredFieldsForTransition(
   const filled = new Set<string>();
 
   for (const rule of rules) {
+    if (rule.isDisabled) continue;
     if (!appliesToTransition(rule, from, to)) continue;
     for (const action of rule.actions ?? []) {
       const target = action.targetField;
       if (!target) continue;
-      if (action.actionType === 'makeRequired') required.add(target);
-      else if (action.actionType && SERVER_FILLS.has(action.actionType)) filled.add(target);
+      const actionType = bare(action.actionType);
+      if (actionType === 'makeRequired') required.add(target);
+      else if (actionType && SERVER_FILLS.has(actionType)) filled.add(target);
     }
   }
 

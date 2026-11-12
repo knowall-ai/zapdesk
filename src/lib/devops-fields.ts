@@ -1,3 +1,15 @@
+/**
+ * How long one allowed-values lookup may take. This runs while a dialog waits
+ * to be shown, and it tries several endpoints in turn, so an unbounded call
+ * here stalls the whole prompt (raised in review on #652).
+ */
+const FIELD_LOOKUP_TIMEOUT_MS = 10_000;
+
+/** A GET that cannot hang: each attempt below falls through on failure. */
+function bounded(url: string, headers: Record<string, string>): Promise<Response> {
+  return fetch(url, { headers, signal: AbortSignal.timeout(FIELD_LOOKUP_TIMEOUT_MS) });
+}
+
 export interface DevOpsField {
   referenceName: string;
   name: string;
@@ -21,9 +33,9 @@ export async function resolveAllowedValues(
 
   // Approach 1: Fetch the specific field from work item type definition
   try {
-    const fieldResponse = await fetch(
+    const fieldResponse = await bounded(
       `https://dev.azure.com/${organization}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/fields/${encodeURIComponent(field.referenceName)}?api-version=7.0`,
-      { headers: authHeaders }
+      authHeaders
     );
 
     if (fieldResponse.ok) {
@@ -38,18 +50,18 @@ export async function resolveAllowedValues(
 
   // Approach 2: For custom picklist fields, fetch from the global fields API
   try {
-    const globalFieldResponse = await fetch(
+    const globalFieldResponse = await bounded(
       `https://dev.azure.com/${organization}/_apis/wit/fields/${encodeURIComponent(field.referenceName)}?api-version=7.0`,
-      { headers: authHeaders }
+      authHeaders
     );
 
     if (globalFieldResponse.ok) {
       const globalFieldData = await globalFieldResponse.json();
 
       if (globalFieldData.isPicklist && globalFieldData.picklistId) {
-        const picklistResponse = await fetch(
+        const picklistResponse = await bounded(
           `https://dev.azure.com/${organization}/_apis/work/processes/lists/${globalFieldData.picklistId}?api-version=7.0`,
-          { headers: authHeaders }
+          authHeaders
         );
 
         if (picklistResponse.ok) {
@@ -65,9 +77,9 @@ export async function resolveAllowedValues(
 
   // Approach 3: Fetch via process template API
   try {
-    const projectResponse = await fetch(
+    const projectResponse = await bounded(
       `https://dev.azure.com/${organization}/_apis/projects/${encodeURIComponent(projectName)}/properties?api-version=7.0-preview.1`,
-      { headers: authHeaders }
+      authHeaders
     );
 
     if (projectResponse.ok) {
@@ -77,9 +89,9 @@ export async function resolveAllowedValues(
       )?.value;
 
       if (processId) {
-        const processWitResponse = await fetch(
+        const processWitResponse = await bounded(
           `https://dev.azure.com/${organization}/_apis/work/processes/${processId}/workItemTypes?api-version=7.0`,
-          { headers: authHeaders }
+          authHeaders
         );
 
         if (processWitResponse.ok) {
@@ -89,9 +101,9 @@ export async function resolveAllowedValues(
           );
 
           if (witDef?.referenceName) {
-            const processFieldsResponse = await fetch(
+            const processFieldsResponse = await bounded(
               `https://dev.azure.com/${organization}/_apis/work/processes/${processId}/workItemTypes/${encodeURIComponent(witDef.referenceName)}/fields?api-version=7.0`,
-              { headers: authHeaders }
+              authHeaders
             );
 
             if (processFieldsResponse.ok) {

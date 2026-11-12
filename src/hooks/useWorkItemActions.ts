@@ -133,6 +133,7 @@ export interface WorkItemActions {
   confirmPendingTypeChange: () => Promise<void>;
   cancelPendingTypeChange: () => void;
   requiredFieldMembers: User[];
+  isLoadingRequiredFieldMembers: boolean;
   pendingTypeMemberSearch: string;
   setPendingTypeMemberSearch: (search: string) => void;
   filteredPendingTypeMembers: User[];
@@ -195,6 +196,9 @@ export function useWorkItemActions({
   const [isLoadingRequiredFields, setIsLoadingRequiredFields] = useState(false);
   const [pendingTypeFieldValues, setPendingTypeFieldValues] = useState<Record<string, string>>({});
   const [requiredFieldMembers, setRequiredFieldMembers] = useState<User[]>([]);
+  const [isLoadingRequiredFieldMembers, setIsLoadingRequiredFieldMembers] = useState(false);
+  /** Counts state selections, so only the newest one may act on its answer. */
+  const stateSelectionRef = useRef(0);
   const [pendingTypeMemberSearch, setPendingTypeMemberSearch] = useState('');
   // The same shape for a state change (#651). Separate state rather than one
   // shared pending-change object: both dialogs can be reached from the same
@@ -323,39 +327,64 @@ export function useWorkItemActions({
    * it is what the user sees. Refusing to try would block transitions that are
    * perfectly allowed.
    */
+  /**
+   * People for an identity field's picker, loaded once per project.
+   *
+   * The dialog shows "Loading..." while this runs and says plainly when it
+   * finishes with nobody, rather than showing a spinner for ever on a request
+   * that already failed (raised in review on #652).
+   */
+  const loadRequiredFieldMembers = useCallback(async () => {
+    if (!project) return;
+    setIsLoadingRequiredFieldMembers(true);
+    try {
+      const response = await devOpsGet(
+        `/api/devops/projects/${encodeURIComponent(project)}/members`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setRequiredFieldMembers(data.members || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch members:', err);
+    } finally {
+      setIsLoadingRequiredFieldMembers(false);
+    }
+  }, [project, devOpsGet]);
+
+  // A list loaded for one project must not be offered for another: an identity
+  // from the old project does not resolve in the new one, so the update would
+  // fail after the pick (raised in review on #652).
+  useEffect(() => {
+    setRequiredFieldMembers([]);
+  }, [project]);
+
   const handleStateSelect = useCallback(
     async (state: string) => {
       if (!onStateChange) return;
 
       if (workItemId && project) {
+        // Only the newest selection may act. The options stay clickable while
+        // this runs, and two lookups can finish in either order -- an older
+        // one could otherwise replace the newer one's prompt, or move the
+        // ticket while that prompt was open (raised in review on #652).
+        const selection = ++stateSelectionRef.current;
         setIsLoadingRequiredFields(true);
         try {
-          {
-            const fields = await fetchStateRequirements(devOpsGet, workItemId, project, state);
-            if (fields.length > 0) {
-              setIsStateDropdownOpen(false);
-              setPendingStateChange({ state, requiredFields: fields });
-              setPendingStateFieldValues({});
-              setPendingStateMemberSearch('');
-              if (fields.some((f) => f.isIdentity) && requiredFieldMembers.length === 0) {
-                try {
-                  const members = await devOpsGet(
-                    `/api/devops/projects/${encodeURIComponent(project)}/members`
-                  );
-                  if (members.ok) {
-                    const data = await members.json();
-                    setRequiredFieldMembers(data.members || []);
-                  }
-                } catch {
-                  // The picker falls back to an empty list, which the dialog
-                  // says plainly rather than pretending nobody exists.
-                }
-              }
-              return;
-            }
+          const fields = await fetchStateRequirements(devOpsGet, workItemId, project, state);
+          if (selection !== stateSelectionRef.current) return;
+          if (fields.length > 0) {
+            setIsStateDropdownOpen(false);
+            setPendingStateChange({ state, requiredFields: fields });
+            setPendingStateFieldValues({});
+            setPendingStateMemberSearch('');
+            if (fields.some((f) => f.isIdentity)) await loadRequiredFieldMembers();
+            return;
           }
         } finally {
-          setIsLoadingRequiredFields(false);
+          // Left alone when a newer selection has taken over: it owns the flag
+          // and is still running.
+          if (selection === stateSelectionRef.current) setIsLoadingRequiredFields(false);
         }
       }
 
@@ -367,7 +396,7 @@ export function useWorkItemActions({
         setIsUpdatingState(false);
       }
     },
-    [onStateChange, workItemId, project, devOpsGet, requiredFieldMembers.length]
+    [onStateChange, workItemId, project, devOpsGet, loadRequiredFieldMembers]
   );
 
   const setPendingStateFieldValue = useCallback((fieldRef: string, value: string) => {
@@ -481,21 +510,16 @@ export function useWorkItemActions({
               setPendingTypeFieldValues({});
               setPendingTypeMemberSearch('');
 
-              // Pre-fetch team members for people picker fields (e.g., Found By)
-              const hasPeopleField = fields.some((f) => f.referenceName === 'Custom.FoundBy');
-              if (hasPeopleField && requiredFieldMembers.length === 0) {
-                try {
-                  const membersResponse = await devOpsGet(
-                    `/api/devops/projects/${encodeURIComponent(project)}/members`
-                  );
-                  if (membersResponse.ok) {
-                    const membersData = await membersResponse.json();
-                    setRequiredFieldMembers(membersData.members || []);
-                  }
-                } catch (err) {
-                  console.error('Failed to fetch members for type change:', err);
-                }
-              }
+              // Any identity field needs the picker, not just Found By: the
+              // endpoint reports `isIdentity` now, and the dialog draws a
+              // picker from it. Recognising one field name here left every
+              // other identity field with an empty picker and no way to
+              // confirm (raised in review on #652). The name check stays for
+              // an answer that predates the flag.
+              const hasPeopleField = fields.some(
+                (f) => f.isIdentity || f.referenceName === 'Custom.FoundBy'
+              );
+              if (hasPeopleField) await loadRequiredFieldMembers();
               return;
             }
           }
@@ -515,7 +539,7 @@ export function useWorkItemActions({
         setIsUpdatingType(false);
       }
     },
-    [onTypeChange, workItemType, project, devOpsGet, requiredFieldMembers.length]
+    [onTypeChange, workItemType, project, devOpsGet, loadRequiredFieldMembers]
   );
 
   const resetAll = useCallback(() => {
@@ -569,6 +593,7 @@ export function useWorkItemActions({
     confirmPendingTypeChange,
     cancelPendingTypeChange,
     requiredFieldMembers,
+    isLoadingRequiredFieldMembers,
     pendingTypeMemberSearch,
     setPendingTypeMemberSearch,
     filteredPendingTypeMembers,

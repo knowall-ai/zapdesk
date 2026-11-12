@@ -241,6 +241,7 @@ export default function TicketDetail({
   } | null>(null);
   const [pendingTypeFieldValues, setPendingTypeFieldValues] = useState<Record<string, string>>({});
   const [requiredFieldMembers, setRequiredFieldMembers] = useState<User[]>([]);
+  const [isLoadingRequiredFieldMembers, setIsLoadingRequiredFieldMembers] = useState(false);
   const [pendingTypeMemberSearch, setPendingTypeMemberSearch] = useState('');
 
   // A state change waiting on fields the process requires (#651). The
@@ -407,7 +408,8 @@ export default function TicketDetail({
 
   /** People for an identity field's picker, loaded once per ticket. */
   const loadRequiredFieldMembers = useCallback(async () => {
-    if (!ticket.project || requiredFieldMembers.length > 0) return;
+    if (!ticket.project) return;
+    setIsLoadingRequiredFieldMembers(true);
     try {
       const response = await devOpsGet(
         `/api/devops/projects/${encodeURIComponent(ticket.project)}/members`
@@ -418,8 +420,16 @@ export default function TicketDetail({
       }
     } catch (err) {
       console.error('Failed to fetch members:', err);
+    } finally {
+      setIsLoadingRequiredFieldMembers(false);
     }
-  }, [ticket.project, requiredFieldMembers.length, devOpsGet]);
+  }, [ticket.project, devOpsGet]);
+
+  // A list loaded for one project must not be offered for another (raised in
+  // review on #652).
+  useEffect(() => {
+    setRequiredFieldMembers([]);
+  }, [ticket.project]);
 
   const handleStateSelect = async (state: string) => {
     if (!onStateChange) return;
@@ -2256,6 +2266,7 @@ export default function TicketDetail({
           onCancel={handleCancelPendingStateChange}
           isUpdating={isUpdatingState}
           members={requiredFieldMembers}
+          membersLoading={isLoadingRequiredFieldMembers}
           memberSearch={pendingStateMemberSearch}
           onMemberSearchChange={setPendingStateMemberSearch}
           filteredMembers={filteredPendingStateMembers}
@@ -2275,6 +2286,7 @@ export default function TicketDetail({
           onCancel={handleCancelPendingTypeChange}
           isUpdating={isUpdatingType}
           members={requiredFieldMembers}
+          membersLoading={isLoadingRequiredFieldMembers}
           memberSearch={pendingTypeMemberSearch}
           onMemberSearchChange={setPendingTypeMemberSearch}
           filteredMembers={filteredPendingTypeMembers}

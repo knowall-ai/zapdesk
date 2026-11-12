@@ -610,6 +610,7 @@ export default function WorkItemDetailDialog({
           onCancel={actions.cancelPendingTypeChange}
           isUpdating={actions.isUpdatingType}
           members={actions.requiredFieldMembers}
+          membersLoading={actions.isLoadingRequiredFieldMembers}
           memberSearch={actions.pendingTypeMemberSearch}
           onMemberSearchChange={actions.setPendingTypeMemberSearch}
           filteredMembers={actions.filteredPendingTypeMembers}
@@ -628,6 +629,7 @@ export default function WorkItemDetailDialog({
           onCancel={actions.cancelPendingStateChange}
           isUpdating={actions.isUpdatingState}
           members={actions.requiredFieldMembers}
+          membersLoading={actions.isLoadingRequiredFieldMembers}
           memberSearch={actions.pendingStateMemberSearch}
           onMemberSearchChange={actions.setPendingStateMemberSearch}
           filteredMembers={actions.filteredPendingStateMembers}

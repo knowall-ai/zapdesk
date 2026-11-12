@@ -27,6 +27,19 @@ import {
  * should go ahead and let the server's own error speak, rather than block a
  * transition that may well be allowed.
  */
+/**
+ * How long each lookup here may take. The dialog waits on this answer before
+ * it will offer the transition, so an upstream call that never returns would
+ * leave the user looking at a dropdown that does nothing. `devops.ts` bounds
+ * its own calls the same way (raised in review on #652).
+ */
+const UPSTREAM_TIMEOUT_MS = 10_000;
+
+/** A GET that cannot hang, so the fallbacks below are reached in bounded time. */
+function bounded(url: string, headers: HeadersInit): Promise<Response> {
+  return fetch(url, { headers, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSessionWithToken();
@@ -67,9 +80,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // The item itself: the state it is really in, its type, and which of the
     // required fields it already holds. Taking `from` from the server rather
     // than the caller keeps the answer honest if the board is stale.
-    const itemResponse = await fetch(
+    const itemResponse = await bounded(
       `https://dev.azure.com/${org}/${proj}/_apis/wit/workitems/${ticketId}?api-version=7.0`,
-      { headers: authHeaders }
+      authHeaders
     );
     if (!itemResponse.ok) {
       return NextResponse.json({ fields: [], unavailable: true });
@@ -83,9 +96,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     // Project -> process. The properties endpoint takes the project's id and
     // answers 400 to its name, so the name has to be resolved first.
-    const projectResponse = await fetch(
+    const projectResponse = await bounded(
       `https://dev.azure.com/${org}/_apis/projects/${proj}?api-version=7.0`,
-      { headers: authHeaders }
+      authHeaders
     );
     if (!projectResponse.ok) return NextResponse.json({ fields: [], unavailable: true });
     const projectId = ((await projectResponse.json()) as { id?: string }).id;
@@ -94,9 +107,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // `System.ProcessTemplateType` is the inherited process. `System.Process
     // Template` names the base template it was derived from ("Scrum"), which
     // is not the process whose rules apply.
-    const propsResponse = await fetch(
+    const propsResponse = await bounded(
       `https://dev.azure.com/${org}/_apis/projects/${encodeURIComponent(projectId)}/properties?api-version=7.0-preview.1`,
-      { headers: authHeaders }
+      authHeaders
     );
     if (!propsResponse.ok) return NextResponse.json({ fields: [], unavailable: true });
     const props = (await propsResponse.json()) as {
@@ -107,9 +120,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     // The rules endpoint takes the type's reference name, while the work item
     // carries its display name.
-    const typesResponse = await fetch(
+    const typesResponse = await bounded(
       `https://dev.azure.com/${org}/_apis/work/processes/${processId}/workitemtypes?api-version=7.0`,
-      { headers: authHeaders }
+      authHeaders
     );
     if (!typesResponse.ok) return NextResponse.json({ fields: [], unavailable: true });
     const types = (await typesResponse.json()) as {
@@ -118,9 +131,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const referenceName = types.value?.find((t) => t.name === typeName)?.referenceName;
     if (!referenceName) return NextResponse.json({ fields: [], unavailable: true });
 
-    const rulesResponse = await fetch(
+    const rulesResponse = await bounded(
       `https://dev.azure.com/${org}/_apis/work/processes/${processId}/workItemTypes/${encodeURIComponent(referenceName)}/rules?api-version=7.0`,
-      { headers: authHeaders }
+      authHeaders
     );
     if (!rulesResponse.ok) {
       // Most likely a permission the user does not have. Say so rather than
@@ -138,9 +151,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // field wants a people picker, a date wants a date input.
     const fields = await Promise.all(
       needed.map(async (referenceNameOfField) => {
-        const fieldResponse = await fetch(
+        const fieldResponse = await bounded(
           `https://dev.azure.com/${org}/_apis/wit/fields/${encodeURIComponent(referenceNameOfField)}?api-version=7.0`,
-          { headers: authHeaders }
+          authHeaders
         );
         const definition = fieldResponse.ok
           ? ((await fieldResponse.json()) as DevOpsField & {

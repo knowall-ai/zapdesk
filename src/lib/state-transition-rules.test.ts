@@ -155,6 +155,85 @@ describe('requiredFieldsForTransition', () => {
   });
 });
 
+// Checked against a real `api-version=7.0` response: every rule carries
+// `isDisabled`, identifiers come back bare, and the action vocabulary seen was
+// copyFromCurrentUser, copyFromServerClock, copyValue, makeReadOnly,
+// makeRequired, setDefaultFromCurrentUser, setDefaultValue, setValueToEmpty
+// (raised in review on #652).
+describe('rules the process is not actually applying', () => {
+  it('ignores a disabled rule', () => {
+    const disabled: ProcessRule = { ...APPROVAL_NEEDED, isDisabled: true };
+    expect(requiredFieldsForTransition([disabled], 'New', 'Todo', () => false)).toEqual([]);
+  });
+
+  it('still applies a rule that says it is not disabled', () => {
+    const enabled: ProcessRule = { ...APPROVAL_NEEDED, isDisabled: false };
+    expect(requiredFieldsForTransition([enabled], 'New', 'Todo', () => false)).toEqual([
+      'Custom.ApprovedBy',
+      'Custom.ApprovedDate',
+    ]);
+  });
+
+  // Emptying a field is not supplying one: if a process both required a field
+  // and blanked it on the same transition, skipping the prompt would send an
+  // update the rule refuses.
+  it('does not treat setValueToEmpty as the process filling the field', () => {
+    const required: ProcessRule = {
+      conditions: [{ field: 'System.State', conditionType: 'when', value: 'Todo' }],
+      actions: [{ actionType: 'makeRequired', targetField: 'Custom.Thing' }],
+    };
+    const emptied: ProcessRule = {
+      conditions: [{ field: 'System.State', conditionType: 'when', value: 'Todo' }],
+      actions: [{ actionType: 'setValueToEmpty', targetField: 'Custom.Thing' }],
+    };
+    expect(requiredFieldsForTransition([required, emptied], 'New', 'Todo', () => false)).toEqual([
+      'Custom.Thing',
+    ]);
+  });
+
+  it.each(['copyFromClock', 'setDefaultFromClock', 'setDefaultFromField', 'copyFromField'])(
+    'treats %s as the process supplying the value',
+    (actionType) => {
+      const required: ProcessRule = {
+        conditions: [{ field: 'System.State', conditionType: 'when', value: 'Todo' }],
+        actions: [{ actionType: 'makeRequired', targetField: 'Custom.Thing' }],
+      };
+      const supplied: ProcessRule = {
+        conditions: [{ field: 'System.State', conditionType: 'when', value: 'Todo' }],
+        actions: [{ actionType, targetField: 'Custom.Thing' }],
+      };
+      expect(requiredFieldsForTransition([required, supplied], 'New', 'Todo', () => false)).toEqual(
+        []
+      );
+    }
+  );
+});
+
+// The endpoint returns bare identifiers, which is what every fixture above
+// uses. Microsoft's reference shows a `$`-prefixed form of the same names, and
+// a response in that shape would otherwise match nothing at all.
+describe('$-prefixed identifiers', () => {
+  const prefixed: ProcessRule = {
+    name: 'Approval Needed',
+    conditions: [{ field: 'System.State', conditionType: '$whenNot', value: 'New' }],
+    actions: [
+      { actionType: '$makeRequired', targetField: 'Custom.ApprovedDate' },
+      { actionType: '$makeRequired', targetField: 'Custom.ApprovedBy' },
+    ],
+  };
+
+  it('reads them the same as the bare form', () => {
+    expect(requiredFieldsForTransition([prefixed], 'New', 'Todo', () => false)).toEqual([
+      'Custom.ApprovedBy',
+      'Custom.ApprovedDate',
+    ]);
+  });
+
+  it('still asks for nothing when the condition does not hold', () => {
+    expect(requiredFieldsForTransition([prefixed], 'Todo', 'New', () => false)).toEqual([]);
+  });
+});
+
 describe('fieldHasValue', () => {
   it('treats absent, null and blank as no value', () => {
     expect(fieldHasValue(undefined, 'Custom.ApprovedBy')).toBe(false);
