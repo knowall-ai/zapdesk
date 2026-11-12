@@ -5,6 +5,7 @@ import {
   isPrivateIp,
   parseLightningAddress,
   LnurlError,
+  LNURL_DNS_TIMEOUT_MS,
   LNURL_MAX_RESPONSE_BYTES,
 } from '@/lib/lnurl-server';
 
@@ -120,6 +121,28 @@ describe('fetchLnurlInvoice', () => {
     const init = (fetchImpl.mock.calls[0] as unknown[])[1] as RequestInit;
     expect(init.redirect).toBe('error');
     expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  // The fetch signal cannot cover the name check, which happens before it is
+  // created, and `dns.lookup` takes no signal. Without its own deadline a
+  // resolver that never answers holds the route open and the dialog never
+  // leaves its loading state (raised in review on #642).
+  it('gives up on a name lookup that never answers, instead of hanging', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = provider();
+      const attempt = run({
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        // Never settles, so the deadline is the only thing that can end it.
+        resolve: () => new Promise<string[]>(() => {}),
+      });
+      const rejects = expect(attempt).rejects.toThrow(/Couldn't reach example\.com/);
+      await vi.advanceTimersByTimeAsync(LNURL_DNS_TIMEOUT_MS + 1);
+      await rejects;
+      expect(fetchImpl).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rejects an invalid address without fetching', async () => {

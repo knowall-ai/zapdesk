@@ -20,6 +20,8 @@ import { isIP } from 'node:net';
 
 /** How long each LNURL request may take. */
 export const LNURL_TIMEOUT_MS = 8_000;
+/** How long the name check before each request may take. */
+export const LNURL_DNS_TIMEOUT_MS = 3_000;
 /** LNURL responses are small JSON documents; anything bigger is refused. */
 export const LNURL_MAX_RESPONSE_BYTES = 64 * 1024;
 /** Bounds for a zap, in whole sats (mirrors the Zap dialog). */
@@ -100,6 +102,34 @@ const defaultResolver: HostResolver = async (hostname) =>
   (await lookup(hostname, { all: true })).map((entry) => entry.address);
 
 /**
+ * `work`, or a rejection once `ms` has passed.
+ *
+ * The request itself is bounded by `AbortSignal.timeout`, but that signal is
+ * created after the name check, and `dns.lookup` takes no signal. A resolver
+ * that never settles would hold the invoice route open for as long as the
+ * platform allows, and the dialog would sit on its loading state -- with
+ * neither the error nor the Try again this route exists to provide (raised in
+ * review on #642).
+ *
+ * `Promise.race` attaches a handler to `work` either way, so a rejection that
+ * arrives after the deadline is still handled and does not surface as an
+ * unhandled rejection.
+ */
+async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Throw unless `url` is an https URL on a public host.
  *
  * This is a check made before the request, so a DNS answer that changes
@@ -132,7 +162,7 @@ export async function assertSafeUrl(url: URL, resolve: HostResolver): Promise<vo
   }
   let addresses: string[];
   try {
-    addresses = await resolve(hostname);
+    addresses = await withDeadline(resolve(hostname), LNURL_DNS_TIMEOUT_MS);
   } catch {
     throw new LnurlError(`Couldn't reach ${hostname}`);
   }
