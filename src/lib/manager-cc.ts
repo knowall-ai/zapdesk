@@ -17,10 +17,24 @@
 
 import { isOwnSender, parseAddressList } from '@/lib/mail-addresses';
 
-/** `a@b`, with no spaces either side. */
+/**
+ * `a@b`, with nothing in it that means something else in a header.
+ *
+ * Stricter than the same-named check elsewhere, because these addresses come
+ * from configuration and go straight into `ccRecipients`: a comma or a
+ * semicolon would read as a second recipient, and angle brackets or quotes as
+ * a display name, so one entry could add a recipient nobody configured
+ * (raised in review on #656).
+ *
+ * An allow-list rather than a list of characters to forbid: the deny-list
+ * first written here let a backslash through, and the only way I noticed was
+ * running it. What is permitted is short and checkable; what is dangerous is
+ * not.
+ */
+const ADDRESS = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$/;
+
 function looksLikeEmail(value: string): boolean {
-  const parts = value.trim().split('@');
-  return parts.length === 2 && parts.every((part) => part.length > 0 && !/\s/.test(part));
+  return ADDRESS.test(value.trim());
 }
 
 /**
@@ -88,7 +102,12 @@ export function managerEmailsFor(
 ): string[] {
   const key = (project || '').trim().toLowerCase();
   if (!key) return [];
-  const configured = parseProjectManagers(raw)[key] ?? [];
+  // An own property only: a project literally called `constructor` or
+  // `toString` would otherwise find the one on `Object.prototype`, which is
+  // not an array -- the loop below would throw, every notification would
+  // swallow it, and no mail would go out (raised in review on #656).
+  const mapping = parseProjectManagers(raw);
+  const configured = Object.prototype.hasOwnProperty.call(mapping, key) ? mapping[key] : [];
   const to = (recipient || '').trim().toLowerCase();
 
   const seen = new Set<string>();

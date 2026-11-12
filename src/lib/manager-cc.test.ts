@@ -61,6 +61,41 @@ describe('parseProjectManagers', () => {
   });
 });
 
+// These addresses come from configuration and go straight into `ccRecipients`,
+// so an entry that means something else in a header would add a recipient
+// nobody configured (raised in review on #656).
+describe('addresses that could carry a second recipient', () => {
+  it.each([
+    ['angle brackets', '<a@b.com>'],
+    ['a quoted local part', '"x"@y.com'],
+    ['a colon', 'a:b@c.com'],
+    ['brackets', 'a[1]@b.com'],
+    ['a backslash', 'a\b@c.com'],
+    ['parentheses', 'a(comment)@b.com'],
+  ])('refuses %s', (_label, entry) => {
+    expect(
+      parseProjectManagers(`{"ABC Inc":[${JSON.stringify(entry)}]}`)['abc inc']
+    ).toBeUndefined();
+  });
+
+  // A comma or semicolon is the documented way to give several, so it is
+  // split into separate recipients rather than refused -- and each part still
+  // has to be an address.
+  it('splits a separated string instead of treating it as one address', () => {
+    expect(parseProjectManagers('{"ABC Inc":"a@b.com, c@d.com"}')['abc inc']).toEqual([
+      'a@b.com',
+      'c@d.com',
+    ]);
+    expect(parseProjectManagers('{"ABC Inc":"a@b.com; <bad>"}')['abc inc']).toEqual(['a@b.com']);
+  });
+
+  it('still accepts the ordinary shapes', () => {
+    expect(
+      parseProjectManagers('{"ABC Inc":["a.b-c@sub.example.co.uk","ok@intranet"]}')['abc inc']
+    ).toEqual(['a.b-c@sub.example.co.uk', 'ok@intranet']);
+  });
+});
+
 describe('managerEmailsFor', () => {
   const config = '{"Contoso Ltd":"manager@example.com","ABC Inc":"boss@example.com"}';
 
@@ -114,6 +149,18 @@ describe('managerEmailsFor', () => {
       managerEmailsFor('ABC Inc', 'alex@example.com', '{"ABC Inc":"zapdesk@example.com"}')
     ).toEqual([]);
   });
+
+  // `constructor` and friends are on every object's prototype. Reading one
+  // would hand back something that is not an array, and the loop would throw
+  // where every caller swallows it -- so no mail at all (raised in review on
+  // #656).
+  it.each(['constructor', 'toString', 'hasOwnProperty', '__proto__'])(
+    'copies nobody for a project called %s',
+    (project) => {
+      expect(managerEmailsFor(project, 'alex@example.com', '{}')).toEqual([]);
+      expect(managerEmailsFor(project, 'alex@example.com', undefined)).toEqual([]);
+    }
+  );
 
   it('reads the environment when no configuration is passed', () => {
     process.env.PROJECT_MANAGER_EMAILS = config;
