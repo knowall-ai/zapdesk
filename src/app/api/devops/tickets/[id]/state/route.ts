@@ -2,12 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSessionWithToken } from '@/lib/server-session';
 import { parseWorkItemId } from '@/lib/work-item-id';
 import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
-import {
-  isEmailTicket,
-  extractRequesterEmail,
-  sendStatusChangeNotification,
-  assigneeEmailFrom,
-} from '@/lib/email';
+import { sendStatusChangeNotification, assigneeEmailFrom } from '@/lib/email';
+import { notifiesCustomer, statusChangeRecipient } from '@/lib/status-notification';
 import { debugLog } from '@/lib/debug';
 
 /** Azure DevOps work item ids are positive int32 values. */
@@ -236,18 +232,37 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 }
 
-/** Fire-and-forget email notification for state changes on email-created tickets. */
+/**
+ * Fire-and-forget email about a state change.
+ *
+ * Every ticket, not only the ones that arrived by email (#654). This used to
+ * need both an `email` tag and an `email-from:` tag, which only the mailbox
+ * ingest writes, so a ticket raised in ZapDesk or in DevOps changed state in
+ * silence -- and a silence nobody could tell from a failure.
+ *
+ * Two reasons to say nothing remain, and both leave a line in the log: a
+ * state the customer is not told about, and no address to tell.
+ */
 function notifyStateChange(
   workItem: { fields?: Record<string, unknown> },
   ticketId: number,
   oldState: string,
   newState: string
 ) {
-  const tags = String(workItem.fields?.['System.Tags'] || '');
-  if (!isEmailTicket(tags)) return;
+  if (!notifiesCustomer(newState)) {
+    console.log(
+      `[Email] Ticket #${ticketId} moved to ${newState}, which customers are not told about - not notifying.`
+    );
+    return;
+  }
 
-  const requesterEmail = extractRequesterEmail(tags);
-  if (!requesterEmail) return;
+  const requesterEmail = statusChangeRecipient(workItem.fields);
+  if (!requesterEmail) {
+    console.warn(
+      `[Email] Ticket #${ticketId} moved to ${newState}, but it carries no address to notify - neither an email-from tag nor a usable creator.`
+    );
+    return;
+  }
 
   const subject = String(workItem.fields?.['System.Title'] || 'Your ticket');
   // Blind-copy the assigned engineer: this message is part of the customer's
