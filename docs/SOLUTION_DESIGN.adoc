@@ -212,6 +212,10 @@ name, not a definition.
 |`/api/github/status`
 |GET
 |Whether GitHub issues are configured
+
+|`/api/lightning/invoice`
+|POST
+|BOLT11 invoice for a zap: `{ lightningAddress, amountSats, ticketId? }` in, `{ invoice }` out. The server makes the LNURL-pay requests (see <<_lightning_invoices>>)
 |===
 
 == Security Considerations
@@ -231,6 +235,29 @@ name, not a definition.
   GitHub account, so the route decides access: a user only receives issues
   from repositories mapped to DevOps projects they can see in the selected
   organization. The token is never sent to the browser.
+
+=== Lightning Invoices
+
+The Zap dialog needs a BOLT11 invoice from the agent's Lightning address
+(LNURL-pay: `https://<domain>/.well-known/lnurlp/<name>`, then the callback
+it names). The Content-Security-Policy only allows `connect-src 'self'`, so
+the browser cannot make those requests; `POST /api/lightning/invoice` makes
+them on the server instead (`src/lib/lnurl-server.ts`). The CSP is not
+widened.
+
+Because the server then fetches URLs chosen by a user or by a remote LNURL
+service, each request is guarded against SSRF:
+
+* The Lightning address must be `name@domain` with a DNS hostname: no IPs or ports.
+* The metadata URL and the callback must be `https`, with no credentials and no port other than 443.
+* `localhost`, `.local`, `.internal` and single-label hosts are refused, as are
+  private, loopback, link-local, CGNAT and multicast IPs, whether given as an IP
+  or returned by DNS.
+* Redirects are refused, each request times out after 8 seconds, and a
+  response over 64 KB is refused.
+* The amount must be 1 to 1,000,000 sats and within the provider's
+  `minSendable` / `maxSendable`, and the returned invoice must be for exactly
+  that amount.
 
 === Email Webhook
 
