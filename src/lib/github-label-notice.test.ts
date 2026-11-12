@@ -48,4 +48,43 @@ describe('readGitHubLabelSummary', () => {
       readGitHubLabelSummary({ ticketLabel: 'ticket', fetchedCount: '1', labelledCount: 0 })
     ).toBeNull();
   });
+
+  // The counts cover what was read. If a repository failed or an organization
+  // was read only in part, the labelled issues may be among the missing ones,
+  // so "none carries the label" is not a conclusion the evidence supports --
+  // and it is the persistent notice, while the partial read is only a toast
+  // (raised in review on #644).
+  it('is null when a repository could not be read', () => {
+    expect(
+      readGitHubLabelSummary({
+        ticketLabel: 'ticket',
+        fetchedCount: 4,
+        labelledCount: 0,
+        failedRepos: ['owner/private-repo'],
+      })
+    ).toBeNull();
+  });
+
+  it('is null when an organization was read only in part', () => {
+    expect(
+      readGitHubLabelSummary({
+        ticketLabel: 'ticket',
+        fetchedCount: 1000,
+        labelledCount: 0,
+        truncatedRepos: ['owner/*'],
+      })
+    ).toBeNull();
+  });
+
+  it('still reads the summary when the read was complete', () => {
+    expect(
+      readGitHubLabelSummary({
+        ticketLabel: 'ticket',
+        fetchedCount: 4,
+        labelledCount: 0,
+        failedRepos: [],
+        truncatedRepos: [],
+      })
+    ).toEqual({ label: 'ticket', fetched: 4, labelled: 0 });
+  });
 });
