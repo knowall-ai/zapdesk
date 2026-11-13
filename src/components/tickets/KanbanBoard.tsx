@@ -24,7 +24,7 @@ import { debugLog, debugWarn } from '@/lib/debug';
 import { gitHubColumnFor, isGitHubItem } from '@/lib/github-kanban';
 import SourceLegend from '@/components/common/SourceLegend';
 import { sourceKindOf, type SourceKind } from '@/lib/source-colors';
-import { isStateChangeCancelled } from '@/lib/state-change-cancelled';
+import { dragFailureMessage } from '@/lib/drag-failure';
 
 // KanbanBoard can work with either Ticket[] or WorkItem[]
 // WorkItem uses 'state' while Ticket uses 'devOpsState' for the state name
@@ -302,13 +302,15 @@ export default function KanbanBoard({
             targetState,
           });
         } catch (error) {
-          // The process asked for fields and the user closed the dialog.
-          // Nothing was written, so the card goes back -- without a toast,
-          // because cancelling is a choice rather than a failure (#662).
-          if (isStateChangeCancelled(error)) {
-            setLocalItems(sourceItems);
-            return;
-          }
+          // Nothing was written, so the card goes back whatever happened.
+          // Process templates often block direct transitions (New → To Do
+          // where an intermediate state is required), and without a message
+          // the user just sees the card snap back (#391).
+          setLocalItems(sourceItems);
+          // Null when the user closed the required-fields dialog, which is a
+          // choice rather than a failure (#662).
+          const message = dragFailureMessage(error, targetState);
+          if (!message) return;
           // Not gated: a rejected transition is rare and its detail is the
           // whole point of issue #391.
           console.error('[Kanban DnD] state change failed — rolling back', {
@@ -317,16 +319,7 @@ export default function KanbanBoard({
             targetState,
             error,
           });
-          // Rollback on failure — and surface the upstream reason. Process
-          // templates often block direct transitions (e.g. New → To Do
-          // when an intermediate state is required); without a toast the
-          // user just sees the card snap back with no explanation (#391).
-          setLocalItems(sourceItems);
-          toast.error(
-            error instanceof Error && error.message
-              ? `Couldn't move to "${targetState}": ${error.message}`
-              : `Couldn't move to "${targetState}"`
-          );
+          toast.error(message);
         } finally {
           setIsUpdating(false);
         }

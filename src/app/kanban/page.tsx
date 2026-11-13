@@ -661,6 +661,8 @@ function StandupPageContent() {
   const boardStateChange = useBoardStateChange({
     get: devOpsGet,
     commit: commitStateChange,
+    // A pending change is dropped if the organisation changes under it.
+    scope: selectedOrganization?.accountName,
   });
   const handleStateChange = boardStateChange.requestStateChange;
 

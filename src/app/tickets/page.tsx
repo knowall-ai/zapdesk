@@ -393,6 +393,8 @@ function TicketsPageContent() {
       },
       [handleTicketStateChange]
     ),
+    // A pending change is dropped if the organisation changes under it.
+    scope: selectedOrganization?.accountName,
   });
 
   const handleDialogAssigneeChange = useCallback(

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useId, useRef } from 'react';
 import { X, Loader2, Search } from 'lucide-react';
 import type { RequiredField } from '@/hooks/useWorkItemActions';
 import type { User } from '@/types';
@@ -56,10 +57,57 @@ export default function RequiredFieldsDialog({
     return !!value;
   });
 
+  /**
+   * Both ways out are shut while the write is away.
+   *
+   * Cancelling then would put the card back in its old column while the PATCH
+   * carried on and very likely succeeded, leaving the board and the server
+   * telling different stories (#663 review). `useBoardStateChange` refuses a
+   * cancel mid-write as well; this is so nothing invites one.
+   */
+  const canLeave = !isUpdating;
+
+  const headingId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Move focus into the dialog, and put it back where it came from on close.
+   *
+   * This had none of a dialog's semantics: no role, no name, no focus. A
+   * screen reader announced nothing when it opened, and a keyboard user was
+   * left on the card behind it (raised in review on #663). It follows
+   * `TicketDialogShell`, including its decision not to attempt a focus trap --
+   * that is a larger change, and the hook above covers the one consequence
+   * that mattered, a pending change outliving the organisation it was asked in.
+   */
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    return () => {
+      // The trigger can be gone by now -- a card that moved column, say -- so
+      // this is only ever a best effort.
+      if (previous?.isConnected) previous.focus();
+    };
+  }, []);
+
+  // Escape is the other way out every dialog in the app offers.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isUpdating) onCancel();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isUpdating, onCancel]);
+
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50">
       <div
-        className="mx-4 w-full max-w-md rounded-lg shadow-xl"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={headingId}
+        tabIndex={-1}
+        className="mx-4 w-full max-w-md rounded-lg shadow-xl outline-none"
         style={{ backgroundColor: 'var(--background)' }}
       >
         {/* Header */}
@@ -67,12 +115,19 @@ export default function RequiredFieldsDialog({
           className="flex items-center justify-between border-b px-4 py-3"
           style={{ borderColor: 'var(--border)' }}
         >
-          <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
+          <h3
+            id={headingId}
+            className="text-base font-semibold"
+            style={{ color: 'var(--text-primary)' }}
+          >
             {changing === 'state' ? `Move to ${targetType}` : `Change to ${targetType}`}
           </h3>
           <button
+            type="button"
             onClick={onCancel}
-            className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
+            disabled={!canLeave}
+            aria-label="Close"
+            className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)] disabled:opacity-50"
             style={{ color: 'var(--text-muted)' }}
           >
             <X size={16} />
@@ -265,13 +320,16 @@ export default function RequiredFieldsDialog({
           style={{ borderColor: 'var(--border)' }}
         >
           <button
+            type="button"
             onClick={onCancel}
-            className="rounded-md px-4 py-2 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+            disabled={!canLeave}
+            className="rounded-md px-4 py-2 text-sm transition-colors hover:bg-[var(--surface-hover)] disabled:opacity-50"
             style={{ color: 'var(--text-secondary)' }}
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={onConfirm}
             disabled={!allFieldsFilled || isUpdating}
             className="btn-primary rounded-md px-4 py-2 text-sm disabled:opacity-50"

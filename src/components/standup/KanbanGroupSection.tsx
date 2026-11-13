@@ -23,7 +23,7 @@ import ActivitySummaryBar, { type PullRequestLoadState } from './ActivitySummary
 import { getColumnIcon, getColumnColor } from './columnConfig';
 import { highlightedFirst } from '@/lib/highlight-order';
 import { isInHandColumn } from '@/lib/in-hand-columns';
-import { isStateChangeCancelled } from '@/lib/state-change-cancelled';
+import { dragFailureMessage } from '@/lib/drag-failure';
 import {
   canTypeEnterColumn,
   resolveStateForColumn,
@@ -462,14 +462,13 @@ export default function KanbanGroupSection({
           resolvedState,
         });
       } catch (error) {
-        // The process wanted fields for this transition, the user was asked,
-        // and they closed the dialog. Nothing was written, so the card goes
-        // back -- but silently: cancelling is a choice, not a failure, and an
-        // error toast for it would read as though something broke (#662).
-        if (isStateChangeCancelled(error)) {
-          syncFromProps();
-          return;
-        }
+        // Nothing was written, so the card goes back whatever happened.
+        syncFromProps();
+        // Null when the user closed the required-fields dialog: that is a
+        // choice, not a failure, and an error for it would read as though
+        // something broke (#662).
+        const message = dragFailureMessage(error, targetCol);
+        if (!message) return;
         // Not gated: a rejected transition is rare and its detail is the
         // whole point of issue #391.
         console.error('[Standup DnD] state change failed — rolling back', {
@@ -479,16 +478,7 @@ export default function KanbanGroupSection({
           resolvedState,
           error,
         });
-        syncFromProps();
-        // Surface the upstream reason. A work item can only enter states its
-        // own work item type defines, so drops onto a column the type has no
-        // state for are rejected by DevOps ("TF401320: Rule Error…"). Without
-        // this toast the card just snaps back with no explanation (#391, #366).
-        toast.error(
-          error instanceof Error && error.message
-            ? `Couldn't move to "${targetCol}": ${error.message}`
-            : `Couldn't move to "${targetCol}"`
-        );
+        toast.error(message);
       } finally {
         setIsUpdating(false);
       }
