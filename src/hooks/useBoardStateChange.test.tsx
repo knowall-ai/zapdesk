@@ -426,3 +426,63 @@ describe('the requirements lookup', () => {
     expect(options?.signal).toBeInstanceOf(AbortSignal);
   });
 });
+describe('the page going away mid-lookup', () => {
+  // The unmount cleanup calls `cancel`, but there is nothing to cancel yet:
+  // `settleRef` is only set once the dialog opens. Without a mount check the
+  // drag's promise waits for a submit that can never come (#663 review).
+  it('cancels a lookup that answers after unmount', async () => {
+    const commit = vi.fn(async () => {});
+    const open = deferred<Response>();
+    const get = vi.fn(() => open.promise);
+    const { result, unmount } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    let caught: unknown;
+    const drag = result.current.requestStateChange(7, 'Todo', 'Contoso Ltd').catch((error) => {
+      caught = error;
+    });
+
+    unmount();
+    await act(async () => {
+      open.resolve(new Response(JSON.stringify({ fields: [APPROVED_DATE] }), { status: 200 }));
+      await drag;
+    });
+
+    expect(isStateChangeCancelled(caught)).toBe(true);
+    expect(commit).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The scope check sits above the commit, not below it (#663 review).
+ *
+ * A transition needing no fields was otherwise written with the drag's own
+ * closure, so a switch during the lookup sent the PATCH to the organisation
+ * the drag began in and popped its success toast over the new one.
+ */
+describe('a switch during the lookup for a transition that needs nothing', () => {
+  it('writes nothing', async () => {
+    const commit = vi.fn(async () => {});
+    const open = deferred<Response>();
+    const get = vi.fn(() => open.promise);
+    const { result, rerender } = renderHook(
+      ({ scope }: { scope: string }) => useBoardStateChange({ get, commit, scope }),
+      { initialProps: { scope: 'KnowAll' } }
+    );
+
+    let caught: unknown;
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active', 'Contoso Ltd').catch((error) => {
+        caught = error;
+      });
+    });
+
+    rerender({ scope: 'Other' });
+    await act(async () => {
+      open.resolve(new Response(JSON.stringify({ fields: [] }), { status: 200 }));
+      await open.promise;
+    });
+
+    expect(commit).not.toHaveBeenCalled();
+    expect(isStateChangeCancelled(caught)).toBe(true);
+  });
+});

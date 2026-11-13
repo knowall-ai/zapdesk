@@ -90,13 +90,29 @@ export default function RequiredFieldsDialog({
     };
   }, []);
 
-  // Escape is the other way out every dialog in the app offers.
+  /**
+   * Escape closes this prompt, and only this prompt.
+   *
+   * `TicketDialogShell` listens for Escape on `document` too, and when the
+   * pop-up opens this prompt both are mounted at once -- so one press closed
+   * the ticket dialog underneath as well, and did it even mid-write, when this
+   * prompt itself refuses to close (raised in review on #663).
+   *
+   * Listening in the capture phase and stopping the event there means the
+   * innermost dialog is the one that answers, which is what a modal should do.
+   * Nothing nested here handles Escape of its own -- the people picker is a
+   * search box and a list -- so nothing else is swallowed.
+   */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isUpdating) onCancel();
+      if (event.key !== 'Escape') return;
+      // Stopped whether or not it acts: while a write is away this prompt
+      // stays put, and the dialog behind it must not close either.
+      event.stopPropagation();
+      if (!isUpdating) onCancel();
     };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
   }, [isUpdating, onCancel]);
 
   return (

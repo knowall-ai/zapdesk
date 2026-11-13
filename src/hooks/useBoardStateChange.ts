@@ -104,6 +104,23 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
     scopeRef.current = scope;
   }, [scope]);
 
+  /**
+   * False once the hook unmounts.
+   *
+   * The unmount cleanup calls `cancel`, but while the lookup is still running
+   * there is nothing yet for it to cancel -- `settleRef` is only set when the
+   * dialog opens. Without this, a lookup that answered after the page had gone
+   * would open a dialog nobody can see, and leave the drag's promise and its
+   * handler waiting for a submit that can never come (#663 review).
+   */
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const requestStateChange = useCallback(
     async (itemId: number, state: string, project?: string) => {
       // No project means nothing to ask: the rules live on the project's
@@ -123,16 +140,23 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
         project,
         state
       );
+      // Checked before the commit below, not after it: a transition that
+      // needs no fields was otherwise written with the drag's own closure, so
+      // a switch during the lookup sent the PATCH to the organisation the drag
+      // began in and popped its success toast over the new one (#663 review).
+      //
+      // The page stays usable during the lookup, so the organisation can have
+      // changed by now, or the page can have gone entirely. Both take the
+      // cancel path: doing nothing beats writing this item's answers to
+      // whatever that id names elsewhere.
+      if (scopeRef.current !== askedIn || !mountedRef.current) {
+        throw new StateChangeCancelled();
+      }
+
       if (fields.length === 0) {
         await commit(itemId, state, project);
         return;
       }
-
-      // The page stays usable during the lookup, so the organisation can have
-      // changed by now. Asking for this item's fields and writing them to
-      // whatever that id names in another organisation would be worse than
-      // doing nothing, so this takes the cancel path (#663 review).
-      if (scopeRef.current !== askedIn) throw new StateChangeCancelled();
 
       // One dialog at a time. A second drag landing while one is open would
       // replace the pending change, leaving the first drag's promise unsettled
