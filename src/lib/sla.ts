@@ -122,8 +122,28 @@ export function getSLAPolicy(level: SLALevel): SLAPolicy {
 /**
  * Get SLA targets for a specific priority level
  */
+/**
+ * Policy targets are keyed on the priority names this codebase used before the
+ * rename, and those keys are part of the SLAPolicy shape rather than something
+ * a rename here can reach.
+ *
+ * Without the translation, `Critical`.toLowerCase() looks up a `critical` key
+ * that does not exist, `getSLATargets` returns undefined, and calculateTicketSLA
+ * reads firstResponseMinutes off it and throws.
+ */
+const POLICY_TARGET_KEYS: Record<string, 'urgent' | 'high' | 'normal' | 'low'> = {
+  critical: 'urgent',
+  urgent: 'urgent',
+  high: 'high',
+  medium: 'normal',
+  normal: 'normal',
+  low: 'low',
+};
+
 export function getSLATargets(policy: SLAPolicy, priority: TicketPriority): SLATargets {
-  const priorityKey = priority.toLowerCase() as 'urgent' | 'high' | 'normal' | 'low';
+  // Falls back rather than returning undefined: priority comes from DevOps and
+  // may hold a value this codebase does not know.
+  const priorityKey = POLICY_TARGET_KEYS[priority.toLowerCase()] ?? 'normal';
   return policy.targets[priorityKey];
 }
 
@@ -172,7 +192,7 @@ export function calculateTicketSLA(
   slaLevel: SLALevel = DEFAULT_SLA_LEVEL
 ): TicketSLAInfo {
   const policy = getSLAPolicy(slaLevel);
-  const targets = getSLATargets(policy, ticket.priority ?? 'Normal');
+  const targets = getSLATargets(policy, ticket.priority ?? 'Medium');
 
   // Calculate first response SLA
   const firstResponseMet = !!ticket.firstResponseAt;
@@ -289,9 +309,9 @@ export function getSLAStatusLabel(status: SLAStatus): string {
 // Default SLA targets by priority (in hours)
 // These can be overridden via environment variables
 const DEFAULT_SLA_CONFIG: SLAConfig = {
-  Urgent: { responseTimeHours: 1, resolutionTimeHours: 4 },
+  Critical: { responseTimeHours: 1, resolutionTimeHours: 4 },
   High: { responseTimeHours: 4, resolutionTimeHours: 8 },
-  Normal: { responseTimeHours: 8, resolutionTimeHours: 24 },
+  Medium: { responseTimeHours: 8, resolutionTimeHours: 24 },
   Low: { responseTimeHours: 24, resolutionTimeHours: 72 },
 };
 
@@ -299,20 +319,48 @@ const DEFAULT_SLA_CONFIG: SLAConfig = {
 const CONFIG_AT_RISK_THRESHOLD = 25; // 25% remaining = at risk
 
 /**
- * Get SLA configuration, allowing for environment variable overrides
+ * Priority names this codebase used before they were renamed to match what
+ * Azure DevOps actually returns.
+ *
+ * SLA_CONFIG is set per deployment, so a rename here cannot reach it. Left
+ * untranslated, a config written against the old names yields no entry for
+ * `Critical` or `Medium`, and the deadline functions read
+ * `resolutionTimeHours` off undefined and throw.
+ */
+const LEGACY_PRIORITY_KEYS: Record<string, TicketPriority> = {
+  Urgent: 'Critical',
+  Normal: 'Medium',
+};
+
+/**
+ * Get SLA configuration, allowing for environment variable overrides.
+ *
+ * Overrides are merged onto the defaults rather than replacing them, so a
+ * config naming only some priorities leaves the rest at their defaults instead
+ * of removing them.
  */
 export function getSLAConfig(): SLAConfig {
   const envConfig = process.env.SLA_CONFIG;
+  if (!envConfig) return DEFAULT_SLA_CONFIG;
 
-  if (envConfig) {
-    try {
-      return JSON.parse(envConfig) as SLAConfig;
-    } catch {
-      console.warn('Failed to parse SLA_CONFIG environment variable, using defaults');
+  try {
+    const parsed = JSON.parse(envConfig) as Record<string, SLAPriorityTargets>;
+    const config: SLAConfig = { ...DEFAULT_SLA_CONFIG };
+    for (const [key, targets] of Object.entries(parsed)) {
+      const priority = LEGACY_PRIORITY_KEYS[key] ?? key;
+      if (priority in DEFAULT_SLA_CONFIG) {
+        config[priority] = targets;
+      } else {
+        // Said rather than swallowed: a typo here means the intended target
+        // silently never applies, and the default looks like it worked.
+        console.warn(`SLA_CONFIG names an unknown priority "${key}" — ignoring it.`);
+      }
     }
+    return config;
+  } catch {
+    console.warn('Failed to parse SLA_CONFIG environment variable, using defaults');
+    return DEFAULT_SLA_CONFIG;
   }
-
-  return DEFAULT_SLA_CONFIG;
 }
 
 /**
@@ -320,14 +368,17 @@ export function getSLAConfig(): SLAConfig {
  */
 export function getSLATargetsForPriority(priority: TicketPriority): SLAPriorityTargets {
   const config = getSLAConfig();
-  return config[priority];
+  // Priority arrives from DevOps, which is free to hold a value this codebase
+  // does not know. Returning undefined here means a thrown TypeError two frames
+  // later, in a deadline calculation that reports nothing useful about why.
+  return config[priority] ?? DEFAULT_SLA_CONFIG[priority] ?? DEFAULT_SLA_CONFIG.Medium;
 }
 
 /**
  * Calculate the resolution deadline for a ticket
  */
 export function calculateResolutionDeadline(ticket: Ticket): Date {
-  const targets = getSLATargetsForPriority(ticket.priority ?? 'Normal');
+  const targets = getSLATargetsForPriority(ticket.priority ?? 'Medium');
   const createdAt = new Date(ticket.createdAt);
   return new Date(createdAt.getTime() + targets.resolutionTimeHours * 60 * 60 * 1000);
 }
@@ -336,7 +387,7 @@ export function calculateResolutionDeadline(ticket: Ticket): Date {
  * Calculate the response deadline for a ticket
  */
 export function calculateResponseDeadline(ticket: Ticket): Date {
-  const targets = getSLATargetsForPriority(ticket.priority ?? 'Normal');
+  const targets = getSLATargetsForPriority(ticket.priority ?? 'Medium');
   const createdAt = new Date(ticket.createdAt);
   return new Date(createdAt.getTime() + targets.responseTimeHours * 60 * 60 * 1000);
 }
@@ -352,7 +403,7 @@ export function isActiveTicketStatus(status: TicketStatus): boolean {
  * Calculate SLA status for a single ticket
  */
 export function calculateTicketSLAStatus(ticket: Ticket, now: Date = new Date()): TicketSLAStatus {
-  const targets = getSLATargetsForPriority(ticket.priority ?? 'Normal');
+  const targets = getSLATargetsForPriority(ticket.priority ?? 'Medium');
   const createdAt = new Date(ticket.createdAt);
 
   const responseTarget = calculateResponseDeadline(ticket);
