@@ -24,7 +24,9 @@ import { StandupSummaryCards, KanbanGroupSection } from '@/components/standup';
 import type { GroupActivity } from '@/components/standup/KanbanGroupSection';
 import type { PullRequestLoadState } from '@/components/standup/ActivitySummaryBar';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
+import BoardStateChangeDialog from '@/components/tickets/BoardStateChangeDialog';
 import { useDevOpsApi } from '@/hooks';
+import { useBoardStateChange } from '@/hooks/useBoardStateChange';
 import {
   CLOSED_WINDOW_DAYS,
   CLOSED_WINDOW_LABELS,
@@ -602,10 +604,26 @@ function StandupPageContent() {
 
   // Generic state-change. Pass `project` when known to avoid an
   // expensive cross-project scan on the server.
-  const handleStateChange = useCallback(
-    async (itemId: number, targetState: string, project?: string) => {
+  /**
+   * Write the state, with whatever fields the process required for it.
+   *
+   * `additionalFields` used to be missing from this path entirely. The pop-up
+   * collects them (#651) and hands them over, and they were dropped on the way
+   * here -- so the dialog asked for Approved By and an Approved Date, the user
+   * filled them in, and the PATCH went without them and was refused (#662).
+   */
+  const commitStateChange = useCallback(
+    async (
+      itemId: number,
+      targetState: string,
+      project?: string,
+      additionalFields?: Record<string, string>
+    ) => {
       const body: Record<string, unknown> = { state: targetState };
       if (project) body.project = project;
+      if (additionalFields && Object.keys(additionalFields).length > 0) {
+        body.additionalFields = additionalFields;
+      }
       debugLog('[Kanban] PATCH /state', { itemId, targetState, project });
       const response = await devOpsPatch(`/api/devops/tickets/${itemId}/state`, body);
 
@@ -631,6 +649,20 @@ function StandupPageContent() {
     },
     [refreshBoardAfterChange, devOpsPatch, selectedOrganization?.accountName]
   );
+
+  /**
+   * A drag asks the process for its required fields first (#662).
+   *
+   * Dragging a Bug out of New used to PATCH straight through and be refused by
+   * the "Approval Needed" rule, so the card sprang back wearing a raw DevOps
+   * error and the board gave you no way to satisfy it. The dialog the detail
+   * page has had since #651 opens here now instead.
+   */
+  const boardStateChange = useBoardStateChange({
+    get: devOpsGet,
+    commit: commitStateChange,
+  });
+  const handleStateChange = boardStateChange.requestStateChange;
 
   // Fetch the full Ticket on card click and open the detail dialog.
   // Uses a monotonic seq id so out-of-order responses from rapid clicks
@@ -708,7 +740,7 @@ function StandupPageContent() {
   // Pass project so the server doesn't have to scan every project to find
   // the work item.
   const handleDialogStateChange = useCallback(
-    async (workItemId: number, state: string) => {
+    async (workItemId: number, state: string, additionalFields?: Record<string, string>) => {
       const open = selectedTicket?.id === workItemId ? selectedTicket : undefined;
 
       // A GitHub issue's status is written back to GitHub as a state and a
@@ -729,11 +761,14 @@ function StandupPageContent() {
         return;
       }
 
-      await handleStateChange(workItemId, state, open?.project);
+      // Straight to the write, not through `handleStateChange`: the pop-up has
+      // already asked for these fields with its own dialog, and routing it
+      // through the drag path would ask a second time for the same transition.
+      await commitStateChange(workItemId, state, open?.project, additionalFields);
       setSelectedTicket((prev) => (prev ? { ...prev, devOpsState: state } : null));
     },
     [
-      handleStateChange,
+      commitStateChange,
       selectedTicket,
       devOpsPatch,
       refreshBoardAfterChange,
@@ -1386,6 +1421,15 @@ function StandupPageContent() {
             <LoadingSpinner />
           </div>
         )}
+
+        {/* What the process demands for a state a card was dragged to (#662) */}
+        <BoardStateChangeDialog
+          pending={boardStateChange.pending}
+          isSubmitting={boardStateChange.isSubmitting}
+          get={devOpsGet}
+          onSubmit={boardStateChange.submit}
+          onCancel={boardStateChange.cancel}
+        />
 
         {/* Detail dialog (issue #368) */}
         <WorkItemDetailDialog

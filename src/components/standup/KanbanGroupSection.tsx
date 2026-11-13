@@ -23,6 +23,7 @@ import ActivitySummaryBar, { type PullRequestLoadState } from './ActivitySummary
 import { getColumnIcon, getColumnColor } from './columnConfig';
 import { highlightedFirst } from '@/lib/highlight-order';
 import { isInHandColumn } from '@/lib/in-hand-columns';
+import { isStateChangeCancelled } from '@/lib/state-change-cancelled';
 import {
   canTypeEnterColumn,
   resolveStateForColumn,
@@ -461,6 +462,14 @@ export default function KanbanGroupSection({
           resolvedState,
         });
       } catch (error) {
+        // The process wanted fields for this transition, the user was asked,
+        // and they closed the dialog. Nothing was written, so the card goes
+        // back -- but silently: cancelling is a choice, not a failure, and an
+        // error toast for it would read as though something broke (#662).
+        if (isStateChangeCancelled(error)) {
+          syncFromProps();
+          return;
+        }
         // Not gated: a rejected transition is rare and its detail is the
         // whole point of issue #391.
         console.error('[Standup DnD] state change failed — rolling back', {
