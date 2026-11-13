@@ -93,19 +93,22 @@ function DroppableColumn({
   const color = getColumnColor(name, category);
   const isDoneColumn = category === 'Completed';
   const doneHint = doneWindowHint(closedWindow);
+  // To Do and Active are the work in hand (#619). What they are spared is the
+  // fade and the reorder, named separately below -- not the ring and the
+  // badge, which they used to lose along with them because all four derived
+  // from one `highlights` value. That left the Highlight button counting cards
+  // in these two columns and the board marking none of them (#659), and these
+  // are the columns most of the activity is in.
+  const inHand = isInHandColumn(name);
+  /** Highlighting is on and this column fades the cards that did not move. */
+  const fadeUnmarked = highlights !== undefined && !inHand;
   // Highlighted cards first while highlighting is on (#503). One array for both
   // the rendered list and the SortableContext below: if those two disagree, a
-  // drag lands on the wrong card.
-  // To Do and Active are the work in hand: never faded, never ringed (#619).
-  // Taking `highlights` away for this column handles all three at once -- the
-  // fade, the ring and the reason badges all derive from it -- and keeps the
-  // card order stable, since `highlightedFirst` is a no-op without it.
-  const columnHighlights = isInHandColumn(name) ? undefined : highlights;
-  // The amber tier follows the same rule, and sorts below the 24-hour cards.
-  const columnRecent = columnHighlights === undefined ? undefined : recent;
+  // drag lands on the wrong card. Not in the columns read aloud top to bottom:
+  // lifting a card there moves the one being talked through.
   const ordered = useMemo(
-    () => highlightedFirst(highlightedFirst(items, columnRecent), columnHighlights),
-    [items, columnRecent, columnHighlights]
+    () => (inHand ? items : highlightedFirst(highlightedFirst(items, recent), highlights)),
+    [items, recent, highlights, inHand]
   );
 
   return (
@@ -145,13 +148,9 @@ function DroppableColumn({
               key={item.id}
               item={item}
               isDragging={activeId === item.id}
-              highlight={columnHighlights?.get(item.id)}
-              recent={columnRecent?.has(item.id)}
-              dimmed={
-                columnHighlights !== undefined &&
-                !columnHighlights.has(item.id) &&
-                !columnRecent?.has(item.id)
-              }
+              highlight={highlights?.get(item.id)}
+              recent={recent?.has(item.id)}
+              dimmed={fadeUnmarked && !highlights?.has(item.id) && !recent?.has(item.id)}
               onClick={onItemClick}
             />
           ))}

@@ -284,14 +284,18 @@ describe('the amber 72-hour tier (#586)', () => {
     expect(summary.highlights.get(2)).toEqual(['pr']);
   });
 
-  it('leaves out To Do and Active, which never wear a ring (#619)', () => {
+  // These two columns used to be left out, because #619 took their ring away
+  // along with their fade. The ring is back, so the amber tier counts them
+  // like every other column -- otherwise the board marks a card the number
+  // behind the Highlight button does not know about, which is #659 in reverse.
+  it('includes To Do and Active, which are ringed like every other column (#659)', () => {
     const inHand = [
       column('To Do', 'Proposed', [item(5, OLD, EARLIER)]),
       column('Active', 'InProgress', [item(6, OLD, EARLIER)]),
     ];
-    // Empty, so this group's Highlight toggle stays off rather than dimming
-    // the board without lighting anything.
-    expect(summariseGroupActivity(inHand, [], SINCE, RECENT_SINCE).recent.size).toBe(0);
+    expect([...summariseGroupActivity(inHand, [], SINCE, RECENT_SINCE).recent].sort()).toEqual([
+      5, 6,
+    ]);
   });
 
   it('is empty without a 72-hour window start', () => {
