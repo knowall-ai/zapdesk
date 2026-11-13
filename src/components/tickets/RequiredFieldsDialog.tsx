@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useId, useRef } from 'react';
 import { X, Loader2, Search } from 'lucide-react';
 import type { RequiredField } from '@/hooks/useWorkItemActions';
 import type { User } from '@/types';
@@ -56,10 +57,83 @@ export default function RequiredFieldsDialog({
     return !!value;
   });
 
+  /**
+   * Both ways out are shut while the write is away.
+   *
+   * Cancelling then would put the card back in its old column while the PATCH
+   * carried on and very likely succeeded, leaving the board and the server
+   * telling different stories (#663 review). `useBoardStateChange` refuses a
+   * cancel mid-write as well; this is so nothing invites one.
+   */
+  const canLeave = !isUpdating;
+
+  /**
+   * One verb for the whole dialog.
+   *
+   * The heading became state-aware with #651 and the button did not, so a card
+   * dragged to Todo was headed "Move to Todo" above a button reading "Change
+   * to Todo", and "Changing…" while it ran. Two words for one action in a box
+   * four lines tall; seen in the screenshots taken for #663.
+   */
+  const verb = changing === 'state' ? 'Move' : 'Change';
+
+  const headingId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Move focus into the dialog, and put it back where it came from on close.
+   *
+   * This had none of a dialog's semantics: no role, no name, no focus. A
+   * screen reader announced nothing when it opened, and a keyboard user was
+   * left on the card behind it (raised in review on #663). It follows
+   * `TicketDialogShell`, including its decision not to attempt a focus trap --
+   * that is a larger change, and the hook above covers the one consequence
+   * that mattered, a pending change outliving the organisation it was asked in.
+   */
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    return () => {
+      // The trigger can be gone by now -- a card that moved column, say -- so
+      // this is only ever a best effort.
+      if (previous?.isConnected) previous.focus();
+    };
+  }, []);
+
+  /**
+   * Escape closes this prompt, and only this prompt.
+   *
+   * `TicketDialogShell` listens for Escape on `document` too, and when the
+   * pop-up opens this prompt both are mounted at once -- so one press closed
+   * the ticket dialog underneath as well, and did it even mid-write, when this
+   * prompt itself refuses to close (raised in review on #663).
+   *
+   * Listening in the capture phase and stopping the event there means the
+   * innermost dialog is the one that answers, which is what a modal should do.
+   * Nothing nested here handles Escape of its own -- the people picker is a
+   * search box and a list -- so nothing else is swallowed.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      // Stopped whether or not it acts: while a write is away this prompt
+      // stays put, and the dialog behind it must not close either.
+      event.stopPropagation();
+      if (!isUpdating) onCancel();
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [isUpdating, onCancel]);
+
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50">
       <div
-        className="mx-4 w-full max-w-md rounded-lg shadow-xl"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={headingId}
+        tabIndex={-1}
+        className="mx-4 w-full max-w-md rounded-lg shadow-xl outline-none"
         style={{ backgroundColor: 'var(--background)' }}
       >
         {/* Header */}
@@ -67,12 +141,19 @@ export default function RequiredFieldsDialog({
           className="flex items-center justify-between border-b px-4 py-3"
           style={{ borderColor: 'var(--border)' }}
         >
-          <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {changing === 'state' ? `Move to ${targetType}` : `Change to ${targetType}`}
+          <h3
+            id={headingId}
+            className="text-base font-semibold"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            {`${verb} to ${targetType}`}
           </h3>
           <button
+            type="button"
             onClick={onCancel}
-            className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
+            disabled={!canLeave}
+            aria-label="Close"
+            className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)] disabled:opacity-50"
             style={{ color: 'var(--text-muted)' }}
           >
             <X size={16} />
@@ -265,13 +346,16 @@ export default function RequiredFieldsDialog({
           style={{ borderColor: 'var(--border)' }}
         >
           <button
+            type="button"
             onClick={onCancel}
-            className="rounded-md px-4 py-2 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+            disabled={!canLeave}
+            className="rounded-md px-4 py-2 text-sm transition-colors hover:bg-[var(--surface-hover)] disabled:opacity-50"
             style={{ color: 'var(--text-secondary)' }}
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={onConfirm}
             disabled={!allFieldsFilled || isUpdating}
             className="btn-primary rounded-md px-4 py-2 text-sm disabled:opacity-50"
@@ -279,10 +363,10 @@ export default function RequiredFieldsDialog({
             {isUpdating ? (
               <span className="flex items-center gap-2">
                 <Loader2 size={14} className="animate-spin" />
-                Changing...
+                {changing === 'state' ? 'Moving…' : 'Changing…'}
               </span>
             ) : (
-              `Change to ${targetType}`
+              `${verb} to ${targetType}`
             )}
           </button>
         </div>

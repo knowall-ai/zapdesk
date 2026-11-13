@@ -24,6 +24,7 @@ import { debugLog, debugWarn } from '@/lib/debug';
 import { gitHubColumnFor, isGitHubItem } from '@/lib/github-kanban';
 import SourceLegend from '@/components/common/SourceLegend';
 import { sourceKindOf, type SourceKind } from '@/lib/source-colors';
+import { dragFailureMessage } from '@/lib/drag-failure';
 
 // KanbanBoard can work with either Ticket[] or WorkItem[]
 // WorkItem uses 'state' while Ticket uses 'devOpsState' for the state name
@@ -32,7 +33,12 @@ type KanbanItem = Ticket | WorkItem;
 interface KanbanBoardProps {
   tickets?: Ticket[];
   items?: WorkItem[]; // Alternative prop for WorkItem[]
-  onTicketStateChange?: (ticketId: number, newState: string) => Promise<void>;
+  /**
+   * Writes the dropped card's new state. `project` is passed on so the handler
+   * can ask that project's process what the transition requires before
+   * writing it (#662), and so the route need not scan every project.
+   */
+  onTicketStateChange?: (ticketId: number, newState: string, project?: string) => Promise<void>;
   readOnly?: boolean; // Disable drag-and-drop
   groupBy?: GroupByOption;
   groupedItems?: Record<string, WorkItem[]>; // Pre-grouped items from WorkItemBoard
@@ -290,12 +296,21 @@ export default function KanbanBoard({
             fromState,
             targetState,
           });
-          await onTicketStateChange(activeItemId, targetState);
+          await onTicketStateChange(activeItemId, targetState, originalItem.project);
           debugLog('[Kanban DnD] state change succeeded', {
             itemId: activeItemId,
             targetState,
           });
         } catch (error) {
+          // Nothing was written, so the card goes back whatever happened.
+          // Process templates often block direct transitions (New → To Do
+          // where an intermediate state is required), and without a message
+          // the user just sees the card snap back (#391).
+          setLocalItems(sourceItems);
+          // Null when the user closed the required-fields dialog, which is a
+          // choice rather than a failure (#662).
+          const message = dragFailureMessage(error, targetState);
+          if (!message) return;
           // Not gated: a rejected transition is rare and its detail is the
           // whole point of issue #391.
           console.error('[Kanban DnD] state change failed — rolling back', {
@@ -304,16 +319,7 @@ export default function KanbanBoard({
             targetState,
             error,
           });
-          // Rollback on failure — and surface the upstream reason. Process
-          // templates often block direct transitions (e.g. New → To Do
-          // when an intermediate state is required); without a toast the
-          // user just sees the card snap back with no explanation (#391).
-          setLocalItems(sourceItems);
-          toast.error(
-            error instanceof Error && error.message
-              ? `Couldn't move to "${targetState}": ${error.message}`
-              : `Couldn't move to "${targetState}"`
-          );
+          toast.error(message);
         } finally {
           setIsUpdating(false);
         }

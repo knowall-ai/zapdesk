@@ -11,10 +11,13 @@ import { LoadingSpinner } from '@/components/common';
 import GitHubLabelNotice from '@/components/common/GitHubLabelNotice';
 import { TicketList } from '@/components/tickets';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
+import BoardStateChangeDialog from '@/components/tickets/BoardStateChangeDialog';
 import ZapDialog from '@/components/tickets/ZapDialog';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { useSourceFilter } from '@/components/providers/SourceProvider';
+import { useDevOpsApi } from '@/hooks';
+import { useBoardStateChange } from '@/hooks/useBoardStateChange';
 import { ticketToWorkItem } from '@/lib/devops';
 import { useDefaultView, viewToShow } from '@/lib/default-view';
 import { readGitHubLabelSummary, type GitHubLabelSummary } from '@/lib/github-label-notice';
@@ -52,6 +55,9 @@ function TicketsPageContent() {
   const searchParams = useSearchParams();
   const { selectedOrganization } = useOrganization();
   const { refresh: refreshCounts } = useTicketCounts();
+  // Only the GET is taken from here; the writes on this page build their own
+  // request so their error messages stay as they were.
+  const { get: devOpsGet } = useDevOpsApi();
   const { sourceFilter, gitHubConfigured, sourceReady } = useSourceFilter();
   // No view asked for: the one starred in the sidebar, if any (#7729).
   const defaultView = useDefaultView();
@@ -349,14 +355,47 @@ function TicketsPageContent() {
     [tickets, selectedOrganization]
   );
 
+  /**
+   * The pop-up's own state change.
+   *
+   * `additionalFields` is forwarded, which it was not before: the dialog from
+   * #651 collected Approved By and an Approved Date, this handler took two
+   * arguments, and they were dropped on the floor -- so the PATCH went without
+   * them and DevOps refused the transition the dialog had just asked about
+   * (#662).
+   */
   const handleDialogStateChange = useCallback(
-    async (workItemId: number, state: string) => {
-      await handleTicketStateChange(workItemId, state);
+    async (workItemId: number, state: string, additionalFields?: Record<string, string>) => {
+      await handleTicketStateChange(workItemId, state, additionalFields);
       // Update the selected ticket's state in the dialog
       setSelectedTicket((prev) => (prev ? { ...prev, devOpsState: state } : null));
     },
     [handleTicketStateChange]
   );
+
+  /**
+   * A drag on the board asks the process for its required fields first (#662).
+   *
+   * The project is used only to look the rules up: the PATCH body deliberately
+   * leaves it out, as it always has, so a card carrying a stale project name
+   * still goes through the route's own cross-project search rather than 404ing.
+   */
+  const boardStateChange = useBoardStateChange({
+    get: devOpsGet,
+    commit: useCallback(
+      async (
+        itemId: number,
+        state: string,
+        _project: string | undefined,
+        additionalFields?: Record<string, string>
+      ) => {
+        await handleTicketStateChange(itemId, state, additionalFields);
+      },
+      [handleTicketStateChange]
+    ),
+    // A pending change is dropped if the organisation changes under it.
+    scope: selectedOrganization?.accountName,
+  });
 
   const handleDialogAssigneeChange = useCallback(
     async (workItemId: number, assigneeId: string | null) => {
@@ -642,7 +681,7 @@ function TicketsPageContent() {
             title={title}
             onWorkItemClick={handleWorkItemClick}
             onZapClick={handleZapClick}
-            onStatusChange={handleTicketStateChange}
+            onStatusChange={boardStateChange.requestStateChange}
             availableTypes={workItemTypes}
             defaultViewMode={defaultViewMode}
             hideTicketsOnlyToggle
@@ -651,6 +690,15 @@ function TicketsPageContent() {
             showSource={gitHubConfigured}
           />
         </div>
+
+        {/* What the process demands for a state a card was dragged to (#662) */}
+        <BoardStateChangeDialog
+          pending={boardStateChange.pending}
+          isSubmitting={boardStateChange.isSubmitting}
+          get={devOpsGet}
+          onSubmit={boardStateChange.submit}
+          onCancel={boardStateChange.cancel}
+        />
 
         {/* Work item detail dialog for list and kanban clicks */}
         <WorkItemDetailDialog
