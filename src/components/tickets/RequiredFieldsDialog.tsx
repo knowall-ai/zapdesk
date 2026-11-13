@@ -67,6 +67,16 @@ export default function RequiredFieldsDialog({
    */
   const canLeave = !isUpdating;
 
+  /**
+   * One verb for the whole dialog.
+   *
+   * The heading became state-aware with #651 and the button did not, so a card
+   * dragged to Todo was headed "Move to Todo" above a button reading "Change
+   * to Todo", and "Changing…" while it ran. Two words for one action in a box
+   * four lines tall; seen in the screenshots taken for #663.
+   */
+  const verb = changing === 'state' ? 'Move' : 'Change';
+
   const headingId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -136,7 +146,7 @@ export default function RequiredFieldsDialog({
             className="text-base font-semibold"
             style={{ color: 'var(--text-primary)' }}
           >
-            {changing === 'state' ? `Move to ${targetType}` : `Change to ${targetType}`}
+            {`${verb} to ${targetType}`}
           </h3>
           <button
             type="button"
@@ -353,10 +363,10 @@ export default function RequiredFieldsDialog({
             {isUpdating ? (
               <span className="flex items-center gap-2">
                 <Loader2 size={14} className="animate-spin" />
-                Changing...
+                {changing === 'state' ? 'Moving…' : 'Changing…'}
               </span>
             ) : (
-              `Change to ${targetType}`
+              `${verb} to ${targetType}`
             )}
           </button>
         </div>

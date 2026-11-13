@@ -114,6 +114,29 @@ describe('the prompt as a dialog', () => {
     expect(document.activeElement).toBe(screen.getByRole('dialog'));
   });
 
+  // The heading became state-aware with #651 and the button did not, so a card
+  // dragged to Todo was headed "Move to Todo" above a button reading "Change
+  // to Todo". Two words for one action, four lines apart.
+  it('uses one verb for the heading and the button', () => {
+    renderPrompt();
+    expect(screen.getByRole('dialog', { name: 'Move to Todo' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Move to Todo' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: /Change to/ })).toBeNull();
+  });
+
+  it('keeps that verb while the write is away', () => {
+    renderPrompt({ isUpdating: true });
+    expect(screen.getByText('Moving…')).toBeDefined();
+    expect(screen.queryByText('Changing…')).toBeNull();
+  });
+
+  // A type change still reads as a change: the wording is only wrong for a
+  // state, where the ticket moves rather than becomes something else.
+  it('still says change when the type is what changes', () => {
+    renderPrompt({ changing: 'type', targetType: 'Bug' });
+    expect(screen.getByRole('button', { name: 'Change to Bug' })).toBeDefined();
+  });
+
   // Both ways out are shut while the write is away: the hook ignores a cancel
   // then, and nothing should invite one.
   it('offers no way out while a write is away', () => {
