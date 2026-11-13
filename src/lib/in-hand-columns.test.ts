@@ -17,7 +17,8 @@ describe('isInHandColumn (#619)', () => {
 
   it('leaves every other column highlighting as it was', () => {
     // These are the columns where "did anything happen here" is the question,
-    // so the ring and the fade are doing real work.
+    // so fading the cards that did not move is doing real work. The ring is
+    // not at stake either way -- every column wears that now (#659).
     for (const name of ['New', 'Blocked', 'Resolved', 'Closed', 'Removed']) {
       expect(isInHandColumn(name)).toBe(false);
     }
