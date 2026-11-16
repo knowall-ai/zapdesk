@@ -37,6 +37,10 @@ interface RequiredFieldsDialogProps {
 
 const PEOPLE_PICKER_FIELDS = new Set(['Custom.FoundBy']);
 
+/** What can take keyboard focus inside the dialog. */
+const FOCUSABLE =
+  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
 export default function RequiredFieldsDialog({
   targetType,
   changing = 'type',
@@ -85,10 +89,8 @@ export default function RequiredFieldsDialog({
    *
    * This had none of a dialog's semantics: no role, no name, no focus. A
    * screen reader announced nothing when it opened, and a keyboard user was
-   * left on the card behind it (raised in review on #663). It follows
-   * `TicketDialogShell`, including its decision not to attempt a focus trap --
-   * that is a larger change, and the hook above covers the one consequence
-   * that mattered, a pending change outliving the organisation it was asked in.
+   * left on the card behind it (raised in review on #663). Focus is also kept
+   * inside while it is open: see the trap below.
    */
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -124,6 +126,66 @@ export default function RequiredFieldsDialog({
     document.addEventListener('keydown', onKeyDown, true);
     return () => document.removeEventListener('keydown', onKeyDown, true);
   }, [isUpdating, onCancel]);
+
+  /**
+   * Keep keyboard focus inside the dialog while it is open.
+   *
+   * `aria-modal` tells assistive technology the page behind is unavailable,
+   * but Tab still walked out past the last button -- onto the organisation
+   * switcher, among other things, where a keypress could throw away the
+   * pending move and everything typed into it (raised in review on #663).
+   *
+   * Tab and Shift+Tab wrap between the first and last control that can take
+   * focus right now (disabled ones are skipped, so it still works mid-write),
+   * and focus that lands behind the dialog by any other route is pulled back.
+   * Both listen in the capture phase, like Escape above, so the innermost
+   * dialog decides -- `TicketDialogShell` can be open underneath this one.
+   */
+  useEffect(() => {
+    const focusable = (): HTMLElement[] => {
+      const dialog = dialogRef.current;
+      if (!dialog) return [];
+      return [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (element) => !element.hasAttribute('disabled') && element.tabIndex >= 0
+      );
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const dialog = dialogRef.current;
+      const controls = focusable();
+      if (!dialog) return;
+      if (controls.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      const active = document.activeElement;
+      const inside = active instanceof Node && dialog.contains(active);
+      if (event.shiftKey && (!inside || active === first || active === dialog)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (!inside || active === last)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    const onFocusIn = (event: FocusEvent) => {
+      const dialog = dialogRef.current;
+      if (!dialog || !(event.target instanceof Node) || dialog.contains(event.target)) return;
+      (focusable()[0] ?? dialog).focus();
+    };
+
+    document.addEventListener('keydown', onKeyDown, true);
+    document.addEventListener('focusin', onFocusIn, true);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('focusin', onFocusIn, true);
+    };
+  }, []);
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50">

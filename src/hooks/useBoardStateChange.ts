@@ -210,10 +210,10 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
     setPending(null);
   }, []);
 
-  // A pending change belongs to the organisation it was asked in, and the
-  // dialog has no focus trap, so a keyboard user can still reach the
-  // organisation switcher behind it. Dropping the change is the safe answer:
-  // the card goes back and nothing is written anywhere.
+  // A pending change belongs to the organisation it was asked in. The dialog
+  // keeps focus inside itself, but the organisation can still change from
+  // outside it -- another tab, a session refresh. Dropping the change is the
+  // safe answer: the card goes back and nothing is written anywhere.
   useEffect(() => {
     return () => cancel();
   }, [scope, cancel]);
