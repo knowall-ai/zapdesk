@@ -253,6 +253,12 @@ The new title is shown in the email's list of changes.
 * Emails to the customer (confirmation, agent reply, status change, title or
   priority update) contain no links to ZapDesk: customers have no ZapDesk
   account. They are asked to reply to the email instead.
+* A status-change email goes out only when all three hold: the ticket arrived
+  by email (it carries the `email` and `email-from:` tags), its state actually
+  moved, and the new state is one customers are told about (Todo, Active,
+  Resolved and Closed by default; `CUSTOMER_NOTIFY_STATES` overrides the list,
+  comma-separated). A ticket raised in ZapDesk or in Azure DevOps sends none,
+  and neither does setting a ticket to the state it is already in.
 * Emails to the support team (new ticket, assignment, new customer reply) keep
   their *View Ticket* link.
 * As soon as a ticket arrives by email, everyone in `SUPPORT_TEAM_NOTIFY_EMAIL`

@@ -3,7 +3,7 @@ import { getServerSessionWithToken } from '@/lib/server-session';
 import { parseWorkItemId } from '@/lib/work-item-id';
 import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
 import { sendStatusChangeNotification, assigneeEmailFrom } from '@/lib/email';
-import { notifiesCustomer, statusChangeRecipient } from '@/lib/status-notification';
+import { notifiesCustomer, stateMoved, statusChangeRecipient } from '@/lib/status-notification';
 import { debugLog } from '@/lib/debug';
 
 /** Azure DevOps work item ids are positive int32 values. */
@@ -153,13 +153,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     // If project is provided in the body, use it directly
     if (projectHint) {
-      // Snapshot old state first so the email shows the transition.
+      // Snapshot the old state first: the customer is only told when it moved.
       let oldState: string | undefined;
       try {
         const existing = await devopsService.getWorkItem(projectHint, ticketId);
         oldState = existing?.fields?.['System.State'];
       } catch {
-        // Continue without old state — the transition message will say "Unknown".
+        // Continue without it. The update still goes ahead; the customer is
+        // not mailed, because a move from an unknown state would be a guess.
       }
 
       const updatedWorkItem = await devopsService.updateTicketState(
@@ -168,7 +169,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         state,
         extraFields
       );
-      notifyStateChange(updatedWorkItem, ticketId, oldState || 'Unknown', state);
+      notifyStateChange(updatedWorkItem, ticketId, oldState, state);
       const ticket = workItemToTicket(updatedWorkItem);
       return NextResponse.json({ ticket });
     }
@@ -190,7 +191,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       }
       if (!workItem) continue;
 
-      const oldState = workItem.fields?.['System.State'] || 'Unknown';
+      const oldState: string | undefined = workItem.fields?.['System.State'] || undefined;
 
       const updatedWorkItem = await devopsService.updateTicketState(
         project.name,
@@ -233,33 +234,48 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 }
 
 /**
- * Fire-and-forget email about a state change.
+ * Fire-and-forget email to the customer about a state change.
  *
- * Every ticket, not only the ones that arrived by email (#654). This used to
- * need both an `email` tag and an `email-from:` tag, which only the mailbox
- * ingest writes, so a ticket raised in ZapDesk or in DevOps changed state in
- * silence -- and a silence nobody could tell from a failure.
+ * Sent only when all of these hold, and each reason to stay quiet leaves a
+ * line in the log:
  *
- * Two reasons to say nothing remain, and both leave a line in the log: a
- * state the customer is not told about, and no address to tell.
+ * - The state really moved. Compared with what DevOps saved rather than with
+ *   what was asked for, and an unreadable old state sends nothing rather than
+ *   "Unknown -> X".
+ * - The ticket arrived by email. #654 extended this to every ticket, mailing
+ *   whoever created the work item -- usually a colleague, not a customer.
+ * - The new state is one customers are told about.
  */
 function notifyStateChange(
   workItem: { fields?: Record<string, unknown> },
   ticketId: number,
-  oldState: string,
-  newState: string
+  oldState: string | undefined,
+  requestedState: string
 ) {
-  if (!notifiesCustomer(newState)) {
+  const savedState = workItem.fields?.['System.State'];
+  const newState =
+    typeof savedState === 'string' && savedState.trim() ? savedState : requestedState;
+
+  if (!oldState || !stateMoved(oldState, newState)) {
     console.log(
-      `[Email] Ticket #${ticketId} moved to ${newState}, which customers are not told about - not notifying.`
+      oldState
+        ? `[Email] Ticket #${ticketId} is still ${newState} - the state did not move, not notifying.`
+        : `[Email] Ticket #${ticketId} moved to ${newState}, but its earlier state could not be read - not notifying.`
     );
     return;
   }
 
   const requesterEmail = statusChangeRecipient(workItem.fields);
   if (!requesterEmail) {
-    console.warn(
-      `[Email] Ticket #${ticketId} moved to ${newState}, but it carries no address to notify - neither an email-from tag nor a usable creator.`
+    console.log(
+      `[Email] Ticket #${ticketId} moved to ${newState}, but it did not arrive by email (or has no usable email-from tag) - not notifying.`
+    );
+    return;
+  }
+
+  if (!notifiesCustomer(newState)) {
+    console.log(
+      `[Email] Ticket #${ticketId} moved to ${newState}, which customers are not told about - not notifying.`
     );
     return;
   }
