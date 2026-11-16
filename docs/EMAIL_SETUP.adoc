@@ -256,7 +256,8 @@ The new title is shown in the email's list of changes.
 * A status-change email goes out only when all three hold: the ticket arrived
   by email (it carries the `email` and `email-from:` tags), its state actually
   moved, and the new state is one customers are told about (Todo, Active,
-  Resolved and Closed by default; `CUSTOMER_NOTIFY_STATES` overrides the list,
+  Resolved, Closed and Done by default, with To Do accepted as a spelling of
+  Todo; `CUSTOMER_NOTIFY_STATES` overrides the list,
   comma-separated). A ticket raised in ZapDesk or in Azure DevOps sends none,
   and neither does setting a ticket to the state it is already in.
 * Emails to the support team (new ticket, assignment, new customer reply) keep
