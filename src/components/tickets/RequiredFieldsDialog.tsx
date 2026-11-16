@@ -38,8 +38,7 @@ interface RequiredFieldsDialogProps {
 const PEOPLE_PICKER_FIELDS = new Set(['Custom.FoundBy']);
 
 /** What can take keyboard focus inside the dialog. */
-const FOCUSABLE =
-  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 export default function RequiredFieldsDialog({
   targetType,
