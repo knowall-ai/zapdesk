@@ -285,7 +285,10 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
         },
       };
       getWorkItem.mockResolvedValue(assigned);
-      updateTicketState.mockResolvedValue(assigned);
+      updateTicketState.mockResolvedValue({
+        ...assigned,
+        fields: { ...assigned.fields, 'System.State': 'Resolved' },
+      });
 
       await patch('42', { state: 'Resolved', project: 'Internal' });
 
@@ -301,25 +304,78 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
       );
     });
 
-    // #654: this used to be "does not email for a ticket that did not come
-    // from email". A ticket raised in ZapDesk or in DevOps has neither tag the
-    // ingest writes, so every status change on it was silent.
-    it('emails the creator when the ticket carries no email tags', async () => {
+    // #654 mailed the creator of every ticket, usually a colleague. Only a
+    // ticket that arrived by email has a customer to tell.
+    it('does not email about a ticket that did not arrive by email', async () => {
       getWorkItem.mockResolvedValue(workItem(42, 'Active'));
       updateTicketState.mockResolvedValue(workItem(42, 'Resolved'));
 
-      await patch('42', { state: 'Resolved', project: 'Internal' });
+      const { status } = await patch('42', { state: 'Resolved', project: 'Internal' });
 
+      expect(status).toBe(200);
+      expect(updateTicketState).toHaveBeenCalled();
+      expect(sendStatusChangeNotification).not.toHaveBeenCalled();
+    });
+
+    it('does not email when the state did not move', async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Resolved', EMAIL_TAGS));
+      updateTicketState.mockResolvedValue(workItem(42, 'Resolved', EMAIL_TAGS));
+
+      const { status } = await patch('42', { state: 'Resolved', project: 'Internal' });
+
+      expect(status).toBe(200);
+      expect(sendStatusChangeNotification).not.toHaveBeenCalled();
+    });
+
+    // Compared with what DevOps saved, so a request spelled differently from
+    // the stored state is not taken for a move.
+    it('does not email when the saved state matches the old one in another spelling', async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Active', EMAIL_TAGS));
+      updateTicketState.mockResolvedValue(workItem(42, 'Active', EMAIL_TAGS));
+
+      await patch('42', { state: ' active ', project: 'Internal' });
+
+      expect(sendStatusChangeNotification).not.toHaveBeenCalled();
+    });
+
+    // The update still goes through; only the guess of a mail is held back.
+    it('saves the state but does not email when the old state cannot be read', async () => {
+      getWorkItem.mockRejectedValue(new Error('network'));
+      updateTicketState.mockResolvedValue(workItem(42, 'Resolved', EMAIL_TAGS));
+
+      const { status } = await patch('42', { state: 'Resolved', project: 'Internal' });
+
+      expect(status).toBe(200);
+      expect(updateTicketState).toHaveBeenCalledWith('Internal', 42, 'Resolved', {});
+      expect(sendStatusChangeNotification).not.toHaveBeenCalled();
+    });
+
+    it('emails once about a real move found by scanning the projects', async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Active', EMAIL_TAGS));
+      updateTicketState.mockResolvedValue(workItem(42, 'Resolved', EMAIL_TAGS));
+
+      await patch('42', { state: 'Resolved' });
+
+      expect(sendStatusChangeNotification).toHaveBeenCalledTimes(1);
       expect(sendStatusChangeNotification).toHaveBeenCalledWith(
         42,
         'Printer offline',
-        'dana@example.test',
+        'requester@example.test',
         'Active',
         'Resolved',
         undefined,
         undefined,
         'Internal'
       );
+    });
+
+    it('does not email when a scanned ticket is already in that state', async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Resolved', EMAIL_TAGS));
+      updateTicketState.mockResolvedValue(workItem(42, 'Resolved', EMAIL_TAGS));
+
+      await patch('42', { state: 'Resolved' });
+
+      expect(sendStatusChangeNotification).not.toHaveBeenCalled();
     });
 
     it.each(['New', 'Blocked', 'Pending', 'Removed'])(
