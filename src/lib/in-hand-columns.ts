@@ -10,9 +10,10 @@ import { normalizeStateName } from './kanban-columns';
  * and fading them makes the board hard to read at exactly the moment somebody
  * is reading it aloud.
  *
- * So these columns are never faded, and their cards are never lifted to the
- * top of the column either -- they get read top to bottom in the meeting, and
- * reordering them moves the card being talked through.
+ * So these columns are never faded. Their highlighted cards are lifted to the
+ * top like every other column's: #619 kept them in place, so the meeting read
+ * the same order top to bottom, but the cards that moved are the ones it wants
+ * to reach first, and in a long Active column they sat below the rest.
  *
  * They are still ringed and badged, like every other column. #619 took that
  * away with the fade, which left the number on the Highlight button counting
@@ -29,7 +30,7 @@ import { normalizeStateName } from './kanban-columns';
  */
 const IN_HAND_COLUMN_NAMES: readonly string[] = ['todo', 'active'];
 
-/** Whether a column holds work in hand, and so is never faded or reordered. */
+/** Whether a column holds work in hand, and so is never faded. */
 export function isInHandColumn(name: string): boolean {
   return IN_HAND_COLUMN_NAMES.includes(normalizeStateName(name));
 }

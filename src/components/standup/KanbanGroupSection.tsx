@@ -94,7 +94,7 @@ function DroppableColumn({
   const isDoneColumn = category === 'Completed';
   const doneHint = doneWindowHint(closedWindow);
   // To Do and Active are the work in hand (#619). What they are spared is the
-  // fade and the reorder, named separately below -- not the ring and the
+  // fade, named separately below -- not the ring and the
   // badge, which they used to lose along with them because all four derived
   // from one `highlights` value. That left the Highlight button counting cards
   // in these two columns and the board marking none of them (#659), and these
@@ -102,13 +102,14 @@ function DroppableColumn({
   const inHand = isInHandColumn(name);
   /** Highlighting is on and this column fades the cards that did not move. */
   const fadeUnmarked = highlights !== undefined && !inHand;
-  // Highlighted cards first while highlighting is on (#503). One array for both
+  // Highlighted cards first while highlighting is on (#503), in every column --
+  // To Do and Active included, which #619 had left in place: the cards that
+  // moved are the ones the stand-up wants to reach first. One array for both
   // the rendered list and the SortableContext below: if those two disagree, a
-  // drag lands on the wrong card. Not in the columns read aloud top to bottom:
-  // lifting a card there moves the one being talked through.
+  // drag lands on the wrong card.
   const ordered = useMemo(
-    () => (inHand ? items : highlightedFirst(highlightedFirst(items, recent), highlights)),
-    [items, recent, highlights, inHand]
+    () => highlightedFirst(highlightedFirst(items, recent), highlights),
+    [items, recent, highlights]
   );
 
   return (

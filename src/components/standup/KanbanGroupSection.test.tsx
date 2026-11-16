@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { StandupColumn } from '@/types';
 
 /**
@@ -111,8 +111,8 @@ describe('the Closed column hint', () => {
 /**
  * Highlight mode in the columns holding work in hand (#619, #659).
  *
- * To Do and Active are never faded and never reordered -- the stand-up reads
- * them aloud top to bottom. They are still ringed and badged: the count on the
+ * To Do and Active are never faded, but their highlighted cards are lifted to
+ * the top like any other column's. They are ringed and badged: the count on the
  * Highlight button includes their cards, and for a while the board marked none
  * of them, so the number could not be accounted for (#659).
  *
@@ -207,21 +207,76 @@ describe('Highlight mode in To Do and Active', () => {
     expect(cardFor('Moved resolved').style.boxShadow).toContain('2px');
   });
 
-  it('leaves the cards in hand where they were', () => {
+  // #619 kept these in place; the cards that moved are the ones the stand-up
+  // wants to reach first, so they are lifted here as in every other column.
+  it('lifts the cards in hand that moved to the top of the column', () => {
     board_();
 
-    const titles = [...document.querySelectorAll('.kanban-column')]
-      .find((column) => column.textContent?.includes('Quiet in hand'))!
-      .querySelectorAll('.kanban-card h4');
-    expect([...titles].map((h) => h.textContent)).toEqual(['Quiet in hand', 'Moved in hand']);
+    expect(titlesIn('Quiet in hand')).toEqual(['Moved in hand', 'Quiet in hand']);
+  });
+
+  // Lifting is the only thing that changed for these columns: still no fade.
+  it('lifts them without fading the rest', () => {
+    board_();
+
+    expect(cardFor('Quiet in hand').style.opacity).toBe('');
+    expect(cardFor('Moved in hand').style.opacity).toBe('');
+  });
+
+  // Order is decided by Highlight mode; switched off, the board's own order.
+  it('puts the cards in hand back in order when highlighting is off', () => {
+    render(
+      <KanbanGroupSection
+        groupName="Internal"
+        columns={board}
+        focusedColumn="Active"
+        activity={
+          activity as unknown as React.ComponentProps<typeof KanbanGroupSection>['activity']
+        }
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /highlight/i }));
+
+    expect(titlesIn('Quiet in hand')).toEqual(['Quiet in hand', 'Moved in hand']);
+  });
+
+  // The amber 72-hour tier (#586) goes under the 24-hour one, above the rest.
+  it('orders the cards in hand: 24 hours, then 72 hours, then the rest', () => {
+    const tiers: StandupColumn[] = [
+      {
+        name: 'Active',
+        category: 'InProgress',
+        items: [card(5, 'Quiet A'), card(6, 'Amber A'), card(1, 'Moved in hand')],
+      },
+    ];
+    render(
+      <KanbanGroupSection
+        groupName="Internal"
+        columns={tiers}
+        focusedColumn="Active"
+        activity={
+          {
+            ...activity,
+            summary: { ...activity.summary, recent: new Set([6]) },
+          } as unknown as React.ComponentProps<typeof KanbanGroupSection>['activity']
+        }
+      />
+    );
+
+    expect(titlesIn('Quiet A')).toEqual(['Moved in hand', 'Amber A', 'Quiet A']);
   });
 
   it('lifts them in a column that is skimmed past (#503)', () => {
     board_();
 
-    const titles = [...document.querySelectorAll('.kanban-column')]
-      .find((column) => column.textContent?.includes('Quiet resolved'))!
-      .querySelectorAll('.kanban-card h4');
-    expect([...titles].map((h) => h.textContent)).toEqual(['Moved resolved', 'Quiet resolved']);
+    expect(titlesIn('Quiet resolved')).toEqual(['Moved resolved', 'Quiet resolved']);
   });
+
+  /** Card titles, top to bottom, in the column holding the named card. */
+  function titlesIn(cardTitle: string): (string | null)[] {
+    const titles = [...document.querySelectorAll('.kanban-column')]
+      .find((column) => column.textContent?.includes(cardTitle))!
+      .querySelectorAll('.kanban-card h4');
+    return [...titles].map((h) => h.textContent);
+  }
 });
