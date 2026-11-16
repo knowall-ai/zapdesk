@@ -24,6 +24,7 @@ import { getColumnIcon, getColumnColor } from './columnConfig';
 import { highlightedFirst } from '@/lib/highlight-order';
 import { isInHandColumn } from '@/lib/in-hand-columns';
 import { dragFailureMessage } from '@/lib/drag-failure';
+import { isStateChangeSuperseded } from '@/lib/state-change-cancelled';
 import {
   canTypeEnterColumn,
   resolveStateForColumn,
@@ -53,6 +54,27 @@ import {
  * now measured on -- an old closed item edited yesterday is not recently
  * closed.
  */
+/**
+ * `columns` with the card moved to the end of `target`, or unchanged when it
+ * is already there or in no column at all. Appended, as `handleDragOver` does.
+ */
+export function moveCardTo(
+  columns: Record<string, StandupWorkItem[]>,
+  itemId: number,
+  target: string
+): Record<string, StandupWorkItem[]> {
+  const source = Object.keys(columns).find((name) =>
+    columns[name]?.some((item) => item.id === itemId)
+  );
+  if (!source || source === target) return columns;
+  const card = columns[source].find((item) => item.id === itemId)!;
+  return {
+    ...columns,
+    [source]: columns[source].filter((item) => item.id !== itemId),
+    [target]: [...(columns[target] ?? []), card],
+  };
+}
+
 function doneWindowHint(closedWindow: ClosedWindow): string {
   return closedWindow === 'all'
     ? 'Showing closed items as far back as they go. Very old closed GitHub issues may be missing.'
@@ -251,7 +273,14 @@ export default function KanbanGroupSection({
   const highlights = highlightOn ? activity?.summary.highlights : undefined;
   const recentHighlights = highlightOn ? activity?.summary.recent : undefined;
   const [activeId, setActiveId] = useState<number | null>(null);
-  const [isUpdating, setIsUpdating] = useState(false);
+  /**
+   * Moves still waiting on their lookup or write. A count, not a flag: a
+   * second drag can start while the first is still away, and the first one
+   * settling must not clear the guard below for the second -- a refresh would
+   * then put that card back in its old column mid-write (#663 review).
+   */
+  const [pendingMoves, setPendingMoves] = useState(0);
+  const isUpdating = pendingMoves > 0;
 
   // What the server last told us, keyed by column name.
   const propItems = useMemo(() => {
@@ -455,7 +484,14 @@ export default function KanbanGroupSection({
         blockedColumns: [...blockedColumns],
       });
 
-      setIsUpdating(true);
+      // Put the card where it was dropped before anything is awaited. The
+      // target came from `event.over`, and when no dragOver arrived for that
+      // column the card is still drawn in the one it left -- which is where
+      // it would sit, wrongly, all the while the required-fields prompt is
+      // open (#663 review).
+      setLocalItems((prev) => moveCardTo(prev, activeItemId, targetCol));
+
+      setPendingMoves((count) => count + 1);
       try {
         await onStateChange(activeItemId, resolvedState, dragged?.project);
         debugLog('[Standup DnD] state change succeeded', {
@@ -463,6 +499,9 @@ export default function KanbanGroupSection({
           resolvedState,
         });
       } catch (error) {
+        // A newer drag of this card took over during the lookup. The card is
+        // where that drag put it, and its write is still away: leave it.
+        if (isStateChangeSuperseded(error)) return;
         // Nothing was written, so the card goes back whatever happened.
         syncFromProps();
         // Null when the user closed the required-fields dialog: that is a
@@ -481,7 +520,7 @@ export default function KanbanGroupSection({
         });
         toast.error(message);
       } finally {
-        setIsUpdating(false);
+        setPendingMoves((count) => Math.max(0, count - 1));
       }
     },
     [

@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
 import { useBoardStateChange } from './useBoardStateChange';
-import { isStateChangeCancelled } from '@/lib/state-change-cancelled';
+import { isStateChangeCancelled, isStateChangeSuperseded } from '@/lib/state-change-cancelled';
 
 /**
  * Dragging a card to a state the process has rules about (#662).
@@ -305,8 +305,8 @@ describe('the organisation changing underneath', () => {
     expect(commit).not.toHaveBeenCalled();
   });
 
-  // The dialog has no focus trap, so a keyboard user can still reach the
-  // organisation switcher behind it.
+  // The dialog keeps focus inside itself, but the organisation can still
+  // change from outside it -- another tab, a session refresh.
   it('cancels a dialog left open across the switch', async () => {
     const commit = vi.fn(async () => {});
     const get = requirements([APPROVED_DATE]);
@@ -484,5 +484,85 @@ describe('a switch during the lookup for a transition that needs nothing', () =>
 
     expect(commit).not.toHaveBeenCalled();
     expect(isStateChangeCancelled(caught)).toBe(true);
+  });
+});
+
+/**
+ * The same card dragged again before its first lookup answered (#663 review).
+ *
+ * The card stays draggable while a lookup is away. If the first drag's lookup
+ * answered last, its older state would be written last and kept, with nothing
+ * said. Only the newest drag of an item may write.
+ */
+describe('a newer drag of the same card during the lookup', () => {
+  it('stands the older drag down, and writes only the newer one', async () => {
+    const commit = vi.fn(async () => {});
+    const first = deferred<Response>();
+    const second = deferred<Response>();
+    const get = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    let olderError: unknown;
+    let newerDone = false;
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active', 'Contoso Ltd').catch((error) => {
+        olderError = error;
+      });
+      void result.current.requestStateChange(7, 'Resolved', 'Contoso Ltd').then(() => {
+        newerDone = true;
+      });
+    });
+
+    // The newer lookup answers first and writes; the older answers last.
+    await act(async () => {
+      second.resolve(new Response(JSON.stringify({ fields: [] }), { status: 200 }));
+      await second.promise;
+    });
+    await act(async () => {
+      first.resolve(new Response(JSON.stringify({ fields: [] }), { status: 200 }));
+      await first.promise;
+    });
+
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(commit).toHaveBeenCalledWith(7, 'Resolved', 'Contoso Ltd');
+    expect(newerDone).toBe(true);
+    // Marked superseded, so the board leaves the card where the newer drag put it.
+    expect(isStateChangeSuperseded(olderError)).toBe(true);
+  });
+
+  it('does not hold back a drag of a different card', async () => {
+    const commit = vi.fn(async () => {});
+    const get = requirements([]);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    await act(async () => {
+      await Promise.all([
+        result.current.requestStateChange(7, 'Active', 'Contoso Ltd'),
+        result.current.requestStateChange(8, 'Resolved', 'Contoso Ltd'),
+      ]);
+    });
+
+    expect(commit).toHaveBeenCalledWith(7, 'Active', 'Contoso Ltd');
+    expect(commit).toHaveBeenCalledWith(8, 'Resolved', 'Contoso Ltd');
+  });
+
+  // A drag stood down for a newer one is a cancel, but not one to roll back.
+  it('marks only that case as superseded', async () => {
+    const commit = vi.fn(async () => {});
+    const get = requirements([APPROVED_DATE]);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    let caught: unknown;
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Todo', 'Contoso Ltd').catch((error) => {
+        caught = error;
+      });
+    });
+    await act(async () => {
+      result.current.cancel();
+    });
+
+    expect(isStateChangeCancelled(caught)).toBe(true);
+    expect(isStateChangeSuperseded(caught)).toBe(false);
   });
 });

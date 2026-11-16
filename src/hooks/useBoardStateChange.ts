@@ -100,6 +100,15 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
    */
   const scopeRef = useRef(scope);
   const submittingRef = useRef(false);
+  /**
+   * The latest drag of each work item, numbered.
+   *
+   * A card stays draggable while its rules lookup is away, so it can be
+   * dragged again before the first lookup answers. Were the first to answer
+   * last, its older state would be written last and kept, with nothing said
+   * (#663 review). Only the newest drag of an item may go on to write.
+   */
+  const latestAttemptRef = useRef(new Map<number, number>());
   useEffect(() => {
     scopeRef.current = scope;
   }, [scope]);
@@ -134,6 +143,8 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
       // or times out -- leaves the drag working exactly as it did before this
       // hook existed.
       const askedIn = scopeRef.current;
+      const attempt = (latestAttemptRef.current.get(itemId) ?? 0) + 1;
+      latestAttemptRef.current.set(itemId, attempt);
       const fields = await fetchStateRequirements(
         (url) => get(url, { signal: AbortSignal.timeout(REQUIREMENTS_TIMEOUT_MS) }),
         itemId,
@@ -151,6 +162,11 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
       // whatever that id names elsewhere.
       if (scopeRef.current !== askedIn || !mountedRef.current) {
         throw new StateChangeCancelled();
+      }
+      // A newer drag of this item began during the lookup. That one is the
+      // move the user means, so this one stands down without writing.
+      if (latestAttemptRef.current.get(itemId) !== attempt) {
+        throw new StateChangeCancelled({ superseded: true });
       }
 
       if (fields.length === 0) {

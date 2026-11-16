@@ -25,6 +25,7 @@ import { gitHubColumnFor, isGitHubItem } from '@/lib/github-kanban';
 import SourceLegend from '@/components/common/SourceLegend';
 import { sourceKindOf, type SourceKind } from '@/lib/source-colors';
 import { dragFailureMessage } from '@/lib/drag-failure';
+import { isStateChangeSuperseded } from '@/lib/state-change-cancelled';
 
 // KanbanBoard can work with either Ticket[] or WorkItem[]
 // WorkItem uses 'state' while Ticket uses 'devOpsState' for the state name
@@ -84,7 +85,13 @@ export default function KanbanBoard({
   const [localItems, setLocalItems] = useState<KanbanItem[]>(sourceItems);
   const [syncedItems, setSyncedItems] = useState(sourceItems);
   const [activeId, setActiveId] = useState<number | null>(null);
-  const [isUpdating, setIsUpdating] = useState(false);
+  /**
+   * Moves still waiting on their lookup or write. A count, not a flag: a
+   * second drag can start while the first is away, and the first one settling
+   * must not clear the guard below for the second (#663 review).
+   */
+  const [pendingMoves, setPendingMoves] = useState(0);
+  const isUpdating = pendingMoves > 0;
   const [kanbanStates, setKanbanStates] = useState<WorkItemState[]>([]);
   const [isLoadingStates, setIsLoadingStates] = useState(true);
 
@@ -289,7 +296,14 @@ export default function KanbanBoard({
 
       // Persist the state change
       if (onTicketStateChange) {
-        setIsUpdating(true);
+        // Put the card where it was dropped before anything is awaited: the
+        // target came from `event.over`, and when no dragOver arrived for it
+        // the card would sit in its old column all the while the
+        // required-fields prompt is open (#663 review).
+        setLocalItems((prev) =>
+          prev.map((t) => (t.id === activeItemId ? setItemState(t, targetState!) : t))
+        );
+        setPendingMoves((count) => count + 1);
         try {
           debugLog('[Kanban DnD] calling onTicketStateChange', {
             itemId: activeItemId,
@@ -302,6 +316,9 @@ export default function KanbanBoard({
             targetState,
           });
         } catch (error) {
+          // A newer drag of this card took over during the lookup: the card is
+          // where that drag put it, and its write is still away. Leave it.
+          if (isStateChangeSuperseded(error)) return;
           // Nothing was written, so the card goes back whatever happened.
           // Process templates often block direct transitions (New → To Do
           // where an intermediate state is required), and without a message
@@ -321,7 +338,7 @@ export default function KanbanBoard({
           });
           toast.error(message);
         } finally {
-          setIsUpdating(false);
+          setPendingMoves((count) => Math.max(0, count - 1));
         }
       } else {
         debugWarn('[Kanban DnD] no onTicketStateChange handler wired — change will not persist');

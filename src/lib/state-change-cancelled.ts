@@ -18,10 +18,23 @@ export class StateChangeCancelled extends Error {
    */
   readonly stateChangeCancelled = true;
 
-  constructor() {
+  /**
+   * Stood down because a newer drag of the same card took over. The board
+   * must not roll back then: the card is where the newer drag put it, and
+   * putting it back would undo that move while its write is still away.
+   */
+  readonly superseded: boolean;
+
+  constructor(options: { superseded?: boolean } = {}) {
     super('State change cancelled');
     this.name = 'StateChangeCancelled';
+    this.superseded = options.superseded === true;
   }
+}
+
+/** Whether `error` is a change that stood down for a newer drag of the same card. */
+export function isStateChangeSuperseded(error: unknown): boolean {
+  return isStateChangeCancelled(error) && (error as { superseded?: unknown }).superseded === true;
 }
 
 /** Whether `error` is a cancelled state change, however it reached us. */
