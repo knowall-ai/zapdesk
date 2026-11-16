@@ -2,12 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   customerNotifyStates,
   notifiesCustomer,
+  stateMoved,
   statusChangeRecipient,
 } from './status-notification';
 
-// A status change told the customer nothing unless the ticket had arrived by
-// email, because the only recipient it knew how to find was a tag the mailbox
-// ingest writes (#654).
+// The customer of an emailed ticket hears about a real state change into a
+// state worth telling them about -- and nobody else, and nothing else.
 
 const ENV_KEYS = ['CUSTOMER_NOTIFY_STATES', 'MAIL_FROM', 'MAIL_POLL_MAILBOX'] as const;
 const saved: Record<string, string | undefined> = {};
@@ -63,7 +63,7 @@ describe('which states reach the customer', () => {
 describe('who gets told', () => {
   const createdBy = (uniqueName: string) => ({ 'System.CreatedBy': { uniqueName } });
 
-  it('prefers the address the ingest recorded', () => {
+  it('tells the customer of a ticket that arrived by email', () => {
     expect(
       statusChangeRecipient({
         'System.Tags': 'ticket; email; email-from:alex@example.com',
@@ -72,51 +72,74 @@ describe('who gets told', () => {
     ).toBe('alex@example.com');
   });
 
-  // The case this issue is about: no tags at all.
-  it('falls back to whoever created the ticket', () => {
-    expect(statusChangeRecipient(createdBy('sam@example.com'))).toBe('sam@example.com');
+  // #654 mailed the creator of every ticket, usually a colleague. Only the
+  // customer who wrote in is told now.
+  it('tells nobody about a ticket that did not arrive by email', () => {
+    expect(statusChangeRecipient(createdBy('sam@example.com'))).toBeNull();
+    expect(statusChangeRecipient({ 'System.CreatedBy': 'sam@example.com' })).toBeNull();
+    expect(
+      statusChangeRecipient({ 'System.Tags': 'ticket', ...createdBy('sam@example.com') })
+    ).toBeNull();
   });
 
-  it('reads a creator given as a bare string', () => {
-    expect(statusChangeRecipient({ 'System.CreatedBy': 'sam@example.com' })).toBe(
-      'sam@example.com'
+  it('needs the email tag, not only an email-from tag', () => {
+    expect(statusChangeRecipient({ 'System.Tags': 'ticket; email-from:alex@example.com' })).toBe(
+      null
     );
   });
 
-  it('falls back when the tag holds something that is not an address', () => {
+  it('does not fall back to the creator when the tag is not an address', () => {
     expect(
       statusChangeRecipient({
         'System.Tags': 'email; email-from:not-an-address',
         ...createdBy('sam@example.com'),
       })
-    ).toBe('sam@example.com');
+    ).toBeNull();
   });
 
-  it('has nobody to tell when neither is an address', () => {
-    expect(statusChangeRecipient(createdBy('Build Service'))).toBeNull();
+  it('has nobody to tell when there is nothing to read', () => {
     expect(statusChangeRecipient({})).toBeNull();
     expect(statusChangeRecipient(undefined)).toBeNull();
   });
 
   // Mail to either is read straight back in and becomes a comment on the
   // ticket that produced it, which sends another.
-  it('refuses the mailbox ZapDesk polls', () => {
-    process.env.MAIL_POLL_MAILBOX = 'support@example.com';
-    expect(statusChangeRecipient(createdBy('support@example.com'))).toBeNull();
-  });
-
-  it('refuses the address ZapDesk sends as', () => {
-    process.env.MAIL_FROM = 'zapdesk@example.com';
-    expect(statusChangeRecipient(createdBy('zapdesk@example.com'))).toBeNull();
-  });
-
-  it('still falls back to the creator when the tagged address is the polled mailbox', () => {
+  it('refuses the mailbox ZapDesk polls, without falling back to the creator', () => {
     process.env.MAIL_POLL_MAILBOX = 'support@example.com';
     expect(
       statusChangeRecipient({
         'System.Tags': 'email; email-from:support@example.com',
         ...createdBy('sam@example.com'),
       })
-    ).toBe('sam@example.com');
+    ).toBeNull();
+  });
+
+  it('refuses the address ZapDesk sends as', () => {
+    process.env.MAIL_FROM = 'zapdesk@example.com';
+    expect(statusChangeRecipient({ 'System.Tags': 'email; email-from:zapdesk@example.com' })).toBe(
+      null
+    );
+  });
+});
+
+describe('whether the state moved', () => {
+  it('is a move from one state to another', () => {
+    expect(stateMoved('New', 'Active')).toBe(true);
+    expect(stateMoved('Active', 'Resolved')).toBe(true);
+  });
+
+  it('is not a move to the state it was already in', () => {
+    expect(stateMoved('Active', 'Active')).toBe(false);
+  });
+
+  it('ignores case and stray spacing', () => {
+    expect(stateMoved(' active', 'Active ')).toBe(false);
+  });
+
+  // A mail saying "Unknown -> Resolved" is a guess sent to a customer.
+  it('is not a move when the state before is unknown', () => {
+    expect(stateMoved(undefined, 'Resolved')).toBe(false);
+    expect(stateMoved('', 'Resolved')).toBe(false);
+    expect(stateMoved('  ', 'Resolved')).toBe(false);
   });
 });

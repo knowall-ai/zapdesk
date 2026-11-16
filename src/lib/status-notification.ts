@@ -1,16 +1,15 @@
 /**
- * Who hears about a status change, and which changes are worth hearing (#654).
+ * Who hears about a status change, and which changes are worth hearing.
  *
- * The notification used to go out only when the work item carried both an
- * `email` tag and an `email-from:` tag, which the mailbox ingest writes. A
- * ticket raised in ZapDesk or in Azure DevOps has neither, so every status
- * change on it was silent -- no mail, no log, nothing to tell "there was
- * nobody to tell" from "it broke".
+ * Only the customer of a ticket that arrived by email, only when the state
+ * really moved, and only into a state customers are told about. Every reason
+ * to stay quiet is logged by the caller, so "nobody to tell" can still be
+ * told apart from "it broke".
  *
  * Pure: the caller supplies the work item's fields and does the sending.
  */
 
-import { extractRequesterEmail, isOwnSender } from '@/lib/email';
+import { extractRequesterEmail, isEmailTicket, isOwnSender } from '@/lib/email';
 
 /** `a@b`, with no spaces either side. Mirrors the check in `devops.ts`. */
 function looksLikeEmail(value: string): boolean {
@@ -48,10 +47,12 @@ export function notifiesCustomer(state: string): boolean {
 /**
  * The address to tell, or `null` when there is nobody to tell.
  *
- * Prefers the `email-from:` tag the ingest writes, and otherwise the account
- * that created the item -- which is what `resolveRequester` already does to
- * decide whose ticket it is. The two must agree, or the ticket would show one
- * person as the requester and mail another.
+ * Only a ticket that arrived by email: it carries the `email` tag and the
+ * `email-from:` tag the mailbox ingest writes, and the customer is the address
+ * in the second. #654 widened this to fall back to whoever created the work
+ * item, so every ticket raised in ZapDesk or in Azure DevOps mailed its
+ * creator -- often a colleague -- on every state change. The customer who
+ * wrote in is the only person this mail is for, so that fallback is gone.
  *
  * Refuses ZapDesk's own sender and the mailbox it polls. Mail to either is
  * read straight back in and lands as a comment on the ticket that produced
@@ -59,20 +60,26 @@ export function notifiesCustomer(state: string): boolean {
  * noise.
  */
 export function statusChangeRecipient(fields: Record<string, unknown> | undefined): string | null {
-  const tagged = extractRequesterEmail(String(fields?.['System.Tags'] ?? ''));
-  const creator = fields?.['System.CreatedBy'];
-  const createdBy =
-    typeof creator === 'string'
-      ? creator
-      : typeof (creator as { uniqueName?: unknown })?.uniqueName === 'string'
-        ? ((creator as { uniqueName: string }).uniqueName as string)
-        : '';
+  const tags = String(fields?.['System.Tags'] ?? '');
+  if (!isEmailTicket(tags)) return null;
 
-  for (const candidate of [tagged ?? '', createdBy]) {
-    const address = candidate.trim();
-    if (!address || !looksLikeEmail(address)) continue;
-    if (isOwnSender(address)) continue;
-    return address;
-  }
-  return null;
+  const address = (extractRequesterEmail(tags) ?? '').trim();
+  if (!address || !looksLikeEmail(address)) return null;
+  if (isOwnSender(address)) return null;
+  return address;
+}
+
+/**
+ * Whether the ticket's state actually moved, so the customer has something
+ * to be told.
+ *
+ * `false` when the state before is unknown: the route could not read it, and
+ * a mail claiming a move from "Unknown" is a guess sent to a customer. Case
+ * and stray spacing are not a move.
+ */
+export function stateMoved(before: string | undefined, after: string): boolean {
+  const from = (before ?? '').trim().toLowerCase();
+  const to = after.trim().toLowerCase();
+  if (!from || !to) return false;
+  return from !== to;
 }
