@@ -1,6 +1,5 @@
 'use client';
 
-import { format } from 'date-fns';
 import { CalendarCheck } from 'lucide-react';
 import type { User } from '@/types';
 import Avatar from '../common/Avatar';
@@ -28,14 +27,22 @@ interface ApprovalDetailsProps {
  * pop-up's sidebar and the full view so the two cannot drift.
  */
 /**
- * The calendar day an approval date names, as a local date for formatting.
+ * The calendar day an approval date names, formatted in UTC.
  *
  * The approval form writes a day ('2026-11-18'), which DevOps keeps as
  * midnight UTC. Formatting that instant in the viewer's zone showed 17 Nov
- * to anyone west of Greenwich, so the day is read in UTC instead.
+ * to anyone west of Greenwich. Rebuilding it as a local date was not enough
+ * either: a zone that skipped that day (Pacific/Apia, 30 Dec 2011) rolled it
+ * to the next. So the day is built from its UTC parts directly, rather than
+ * through Intl, whose month names vary by runtime ('Sept' against the
+ * 'Sep' date-fns prints everywhere else).
  */
-function approvalDay(date: Date): Date {
-  return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** 'dd MMM yyyy', like every other date in the panel, from the UTC parts. */
+function approvalDay(date: Date): string {
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${day} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 }
 
 export default function ApprovalDetails({ approvedBy, approvedDate }: ApprovalDetailsProps) {
@@ -81,7 +88,7 @@ export default function ApprovalDetails({ approvedBy, approvedDate }: ApprovalDe
           <div className="flex items-center gap-2">
             <CalendarCheck size={14} style={{ color: 'var(--text-muted)' }} />
             <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {format(approvalDay(validDate), 'dd MMM yyyy')}
+              {approvalDay(validDate)}
             </span>
           </div>
         </div>

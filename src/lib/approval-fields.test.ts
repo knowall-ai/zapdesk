@@ -40,6 +40,12 @@ describe('readIdentityField', () => {
     });
   });
 
+  it('ignores an image URL that is not a string', () => {
+    expect(
+      readIdentityField({ displayName: 'Alex Morgan', id: 'a1', imageUrl: 42 })?.avatarUrl
+    ).toBe('/api/devops/avatar/a1');
+  });
+
   it('reads the "Name <email>" string form', () => {
     expect(readIdentityField('Sam Taylor <sam@example.com>')).toEqual({
       id: '',

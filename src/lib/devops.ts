@@ -448,7 +448,11 @@ export function readIdentityField(raw: unknown): User | undefined {
       displayName: name,
       uniqueName: typeof identity.uniqueName === 'string' ? identity.uniqueName : '',
       id: typeof identity.id === 'string' ? identity.id : '',
-      imageUrl: (raw as { imageUrl?: string }).imageUrl,
+      // Only a string: anything else would reach the client as avatarUrl.
+      imageUrl:
+        typeof (raw as { imageUrl?: unknown }).imageUrl === 'string'
+          ? (raw as { imageUrl: string }).imageUrl
+          : undefined,
     });
   }
   if (typeof raw !== 'string' || !raw.trim()) return undefined;

@@ -40,6 +40,17 @@ describe('ApprovalDetails', () => {
     expect(screen.getByText('18 Nov 2026')).toBeTruthy();
   });
 
+  // Pacific/Apia skipped 30 Dec 2011; the stored day still shows as it is.
+  it("shows a day the viewer's zone skipped", () => {
+    render(<ApprovalDetails approvedDate="2011-12-30T00:00:00Z" />);
+    expect(screen.getByText('30 Dec 2011')).toBeTruthy();
+  });
+
+  it('names September as everywhere else does', () => {
+    render(<ApprovalDetails approvedDate="2026-09-05T00:00:00Z" />);
+    expect(screen.getByText('05 Sep 2026')).toBeTruthy();
+  });
+
   it('shows nothing for an item with no approval', () => {
     const { container } = render(<ApprovalDetails />);
 
