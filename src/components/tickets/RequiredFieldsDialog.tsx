@@ -37,6 +37,18 @@ interface RequiredFieldsDialogProps {
 
 const PEOPLE_PICKER_FIELDS = new Set(['Custom.FoundBy']);
 
+/**
+ * Whether a field is drawn as a people picker. The field says so itself; the
+ * name list is kept only for the type endpoint, which does not report it yet.
+ *
+ * Exported so a caller loading the member list asks the same question the
+ * form does. Asking only `isIdentity` left a field offered by name -- with
+ * no metadata -- drawn as a picker with nobody in it (#663 review).
+ */
+export function isPeoplePickerField(field: RequiredField): boolean {
+  return field.isIdentity === true || PEOPLE_PICKER_FIELDS.has(field.referenceName);
+}
+
 /** What can take keyboard focus inside the dialog. */
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -232,8 +244,7 @@ export default function RequiredFieldsDialog({
           {requiredFields.map((field) => {
             // The field says whether it holds a person. The name list is kept
             // only for the type endpoint, which does not report it yet.
-            const isPeoplePicker =
-              field.isIdentity === true || PEOPLE_PICKER_FIELDS.has(field.referenceName);
+            const isPeoplePicker = isPeoplePickerField(field);
 
             if (isPeoplePicker) {
               const selectedValue = fieldValues[field.referenceName];

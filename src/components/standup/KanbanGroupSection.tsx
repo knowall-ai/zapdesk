@@ -474,8 +474,17 @@ export default function KanbanGroupSection({
       }
 
       const activeItemId = active.id as number;
-      const drop = (latestDropRef.current.get(activeItemId) ?? 0) + 1;
-      latestDropRef.current.set(activeItemId, drop);
+      /**
+       * Take ownership of the card for this drop. Only a drop that replaces
+       * the earlier move -- a new transition, or a drop back where it
+       * started -- does; one refused before anything is sent leaves the
+       * earlier move in charge of its own rollback (#663 review).
+       */
+      const claim = () => {
+        const next = (latestDropRef.current.get(activeItemId) ?? 0) + 1;
+        latestDropRef.current.set(activeItemId, next);
+        return next;
+      };
       // Where dnd-kit says the card was dropped, in preference to where
       // `handleDragOver` happened to have moved it (#620).
       //
@@ -511,6 +520,7 @@ export default function KanbanGroupSection({
         // Dropped back where it started. Drawn there even if no dragOver
         // moved it, and a drag of this card still waiting on its lookup must
         // not write the state this drop undid.
+        claim();
         setLocalItems((prev) => moveCardTo(prev, activeItemId, targetCol));
         onStateChangeAbandoned?.(activeItemId);
         return;
@@ -569,6 +579,7 @@ export default function KanbanGroupSection({
       // column the card is still drawn in the one it left -- which is where
       // it would sit, wrongly, all the while the required-fields prompt is
       // open (#663 review).
+      const drop = claim();
       setLocalItems((prev) => moveCardTo(prev, activeItemId, targetCol));
 
       setPendingMoves((count) => count + 1);
@@ -589,6 +600,12 @@ export default function KanbanGroupSection({
         // Nothing was written, so this card goes back whatever happened --
         // only this one: another may be mid-move, with its dialog open.
         setLocalItems((prev) => restoreCard(prev, propItems, activeItemId));
+        // If the card is being dragged again right now, that drag's
+        // fallback placement is the move that just failed. Cancelling it
+        // would put the refused move back on the board (#663 review).
+        if (dragStartRef.current) {
+          dragStartRef.current = restoreCard(dragStartRef.current, propItems, activeItemId);
+        }
         // Null when the user closed the required-fields dialog: that is a
         // choice, not a failure, and an error for it would read as though
         // something broke (#662).

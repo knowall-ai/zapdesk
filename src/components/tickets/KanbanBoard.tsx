@@ -305,8 +305,17 @@ export default function KanbanBoard({
       }
 
       const activeItemId = active.id as number;
-      const drop = (latestDropRef.current.get(activeItemId) ?? 0) + 1;
-      latestDropRef.current.set(activeItemId, drop);
+      /**
+       * Take ownership of the card for this drop. Only a drop that replaces
+       * the earlier move -- a new transition, or a drop back where it
+       * started -- does; one that goes nowhere leaves the earlier move in
+       * charge of its own rollback (#663 review).
+       */
+      const claim = () => {
+        const next = (latestDropRef.current.get(activeItemId) ?? 0) + 1;
+        latestDropRef.current.set(activeItemId, next);
+        return next;
+      };
       const overId = over.id as string;
 
       // Find the original item (from props, not local state)
@@ -341,6 +350,7 @@ export default function KanbanBoard({
       // Dropped back where it started. A drag of this card that is still
       // waiting on its lookup must not write the state this drop undid.
       if (!targetState || fromState === targetState) {
+        claim();
         onStateChangeAbandoned?.(activeItemId);
         restoreCard(activeItemId);
         return;
@@ -352,6 +362,7 @@ export default function KanbanBoard({
         // target came from `event.over`, and when no dragOver arrived for it
         // the card would sit in its old column all the while the
         // required-fields prompt is open (#663 review).
+        const drop = claim();
         setLocalItems((prev) =>
           prev.map((t) => (t.id === activeItemId ? setItemState(t, targetState!) : t))
         );
@@ -374,6 +385,13 @@ export default function KanbanBoard({
           // A later drop of this card owns it now: neither undo that move nor
           // report this older one.
           if (latestDropRef.current.get(activeItemId) !== drop) return;
+          // If the card is being dragged again right now, that drag's
+          // fallback is the move that just failed: point it at the server's
+          // placement instead, so cancelling cannot bring the refused move
+          // back (#663 review).
+          if (dragStartRef.current?.id === activeItemId) {
+            dragStartRef.current = originalItem;
+          }
           // Nothing was written, so the card goes back whatever happened.
           // Process templates often block direct transitions (New → To Do
           // where an intermediate state is required), and without a message
@@ -486,7 +504,12 @@ export default function KanbanBoard({
         // each one is drawn, so a dropped card sits in its new column while
         // its required-fields dialog is open (#663 review).
         const laneItemsByState = getItemsByStateForGroup(
-          groupItems.map((item) => localById.get(item.id) ?? item)
+          groupItems.map((item) => {
+            // The lane's own item, with only the optimistic state taken from
+            // the board: the rest of the card stays as the lane has it.
+            const local = localById.get(item.id);
+            return local ? setItemState(item, getItemState(local)) : item;
+          })
         );
         return (
           <div key={groupName} className="kanban-swim-lane">

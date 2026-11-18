@@ -17,7 +17,12 @@ export class MissingFieldsError extends Error {
 
   constructor(
     message: string,
-    readonly fields: RequiredField[]
+    readonly fields: RequiredField[],
+    /**
+     * The project the server found the item in. A card with no project hint
+     * still gets the dialog, which needs a project to list people from.
+     */
+    readonly project?: string
   ) {
     super(message);
     this.name = 'MissingFieldsError';
@@ -30,6 +35,20 @@ export function missingFieldsOf(error: unknown): RequiredField[] | null {
   if ((error as { missingFieldsError?: unknown }).missingFieldsError !== true) return null;
   const fields = (error as { fields?: unknown }).fields;
   return Array.isArray(fields) && fields.length > 0 ? (fields as RequiredField[]) : null;
+}
+
+/** The project a MissingFieldsError names, if any. */
+export function missingFieldsProjectOf(error: unknown): string | undefined {
+  if (missingFieldsOf(error) === null) return undefined;
+  const project = (error as { project?: unknown }).project;
+  return typeof project === 'string' && project ? project : undefined;
+}
+
+/** The project a state route's refusal names, if any. */
+export function missingFieldsProjectInBody(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const project = (body as { project?: unknown }).project;
+  return typeof project === 'string' && project ? project : undefined;
 }
 
 /**

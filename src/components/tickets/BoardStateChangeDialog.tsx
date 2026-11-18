@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import RequiredFieldsDialog from './RequiredFieldsDialog';
+import RequiredFieldsDialog, { isPeoplePickerField } from './RequiredFieldsDialog';
 import { matchingMembers } from '@/hooks/useWorkItemActions';
 import type { BoardGet, PendingBoardStateChange } from '@/hooks/useBoardStateChange';
 import type { User } from '@/types';
@@ -65,7 +65,7 @@ function Fields({
 }: Props & { pending: PendingBoardStateChange }) {
   // Only an identity field needs a person, and the request is not worth making
   // for a transition that just wants a date.
-  const needsPeople = pending.fields.some((field) => field.isIdentity);
+  const needsPeople = pending.fields.some(isPeoplePickerField);
   const { project } = pending;
 
   const [values, setValues] = useState<Record<string, string>>({});

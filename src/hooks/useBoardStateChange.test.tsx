@@ -950,3 +950,152 @@ describe('a submission refused for a new field after an organisation switch', ()
     expect(commit).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('later review on #663', () => {
+  // A move with no project skips the lookup, but not the queue's checks:
+  // dropping the card back still stops a queued write of it.
+  it('stands down a queued move with no project once the card is dropped back', async () => {
+    const activeWrite = deferred();
+    const commit = vi.fn(async (_id: number, state: string) => {
+      if (state === 'Active') await activeWrite.promise;
+    });
+    const get = requirements([]);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    let queuedError: unknown;
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active');
+    });
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Resolved').catch((error) => {
+        queuedError = error;
+      });
+    });
+    act(() => result.current.supersede(7));
+    await act(async () => {
+      activeWrite.resolve();
+      await activeWrite.promise;
+    });
+
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(isStateChangeSuperseded(queuedError)).toBe(true);
+  });
+
+  // A -> B -> A: the organisation name is the same again, but the board the
+  // move came from is not. A queued write from before must not go out.
+  it('does not send a queued write after switching away and back', async () => {
+    const activeWrite = deferred();
+    const commit = vi.fn(async (_id: number, state: string) => {
+      if (state === 'Active') await activeWrite.promise;
+    });
+    const get = requirements([]);
+    const { result, rerender } = renderHook(
+      ({ scope }) => useBoardStateChange({ get, commit, scope }),
+      { initialProps: { scope: 'KnowAllTest' } }
+    );
+
+    let queuedError: unknown;
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active', 'Contoso Ltd');
+    });
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Resolved', 'Contoso Ltd').catch((error) => {
+        queuedError = error;
+      });
+    });
+    rerender({ scope: 'Fabrikam' });
+    rerender({ scope: 'KnowAllTest' });
+    await act(async () => {
+      activeWrite.resolve();
+      await activeWrite.promise;
+    });
+
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(isStateChangeCancelled(queuedError)).toBe(true);
+  });
+
+  it('still writes a move that stayed in its organisation', async () => {
+    const commit = vi.fn(async () => {});
+    const get = requirements([]);
+    const { result, rerender } = renderHook(
+      ({ scope }) => useBoardStateChange({ get, commit, scope }),
+      { initialProps: { scope: 'KnowAllTest' } }
+    );
+    rerender({ scope: 'KnowAllTest' });
+
+    await act(async () => {
+      await result.current.requestStateChange(7, 'Active', 'Contoso Ltd');
+    });
+    expect(commit).toHaveBeenCalledWith(7, 'Active', 'Contoso Ltd');
+  });
+
+  // The dialog's answers are for the drag that opened it. If that drag has
+  // been stood down, confirming must not write the old target.
+  it('does not write a confirmed dialog whose drag was stood down', async () => {
+    const commit = vi.fn(async () => {});
+    const get = requirements([APPROVED_DATE]);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    let caught: unknown;
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active', 'Contoso Ltd').catch((error) => {
+        caught = error;
+      });
+    });
+    expect(result.current.pending?.itemId).toBe(7);
+    act(() => result.current.supersede(7));
+    await act(async () => {
+      await result.current.submit({ 'Custom.ApprovedDate': '2026-11-18' });
+    });
+
+    expect(commit).not.toHaveBeenCalled();
+    expect(isStateChangeSuperseded(caught)).toBe(true);
+    expect(result.current.pending).toBeNull();
+  });
+
+  // A card that came with no project still gets the dialog when DevOps
+  // names the fields, using the project the server found the item in.
+  it('opens the dialog for a card with no project, with the project the server found', async () => {
+    const commit = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new MissingFieldsError('TF401320: Rule Error', [APPROVED_DATE], 'Contoso Ltd')
+      )
+      .mockResolvedValueOnce(undefined);
+    const get = requirements([]);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    let caught: unknown;
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active').catch((error) => {
+        caught = error;
+      });
+    });
+
+    expect(get).not.toHaveBeenCalled();
+    expect(caught).toBeUndefined();
+    expect(result.current.pending).toEqual({
+      itemId: 7,
+      state: 'Active',
+      project: 'Contoso Ltd',
+      fields: [APPROVED_DATE],
+    });
+  });
+
+  it('hands the refusal back when there is no project to ask with', async () => {
+    const refusal = new MissingFieldsError('TF401320: Rule Error', [APPROVED_DATE]);
+    const commit = vi.fn().mockRejectedValueOnce(refusal);
+    const get = requirements([]);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    let caught: unknown;
+    await act(async () => {
+      await result.current.requestStateChange(7, 'Active').catch((error) => {
+        caught = error;
+      });
+    });
+
+    expect(caught).toBe(refusal);
+    expect(result.current.pending).toBeNull();
+  });
+});

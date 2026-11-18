@@ -22,7 +22,11 @@ import { ticketToWorkItem } from '@/lib/devops';
 import { useDefaultView, viewToShow } from '@/lib/default-view';
 import { readGitHubLabelSummary, type GitHubLabelSummary } from '@/lib/github-label-notice';
 import { responseErrorMessage } from '@/lib/response-error';
-import { MissingFieldsError, missingFieldsInBody } from '@/lib/missing-fields-error';
+import {
+  MissingFieldsError,
+  missingFieldsInBody,
+  missingFieldsProjectInBody,
+} from '@/lib/missing-fields-error';
 import { gitHubTruncationMessage } from '@/lib/github-truncation';
 import type { Ticket, WorkItem, User, WorkItemType, EffortHoursUpdate } from '@/types';
 
@@ -313,8 +317,11 @@ function TicketsPageContent() {
         if (!response.ok) {
           const message = await responseErrorMessage(response, 'the status', 'update');
           if (askForMissingFields) {
-            const missing = missingFieldsInBody(await response.json().catch(() => null));
-            if (missing) throw new MissingFieldsError(message, missing);
+            const body = await response.json().catch(() => null);
+            const missing = missingFieldsInBody(body);
+            if (missing) {
+              throw new MissingFieldsError(message, missing, missingFieldsProjectInBody(body));
+            }
           }
           throw new Error(message);
         }

@@ -328,7 +328,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       // place the answer comes from (#663).
       const missingFields = await missingFieldsFor(error, refusal);
       if (missingFields.length > 0) {
-        return NextResponse.json({ error: error.message, missingFields }, { status });
+        // The project the item was found in, so a card that came without one
+        // can still list the people a field wants.
+        return NextResponse.json(
+          { error: error.message, missingFields, project: refusal?.project },
+          { status }
+        );
       }
       return NextResponse.json({ error: error.message }, { status });
     }

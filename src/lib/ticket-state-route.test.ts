@@ -528,6 +528,7 @@ describe('PATCH /api/devops/tickets/[id]/state, refused for empty fields', () =>
     expect(status).toBe(400);
     expect(body.error).toContain('TF401320');
     expect(body.missingFields).toEqual([APPROVED_BY]);
+    expect(body.project).toBe('Internal');
     expect(describeFields).toHaveBeenCalledWith(['Custom.ApprovedBy'], {
       organization: 'KnowAll',
       project: 'Internal',
@@ -598,6 +599,7 @@ describe('PATCH /api/devops/tickets/[id]/state, refused for empty fields', () =>
       updateTicketState.mockRejectedValue(refusal(['Custom.ApprovedBy']));
 
       const pending = patch('42', { state: 'Active', project: 'Internal' });
+      await vi.dynamicImportSettled();
       await vi.advanceTimersByTimeAsync(5_000);
       const { status, body } = await pending;
 
