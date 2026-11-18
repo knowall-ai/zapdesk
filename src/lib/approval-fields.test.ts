@@ -40,6 +40,10 @@ describe('readIdentityField', () => {
     });
   });
 
+  it('leaves the avatar unset for an identity with no id or image', () => {
+    expect(readIdentityField({ displayName: 'Alex Morgan' })?.avatarUrl).toBeUndefined();
+  });
+
   it('ignores an image URL that is not a string', () => {
     expect(
       readIdentityField({ displayName: 'Alex Morgan', id: 'a1', imageUrl: 42 })?.avatarUrl

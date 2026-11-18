@@ -209,8 +209,9 @@ function identityToUser(identity?: {
     id: identity.id,
     displayName: identity.displayName,
     email: identity.uniqueName,
-    // Use imageUrl if available, otherwise fall back to avatar API
-    avatarUrl: identity.imageUrl || `/api/devops/avatar/${identity.id}`,
+    // Use imageUrl if available, otherwise fall back to avatar API. With no
+    // id there is nothing to fetch: leave it unset so the initials show at once.
+    avatarUrl: identity.imageUrl || (identity.id ? `/api/devops/avatar/${identity.id}` : undefined),
   };
 }
 
