@@ -27,6 +27,12 @@ describe('imageRequestDevOpsOrg', () => {
     expect(imageRequestDevOpsOrg(imageRequest('?org=Other', 'KnowAllTest'))).toBe('KnowAllTest');
   });
 
+  it('lets an invalid header fall through to a valid ?org=', () => {
+    expect(imageRequestDevOpsOrg(imageRequest('?org=KnowAllTest', 'not an org'))).toBe(
+      'KnowAllTest'
+    );
+  });
+
   it('falls back to the server default without either', () => {
     vi.stubEnv('AZURE_DEVOPS_ORG', 'server-default');
     expect(imageRequestDevOpsOrg(imageRequest())).toBe('server-default');

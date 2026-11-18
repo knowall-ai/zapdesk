@@ -35,7 +35,9 @@ const DEVOPS_ORG_NAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,48}[A-Za-z0-9])?$/;
  */
 export function imageRequestDevOpsOrg(request: Request): string | null {
   const header = (request.headers.get('x-devops-org') || '').trim();
-  if (header) return header;
+  // Checked like the query: an invalid header falls through rather than
+  // overriding a valid ?org= and reaching dev.azure.com.
+  if (header && DEVOPS_ORG_NAME.test(header)) return header;
   const query = (new URL(request.url).searchParams.get('org') || '').trim();
   if (query && DEVOPS_ORG_NAME.test(query)) return query;
   return configuredDevOpsOrg();
