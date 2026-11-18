@@ -209,8 +209,9 @@ function identityToUser(identity?: {
     id: identity.id,
     displayName: identity.displayName,
     email: identity.uniqueName,
-    // Use imageUrl if available, otherwise fall back to avatar API
-    avatarUrl: identity.imageUrl || `/api/devops/avatar/${identity.id}`,
+    // Use imageUrl if available, otherwise fall back to avatar API. With no
+    // id there is nothing to fetch: leave it unset so the initials show at once.
+    avatarUrl: identity.imageUrl || (identity.id ? `/api/devops/avatar/${identity.id}` : undefined),
   };
 }
 
@@ -365,6 +366,8 @@ export function ticketToWorkItem(ticket: Ticket): WorkItem {
     mitigation: ticket.mitigation,
     resolvedReason: ticket.resolvedReason,
     customerResponse: ticket.customerResponse,
+    approvedBy: ticket.approvedBy,
+    approvedDate: ticket.approvedDate,
     requester: ticket.requester,
     organization: ticket.organization,
     // Where the item came from, so the dialog knows to talk to GitHub rather
@@ -423,8 +426,61 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     completedWork: readEffortField(fields, 'Microsoft.VSTS.Scheduling.CompletedWork'),
     remainingWork: readEffortField(fields, 'Microsoft.VSTS.Scheduling.RemainingWork'),
     originalEstimate: readEffortField(fields, 'Microsoft.VSTS.Scheduling.OriginalEstimate'),
+    approvedBy: readIdentityField(
+      fields['Custom.ApprovedBy'],
+      organization?.devOpsOrg || undefined
+    ),
+    approvedDate: readDateField(fields['Custom.ApprovedDate']),
     comments: [],
   };
+}
+
+/**
+ * A person held in an identity field, as a User, or undefined when unset.
+ *
+ * The batch read returns an identity object; older responses and some
+ * customised fields hold the "Name <email>" string instead. Both are
+ * accepted, and anything else is treated as unset rather than shown wrongly.
+ *
+ * `organization` is the one the work item came from. When DevOps gives no
+ * image, the avatar route has to be told which organisation to ask: a plain
+ * `<img>` request carries no `x-devops-org` header, so without it the route
+ * fell back to the server default -- or answered 400 with none set (#674
+ * review).
+ */
+export function readIdentityField(raw: unknown, organization?: string): User | undefined {
+  if (!raw) return undefined;
+  if (typeof raw === 'object') {
+    const identity = raw as { displayName?: unknown; uniqueName?: unknown; id?: unknown };
+    const name = typeof identity.displayName === 'string' ? identity.displayName.trim() : '';
+    if (!name) return undefined;
+    const imageUrl =
+      typeof (raw as { imageUrl?: unknown }).imageUrl === 'string'
+        ? (raw as { imageUrl: string }).imageUrl
+        : undefined;
+    const user = identityToUser({
+      displayName: name,
+      uniqueName: typeof identity.uniqueName === 'string' ? identity.uniqueName : '',
+      id: typeof identity.id === 'string' ? identity.id : '',
+      // Only a string: anything else would reach the client as avatarUrl.
+      imageUrl,
+    });
+    if (user && !imageUrl && user.id && organization) {
+      user.avatarUrl = `/api/devops/avatar/${encodeURIComponent(user.id)}?org=${encodeURIComponent(organization)}`;
+    }
+    return user;
+  }
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  const match = /^(.*?)\s*<([^>]+)>\s*$/.exec(raw.trim());
+  const displayName = (match ? match[1] : raw).trim();
+  return { id: '', displayName: displayName || raw.trim(), email: match ? match[2] : '' };
+}
+
+/** A date field as a Date, or undefined when unset or not a date. */
+export function readDateField(raw: unknown): Date | undefined {
+  if (typeof raw !== 'string' && !(raw instanceof Date)) return undefined;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
 /**

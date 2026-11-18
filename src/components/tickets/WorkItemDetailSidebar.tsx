@@ -20,6 +20,7 @@ import { useClickOutside } from '@/hooks';
 import { assigneeIdentity } from '@/lib/assignee';
 import { useCallback, useState } from 'react';
 import EffortHoursField from './EffortHoursField';
+import ApprovalDetails from './ApprovalDetails';
 
 interface WorkItemDetailSidebarProps {
   workItem: WorkItem;
@@ -508,6 +509,8 @@ export default function WorkItemDetailSidebar({
           />
         </div>
       )}
+
+      <ApprovalDetails approvedBy={workItem.approvedBy} approvedDate={workItem.approvedDate} />
 
       {/* Dates */}
       <div>

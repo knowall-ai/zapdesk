@@ -183,6 +183,10 @@ export interface Ticket {
   completedWork?: number;
   remainingWork?: number;
   originalEstimate?: number;
+  // Who approved the work item and when (Custom.ApprovedBy / ApprovedDate).
+  // Undefined when the process has no such fields or they are not set yet.
+  approvedBy?: User;
+  approvedDate?: Date;
 }
 
 export interface TicketComment {
@@ -654,6 +658,9 @@ export interface WorkItem {
   resolvedReason?: string;
   // Customer's response on a Question work item (Custom.CustomerResponse)
   customerResponse?: string;
+  // Who approved the work item and when (Custom.ApprovedBy / ApprovedDate).
+  approvedBy?: User;
+  approvedDate?: Date;
   source?: WorkSource;
   sourceUrl?: string;
   sourceRef?: string;

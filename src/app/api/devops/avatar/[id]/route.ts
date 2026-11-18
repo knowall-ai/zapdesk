@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerSessionWithToken } from '@/lib/server-session';
-import { requestDevOpsOrg } from '@/lib/devops-org';
+import { imageRequestDevOpsOrg } from '@/lib/devops-org';
 
 // Convert UUID string to base64 for Azure DevOps descriptor
 // Azure DevOps expects the UUID bytes (not string) to be base64 encoded
@@ -31,7 +31,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const descriptor = `aad.${base64Id}`;
 
     // Fetch avatar from Azure DevOps, respecting the selected organization
-    const org = requestDevOpsOrg(request);
+    // An <img> sends no header, so a generated URL may name it in ?org=.
+    const org = imageRequestDevOpsOrg(request);
     if (!org) {
       return NextResponse.json({ error: 'No Azure DevOps organization selected' }, { status: 400 });
     }

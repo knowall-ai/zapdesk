@@ -59,6 +59,7 @@ import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
 import AttachmentList from './AttachmentList';
 import EffortHoursField from './EffortHoursField';
+import ApprovalDetails from './ApprovalDetails';
 import TicketHistory from './TicketHistory';
 import RequiredFieldsDialog from './RequiredFieldsDialog';
 import { fetchStateRequirements, type RequiredField } from '@/hooks/useWorkItemActions';
@@ -2213,6 +2214,8 @@ export default function TicketDetail({
                 onSave={onEffortChange}
               />
             </div>
+
+            <ApprovalDetails approvedBy={ticket.approvedBy} approvedDate={ticket.approvedDate} />
 
             {/* Dates */}
             <div>
