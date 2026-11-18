@@ -66,6 +66,13 @@ describe('missingFieldsFromRuleError', () => {
     expect(missingFieldsFromRuleError(body)).toEqual([]);
   });
 
+  it('accepts versioned field namespaces', () => {
+    const body = refusal([
+      { fieldReferenceName: 'AzureCSI-V1.0.Requestor', fieldStatusFlags: 'InvalidEmpty' },
+    ]);
+    expect(missingFieldsFromRuleError(body)).toEqual(['AzureCSI-V1.0.Requestor']);
+  });
+
   it('ignores names that are not field reference names', () => {
     const body = refusal([
       { fieldReferenceName: 'Approved By', fieldStatusFlags: 'InvalidEmpty' },

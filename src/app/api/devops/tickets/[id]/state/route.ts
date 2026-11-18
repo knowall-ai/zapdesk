@@ -6,14 +6,14 @@ import { sendStatusChangeNotification, assigneeEmailFrom } from '@/lib/email';
 import { notifiesCustomer, stateMoved, statusChangeRecipient } from '@/lib/status-notification';
 import { debugLog } from '@/lib/debug';
 import { describeFields } from '@/lib/describe-fields';
+import { FIELD_REFERENCE } from '@/lib/rule-validation';
+import type { RequiredField } from '@/hooks/useWorkItemActions';
 
 /** Azure DevOps work item ids are positive int32 values. */
 /** Generous bound on a process-template state name. */
 const MAX_STATE_LENGTH = 128;
 /** Azure DevOps caps project names at 64 characters. */
 const MAX_PROJECT_LENGTH = 64;
-/** `Namespace.FieldName`, which is the shape of every work item field. */
-const FIELD_REFERENCE = /^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)+$/;
 /** No transition in any process requires anything like this many. */
 const MAX_ADDITIONAL_FIELDS = 20;
 /** Generous for an identity string or a date; short of a description. */
@@ -45,30 +45,67 @@ interface RefusalContext {
 }
 
 /**
- * The fields to ask for, described, or nothing when there is nothing a
- * required-fields dialog could fix. Never throws: this only improves an error
- * response, and failing here must not replace the error being reported.
+ * The longest a refusal waits to have its fields described. The refusal is
+ * already known; the descriptions only improve the controls, and several
+ * metadata reads each with their own timeout could otherwise hold the answer
+ * back for half a minute (#663 review).
  */
-async function missingFieldsFor(error: DevOpsApiError, context: RefusalContext | undefined) {
-  if (!context || error.status !== 400) return [];
+const DESCRIBE_DEADLINE_MS = 5_000;
+
+/** A field asked for by name only: a text box, which DevOps still checks. */
+const byName = (referenceName: string): RequiredField => ({
+  referenceName,
+  name: referenceName,
+  type: 'string',
+});
+
+/**
+ * The fields to ask for, described where possible, or nothing when there is
+ * nothing a required-fields dialog could fix. Never throws: this only
+ * improves an error response, and failing here must not replace the error
+ * being reported.
+ *
+ * The names stand on their own. Without the context to describe them --
+ * the work item could not be read first -- or when describing them fails or
+ * runs out of time, each is offered by name as text rather than dropped, so
+ * the board can still ask (#663 review).
+ */
+async function missingFieldsFor(
+  error: DevOpsApiError,
+  context: RefusalContext | undefined
+): Promise<RequiredField[]> {
+  if (error.status !== 400) return [];
   const askable = error.missingFields.filter(
     (field) => FIELD_REFERENCE.test(field) && !RESERVED_FIELDS.has(field)
   );
   if (askable.length === 0 || askable.length > MAX_ADDITIONAL_FIELDS) return [];
+  if (!context) return askable.map(byName);
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), DESCRIBE_DEADLINE_MS);
+  });
   try {
-    return await describeFields(askable, {
-      organization: context.organization,
-      project: context.project,
-      workItemType: context.workItemType,
-      authHeaders: {
-        Authorization: `Bearer ${context.accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    const described = await Promise.race([
+      describeFields(askable, {
+        organization: context.organization,
+        project: context.project,
+        workItemType: context.workItemType,
+        authHeaders: {
+          Authorization: `Bearer ${context.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }),
+      deadline,
+    ]);
+    if (described) return described;
+    console.error('Describing the fields a refused update needs ran out of time');
   } catch (describeError) {
     console.error('Could not describe the fields a refused update needs:', describeError);
-    return [];
+  } finally {
+    clearTimeout(timer);
   }
+  return askable.map(byName);
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

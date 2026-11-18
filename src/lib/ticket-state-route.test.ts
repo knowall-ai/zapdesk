@@ -555,14 +555,68 @@ describe('PATCH /api/devops/tickets/[id]/state, refused for empty fields', () =>
     expect(describeFields).not.toHaveBeenCalled();
   });
 
-  it('keeps the plain error when describing the fields fails', async () => {
+  // Metadata unavailable: the field is still offered, by name, as text --
+  // with the real describer running against a failing network, not a stub.
+  it('still offers the field by name when its definition cannot be read', async () => {
+    const actual = await vi.importActual<typeof import('./describe-fields')>('./describe-fields');
+    describeFields.mockImplementation(actual.describeFields as never);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
     updateTicketState.mockRejectedValue(refusal(['Custom.ApprovedBy']));
-    describeFields.mockRejectedValue(new Error('network'));
+
+    const { status, body } = await patch('42', { state: 'Active', project: 'Internal' });
+
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(status).toBe(400);
+    expect(body.error).toContain('TF401320');
+    expect(body.missingFields).toEqual([
+      {
+        referenceName: 'Custom.ApprovedBy',
+        name: 'Custom.ApprovedBy',
+        type: 'string',
+        isIdentity: false,
+      },
+    ]);
+  });
+
+  it('offers the fields by name when the work item could not be read first', async () => {
+    getWorkItem.mockRejectedValue(new Error('read failed'));
+    updateTicketState.mockRejectedValue(refusal(['Custom.ApprovedBy']));
+
     const { status, body } = await patch('42', { state: 'Active', project: 'Internal' });
 
     expect(status).toBe(400);
-    expect(body.error).toContain('TF401320');
-    expect(body.missingFields).toBeUndefined();
+    expect(body.missingFields).toEqual([
+      { referenceName: 'Custom.ApprovedBy', name: 'Custom.ApprovedBy', type: 'string' },
+    ]);
+    expect(describeFields).not.toHaveBeenCalled();
+  });
+
+  it('does not hold the refusal back for slow metadata', async () => {
+    vi.useFakeTimers();
+    try {
+      describeFields.mockImplementation(() => new Promise(() => {}));
+      updateTicketState.mockRejectedValue(refusal(['Custom.ApprovedBy']));
+
+      const pending = patch('42', { state: 'Active', project: 'Internal' });
+      await vi.advanceTimersByTimeAsync(5_000);
+      const { status, body } = await pending;
+
+      expect(status).toBe(400);
+      expect(body.missingFields).toEqual([
+        { referenceName: 'Custom.ApprovedBy', name: 'Custom.ApprovedBy', type: 'string' },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // DevOps has reported fields with versioned namespaces as empty.
+  it('accepts a versioned field reference name', async () => {
+    updateTicketState.mockRejectedValue(refusal(['AzureCSI-V1.0.Requestor']));
+    const { body } = await patch('42', { state: 'Active', project: 'Internal' });
+
+    expect(describeFields).toHaveBeenCalledWith(['AzureCSI-V1.0.Requestor'], expect.anything());
+    expect(body.missingFields).toHaveLength(1);
   });
 
   it('adds nothing to a refusal that names no empty field', async () => {

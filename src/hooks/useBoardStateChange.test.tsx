@@ -412,19 +412,41 @@ describe('a cancel while the write is in flight', () => {
 describe('the requirements lookup', () => {
   // Nothing else bounded it: a stalled request left the drag unresolved with
   // no dialog on screen to cancel (#663 review).
-  it('is given a deadline', async () => {
+  // A lookup that never answers is released by its deadline, and the move
+  // is then attempted once. A signal that never fires would leave this
+  // test waiting, which is the point: an AbortSignal alone proves nothing.
+  it('is given a deadline that releases a stalled lookup', async () => {
+    // The deadline's own timer is the runtime's, not one a fake clock moves,
+    // so it is taken over here: the test fires it, and checks its length.
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal);
     const commit = vi.fn(async () => {});
-    const get = requirements([]);
+    const get = vi.fn(
+      (_url: string, options?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        })
+    );
     const { result } = renderHook(() => useBoardStateChange({ get, commit }));
 
+    let done = false;
     await act(async () => {
-      await result.current.requestStateChange(7, 'Todo', 'Contoso Ltd');
+      void result.current.requestStateChange(7, 'Todo', 'Contoso Ltd').then(() => {
+        done = true;
+      });
+    });
+    expect(timeout).toHaveBeenCalledWith(10_000);
+    // A lookup that never answers holds the move...
+    expect(commit).not.toHaveBeenCalled();
+
+    // ...until its deadline passes. Then the move is attempted, once.
+    await act(async () => {
+      deadline.abort();
     });
 
-    // The helper's mock declares no parameters, so the recorded call is read
-    // through a cast rather than giving it unused ones.
-    const [, options] = get.mock.calls[0] as unknown as [string, { signal?: AbortSignal }];
-    expect(options?.signal).toBeInstanceOf(AbortSignal);
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(commit).toHaveBeenCalledWith(7, 'Todo', 'Contoso Ltd');
+    expect(done).toBe(true);
   });
 });
 describe('the page going away mid-lookup', () => {
@@ -531,20 +553,35 @@ describe('a newer drag of the same card during the lookup', () => {
     expect(isStateChangeSuperseded(olderError)).toBe(true);
   });
 
+  // Card 7's write is held open; card 8's must finish regardless. A single
+  // queue for every card would keep 8 waiting behind 7.
   it('does not hold back a drag of a different card', async () => {
-    const commit = vi.fn(async () => {});
+    const sevenWrite = deferred();
+    const commit = vi.fn(async (id: number) => {
+      if (id === 7) await sevenWrite.promise;
+    });
     const get = requirements([]);
     const { result } = renderHook(() => useBoardStateChange({ get, commit }));
 
+    let sevenDone = false;
+    let eightDone = false;
     await act(async () => {
-      await Promise.all([
-        result.current.requestStateChange(7, 'Active', 'Contoso Ltd'),
-        result.current.requestStateChange(8, 'Resolved', 'Contoso Ltd'),
-      ]);
+      void result.current.requestStateChange(7, 'Active', 'Contoso Ltd').then(() => {
+        sevenDone = true;
+      });
+      void result.current.requestStateChange(8, 'Resolved', 'Contoso Ltd').then(() => {
+        eightDone = true;
+      });
     });
 
-    expect(commit).toHaveBeenCalledWith(7, 'Active', 'Contoso Ltd');
-    expect(commit).toHaveBeenCalledWith(8, 'Resolved', 'Contoso Ltd');
+    expect(eightDone).toBe(true);
+    expect(sevenDone).toBe(false);
+
+    await act(async () => {
+      sevenWrite.resolve();
+      await sevenWrite.promise;
+    });
+    expect(sevenDone).toBe(true);
   });
 
   // A drag stood down for a newer one is a cancel, but not one to roll back.
@@ -809,5 +846,107 @@ describe('a refusal that names the fields it wanted', () => {
 
     expect(isStateChangeCancelled(caught)).toBe(true);
     expect(result.current.pending).toBeNull();
+  });
+});
+
+describe('a write waiting behind another write of the same card', () => {
+  // Active is being written and Resolved waits behind it. The card is then
+  // dropped back where it started. Resolved was checked when it was queued,
+  // but the move no longer stands by the time its turn comes (#663 review).
+  it('is not sent once the card has been dropped back', async () => {
+    const activeWrite = deferred();
+    const commit = vi.fn(async (_id: number, state: string) => {
+      if (state === 'Active') await activeWrite.promise;
+    });
+    const get = requirements([]);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    let resolvedError: unknown;
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active', 'Contoso Ltd');
+    });
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Resolved', 'Contoso Ltd').catch((error) => {
+        resolvedError = error;
+      });
+    });
+    act(() => result.current.supersede(7));
+    await act(async () => {
+      activeWrite.resolve();
+      await activeWrite.promise;
+    });
+
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(commit).toHaveBeenCalledWith(7, 'Active', 'Contoso Ltd');
+    expect(isStateChangeSuperseded(resolvedError)).toBe(true);
+  });
+
+  it('is not sent once the organisation has changed', async () => {
+    const activeWrite = deferred();
+    const commit = vi.fn(async (_id: number, state: string) => {
+      if (state === 'Active') await activeWrite.promise;
+    });
+    const get = requirements([]);
+    const { result, rerender } = renderHook(
+      ({ scope }) => useBoardStateChange({ get, commit, scope }),
+      { initialProps: { scope: 'KnowAllTest' } }
+    );
+
+    let resolvedError: unknown;
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active', 'Contoso Ltd');
+    });
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Resolved', 'Contoso Ltd').catch((error) => {
+        resolvedError = error;
+      });
+    });
+    rerender({ scope: 'Fabrikam' });
+    await act(async () => {
+      activeWrite.resolve();
+      await activeWrite.promise;
+    });
+
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(isStateChangeCancelled(resolvedError)).toBe(true);
+  });
+});
+
+describe('a submission refused for a new field after an organisation switch', () => {
+  // The dialog's answers belong to the organisation it opened in. Kept open
+  // after a switch, the next confirm would go out with the new organisation's
+  // header, to whatever this id names there (#663 review).
+  it('settles the drag as cancelled instead of keeping the dialog open', async () => {
+    const write = deferred();
+    const commit = vi.fn(() =>
+      write.promise.then(() => {
+        throw new MissingFieldsError('TF401320: Rule Error', [APPROVED_BY, APPROVED_DATE]);
+      })
+    );
+    const get = requirements([APPROVED_BY]);
+    const { result, rerender } = renderHook(
+      ({ scope }) => useBoardStateChange({ get, commit, scope }),
+      { initialProps: { scope: 'KnowAllTest' } }
+    );
+
+    let caught: unknown;
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active', 'Contoso Ltd').catch((error) => {
+        caught = error;
+      });
+    });
+    let submitting!: Promise<void>;
+    await act(async () => {
+      submitting = result.current.submit({ 'Custom.ApprovedBy': 'Alex Morgan <alex@example.com>' });
+    });
+    rerender({ scope: 'Fabrikam' });
+    await act(async () => {
+      write.resolve();
+      await submitting;
+    });
+
+    expect(isStateChangeCancelled(caught)).toBe(true);
+    expect(result.current.pending).toBeNull();
+    expect(commit).toHaveBeenCalledTimes(1);
   });
 });

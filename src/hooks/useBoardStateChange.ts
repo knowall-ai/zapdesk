@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchStateRequirements, type RequiredField } from '@/hooks/useWorkItemActions';
-import { StateChangeCancelled } from '@/lib/state-change-cancelled';
+import { StateChangeCancelled, isStateChangeCancelled } from '@/lib/state-change-cancelled';
 import { missingFieldsOf } from '@/lib/missing-fields-error';
 
 /**
@@ -92,7 +92,12 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
   const [pending, setPending] = useState<PendingBoardStateChange | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   /** Settles the promise the board is awaiting while the dialog is open. */
-  const settleRef = useRef<{ resolve: () => void; reject: (error: unknown) => void } | null>(null);
+  const settleRef = useRef<{
+    resolve: () => void;
+    reject: (error: unknown) => void;
+    /** The organisation the dialog was opened in; its answers belong there. */
+    scope: string | undefined;
+  } | null>(null);
 
   /**
    * Read through refs, not captured.
@@ -144,23 +149,34 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
     };
   }, []);
 
+  /**
+   * Write once this item's earlier write has settled.
+   *
+   * `stillWanted` runs immediately before the PATCH and throws when the move
+   * no longer stands. A write that waited in the queue can have been
+   * overtaken meanwhile -- the card dropped back, the organisation switched,
+   * the page gone -- and checking only when it was queued would still send a
+   * move the user had already undone (#663 review).
+   */
   const commitInTurn = useCallback(
     (
       itemId: number,
       state: string,
       project: string | undefined,
-      additionalFields?: Record<string, string>
+      additionalFields: Record<string, string> | undefined,
+      stillWanted: () => void
     ): Promise<void> => {
       const previous = writesRef.current.get(itemId) ?? Promise.resolve();
       const write = previous
         .catch(() => {
           // The earlier write's failure is its own caller's to report.
         })
-        .then(() =>
-          additionalFields === undefined
+        .then(() => {
+          stillWanted();
+          return additionalFields === undefined
             ? commit(itemId, state, project)
-            : commit(itemId, state, project, additionalFields)
-        );
+            : commit(itemId, state, project, additionalFields);
+        });
       writesRef.current.set(itemId, write);
       const forget = () => {
         if (writesRef.current.get(itemId) === write) writesRef.current.delete(itemId);
@@ -173,13 +189,19 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
 
   /** Open the dialog and wait for it to be submitted or cancelled. */
   const askFor = useCallback(
-    (itemId: number, state: string, project: string, fields: RequiredField[]) => {
+    (
+      itemId: number,
+      state: string,
+      project: string,
+      fields: RequiredField[],
+      askedIn: string | undefined
+    ) => {
       // One dialog at a time. A second drag landing while one is open would
       // replace the pending change, leaving the first drag's promise unsettled
       // for ever and its card parked in a column DevOps never accepted.
       if (settleRef.current) return Promise.reject(new StateChangeCancelled());
       return new Promise<void>((resolve, reject) => {
-        settleRef.current = { resolve, reject };
+        settleRef.current = { resolve, reject, scope: askedIn };
         setPending({ itemId, state, project, fields });
       });
     },
@@ -191,7 +213,12 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
       // No project means nothing to ask: the rules live on the project's
       // process. Go through and let the server's own error speak (#651).
       if (!project) {
-        await commitInTurn(itemId, state, undefined);
+        const askedIn = scopeRef.current;
+        await commitInTurn(itemId, state, undefined, undefined, () => {
+          if (scopeRef.current !== askedIn || !mountedRef.current) {
+            throw new StateChangeCancelled();
+          }
+        });
         return;
       }
 
@@ -201,6 +228,22 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
       const askedIn = scopeRef.current;
       const attempt = (latestAttemptRef.current.get(itemId) ?? 0) + 1;
       latestAttemptRef.current.set(itemId, attempt);
+      /** Throws unless this drag is still the move the user means. */
+      const stillWanted = () => {
+        // The page stays usable during the lookup, so the organisation can
+        // have changed, or the page gone entirely. Both take the cancel path:
+        // doing nothing beats writing this item's answers to whatever that id
+        // names elsewhere.
+        if (scopeRef.current !== askedIn || !mountedRef.current) {
+          throw new StateChangeCancelled();
+        }
+        // A newer drag of this item, or a drop back where it started, came
+        // after this one. That is the move the user means; this one stands
+        // down without writing.
+        if (latestAttemptRef.current.get(itemId) !== attempt) {
+          throw new StateChangeCancelled({ superseded: true });
+        }
+      };
       const fields = await fetchStateRequirements(
         (url) => get(url, { signal: AbortSignal.timeout(REQUIREMENTS_TIMEOUT_MS) }),
         itemId,
@@ -211,27 +254,16 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
       // needs no fields was otherwise written with the drag's own closure, so
       // a switch during the lookup sent the PATCH to the organisation the drag
       // began in and popped its success toast over the new one (#663 review).
-      //
-      // The page stays usable during the lookup, so the organisation can have
-      // changed by now, or the page can have gone entirely. Both take the
-      // cancel path: doing nothing beats writing this item's answers to
-      // whatever that id names elsewhere.
-      if (scopeRef.current !== askedIn || !mountedRef.current) {
-        throw new StateChangeCancelled();
-      }
-      // A newer drag of this item began during the lookup. That one is the
-      // move the user means, so this one stands down without writing.
-      if (latestAttemptRef.current.get(itemId) !== attempt) {
-        throw new StateChangeCancelled({ superseded: true });
-      }
+      // Checked again just before the PATCH, which may wait behind another.
+      stillWanted();
 
       if (fields.length > 0) {
-        await askFor(itemId, state, project, fields);
+        await askFor(itemId, state, project, fields, askedIn);
         return;
       }
 
       try {
-        await commitInTurn(itemId, state, project);
+        await commitInTurn(itemId, state, project, undefined, stillWanted);
       } catch (error) {
         // The lookup found nothing -- or could not look -- and DevOps then
         // refused the move for fields it wanted filled in, naming them. Ask
@@ -239,13 +271,8 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
         // may not read process rules still gets the dialog (#663).
         const missing = missingFieldsOf(error);
         if (!missing) throw error;
-        if (scopeRef.current !== askedIn || !mountedRef.current) {
-          throw new StateChangeCancelled();
-        }
-        if (latestAttemptRef.current.get(itemId) !== attempt) {
-          throw new StateChangeCancelled({ superseded: true });
-        }
-        await askFor(itemId, state, project, missing);
+        stillWanted();
+        await askFor(itemId, state, project, missing, askedIn);
       }
     },
     [get, commitInTurn, askFor]
@@ -258,18 +285,28 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
       submittingRef.current = true;
       setIsSubmitting(true);
       let keepOpen = false;
+      /** The answers belong to the organisation the dialog was opened in. */
+      const sameScope = () => scopeRef.current === settle.scope && mountedRef.current;
       try {
-        await commitInTurn(pending.itemId, pending.state, pending.project, values);
+        await commitInTurn(pending.itemId, pending.state, pending.project, values, () => {
+          if (!sameScope()) throw new StateChangeCancelled();
+        });
         settle.resolve();
       } catch (error) {
         // DevOps wants a field the dialog did not ask for -- the rule lookup
         // can miss one, and a refusal names them all. Add it and keep the
         // dialog open with what was already entered, rather than throw the
         // answers away for a rule error (#663).
-        const missing = missingFieldsOf(error);
+        //
+        // Only in the organisation it was opened in. After a switch the next
+        // confirm would go out with the new organisation's header, to
+        // whatever this id names there (#663 review).
+        const missing = isStateChangeCancelled(error) ? null : missingFieldsOf(error);
         const known = new Set(pending.fields.map((field) => field.referenceName));
         const extra = (missing ?? []).filter((field) => !known.has(field.referenceName));
-        if (extra.length > 0) {
+        if (extra.length > 0 && !sameScope()) {
+          settle.reject(new StateChangeCancelled());
+        } else if (extra.length > 0) {
           keepOpen = true;
           setPending({ ...pending, fields: [...pending.fields, ...extra] });
         } else {

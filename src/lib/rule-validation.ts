@@ -30,8 +30,20 @@ interface RuleValidationError {
 /** Never asked for: the state is what is being written, not a missing value. */
 const NOT_ASKABLE = new Set(['System.State', 'System.Reason', 'System.WorkItemType']);
 
-/** A plausible field reference name, so nothing odd reaches a URL. */
-const REFERENCE_NAME = /^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)+$/;
+/**
+ * A work item field reference name: `Namespace.FieldName`, dot-separated.
+ *
+ * Segments may carry hyphens, underscores and digits, and may start with a
+ * digit after the first: DevOps has reported fields such as
+ * `AzureCSI-V1.0.Requestor` as empty, and a stricter pattern would leave the
+ * user unable to fill one in. No slash, space or other character that could
+ * change the meaning of the URL or patch path the name is put in.
+ *
+ * The one validator for every place a field name crosses a boundary: the
+ * rule error read here, the names the state route offers back, and the
+ * `additionalFields` it accepts (#663 review).
+ */
+export const FIELD_REFERENCE = /^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)+$/;
 
 function isEmptyFieldError(error: RuleValidationError): boolean {
   return (
@@ -59,7 +71,7 @@ export function missingFieldsFromRuleError(body: unknown): string[] {
       const name = error.fieldReferenceName;
       if (
         typeof name === 'string' &&
-        REFERENCE_NAME.test(name) &&
+        FIELD_REFERENCE.test(name) &&
         !NOT_ASKABLE.has(name) &&
         isEmptyFieldError(error) &&
         !found.includes(name)

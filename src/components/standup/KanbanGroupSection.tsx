@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import {
   DndContext,
@@ -13,6 +13,7 @@ import {
   type DragStartEvent,
   type DragEndEvent,
   type DragOverEvent,
+  type DragCancelEvent,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useDroppable } from '@dnd-kit/core';
@@ -102,7 +103,22 @@ export function restoreCard(
       : items;
   }
   const target = [...(without[home] ?? [])];
-  target.splice(Math.min(index, target.length), 0, card);
+  // Placed after the nearest card that was above it and is still there, or
+  // before the nearest one that was below it. An index alone drifts once
+  // other cards have left the column: [1, 2, 3] with 1 and 2 away, and 2
+  // restored at index 1 of [3], came back as [3, 2] (#663 review).
+  const position = (id: number) => target.findIndex((item) => item.id === id);
+  let at = -1;
+  for (let i = index - 1; i >= 0 && at === -1; i--) {
+    const found = position(original[home][i].id);
+    if (found !== -1) at = found + 1;
+  }
+  for (let i = index + 1; i < original[home].length && at === -1; i++) {
+    const found = position(original[home][i].id);
+    if (found !== -1) at = found;
+  }
+  if (at === -1) at = Math.min(index, target.length);
+  target.splice(at, 0, card);
   return { ...without, [home]: target };
 }
 
@@ -347,12 +363,6 @@ export default function KanbanGroupSection({
     setLocalItems(propItems);
   }
 
-  // Roll the optimistic board back to the server's version after a drag that
-  // didn't stick, or one we never sent.
-  const syncFromProps = useCallback(() => {
-    setLocalItems(propItems);
-  }, [propItems]);
-
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -399,9 +409,32 @@ export default function KanbanGroupSection({
     );
   }, [activeItem, columnNames, allowedStatesByProjectType]);
 
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(event.active.id as number);
+  /**
+   * Where the dragged card was when this drag began. A drag that goes
+   * nowhere -- cancelled, dropped outside, refused before it is sent -- puts
+   * back only that card, from here. Resetting the board to the props also
+   * undid another card's move still waiting on its lookup (#663 review).
+   */
+  const dragStartRef = useRef<Record<string, StandupWorkItem[]> | null>(null);
+  const putBackDragged = useCallback((itemId: number) => {
+    const start = dragStartRef.current;
+    if (start) setLocalItems((prev) => restoreCard(prev, start, itemId));
   }, []);
+  /**
+   * The newest drop of each card. Only the drop that still owns a card may
+   * roll it back or report a refusal: an older drop's late failure would
+   * otherwise put the card back while a newer one is waiting on its dialog
+   * (#663 review).
+   */
+  const latestDropRef = useRef(new Map<number, number>());
+
+  const handleDragStart = useCallback(
+    (event: DragStartEvent) => {
+      dragStartRef.current = localItems;
+      setActiveId(event.active.id as number);
+    },
+    [localItems]
+  );
 
   const handleDragOver = useCallback(
     (event: DragOverEvent) => {
@@ -435,12 +468,14 @@ export default function KanbanGroupSection({
       setActiveId(null);
 
       if (!event.over || !onStateChange) {
-        // Rollback visual state if no handler
-        syncFromProps();
+        // Dropped outside, or nothing to write with: put this card back.
+        putBackDragged(active.id as number);
         return;
       }
 
       const activeItemId = active.id as number;
+      const drop = (latestDropRef.current.get(activeItemId) ?? 0) + 1;
+      latestDropRef.current.set(activeItemId, drop);
       // Where dnd-kit says the card was dropped, in preference to where
       // `handleDragOver` happened to have moved it (#620).
       //
@@ -466,15 +501,17 @@ export default function KanbanGroupSection({
         console.warn('[Standup DnD] dropped item is in no column', { activeItemId });
         // handleDragOver may already have moved the card in localItems, so
         // bail out through the same rollback every other early return uses.
-        syncFromProps();
+        putBackDragged(activeItemId);
         return;
       }
 
       // Find original column from props
       const originalCol = columns.find((c) => c.items.some((i) => i.id === activeItemId));
       if (originalCol?.name === targetCol) {
-        // Dropped back where it started. A drag of this card still waiting
-        // on its lookup must not write the state this drop undid.
+        // Dropped back where it started. Drawn there even if no dragOver
+        // moved it, and a drag of this card still waiting on its lookup must
+        // not write the state this drop undid.
+        setLocalItems((prev) => moveCardTo(prev, activeItemId, targetCol));
         onStateChangeAbandoned?.(activeItemId);
         return;
       }
@@ -492,7 +529,7 @@ export default function KanbanGroupSection({
           allowedStatesByProjectType
         )
       ) {
-        syncFromProps();
+        putBackDragged(activeItemId);
         // Gated, unlike the fault above: a blocked drop is an ordinary,
         // expected outcome — the column is already disabled as a drop target
         // and the user gets a toast — so logging it every time is exactly the
@@ -545,6 +582,10 @@ export default function KanbanGroupSection({
         // A newer drag of this card took over during the lookup. The card is
         // where that drag put it, and its write is still away: leave it.
         if (isStateChangeSuperseded(error)) return;
+        // A later drop of this card owns it now. This refusal is about a
+        // move the user has already replaced: neither undo the newer one nor
+        // report the older.
+        if (latestDropRef.current.get(activeItemId) !== drop) return;
         // Nothing was written, so this card goes back whatever happened --
         // only this one: another may be mid-move, with its dialog open.
         setLocalItems((prev) => restoreCard(prev, propItems, activeItemId));
@@ -574,16 +615,19 @@ export default function KanbanGroupSection({
       columnNames,
       columns,
       allowedStatesByProjectType,
-      syncFromProps,
+      putBackDragged,
       propItems,
       blockedColumns,
     ]
   );
 
-  const handleDragCancel = useCallback(() => {
-    setActiveId(null);
-    syncFromProps();
-  }, [syncFromProps]);
+  const handleDragCancel = useCallback(
+    (event: DragCancelEvent) => {
+      setActiveId(null);
+      putBackDragged(event.active.id as number);
+    },
+    [putBackDragged]
+  );
 
   return (
     <div className="card kanban-group">

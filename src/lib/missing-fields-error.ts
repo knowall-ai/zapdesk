@@ -40,12 +40,28 @@ export function missingFieldsInBody(body: unknown): RequiredField[] | null {
   if (!body || typeof body !== 'object') return null;
   const fields = (body as { missingFields?: unknown }).missingFields;
   if (!Array.isArray(fields)) return null;
-  const valid = fields.filter(
-    (field): field is RequiredField =>
-      !!field &&
-      typeof field === 'object' &&
-      typeof (field as RequiredField).referenceName === 'string' &&
-      typeof (field as RequiredField).name === 'string'
-  );
+  // Rebuilt rather than passed through: the dialog maps `allowedValues`
+  // and reads `type`, so a malformed field would throw before the user
+  // could answer. A bad option list falls back to a text box (#663 review).
+  const valid: RequiredField[] = [];
+  for (const field of fields) {
+    if (!field || typeof field !== 'object') continue;
+    const { referenceName, name, type, isIdentity, allowedValues } = field as Record<
+      string,
+      unknown
+    >;
+    if (typeof referenceName !== 'string' || !referenceName) continue;
+    const options =
+      Array.isArray(allowedValues) && allowedValues.every((value) => typeof value === 'string')
+        ? (allowedValues as string[])
+        : [];
+    valid.push({
+      referenceName,
+      name: typeof name === 'string' && name ? name : referenceName,
+      type: typeof type === 'string' && type ? type : 'string',
+      ...(isIdentity === true && { isIdentity: true }),
+      ...(options.length > 0 && { allowedValues: options }),
+    });
+  }
   return valid.length > 0 ? valid : null;
 }

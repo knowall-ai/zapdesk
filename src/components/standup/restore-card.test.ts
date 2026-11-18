@@ -32,6 +32,16 @@ describe('restoreCard', () => {
     expect(ids(restoreCard(both, original, 3))).toEqual({ New: [2, 3], Active: [4, 1] });
   });
 
+  // Cards 1 and 2 both leave New, and both roll back -- middle card first.
+  // An index alone put 2 after 3, and then 1 at the top: [1, 3, 2].
+  it('keeps the original order when several cards roll back', () => {
+    const away = moveCardTo(moveCardTo(original, 1, 'Active'), 2, 'Active');
+
+    const afterTwo = restoreCard(away, original, 2);
+    expect(ids(afterTwo).New).toEqual([2, 3]);
+    expect(ids(restoreCard(afterTwo, original, 1)).New).toEqual([1, 2, 3]);
+  });
+
   it('changes nothing for a card the original does not have', () => {
     const moved = moveCardTo(original, 2, 'Active');
 

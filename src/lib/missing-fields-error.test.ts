@@ -15,6 +15,16 @@ describe('missingFieldsInBody', () => {
     ]);
   });
 
+  // The dialog maps the option list, so one that is not a list of strings
+  // must not reach it: the field falls back to a text box instead.
+  it('drops an option list that is not a list of strings, keeping the field', () => {
+    expect(
+      missingFieldsInBody({
+        missingFields: [{ referenceName: 'Custom.Impact', name: 'Impact', allowedValues: 'High' }],
+      })
+    ).toEqual([{ referenceName: 'Custom.Impact', name: 'Impact', type: 'string' }]);
+  });
+
   it('is null when the error names none, or the body is not one', () => {
     expect(missingFieldsInBody({ error: 'TF401320' })).toBeNull();
     expect(missingFieldsInBody({ error: 'x', missingFields: [] })).toBeNull();

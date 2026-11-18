@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import {
   DndContext,
@@ -13,6 +13,7 @@ import {
   type DragStartEvent,
   type DragEndEvent,
   type DragOverEvent,
+  type DragCancelEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import KanbanColumn from './KanbanColumn';
@@ -223,9 +224,34 @@ export default function KanbanBoard({
     return localItems.find((t) => t.id === activeId) || null;
   }, [activeId, localItems]);
 
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(event.active.id as number);
+  /**
+   * The dragged card as it was when this drag began. A drag that goes
+   * nowhere -- cancelled, or dropped outside -- puts back only that card,
+   * from here. Resetting the board to the props also undid another card's
+   * move still waiting on its lookup (#663 review).
+   */
+  const dragStartRef = useRef<KanbanItem | null>(null);
+  const putBackDragged = useCallback((itemId: number) => {
+    const start = dragStartRef.current;
+    if (start?.id !== itemId) return;
+    setLocalItems((prev) => prev.map((t) => (t.id === itemId ? start : t)));
   }, []);
+  /**
+   * The newest drop of each card. Only the drop that still owns a card may
+   * roll it back or report a refusal: an older drop's late failure would
+   * otherwise put the card back while a newer one waits on its dialog
+   * (#663 review).
+   */
+  const latestDropRef = useRef(new Map<number, number>());
+
+  const handleDragStart = useCallback(
+    (event: DragStartEvent) => {
+      const id = event.active.id as number;
+      dragStartRef.current = localItems.find((t) => t.id === id) ?? null;
+      setActiveId(id);
+    },
+    [localItems]
+  );
 
   // Get list of state names for checking if dropping on a column
   const stateNames = useMemo(() => kanbanStates.map((s) => s.name), [kanbanStates]);
@@ -274,18 +300,20 @@ export default function KanbanBoard({
       if (!over) {
         debugLog('[Kanban DnD] drag ended with no drop target');
         // handleDragOver may already have moved the card; put it back.
-        setLocalItems(sourceItems);
+        putBackDragged(active.id as number);
         return;
       }
 
       const activeItemId = active.id as number;
+      const drop = (latestDropRef.current.get(activeItemId) ?? 0) + 1;
+      latestDropRef.current.set(activeItemId, drop);
       const overId = over.id as string;
 
       // Find the original item (from props, not local state)
       const originalItem = sourceItems.find((t) => t.id === activeItemId);
       if (!originalItem) {
         debugWarn('[Kanban DnD] active item not found in sourceItems', { activeItemId });
-        setLocalItems(sourceItems);
+        putBackDragged(activeItemId);
         return;
       }
 
@@ -343,6 +371,9 @@ export default function KanbanBoard({
           // A newer drag of this card took over during the lookup: the card is
           // where that drag put it, and its write is still away. Leave it.
           if (isStateChangeSuperseded(error)) return;
+          // A later drop of this card owns it now: neither undo that move nor
+          // report this older one.
+          if (latestDropRef.current.get(activeItemId) !== drop) return;
           // Nothing was written, so the card goes back whatever happened.
           // Process templates often block direct transitions (New → To Do
           // where an intermediate state is required), and without a message
@@ -375,15 +406,19 @@ export default function KanbanBoard({
       onTicketStateChange,
       onStateChangeAbandoned,
       restoreCard,
+      putBackDragged,
       stateNames,
       columnOf,
     ]
   );
 
-  const handleDragCancel = useCallback(() => {
-    setActiveId(null);
-    setLocalItems(sourceItems);
-  }, [sourceItems]);
+  const handleDragCancel = useCallback(
+    (event: DragCancelEvent) => {
+      setActiveId(null);
+      putBackDragged(event.active.id as number);
+    },
+    [putBackDragged]
+  );
 
   // Group items by state for a subset of items (used for swim lanes)
   const localById = useMemo(() => new Map(localItems.map((t) => [t.id, t])), [localItems]);
