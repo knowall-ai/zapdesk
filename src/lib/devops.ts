@@ -426,7 +426,10 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     completedWork: readEffortField(fields, 'Microsoft.VSTS.Scheduling.CompletedWork'),
     remainingWork: readEffortField(fields, 'Microsoft.VSTS.Scheduling.RemainingWork'),
     originalEstimate: readEffortField(fields, 'Microsoft.VSTS.Scheduling.OriginalEstimate'),
-    approvedBy: readIdentityField(fields['Custom.ApprovedBy']),
+    approvedBy: readIdentityField(
+      fields['Custom.ApprovedBy'],
+      organization?.devOpsOrg || undefined
+    ),
     approvedDate: readDateField(fields['Custom.ApprovedDate']),
     comments: [],
   };
@@ -438,23 +441,34 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
  * The batch read returns an identity object; older responses and some
  * customised fields hold the "Name <email>" string instead. Both are
  * accepted, and anything else is treated as unset rather than shown wrongly.
+ *
+ * `organization` is the one the work item came from. When DevOps gives no
+ * image, the avatar route has to be told which organisation to ask: a plain
+ * `<img>` request carries no `x-devops-org` header, so without it the route
+ * fell back to the server default -- or answered 400 with none set (#674
+ * review).
  */
-export function readIdentityField(raw: unknown): User | undefined {
+export function readIdentityField(raw: unknown, organization?: string): User | undefined {
   if (!raw) return undefined;
   if (typeof raw === 'object') {
     const identity = raw as { displayName?: unknown; uniqueName?: unknown; id?: unknown };
     const name = typeof identity.displayName === 'string' ? identity.displayName.trim() : '';
     if (!name) return undefined;
-    return identityToUser({
+    const imageUrl =
+      typeof (raw as { imageUrl?: unknown }).imageUrl === 'string'
+        ? (raw as { imageUrl: string }).imageUrl
+        : undefined;
+    const user = identityToUser({
       displayName: name,
       uniqueName: typeof identity.uniqueName === 'string' ? identity.uniqueName : '',
       id: typeof identity.id === 'string' ? identity.id : '',
       // Only a string: anything else would reach the client as avatarUrl.
-      imageUrl:
-        typeof (raw as { imageUrl?: unknown }).imageUrl === 'string'
-          ? (raw as { imageUrl: string }).imageUrl
-          : undefined,
+      imageUrl,
     });
+    if (user && !imageUrl && user.id && organization) {
+      user.avatarUrl = `/api/devops/avatar/${encodeURIComponent(user.id)}?org=${encodeURIComponent(organization)}`;
+    }
+    return user;
   }
   if (typeof raw !== 'string' || !raw.trim()) return undefined;
   const match = /^(.*?)\s*<([^>]+)>\s*$/.exec(raw.trim());
