@@ -38,8 +38,10 @@ interface RequiredFieldsDialogProps {
 const PEOPLE_PICKER_FIELDS = new Set(['Custom.FoundBy']);
 
 /**
- * Whether a field is drawn as a people picker. The field says so itself; the
- * name list is kept only for the type endpoint, which does not report it yet.
+ * Whether a field is drawn as a people picker. The field says so itself when
+ * its metadata could be read; the name list covers a field whose metadata
+ * says nothing -- the type endpoint, which does not report it yet, and a
+ * state change whose refused field could only be offered by name.
  *
  * Exported so a caller loading the member list asks the same question the
  * form does. Asking only `isIdentity` left a field offered by name -- with
@@ -241,7 +243,10 @@ export default function RequiredFieldsDialog({
               : `The following fields are required for ${targetType} work items:`}
           </p>
 
-          {requiredFields.map((field) => {
+          {requiredFields.map((field, index) => {
+            // Ties each visible field name to its control, so a screen
+            // reader says which field it is in (#663 review).
+            const inputId = `${headingId}-field-${index}`;
             // The field says whether it holds a person. The name list is kept
             // only for the type endpoint, which does not report it yet.
             const isPeoplePicker = isPeoplePickerField(field);
@@ -251,6 +256,7 @@ export default function RequiredFieldsDialog({
               return (
                 <div key={field.referenceName}>
                   <label
+                    htmlFor={inputId}
                     className="mb-1 block text-xs uppercase"
                     style={{ color: 'var(--text-muted)' }}
                   >
@@ -279,6 +285,7 @@ export default function RequiredFieldsDialog({
                           style={{ color: 'var(--text-muted)' }}
                         />
                         <input
+                          id={inputId}
                           type="text"
                           placeholder="Search users..."
                           value={memberSearch}
@@ -348,12 +355,14 @@ export default function RequiredFieldsDialog({
               return (
                 <div key={field.referenceName}>
                   <label
+                    htmlFor={inputId}
                     className="mb-1 block text-xs uppercase"
                     style={{ color: 'var(--text-muted)' }}
                   >
                     {field.name} *
                   </label>
                   <select
+                    id={inputId}
                     value={fieldValues[field.referenceName] || ''}
                     onChange={(e) => onFieldChange(field.referenceName, e.target.value)}
                     className="input w-full text-sm"
@@ -376,12 +385,14 @@ export default function RequiredFieldsDialog({
               return (
                 <div key={field.referenceName}>
                   <label
+                    htmlFor={inputId}
                     className="mb-1 block text-xs uppercase"
                     style={{ color: 'var(--text-muted)' }}
                   >
                     {field.name} *
                   </label>
                   <input
+                    id={inputId}
                     type="date"
                     value={(fieldValues[field.referenceName] || '').slice(0, 10)}
                     onChange={(e) => onFieldChange(field.referenceName, e.target.value)}
@@ -395,12 +406,14 @@ export default function RequiredFieldsDialog({
             return (
               <div key={field.referenceName}>
                 <label
+                  htmlFor={inputId}
                   className="mb-1 block text-xs uppercase"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   {field.name} *
                 </label>
                 <input
+                  id={inputId}
                   type="text"
                   value={fieldValues[field.referenceName] || ''}
                   onChange={(e) => onFieldChange(field.referenceName, e.target.value)}

@@ -129,7 +129,7 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
    * and the one the user made first would then be the one kept (#663 review).
    * Writes for different items do not wait on each other.
    */
-  const writesRef = useRef(new Map<number, Promise<unknown>>());
+  const writesRef = useRef(new Map<string, Promise<unknown>>());
   /**
    * Bumped on every organisation switch. A move belongs to the session it
    * began in: comparing organisation names alone let a write queued in A go
@@ -176,7 +176,10 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
       additionalFields: Record<string, string> | undefined,
       stillWanted: () => void
     ): Promise<void> => {
-      const previous = writesRef.current.get(itemId) ?? Promise.resolve();
+      // Keyed by organisation as well: the same id elsewhere is another
+      // item, and must not wait behind this one's write (#663 review).
+      const key = `${scopeRef.current ?? ''}#${itemId}`;
+      const previous = writesRef.current.get(key) ?? Promise.resolve();
       const write = previous
         .catch(() => {
           // The earlier write's failure is its own caller's to report.
@@ -187,9 +190,9 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
             ? commit(itemId, state, project)
             : commit(itemId, state, project, additionalFields);
         });
-      writesRef.current.set(itemId, write);
+      writesRef.current.set(key, write);
       const forget = () => {
-        if (writesRef.current.get(itemId) === write) writesRef.current.delete(itemId);
+        if (writesRef.current.get(key) === write) writesRef.current.delete(key);
       };
       write.then(forget, forget);
       return write;
@@ -272,7 +275,9 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
         // for those rather than show the rule error: this is how a user who
         // may not read process rules still gets the dialog (#663).
         const missing = missingFieldsOf(error);
-        const where = project || missingFieldsProjectOf(error);
+        // The project the server found the item in, over the card's own
+        // hint, which can be stale.
+        const where = missingFieldsProjectOf(error) || project;
         if (!missing || !where) throw error;
         stillWanted();
         await askFor({ itemId, state, project: where, fields: missing }, stillWanted, sameSession);

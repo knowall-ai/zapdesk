@@ -1099,3 +1099,54 @@ describe('later review on #663', () => {
     expect(result.current.pending).toBeNull();
   });
 });
+
+describe('fourth review round on #663', () => {
+  // The same id in another organisation is another item: its write must not
+  // wait behind this one's.
+  it('does not queue a write in one organisation behind a write in another', async () => {
+    const aWrite = deferred();
+    const commit = vi.fn(async (_id: number, state: string) => {
+      if (state === 'Active') await aWrite.promise;
+    });
+    const get = requirements([]);
+    const { result, rerender } = renderHook(
+      ({ scope }) => useBoardStateChange({ get, commit, scope }),
+      { initialProps: { scope: 'KnowAllTest' } }
+    );
+
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active', 'Contoso Ltd').catch(() => {});
+    });
+    rerender({ scope: 'Fabrikam' });
+    let bDone = false;
+    await act(async () => {
+      await result.current.requestStateChange(7, 'Resolved', 'ABC Inc').then(() => {
+        bDone = true;
+      });
+    });
+
+    expect(bDone).toBe(true);
+    expect(commit).toHaveBeenCalledWith(7, 'Resolved', 'ABC Inc');
+    await act(async () => {
+      aWrite.resolve();
+      await aWrite.promise;
+    });
+  });
+
+  // The card's own project can be stale; the server says where the item is.
+  it('asks with the project the server found the item in, over the card hint', async () => {
+    const commit = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new MissingFieldsError('TF401320: Rule Error', [APPROVED_DATE], 'DEF Inc')
+      );
+    const get = requirements([]);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active', 'Contoso Ltd').catch(() => {});
+    });
+
+    expect(result.current.pending?.project).toBe('DEF Inc');
+  });
+});

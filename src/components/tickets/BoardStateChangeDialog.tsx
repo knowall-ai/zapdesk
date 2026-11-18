@@ -70,10 +70,13 @@ function Fields({
 
   const [values, setValues] = useState<Record<string, string>>({});
   const [members, setMembers] = useState<User[]>([]);
-  // Starts true when people are wanted, rather than being switched on by the
-  // effect below: an empty list must not read as "nobody to pick" while the
-  // request that will fill it is still in flight.
-  const [membersLoading, setMembersLoading] = useState(needsPeople);
+  // Loading until the request for this project has settled, derived rather
+  // than switched on by the effect below: an empty list must not read as
+  // "nobody to pick" while the request that will fill it is still in flight.
+  // That holds for a picker added after the dialog opened, too -- a refusal
+  // can add one -- which a flag set once at mount did not (#663 review).
+  const [settledFor, setSettledFor] = useState<string | null>(null);
+  const membersLoading = needsPeople && settledFor !== project;
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -96,7 +99,7 @@ function Fields({
         console.error('Failed to fetch members:', error);
       })
       .finally(() => {
-        if (current) setMembersLoading(false);
+        if (current) setSettledFor(project);
       });
     return () => {
       current = false;
