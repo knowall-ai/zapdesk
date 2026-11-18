@@ -37,6 +37,11 @@ vi.mock('@/lib/devops', async () => {
   };
 });
 
+const describeFields = vi.fn();
+vi.mock('@/lib/describe-fields', () => ({
+  describeFields: (...args: unknown[]) => describeFields(...args),
+}));
+
 const { DevOpsApiError } = await import('./devops');
 
 const workItem = (id: number, state: string, tags = '') => ({
@@ -478,5 +483,149 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
       expect(status).toBe(500);
       expect(body.error).toBe('Failed to update ticket state');
     });
+  });
+});
+
+// DevOps refuses a move for fields it requires and names them. The route
+// hands them back described, so the board can ask for them instead of
+// showing the TF401320 rule error (#663).
+describe('PATCH /api/devops/tickets/[id]/state, refused for empty fields', () => {
+  const APPROVED_BY = {
+    referenceName: 'Custom.ApprovedBy',
+    name: 'Approved By',
+    type: 'identity',
+    isIdentity: true,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    getServerSession.mockResolvedValue({ accessToken: 'token' });
+    getProjects.mockResolvedValue([{ id: 'p1', name: 'Internal' }]);
+    getWorkItem.mockResolvedValue(workItem(42, 'New'));
+    describeFields.mockImplementation(async (names: string[]) =>
+      names.map((name) =>
+        name === 'Custom.ApprovedBy' ? APPROVED_BY : { referenceName: name, name, type: 'string' }
+      )
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const refusal = (fields: string[]) =>
+    new DevOpsApiError(
+      400,
+      'Failed to update work item state: TF401320: Rule Error for field Approved By.',
+      fields
+    );
+
+  it('returns the fields, described, with the error', async () => {
+    updateTicketState.mockRejectedValue(refusal(['Custom.ApprovedBy']));
+    const { status, body } = await patch('42', { state: 'Active', project: 'Internal' });
+
+    expect(status).toBe(400);
+    expect(body.error).toContain('TF401320');
+    expect(body.missingFields).toEqual([APPROVED_BY]);
+    expect(body.project).toBe('Internal');
+    expect(describeFields).toHaveBeenCalledWith(['Custom.ApprovedBy'], {
+      organization: 'KnowAll',
+      project: 'Internal',
+      workItemType: 'Bug',
+      authHeaders: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
+    });
+  });
+
+  it('does the same when it had to find the project itself', async () => {
+    updateTicketState.mockRejectedValue(refusal(['Custom.ApprovedBy']));
+    const { status, body } = await patch('42', { state: 'Active' });
+
+    expect(status).toBe(400);
+    expect(body.missingFields).toEqual([APPROVED_BY]);
+  });
+
+  // A field the route will not accept back could never be filled in, so
+  // asking for it would only fail again.
+  it('leaves out fields the route would refuse to write', async () => {
+    updateTicketState.mockRejectedValue(refusal(['System.Tags']));
+    const { status, body } = await patch('42', { state: 'Active', project: 'Internal' });
+
+    expect(status).toBe(400);
+    expect(body.missingFields).toBeUndefined();
+    expect(describeFields).not.toHaveBeenCalled();
+  });
+
+  // Metadata unavailable: the field is still offered, by name, as text --
+  // with the real describer running against a failing network, not a stub.
+  it('still offers the field by name when its definition cannot be read', async () => {
+    const actual = await vi.importActual<typeof import('./describe-fields')>('./describe-fields');
+    describeFields.mockImplementation(actual.describeFields as never);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
+    updateTicketState.mockRejectedValue(refusal(['Custom.ApprovedBy']));
+
+    const { status, body } = await patch('42', { state: 'Active', project: 'Internal' });
+
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(status).toBe(400);
+    expect(body.error).toContain('TF401320');
+    expect(body.missingFields).toEqual([
+      {
+        referenceName: 'Custom.ApprovedBy',
+        name: 'Custom.ApprovedBy',
+        type: 'string',
+        isIdentity: false,
+      },
+    ]);
+  });
+
+  it('offers the fields by name when the work item could not be read first', async () => {
+    getWorkItem.mockRejectedValue(new Error('read failed'));
+    updateTicketState.mockRejectedValue(refusal(['Custom.ApprovedBy']));
+
+    const { status, body } = await patch('42', { state: 'Active', project: 'Internal' });
+
+    expect(status).toBe(400);
+    expect(body.missingFields).toEqual([
+      { referenceName: 'Custom.ApprovedBy', name: 'Custom.ApprovedBy', type: 'string' },
+    ]);
+    expect(describeFields).not.toHaveBeenCalled();
+  });
+
+  it('does not hold the refusal back for slow metadata', async () => {
+    vi.useFakeTimers();
+    try {
+      describeFields.mockImplementation(() => new Promise(() => {}));
+      updateTicketState.mockRejectedValue(refusal(['Custom.ApprovedBy']));
+
+      const pending = patch('42', { state: 'Active', project: 'Internal' });
+      await vi.dynamicImportSettled();
+      await vi.advanceTimersByTimeAsync(5_000);
+      const { status, body } = await pending;
+
+      expect(status).toBe(400);
+      expect(body.missingFields).toEqual([
+        { referenceName: 'Custom.ApprovedBy', name: 'Custom.ApprovedBy', type: 'string' },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // DevOps has reported fields with versioned namespaces as empty.
+  it('accepts a versioned field reference name', async () => {
+    updateTicketState.mockRejectedValue(refusal(['AzureCSI-V1.0.Requestor']));
+    const { body } = await patch('42', { state: 'Active', project: 'Internal' });
+
+    expect(describeFields).toHaveBeenCalledWith(['AzureCSI-V1.0.Requestor'], expect.anything());
+    expect(body.missingFields).toHaveLength(1);
+  });
+
+  it('adds nothing to a refusal that names no empty field', async () => {
+    updateTicketState.mockRejectedValue(new DevOpsApiError(400, 'TF401320: not allowed'));
+    const { body } = await patch('42', { state: 'Active', project: 'Internal' });
+
+    expect(body.missingFields).toBeUndefined();
+    expect(describeFields).not.toHaveBeenCalled();
   });
 });

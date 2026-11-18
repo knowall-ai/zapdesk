@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useId, useRef } from 'react';
 import { X, Loader2, Search } from 'lucide-react';
 import type { RequiredField } from '@/hooks/useWorkItemActions';
 import type { User } from '@/types';
@@ -36,6 +37,23 @@ interface RequiredFieldsDialogProps {
 
 const PEOPLE_PICKER_FIELDS = new Set(['Custom.FoundBy']);
 
+/**
+ * Whether a field is drawn as a people picker. The field says so itself when
+ * its metadata could be read; the name list covers a field whose metadata
+ * says nothing -- the type endpoint, which does not report it yet, and a
+ * state change whose refused field could only be offered by name.
+ *
+ * Exported so a caller loading the member list asks the same question the
+ * form does. Asking only `isIdentity` left a field offered by name -- with
+ * no metadata -- drawn as a picker with nobody in it (#663 review).
+ */
+export function isPeoplePickerField(field: RequiredField): boolean {
+  return field.isIdentity === true || PEOPLE_PICKER_FIELDS.has(field.referenceName);
+}
+
+/** What can take keyboard focus inside the dialog. */
+const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
 export default function RequiredFieldsDialog({
   targetType,
   changing = 'type',
@@ -56,10 +74,141 @@ export default function RequiredFieldsDialog({
     return !!value;
   });
 
+  /**
+   * Both ways out are shut while the write is away.
+   *
+   * Cancelling then would put the card back in its old column while the PATCH
+   * carried on and very likely succeeded, leaving the board and the server
+   * telling different stories (#663 review). `useBoardStateChange` refuses a
+   * cancel mid-write as well; this is so nothing invites one.
+   */
+  const canLeave = !isUpdating;
+
+  /**
+   * One verb for the whole dialog.
+   *
+   * The heading became state-aware with #651 and the button did not, so a card
+   * dragged to Todo was headed "Move to Todo" above a button reading "Change
+   * to Todo", and "Changing…" while it ran. Two words for one action in a box
+   * four lines tall; seen in the screenshots taken for #663.
+   */
+  const verb = changing === 'state' ? 'Move' : 'Change';
+
+  const headingId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Move focus into the dialog, and put it back where it came from on close.
+   *
+   * This had none of a dialog's semantics: no role, no name, no focus. A
+   * screen reader announced nothing when it opened, and a keyboard user was
+   * left on the card behind it (raised in review on #663). Focus is also kept
+   * inside while it is open: see the trap below.
+   */
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    return () => {
+      // The trigger can be gone by now -- a card that moved column, say -- so
+      // this is only ever a best effort.
+      if (previous?.isConnected) previous.focus();
+    };
+  }, []);
+
+  /**
+   * Escape closes this prompt, and only this prompt.
+   *
+   * `TicketDialogShell` listens for Escape on `document` too, and when the
+   * pop-up opens this prompt both are mounted at once -- so one press closed
+   * the ticket dialog underneath as well, and did it even mid-write, when this
+   * prompt itself refuses to close (raised in review on #663).
+   *
+   * Listening in the capture phase and stopping the event there means the
+   * innermost dialog is the one that answers, which is what a modal should do.
+   * Nothing nested here handles Escape of its own -- the people picker is a
+   * search box and a list -- so nothing else is swallowed.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      // Stopped whether or not it acts: while a write is away this prompt
+      // stays put, and the dialog behind it must not close either.
+      event.stopPropagation();
+      if (!isUpdating) onCancel();
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [isUpdating, onCancel]);
+
+  /**
+   * Keep keyboard focus inside the dialog while it is open.
+   *
+   * `aria-modal` tells assistive technology the page behind is unavailable,
+   * but Tab still walked out past the last button -- onto the organisation
+   * switcher, among other things, where a keypress could throw away the
+   * pending move and everything typed into it (raised in review on #663).
+   *
+   * Tab and Shift+Tab wrap between the first and last control that can take
+   * focus right now (disabled ones are skipped, so it still works mid-write),
+   * and focus that lands behind the dialog by any other route is pulled back.
+   * Both listen in the capture phase, like Escape above, so the innermost
+   * dialog decides -- `TicketDialogShell` can be open underneath this one.
+   */
+  useEffect(() => {
+    const focusable = (): HTMLElement[] => {
+      const dialog = dialogRef.current;
+      if (!dialog) return [];
+      return [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (element) => !element.hasAttribute('disabled') && element.tabIndex >= 0
+      );
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const dialog = dialogRef.current;
+      const controls = focusable();
+      if (!dialog) return;
+      if (controls.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      const active = document.activeElement;
+      const inside = active instanceof Node && dialog.contains(active);
+      if (event.shiftKey && (!inside || active === first || active === dialog)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (!inside || active === last)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    const onFocusIn = (event: FocusEvent) => {
+      const dialog = dialogRef.current;
+      if (!dialog || !(event.target instanceof Node) || dialog.contains(event.target)) return;
+      (focusable()[0] ?? dialog).focus();
+    };
+
+    document.addEventListener('keydown', onKeyDown, true);
+    document.addEventListener('focusin', onFocusIn, true);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('focusin', onFocusIn, true);
+    };
+  }, []);
+
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50">
       <div
-        className="mx-4 w-full max-w-md rounded-lg shadow-xl"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={headingId}
+        tabIndex={-1}
+        className="mx-4 w-full max-w-md rounded-lg shadow-xl outline-none"
         style={{ backgroundColor: 'var(--background)' }}
       >
         {/* Header */}
@@ -67,12 +216,19 @@ export default function RequiredFieldsDialog({
           className="flex items-center justify-between border-b px-4 py-3"
           style={{ borderColor: 'var(--border)' }}
         >
-          <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {changing === 'state' ? `Move to ${targetType}` : `Change to ${targetType}`}
+          <h3
+            id={headingId}
+            className="text-base font-semibold"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            {`${verb} to ${targetType}`}
           </h3>
           <button
+            type="button"
             onClick={onCancel}
-            className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)]"
+            disabled={!canLeave}
+            aria-label="Close"
+            className="rounded p-1 transition-colors hover:bg-[var(--surface-hover)] disabled:opacity-50"
             style={{ color: 'var(--text-muted)' }}
           >
             <X size={16} />
@@ -87,17 +243,20 @@ export default function RequiredFieldsDialog({
               : `The following fields are required for ${targetType} work items:`}
           </p>
 
-          {requiredFields.map((field) => {
+          {requiredFields.map((field, index) => {
+            // Ties each visible field name to its control, so a screen
+            // reader says which field it is in (#663 review).
+            const inputId = `${headingId}-field-${index}`;
             // The field says whether it holds a person. The name list is kept
             // only for the type endpoint, which does not report it yet.
-            const isPeoplePicker =
-              field.isIdentity === true || PEOPLE_PICKER_FIELDS.has(field.referenceName);
+            const isPeoplePicker = isPeoplePickerField(field);
 
             if (isPeoplePicker) {
               const selectedValue = fieldValues[field.referenceName];
               return (
                 <div key={field.referenceName}>
                   <label
+                    htmlFor={inputId}
                     className="mb-1 block text-xs uppercase"
                     style={{ color: 'var(--text-muted)' }}
                   >
@@ -126,6 +285,7 @@ export default function RequiredFieldsDialog({
                           style={{ color: 'var(--text-muted)' }}
                         />
                         <input
+                          id={inputId}
                           type="text"
                           placeholder="Search users..."
                           value={memberSearch}
@@ -195,12 +355,14 @@ export default function RequiredFieldsDialog({
               return (
                 <div key={field.referenceName}>
                   <label
+                    htmlFor={inputId}
                     className="mb-1 block text-xs uppercase"
                     style={{ color: 'var(--text-muted)' }}
                   >
                     {field.name} *
                   </label>
                   <select
+                    id={inputId}
                     value={fieldValues[field.referenceName] || ''}
                     onChange={(e) => onFieldChange(field.referenceName, e.target.value)}
                     className="input w-full text-sm"
@@ -223,12 +385,14 @@ export default function RequiredFieldsDialog({
               return (
                 <div key={field.referenceName}>
                   <label
+                    htmlFor={inputId}
                     className="mb-1 block text-xs uppercase"
                     style={{ color: 'var(--text-muted)' }}
                   >
                     {field.name} *
                   </label>
                   <input
+                    id={inputId}
                     type="date"
                     value={(fieldValues[field.referenceName] || '').slice(0, 10)}
                     onChange={(e) => onFieldChange(field.referenceName, e.target.value)}
@@ -242,12 +406,14 @@ export default function RequiredFieldsDialog({
             return (
               <div key={field.referenceName}>
                 <label
+                  htmlFor={inputId}
                   className="mb-1 block text-xs uppercase"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   {field.name} *
                 </label>
                 <input
+                  id={inputId}
                   type="text"
                   value={fieldValues[field.referenceName] || ''}
                   onChange={(e) => onFieldChange(field.referenceName, e.target.value)}
@@ -265,13 +431,16 @@ export default function RequiredFieldsDialog({
           style={{ borderColor: 'var(--border)' }}
         >
           <button
+            type="button"
             onClick={onCancel}
-            className="rounded-md px-4 py-2 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+            disabled={!canLeave}
+            className="rounded-md px-4 py-2 text-sm transition-colors hover:bg-[var(--surface-hover)] disabled:opacity-50"
             style={{ color: 'var(--text-secondary)' }}
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={onConfirm}
             disabled={!allFieldsFilled || isUpdating}
             className="btn-primary rounded-md px-4 py-2 text-sm disabled:opacity-50"
@@ -279,10 +448,10 @@ export default function RequiredFieldsDialog({
             {isUpdating ? (
               <span className="flex items-center gap-2">
                 <Loader2 size={14} className="animate-spin" />
-                Changing...
+                {changing === 'state' ? 'Moving…' : 'Changing…'}
               </span>
             ) : (
-              `Change to ${targetType}`
+              `${verb} to ${targetType}`
             )}
           </button>
         </div>

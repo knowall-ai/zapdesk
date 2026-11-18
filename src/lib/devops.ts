@@ -5,6 +5,7 @@ function escapeWiql(value: string): string {
   return value.replace(/'/g, "''");
 }
 import { closedWindowEndDay, closedWindowStartDay, type ClosedWindow } from './closed-window';
+import { missingFieldsFromRuleError } from './rule-validation';
 import type {
   DevOpsWorkItem,
   DevOpsWorkItemRelation,
@@ -446,7 +447,12 @@ function readEffortField(fields: Record<string, unknown>, fieldRef: string): num
 export class DevOpsApiError extends Error {
   constructor(
     public readonly status: number,
-    message: string
+    message: string,
+    /**
+     * Reference names of the fields a refused update left empty, when DevOps
+     * said so (see `rule-validation.ts`). Empty for every other failure.
+     */
+    public readonly missingFields: string[] = []
   ) {
     super(message);
     this.name = 'DevOpsApiError';
@@ -1882,12 +1888,16 @@ export class AzureDevOpsService {
       // the route can pass through a clear, user-facing reason instead of
       // collapsing it to a bare status code (issue #391).
       let detail = response.statusText;
+      let missingFields: string[] = [];
       try {
         const body = await response.text();
         if (body) {
           try {
             const parsed = JSON.parse(body) as { message?: string };
             if (parsed.message) detail = parsed.message;
+            // Which fields the rule wanted, so the board can ask for them
+            // rather than show this message (#663).
+            missingFields = missingFieldsFromRuleError(parsed);
           } catch {
             // Not JSON — most likely an HTML error page from a proxy in
             // front of DevOps. Keep the whole thing in the server log, but
@@ -1910,7 +1920,11 @@ export class AzureDevOpsService {
       } catch {
         // Body read failure — keep the status-text fallback above.
       }
-      throw new DevOpsApiError(response.status, `Failed to update work item state: ${detail}`);
+      throw new DevOpsApiError(
+        response.status,
+        `Failed to update work item state: ${detail}`,
+        missingFields
+      );
     }
 
     return response.json();

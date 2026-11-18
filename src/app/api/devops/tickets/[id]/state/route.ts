@@ -5,14 +5,15 @@ import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devo
 import { sendStatusChangeNotification, assigneeEmailFrom } from '@/lib/email';
 import { notifiesCustomer, stateMoved, statusChangeRecipient } from '@/lib/status-notification';
 import { debugLog } from '@/lib/debug';
+import { describeFields } from '@/lib/describe-fields';
+import { FIELD_REFERENCE } from '@/lib/rule-validation';
+import type { RequiredField } from '@/hooks/useWorkItemActions';
 
 /** Azure DevOps work item ids are positive int32 values. */
 /** Generous bound on a process-template state name. */
 const MAX_STATE_LENGTH = 128;
 /** Azure DevOps caps project names at 64 characters. */
 const MAX_PROJECT_LENGTH = 64;
-/** `Namespace.FieldName`, which is the shape of every work item field. */
-const FIELD_REFERENCE = /^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)+$/;
 /** No transition in any process requires anything like this many. */
 const MAX_ADDITIONAL_FIELDS = 20;
 /** Generous for an identity string or a date; short of a description. */
@@ -32,7 +33,83 @@ const RESERVED_FIELDS = new Set([
   'System.ChangedBy',
 ]);
 
+/**
+ * Where a refused update was headed, so the fields it left empty can be
+ * described for the dialog that asks for them (#663).
+ */
+interface RefusalContext {
+  accessToken: string;
+  organization: string;
+  project: string;
+  workItemType: string;
+}
+
+/**
+ * The longest a refusal waits to have its fields described. The refusal is
+ * already known; the descriptions only improve the controls, and several
+ * metadata reads each with their own timeout could otherwise hold the answer
+ * back for half a minute (#663 review).
+ */
+const DESCRIBE_DEADLINE_MS = 5_000;
+
+/** A field asked for by name only: a text box, which DevOps still checks. */
+const byName = (referenceName: string): RequiredField => ({
+  referenceName,
+  name: referenceName,
+  type: 'string',
+});
+
+/**
+ * The fields to ask for, described where possible, or nothing when there is
+ * nothing a required-fields dialog could fix. Never throws: this only
+ * improves an error response, and failing here must not replace the error
+ * being reported.
+ *
+ * The names stand on their own. Without the context to describe them --
+ * the work item could not be read first -- or when describing them fails or
+ * runs out of time, each is offered by name as text rather than dropped, so
+ * the board can still ask (#663 review).
+ */
+async function missingFieldsFor(
+  error: DevOpsApiError,
+  context: RefusalContext | undefined
+): Promise<RequiredField[]> {
+  if (error.status !== 400) return [];
+  const askable = error.missingFields.filter(
+    (field) => FIELD_REFERENCE.test(field) && !RESERVED_FIELDS.has(field)
+  );
+  if (askable.length === 0 || askable.length > MAX_ADDITIONAL_FIELDS) return [];
+  if (!context) return askable.map(byName);
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), DESCRIBE_DEADLINE_MS);
+  });
+  try {
+    const described = await Promise.race([
+      describeFields(askable, {
+        organization: context.organization,
+        project: context.project,
+        workItemType: context.workItemType,
+        authHeaders: {
+          Authorization: `Bearer ${context.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }),
+      deadline,
+    ]);
+    if (described) return described;
+    console.error('Describing the fields a refused update needs ran out of time');
+  } catch (describeError) {
+    console.error('Could not describe the fields a refused update needs:', describeError);
+  } finally {
+    clearTimeout(timer);
+  }
+  return askable.map(byName);
+}
+
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  let refusal: RefusalContext | undefined;
   try {
     const session = await getServerSessionWithToken();
 
@@ -158,6 +235,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       try {
         const existing = await devopsService.getWorkItem(projectHint, ticketId);
         oldState = existing?.fields?.['System.State'];
+        const workItemType = existing?.fields?.['System.WorkItemType'];
+        if (organization && typeof workItemType === 'string' && workItemType) {
+          refusal = {
+            accessToken: session.accessToken,
+            organization,
+            project: projectHint,
+            workItemType,
+          };
+        }
       } catch {
         // Continue without it. The update still goes ahead; the customer is
         // not mailed, because a move from an unknown state would be a guess.
@@ -192,6 +278,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (!workItem) continue;
 
       const oldState: string | undefined = workItem.fields?.['System.State'] || undefined;
+      const workItemType = workItem.fields?.['System.WorkItemType'];
+      if (organization && typeof workItemType === 'string' && workItemType) {
+        refusal = {
+          accessToken: session.accessToken,
+          organization,
+          project: project.name,
+          workItemType,
+        };
+      }
 
       const updatedWorkItem = await devopsService.updateTicketState(
         project.name,
@@ -227,6 +322,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       // ours to own, so it stays a 500.
       const passThrough = [400, 401, 403, 404, 409];
       const status = passThrough.includes(error.status) ? error.status : 500;
+      // A rule that wanted fields filled in names them. Hand them back so the
+      // board can ask for them -- the rules lookup before the drag fails open
+      // when the user may not read process rules, and this is then the only
+      // place the answer comes from (#663).
+      const missingFields = await missingFieldsFor(error, refusal);
+      if (missingFields.length > 0) {
+        // The project the item was found in, so a card that came without one
+        // can still list the people a field wants.
+        return NextResponse.json(
+          { error: error.message, missingFields, project: refusal?.project },
+          { status }
+        );
+      }
       return NextResponse.json({ error: error.message }, { status });
     }
     return NextResponse.json({ error: 'Failed to update ticket state' }, { status: 500 });

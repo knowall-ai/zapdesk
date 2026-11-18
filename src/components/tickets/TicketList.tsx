@@ -10,7 +10,9 @@ interface TicketListProps {
   hideTicketsOnlyToggle?: boolean;
   onWorkItemClick?: (item: WorkItem) => void;
   onZapClick?: (item: WorkItem) => void;
-  onStatusChange?: (itemId: number, newState: string) => Promise<void>;
+  onStatusChange?: (itemId: number, newState: string, project?: string) => Promise<void>;
+  /** A card dropped back where it started; see `KanbanBoard` (#663). */
+  onStatusChangeAbandoned?: (itemId: number) => void;
   onRefresh?: () => void;
   availableTypes?: WorkItemType[];
   defaultViewMode?: 'list' | 'kanban';
@@ -32,6 +34,7 @@ export default function TicketList({
   onWorkItemClick,
   onZapClick,
   onStatusChange,
+  onStatusChangeAbandoned,
   onRefresh,
   availableTypes,
   defaultViewMode,
@@ -74,6 +77,7 @@ export default function TicketList({
       availableGroupBy={['none', 'assignee']}
       availableTypes={availableTypes}
       onStatusChange={onStatusChange}
+      onStatusChangeAbandoned={onStatusChangeAbandoned}
       onWorkItemClick={onWorkItemClick}
       onZapClick={onZapClick}
       onRefresh={onRefresh}

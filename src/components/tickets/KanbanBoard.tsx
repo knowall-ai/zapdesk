@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import {
   DndContext,
@@ -13,6 +13,7 @@ import {
   type DragStartEvent,
   type DragEndEvent,
   type DragOverEvent,
+  type DragCancelEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import KanbanColumn from './KanbanColumn';
@@ -24,6 +25,8 @@ import { debugLog, debugWarn } from '@/lib/debug';
 import { gitHubColumnFor, isGitHubItem } from '@/lib/github-kanban';
 import SourceLegend from '@/components/common/SourceLegend';
 import { sourceKindOf, type SourceKind } from '@/lib/source-colors';
+import { dragFailureMessage } from '@/lib/drag-failure';
+import { isStateChangeSuperseded } from '@/lib/state-change-cancelled';
 
 // KanbanBoard can work with either Ticket[] or WorkItem[]
 // WorkItem uses 'state' while Ticket uses 'devOpsState' for the state name
@@ -32,7 +35,18 @@ type KanbanItem = Ticket | WorkItem;
 interface KanbanBoardProps {
   tickets?: Ticket[];
   items?: WorkItem[]; // Alternative prop for WorkItem[]
-  onTicketStateChange?: (ticketId: number, newState: string) => Promise<void>;
+  /**
+   * Writes the dropped card's new state. `project` is passed on so the handler
+   * can ask that project's process what the transition requires before
+   * writing it (#662), and so the route need not scan every project.
+   */
+  onTicketStateChange?: (ticketId: number, newState: string, project?: string) => Promise<void>;
+  /**
+   * A card was dropped back in the column it started in. An earlier drag of
+   * it may still be waiting on its rules lookup, and must not go on to write
+   * the state this drop undid (#663 review).
+   */
+  onStateChangeAbandoned?: (ticketId: number) => void;
   readOnly?: boolean; // Disable drag-and-drop
   groupBy?: GroupByOption;
   groupedItems?: Record<string, WorkItem[]>; // Pre-grouped items from WorkItemBoard
@@ -63,6 +77,7 @@ export default function KanbanBoard({
   tickets,
   items,
   onTicketStateChange,
+  onStateChangeAbandoned,
   readOnly = false,
   groupBy = 'none',
   groupedItems,
@@ -78,7 +93,13 @@ export default function KanbanBoard({
   const [localItems, setLocalItems] = useState<KanbanItem[]>(sourceItems);
   const [syncedItems, setSyncedItems] = useState(sourceItems);
   const [activeId, setActiveId] = useState<number | null>(null);
-  const [isUpdating, setIsUpdating] = useState(false);
+  /**
+   * Moves still waiting on their lookup or write. A count, not a flag: a
+   * second drag can start while the first is away, and the first one settling
+   * must not clear the guard below for the second (#663 review).
+   */
+  const [pendingMoves, setPendingMoves] = useState(0);
+  const isUpdating = pendingMoves > 0;
   const [kanbanStates, setKanbanStates] = useState<WorkItemState[]>([]);
   const [isLoadingStates, setIsLoadingStates] = useState(true);
 
@@ -119,6 +140,21 @@ export default function KanbanBoard({
     setSyncedItems(sourceItems);
     setLocalItems(sourceItems);
   }
+
+  /**
+   * Put one card back where the parent has it, leaving every other card
+   * alone. Resetting the whole board to the props would also undo a move of
+   * another card that is still waiting -- even one whose required-fields
+   * dialog is open (#663 review).
+   */
+  const restoreCard = useCallback(
+    (itemId: number) => {
+      const original = sourceItems.find((t) => t.id === itemId);
+      if (!original) return;
+      setLocalItems((prev) => prev.map((t) => (t.id === itemId ? original : t)));
+    },
+    [sourceItems]
+  );
 
   // The column a card sits in. For a DevOps item that is its state. A GitHub
   // issue is only open or closed, so it is placed in the first or last column
@@ -188,9 +224,34 @@ export default function KanbanBoard({
     return localItems.find((t) => t.id === activeId) || null;
   }, [activeId, localItems]);
 
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(event.active.id as number);
+  /**
+   * The dragged card as it was when this drag began. A drag that goes
+   * nowhere -- cancelled, or dropped outside -- puts back only that card,
+   * from here. Resetting the board to the props also undid another card's
+   * move still waiting on its lookup (#663 review).
+   */
+  const dragStartRef = useRef<KanbanItem | null>(null);
+  const putBackDragged = useCallback((itemId: number) => {
+    const start = dragStartRef.current;
+    if (start?.id !== itemId) return;
+    setLocalItems((prev) => prev.map((t) => (t.id === itemId ? start : t)));
   }, []);
+  /**
+   * The newest drop of each card. Only the drop that still owns a card may
+   * roll it back or report a refusal: an older drop's late failure would
+   * otherwise put the card back while a newer one waits on its dialog
+   * (#663 review).
+   */
+  const latestDropRef = useRef(new Map<number, number>());
+
+  const handleDragStart = useCallback(
+    (event: DragStartEvent) => {
+      const id = event.active.id as number;
+      dragStartRef.current = localItems.find((t) => t.id === id) ?? null;
+      setActiveId(id);
+    },
+    [localItems]
+  );
 
   // Get list of state names for checking if dropping on a column
   const stateNames = useMemo(() => kanbanStates.map((s) => s.name), [kanbanStates]);
@@ -239,18 +300,29 @@ export default function KanbanBoard({
       if (!over) {
         debugLog('[Kanban DnD] drag ended with no drop target');
         // handleDragOver may already have moved the card; put it back.
-        setLocalItems(sourceItems);
+        putBackDragged(active.id as number);
         return;
       }
 
       const activeItemId = active.id as number;
+      /**
+       * Take ownership of the card for this drop. Only a drop that replaces
+       * the earlier move -- a new transition, or a drop back where it
+       * started -- does; one that goes nowhere leaves the earlier move in
+       * charge of its own rollback (#663 review).
+       */
+      const claim = () => {
+        const next = (latestDropRef.current.get(activeItemId) ?? 0) + 1;
+        latestDropRef.current.set(activeItemId, next);
+        return next;
+      };
       const overId = over.id as string;
 
       // Find the original item (from props, not local state)
       const originalItem = sourceItems.find((t) => t.id === activeItemId);
       if (!originalItem) {
         debugWarn('[Kanban DnD] active item not found in sourceItems', { activeItemId });
-        setLocalItems(sourceItems);
+        putBackDragged(activeItemId);
         return;
       }
 
@@ -275,27 +347,61 @@ export default function KanbanBoard({
         knownStates: stateNames,
       });
 
-      // If state hasn't changed, reset to original
+      // Dropped back where it started. A drag of this card that is still
+      // waiting on its lookup must not write the state this drop undid.
       if (!targetState || fromState === targetState) {
-        setLocalItems(sourceItems);
+        claim();
+        onStateChangeAbandoned?.(activeItemId);
+        restoreCard(activeItemId);
         return;
       }
 
       // Persist the state change
       if (onTicketStateChange) {
-        setIsUpdating(true);
+        // Put the card where it was dropped before anything is awaited: the
+        // target came from `event.over`, and when no dragOver arrived for it
+        // the card would sit in its old column all the while the
+        // required-fields prompt is open (#663 review).
+        const drop = claim();
+        setLocalItems((prev) =>
+          prev.map((t) => (t.id === activeItemId ? setItemState(t, targetState!) : t))
+        );
+        setPendingMoves((count) => count + 1);
         try {
           debugLog('[Kanban DnD] calling onTicketStateChange', {
             itemId: activeItemId,
             fromState,
             targetState,
           });
-          await onTicketStateChange(activeItemId, targetState);
+          await onTicketStateChange(activeItemId, targetState, originalItem.project);
           debugLog('[Kanban DnD] state change succeeded', {
             itemId: activeItemId,
             targetState,
           });
         } catch (error) {
+          // A newer drag of this card took over during the lookup: the card is
+          // where that drag put it, and its write is still away. Leave it.
+          if (isStateChangeSuperseded(error)) return;
+          // A later drop of this card owns it now: neither undo that move nor
+          // report this older one.
+          if (latestDropRef.current.get(activeItemId) !== drop) return;
+          // If the card is being dragged again right now, that drag's
+          // fallback is the move that just failed: point it at the server's
+          // placement instead, so cancelling cannot bring the refused move
+          // back (#663 review).
+          if (dragStartRef.current?.id === activeItemId) {
+            dragStartRef.current = originalItem;
+          }
+          // Nothing was written, so the card goes back whatever happened.
+          // Process templates often block direct transitions (New → To Do
+          // where an intermediate state is required), and without a message
+          // the user just sees the card snap back (#391). Only this card:
+          // another may be mid-move, with its dialog open.
+          restoreCard(activeItemId);
+          // Null when the user closed the required-fields dialog, which is a
+          // choice rather than a failure (#662).
+          const message = dragFailureMessage(error, targetState);
+          if (!message) return;
           // Not gated: a rejected transition is rare and its detail is the
           // whole point of issue #391.
           console.error('[Kanban DnD] state change failed — rolling back', {
@@ -304,32 +410,37 @@ export default function KanbanBoard({
             targetState,
             error,
           });
-          // Rollback on failure — and surface the upstream reason. Process
-          // templates often block direct transitions (e.g. New → To Do
-          // when an intermediate state is required); without a toast the
-          // user just sees the card snap back with no explanation (#391).
-          setLocalItems(sourceItems);
-          toast.error(
-            error instanceof Error && error.message
-              ? `Couldn't move to "${targetState}": ${error.message}`
-              : `Couldn't move to "${targetState}"`
-          );
+          toast.error(message);
         } finally {
-          setIsUpdating(false);
+          setPendingMoves((count) => Math.max(0, count - 1));
         }
       } else {
         debugWarn('[Kanban DnD] no onTicketStateChange handler wired — change will not persist');
       }
     },
-    [sourceItems, localItems, onTicketStateChange, stateNames, columnOf]
+    [
+      sourceItems,
+      localItems,
+      onTicketStateChange,
+      onStateChangeAbandoned,
+      restoreCard,
+      putBackDragged,
+      stateNames,
+      columnOf,
+    ]
   );
 
-  const handleDragCancel = useCallback(() => {
-    setActiveId(null);
-    setLocalItems(sourceItems);
-  }, [sourceItems]);
+  const handleDragCancel = useCallback(
+    (event: DragCancelEvent) => {
+      setActiveId(null);
+      putBackDragged(event.active.id as number);
+    },
+    [putBackDragged]
+  );
 
   // Group items by state for a subset of items (used for swim lanes)
+  const localById = useMemo(() => new Map(localItems.map((t) => [t.id, t])), [localItems]);
+
   const getItemsByStateForGroup = useCallback(
     (groupItems: KanbanItem[]): Record<string, KanbanItem[]> => {
       const grouped: Record<string, KanbanItem[]> = {};
@@ -389,7 +500,17 @@ export default function KanbanBoard({
   const swimLaneContent = hasSwimLanes ? (
     <div className="kanban-swim-lanes">
       {Object.entries(groupedItems).map(([groupName, groupItems]) => {
-        const laneItemsByState = getItemsByStateForGroup(groupItems);
+        // The lane decides which cards are in it; `localItems` decides where
+        // each one is drawn, so a dropped card sits in its new column while
+        // its required-fields dialog is open (#663 review).
+        const laneItemsByState = getItemsByStateForGroup(
+          groupItems.map((item) => {
+            // The lane's own item, with only the optimistic state taken from
+            // the board: the rest of the card stays as the lane has it.
+            const local = localById.get(item.id);
+            return local ? setItemState(item, getItemState(local)) : item;
+          })
+        );
         return (
           <div key={groupName} className="kanban-swim-lane">
             <div className="kanban-swim-lane-header">

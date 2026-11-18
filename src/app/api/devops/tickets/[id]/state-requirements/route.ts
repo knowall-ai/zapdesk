@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSessionWithToken } from '@/lib/server-session';
 import { validateOrganizationAccess } from '@/lib/devops-auth';
 import { parseWorkItemId } from '@/lib/work-item-id';
-import { resolveAllowedValues, type DevOpsField } from '@/lib/devops-fields';
+import { describeFields } from '@/lib/describe-fields';
 import {
   fieldHasValue,
   requiredFieldsForTransition,
@@ -149,30 +149,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     // Describe each one well enough to draw a control for it: an identity
     // field wants a people picker, a date wants a date input.
-    const fields = await Promise.all(
-      needed.map(async (referenceNameOfField) => {
-        const fieldResponse = await bounded(
-          `https://dev.azure.com/${org}/_apis/wit/fields/${encodeURIComponent(referenceNameOfField)}?api-version=7.0`,
-          authHeaders
-        );
-        const definition = fieldResponse.ok
-          ? ((await fieldResponse.json()) as DevOpsField & {
-              isIdentity?: boolean;
-              picklistId?: string | null;
-            })
-          : null;
-        const allowedValues = definition
-          ? await resolveAllowedValues(definition, organization, project, typeName, authHeaders)
-          : [];
-        return {
-          referenceName: referenceNameOfField,
-          name: definition?.name || referenceNameOfField,
-          type: definition?.type || 'string',
-          isIdentity: definition?.isIdentity === true,
-          allowedValues: allowedValues.length > 0 ? allowedValues : undefined,
-        };
-      })
-    );
+    const fields = await describeFields(needed, {
+      organization,
+      project,
+      workItemType: typeName,
+      authHeaders,
+    });
 
     return NextResponse.json({ fields });
   } catch (error) {
