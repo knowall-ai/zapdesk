@@ -22,6 +22,7 @@ import { ticketToWorkItem } from '@/lib/devops';
 import { useDefaultView, viewToShow } from '@/lib/default-view';
 import { readGitHubLabelSummary, type GitHubLabelSummary } from '@/lib/github-label-notice';
 import { responseErrorMessage } from '@/lib/response-error';
+import { MissingFieldsError, missingFieldsInBody } from '@/lib/missing-fields-error';
 import { gitHubTruncationMessage } from '@/lib/github-truncation';
 import type { Ticket, WorkItem, User, WorkItemType, EffortHoursUpdate } from '@/types';
 
@@ -286,7 +287,18 @@ function TicketsPageContent() {
   );
 
   const handleTicketStateChange = useCallback(
-    async (ticketId: number, newState: string, additionalFields?: Record<string, string>) => {
+    async (
+      ticketId: number,
+      newState: string,
+      additionalFields?: Record<string, string>,
+      /**
+       * The board asks for fields a refusal names instead of showing it
+       * (#663), so it wants that refusal back quietly: a toast reading
+       * "Rule Error for field Approved By" over the dialog asking for Approved
+       * By would only contradict it. Other callers keep the toast.
+       */
+      { askForMissingFields = false }: { askForMissingFields?: boolean } = {}
+    ) => {
       try {
         const response = await fetch(`/api/devops/tickets/${ticketId}/state`, {
           method: 'PATCH',
@@ -299,7 +311,12 @@ function TicketsPageContent() {
           body: JSON.stringify({ state: newState, additionalFields }),
         });
         if (!response.ok) {
-          throw new Error(await responseErrorMessage(response, 'the status', 'update'));
+          const message = await responseErrorMessage(response, 'the status', 'update');
+          if (askForMissingFields) {
+            const missing = missingFieldsInBody(await response.json().catch(() => null));
+            if (missing) throw new MissingFieldsError(message, missing);
+          }
+          throw new Error(message);
         }
         setTickets((prev) =>
           prev.map((t) => (t.id === ticketId ? { ...t, devOpsState: newState } : t))
@@ -307,6 +324,8 @@ function TicketsPageContent() {
         refreshCounts();
         toast.success(`Status updated to "${newState}"`);
       } catch (error) {
+        // The board opens the dialog for these, so this is not a failure yet.
+        if (error instanceof MissingFieldsError) throw error;
         console.error('Failed to update ticket state:', error);
         toast.error(error instanceof Error ? error.message : 'Failed to update status');
         throw error; // Re-throw so KanbanBoard can handle rollback
@@ -389,7 +408,9 @@ function TicketsPageContent() {
         _project: string | undefined,
         additionalFields?: Record<string, string>
       ) => {
-        await handleTicketStateChange(itemId, state, additionalFields);
+        await handleTicketStateChange(itemId, state, additionalFields, {
+          askForMissingFields: true,
+        });
       },
       [handleTicketStateChange]
     ),
@@ -682,6 +703,7 @@ function TicketsPageContent() {
             onWorkItemClick={handleWorkItemClick}
             onZapClick={handleZapClick}
             onStatusChange={boardStateChange.requestStateChange}
+            onStatusChangeAbandoned={boardStateChange.supersede}
             availableTypes={workItemTypes}
             defaultViewMode={defaultViewMode}
             hideTicketsOnlyToggle

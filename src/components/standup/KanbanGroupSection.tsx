@@ -75,6 +75,37 @@ export function moveCardTo(
   };
 }
 
+/**
+ * Put one card back where `original` has it -- same column, same place --
+ * and leave every other card as it is.
+ *
+ * A failed or cancelled move used to reset the whole board to the props.
+ * With two moves away at once that also undid the other one, sending a card
+ * back to its old column while its required-fields dialog was still open
+ * (#663 review).
+ */
+export function restoreCard(
+  columns: Record<string, StandupWorkItem[]>,
+  original: Record<string, StandupWorkItem[]>,
+  itemId: number
+): Record<string, StandupWorkItem[]> {
+  const home = Object.keys(original).find((name) =>
+    original[name]?.some((item) => item.id === itemId)
+  );
+  if (!home) return columns;
+  const index = original[home].findIndex((item) => item.id === itemId);
+  const card = original[home][index];
+  const without: Record<string, StandupWorkItem[]> = {};
+  for (const [name, items] of Object.entries(columns)) {
+    without[name] = items.some((item) => item.id === itemId)
+      ? items.filter((item) => item.id !== itemId)
+      : items;
+  }
+  const target = [...(without[home] ?? [])];
+  target.splice(Math.min(index, target.length), 0, card);
+  return { ...without, [home]: target };
+}
+
 function doneWindowHint(closedWindow: ClosedWindow): string {
   return closedWindow === 'all'
     ? 'Showing closed items as far back as they go. Very old closed GitHub issues may be missing.'
@@ -217,6 +248,12 @@ interface KanbanGroupSectionProps {
   allowedStatesByProjectType?: AllowedStates;
   /** `project` is the card's own project; passing it on saves the server a search. */
   onStateChange?: (itemId: number, targetState: string, project?: string) => Promise<void>;
+  /**
+   * A card was dropped back in the column it started in. An earlier drag of
+   * it may still be waiting on its rules lookup, and must not go on to write
+   * the state this drop undid (#663 review).
+   */
+  onStateChangeAbandoned?: (itemId: number) => void;
   onItemClick?: (item: StandupWorkItem) => void;
   activity?: GroupActivity;
   /** How far back the Closed column reaches (#6713). */
@@ -230,6 +267,7 @@ export default function KanbanGroupSection({
   columns,
   allowedStatesByProjectType,
   onStateChange,
+  onStateChangeAbandoned,
   onItemClick,
   activity,
   closedWindow = 'recent',
@@ -434,7 +472,12 @@ export default function KanbanGroupSection({
 
       // Find original column from props
       const originalCol = columns.find((c) => c.items.some((i) => i.id === activeItemId));
-      if (originalCol?.name === targetCol) return; // No change
+      if (originalCol?.name === targetCol) {
+        // Dropped back where it started. A drag of this card still waiting
+        // on its lookup must not write the state this drop undid.
+        onStateChangeAbandoned?.(activeItemId);
+        return;
+      }
 
       // Blocked columns are already disabled as drop targets, so this only
       // trips if the cached state list went stale mid-session. Say so plainly
@@ -502,8 +545,9 @@ export default function KanbanGroupSection({
         // A newer drag of this card took over during the lookup. The card is
         // where that drag put it, and its write is still away: leave it.
         if (isStateChangeSuperseded(error)) return;
-        // Nothing was written, so the card goes back whatever happened.
-        syncFromProps();
+        // Nothing was written, so this card goes back whatever happened --
+        // only this one: another may be mid-move, with its dialog open.
+        setLocalItems((prev) => restoreCard(prev, propItems, activeItemId));
         // Null when the user closed the required-fields dialog: that is a
         // choice, not a failure, and an error for it would read as though
         // something broke (#662).
@@ -525,11 +569,13 @@ export default function KanbanGroupSection({
     },
     [
       onStateChange,
+      onStateChangeAbandoned,
       findColumn,
       columnNames,
       columns,
       allowedStatesByProjectType,
       syncFromProps,
+      propItems,
       blockedColumns,
     ]
   );

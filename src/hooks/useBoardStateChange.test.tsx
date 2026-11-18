@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
 import { useBoardStateChange } from './useBoardStateChange';
 import { isStateChangeCancelled, isStateChangeSuperseded } from '@/lib/state-change-cancelled';
+import { MissingFieldsError } from '@/lib/missing-fields-error';
 
 /**
  * Dragging a card to a state the process has rules about (#662).
@@ -564,5 +565,249 @@ describe('a newer drag of the same card during the lookup', () => {
 
     expect(isStateChangeCancelled(caught)).toBe(true);
     expect(isStateChangeSuperseded(caught)).toBe(false);
+  });
+});
+
+describe('a card dropped back where it started during the lookup', () => {
+  // Leave New for Active, then put it back in New before the lookup answers.
+  // The last drop is the one the user means, so Active must not be written.
+  it('stands the earlier drag down without writing', async () => {
+    const commit = vi.fn(async () => {});
+    const lookup = deferred<Response>();
+    const get = vi.fn().mockReturnValueOnce(lookup.promise);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    let caught: unknown;
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active', 'Contoso Ltd').catch((error) => {
+        caught = error;
+      });
+    });
+    act(() => result.current.supersede(7));
+    await act(async () => {
+      lookup.resolve(new Response(JSON.stringify({ fields: [] }), { status: 200 }));
+      await lookup.promise;
+    });
+
+    expect(commit).not.toHaveBeenCalled();
+    expect(isStateChangeSuperseded(caught)).toBe(true);
+  });
+
+  it('leaves other cards alone', async () => {
+    const commit = vi.fn(async () => {});
+    const lookup = deferred<Response>();
+    const get = vi.fn().mockReturnValueOnce(lookup.promise);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    let done = false;
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active', 'Contoso Ltd').then(() => {
+        done = true;
+      });
+    });
+    act(() => result.current.supersede(8));
+    await act(async () => {
+      lookup.resolve(new Response(JSON.stringify({ fields: [] }), { status: 200 }));
+      await lookup.promise;
+    });
+
+    expect(commit).toHaveBeenCalledWith(7, 'Active', 'Contoso Ltd');
+    expect(done).toBe(true);
+  });
+});
+
+describe('writes of the same card', () => {
+  it('run one after the other, in the order they were made', async () => {
+    const order: string[] = [];
+    const firstWrite = deferred();
+    const commit = vi.fn(async (_id: number, state: string) => {
+      order.push(`start ${state}`);
+      if (state === 'Active') await firstWrite.promise;
+      order.push(`end ${state}`);
+    });
+    const get = requirements([]);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    // A drag, then a second drag of the same card once the first is writing.
+    let first!: Promise<void>;
+    await act(async () => {
+      first = result.current.requestStateChange(7, 'Active', 'Contoso Ltd');
+    });
+    let second!: Promise<void>;
+    await act(async () => {
+      second = result.current.requestStateChange(7, 'Resolved', 'Contoso Ltd');
+    });
+    // The second must not start while the first is still away.
+    expect(order).toEqual(['start Active']);
+
+    await act(async () => {
+      firstWrite.resolve();
+      await first;
+      await second;
+    });
+    expect(order).toEqual(['start Active', 'end Active', 'start Resolved', 'end Resolved']);
+  });
+});
+
+describe('a refusal that names the fields it wanted', () => {
+  // The rules lookup fails open -- process rules need a permission an
+  // ordinary user may not hold -- so the move goes out with nothing and
+  // DevOps refuses it, naming the fields. The dialog asks for those instead
+  // of the board showing the TF401320 rule error (#663).
+  it('opens the dialog for them, and writes the answers', async () => {
+    const commit = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new MissingFieldsError('TF401320: Rule Error', [APPROVED_BY, APPROVED_DATE])
+      )
+      .mockResolvedValueOnce(undefined);
+    const get = vi.fn(
+      async () => new Response(JSON.stringify({ fields: [], unavailable: true }), { status: 200 })
+    );
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    let done = false;
+    let caught: unknown;
+    await act(async () => {
+      void result.current
+        .requestStateChange(7, 'Active', 'Contoso Ltd')
+        .then(() => {
+          done = true;
+        })
+        .catch((error) => {
+          caught = error;
+        });
+    });
+
+    expect(caught).toBeUndefined();
+    expect(result.current.pending).toEqual({
+      itemId: 7,
+      state: 'Active',
+      project: 'Contoso Ltd',
+      fields: [APPROVED_BY, APPROVED_DATE],
+    });
+
+    const answers = {
+      'Custom.ApprovedBy': 'Alex Morgan <alex@example.com>',
+      'Custom.ApprovedDate': '2026-11-18',
+    };
+    await act(async () => {
+      await result.current.submit(answers);
+    });
+
+    expect(commit).toHaveBeenLastCalledWith(7, 'Active', 'Contoso Ltd', answers);
+    expect(done).toBe(true);
+    expect(result.current.pending).toBeNull();
+  });
+
+  it('passes any other failure straight to the board', async () => {
+    const refusal = new Error('TF401320: Rule Error for field State');
+    const commit = vi.fn().mockRejectedValueOnce(refusal);
+    const get = requirements([]);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    let caught: unknown;
+    await act(async () => {
+      await result.current.requestStateChange(7, 'Active', 'Contoso Ltd').catch((error) => {
+        caught = error;
+      });
+    });
+
+    expect(caught).toBe(refusal);
+    expect(result.current.pending).toBeNull();
+  });
+
+  // The lookup found Approved By but not the second field the rule wanted.
+  // Throwing the answers away for a rule error would make the user start
+  // again; the missing field is added and the dialog stays open instead.
+  it('adds a field the dialog did not ask for, and keeps the dialog open', async () => {
+    const commit = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new MissingFieldsError('TF401320: Rule Error', [APPROVED_BY, APPROVED_DATE])
+      )
+      .mockResolvedValueOnce(undefined);
+    const get = requirements([APPROVED_BY]);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    let done = false;
+    let caught: unknown;
+    await act(async () => {
+      void result.current
+        .requestStateChange(7, 'Active', 'Contoso Ltd')
+        .then(() => {
+          done = true;
+        })
+        .catch((error) => {
+          caught = error;
+        });
+    });
+
+    await act(async () => {
+      await result.current.submit({ 'Custom.ApprovedBy': 'Alex Morgan <alex@example.com>' });
+    });
+
+    expect(caught).toBeUndefined();
+    expect(done).toBe(false);
+    expect(result.current.pending?.fields).toEqual([APPROVED_BY, APPROVED_DATE]);
+    expect(result.current.isSubmitting).toBe(false);
+
+    await act(async () => {
+      await result.current.submit({
+        'Custom.ApprovedBy': 'Alex Morgan <alex@example.com>',
+        'Custom.ApprovedDate': '2026-11-18',
+      });
+    });
+    expect(done).toBe(true);
+    expect(result.current.pending).toBeNull();
+  });
+
+  it('rolls back when the refusal names only fields already asked for', async () => {
+    const refusal = new MissingFieldsError('TF401320: Rule Error', [APPROVED_BY]);
+    const commit = vi.fn().mockRejectedValueOnce(refusal);
+    const get = requirements([APPROVED_BY]);
+    const { result } = renderHook(() => useBoardStateChange({ get, commit }));
+
+    let caught: unknown;
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active', 'Contoso Ltd').catch((error) => {
+        caught = error;
+      });
+    });
+    await act(async () => {
+      await result.current.submit({ 'Custom.ApprovedBy': 'Sam Taylor <sam@example.com>' });
+    });
+
+    expect(caught).toBe(refusal);
+    expect(result.current.pending).toBeNull();
+  });
+
+  it('opens nothing when the organisation changed meanwhile', async () => {
+    const write = deferred();
+    const commit = vi.fn(() =>
+      write.promise.then(() => {
+        throw new MissingFieldsError('TF401320: Rule Error', [APPROVED_BY]);
+      })
+    );
+    const get = requirements([]);
+    const { result, rerender } = renderHook(
+      ({ scope }) => useBoardStateChange({ get, commit, scope }),
+      { initialProps: { scope: 'KnowAllTest' } }
+    );
+
+    let caught: unknown;
+    await act(async () => {
+      void result.current.requestStateChange(7, 'Active', 'Contoso Ltd').catch((error) => {
+        caught = error;
+      });
+    });
+    rerender({ scope: 'Fabrikam' });
+    await act(async () => {
+      write.resolve();
+      await write.promise.catch(() => {});
+    });
+
+    expect(isStateChangeCancelled(caught)).toBe(true);
+    expect(result.current.pending).toBeNull();
   });
 });

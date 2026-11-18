@@ -43,6 +43,7 @@ import { ticketToWorkItem } from '@/lib/devops';
 import { debugLog } from '@/lib/debug';
 import { groupsWithColumn } from '@/lib/kanban-summary';
 import { responseErrorMessage } from '@/lib/response-error';
+import { MissingFieldsError, missingFieldsInBody } from '@/lib/missing-fields-error';
 import { canonicalProject, filterStandupByProject } from '@/lib/kanban-project';
 import { createBoardCache } from '@/lib/standup-board-cache';
 import {
@@ -632,6 +633,18 @@ function StandupPageContent() {
         // (KanbanBoard drag, dialog state dropdown) can show the actual
         // workflow-rule message — not just "Failed to update state".
         const data = await response.json().catch(() => ({}));
+        // DevOps named fields it wanted filled in. A board asks for them
+        // rather than showing the rule error; the pop-up shows the message
+        // as before (#663).
+        const missing = missingFieldsInBody(data);
+        if (missing) {
+          debugLog('[Kanban] state PATCH needs fields', {
+            itemId,
+            targetState,
+            fields: missing.map((field) => field.referenceName),
+          });
+          throw new MissingFieldsError(data.error || 'Failed to update state', missing);
+        }
         // Not gated: this only fires on a rejected transition, and the status
         // plus upstream reason is the whole point of issue #391.
         console.error('[Kanban] state PATCH rejected', {
@@ -1396,6 +1409,7 @@ function StandupPageContent() {
                       columns={group.columns}
                       allowedStatesByProjectType={standupData.allowedStatesByProjectType}
                       onStateChange={handleStateChange}
+                      onStateChangeAbandoned={boardStateChange.supersede}
                       onItemClick={handleItemClick}
                       activity={groupActivity.get(group.groupName)}
                       closedWindow={closedWindow}

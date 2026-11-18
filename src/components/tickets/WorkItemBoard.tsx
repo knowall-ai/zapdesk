@@ -132,6 +132,8 @@ interface WorkItemBoardProps {
    * project's process what the transition requires before writing it (#662).
    */
   onStatusChange?: (itemId: number, newState: string, project?: string) => Promise<void>;
+  /** A card dropped back where it started; see `KanbanBoard` (#663). */
+  onStatusChangeAbandoned?: (itemId: number) => void;
   onWorkItemClick?: (item: WorkItem) => void; // Click handler for work item subject (opens dialog instead of navigating)
   onZapClick?: (item: WorkItem) => void; // Opens ZapDialog for the work item's assignee
   onRefresh?: () => void; // Called after bulk actions to refresh data without full page reload
@@ -379,6 +381,7 @@ export default function WorkItemBoard({
   availableTypes,
   defaultTicketsOnly = true,
   onStatusChange,
+  onStatusChangeAbandoned,
   onWorkItemClick,
   onZapClick,
   onRefresh,
@@ -1278,6 +1281,7 @@ export default function WorkItemBoard({
             items={filteredItems}
             readOnly={readOnlyKanban}
             onTicketStateChange={onStatusChange}
+            onStateChangeAbandoned={onStatusChangeAbandoned}
             groupBy={groupBy}
             groupedItems={groupBy !== 'none' ? groupedItems : undefined}
             typeInfoMap={typeInfoMap}

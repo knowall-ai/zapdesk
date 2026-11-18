@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchStateRequirements, type RequiredField } from '@/hooks/useWorkItemActions';
 import { StateChangeCancelled } from '@/lib/state-change-cancelled';
+import { missingFieldsOf } from '@/lib/missing-fields-error';
 
 /**
  * Asking the process for a transition's required fields from a board, and
@@ -79,6 +80,12 @@ export interface BoardStateChange {
   requestStateChange: (itemId: number, state: string, project?: string) => Promise<void>;
   submit: (values: Record<string, string>) => Promise<void>;
   cancel: () => void;
+  /**
+   * The card was dropped back where it started. Any drag of it still waiting
+   * on its lookup stands down, so it cannot write a state the last drop
+   * undid (#663 review).
+   */
+  supersede: (itemId: number) => void;
 }
 
 export function useBoardStateChange({ get, commit, scope }: Options): BoardStateChange {
@@ -109,6 +116,13 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
    * (#663 review). Only the newest drag of an item may go on to write.
    */
   const latestAttemptRef = useRef(new Map<number, number>());
+  /**
+   * The write in flight for each work item. A later write of the same item
+   * waits for it: two PATCHes of one item racing could land in either order,
+   * and the one the user made first would then be the one kept (#663 review).
+   * Writes for different items do not wait on each other.
+   */
+  const writesRef = useRef(new Map<number, Promise<unknown>>());
   useEffect(() => {
     scopeRef.current = scope;
   }, [scope]);
@@ -130,12 +144,54 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
     };
   }, []);
 
+  const commitInTurn = useCallback(
+    (
+      itemId: number,
+      state: string,
+      project: string | undefined,
+      additionalFields?: Record<string, string>
+    ): Promise<void> => {
+      const previous = writesRef.current.get(itemId) ?? Promise.resolve();
+      const write = previous
+        .catch(() => {
+          // The earlier write's failure is its own caller's to report.
+        })
+        .then(() =>
+          additionalFields === undefined
+            ? commit(itemId, state, project)
+            : commit(itemId, state, project, additionalFields)
+        );
+      writesRef.current.set(itemId, write);
+      const forget = () => {
+        if (writesRef.current.get(itemId) === write) writesRef.current.delete(itemId);
+      };
+      write.then(forget, forget);
+      return write;
+    },
+    [commit]
+  );
+
+  /** Open the dialog and wait for it to be submitted or cancelled. */
+  const askFor = useCallback(
+    (itemId: number, state: string, project: string, fields: RequiredField[]) => {
+      // One dialog at a time. A second drag landing while one is open would
+      // replace the pending change, leaving the first drag's promise unsettled
+      // for ever and its card parked in a column DevOps never accepted.
+      if (settleRef.current) return Promise.reject(new StateChangeCancelled());
+      return new Promise<void>((resolve, reject) => {
+        settleRef.current = { resolve, reject };
+        setPending({ itemId, state, project, fields });
+      });
+    },
+    []
+  );
+
   const requestStateChange = useCallback(
     async (itemId: number, state: string, project?: string) => {
       // No project means nothing to ask: the rules live on the project's
       // process. Go through and let the server's own error speak (#651).
       if (!project) {
-        await commit(itemId, state, undefined);
+        await commitInTurn(itemId, state, undefined);
         return;
       }
 
@@ -169,22 +225,30 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
         throw new StateChangeCancelled({ superseded: true });
       }
 
-      if (fields.length === 0) {
-        await commit(itemId, state, project);
+      if (fields.length > 0) {
+        await askFor(itemId, state, project, fields);
         return;
       }
 
-      // One dialog at a time. A second drag landing while one is open would
-      // replace the pending change, leaving the first drag's promise unsettled
-      // for ever and its card parked in a column DevOps never accepted.
-      if (settleRef.current) throw new StateChangeCancelled();
-
-      await new Promise<void>((resolve, reject) => {
-        settleRef.current = { resolve, reject };
-        setPending({ itemId, state, project, fields });
-      });
+      try {
+        await commitInTurn(itemId, state, project);
+      } catch (error) {
+        // The lookup found nothing -- or could not look -- and DevOps then
+        // refused the move for fields it wanted filled in, naming them. Ask
+        // for those rather than show the rule error: this is how a user who
+        // may not read process rules still gets the dialog (#663).
+        const missing = missingFieldsOf(error);
+        if (!missing) throw error;
+        if (scopeRef.current !== askedIn || !mountedRef.current) {
+          throw new StateChangeCancelled();
+        }
+        if (latestAttemptRef.current.get(itemId) !== attempt) {
+          throw new StateChangeCancelled({ superseded: true });
+        }
+        await askFor(itemId, state, project, missing);
+      }
     },
-    [get, commit]
+    [get, commitInTurn, askFor]
   );
 
   const submit = useCallback(
@@ -193,21 +257,36 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
       if (!pending || !settle) return;
       submittingRef.current = true;
       setIsSubmitting(true);
+      let keepOpen = false;
       try {
-        await commit(pending.itemId, pending.state, pending.project, values);
+        await commitInTurn(pending.itemId, pending.state, pending.project, values);
         settle.resolve();
       } catch (error) {
-        // Handed to the board, which rolls the card back and shows the
-        // message -- the same path as a drop DevOps refuses outright.
-        settle.reject(error);
+        // DevOps wants a field the dialog did not ask for -- the rule lookup
+        // can miss one, and a refusal names them all. Add it and keep the
+        // dialog open with what was already entered, rather than throw the
+        // answers away for a rule error (#663).
+        const missing = missingFieldsOf(error);
+        const known = new Set(pending.fields.map((field) => field.referenceName));
+        const extra = (missing ?? []).filter((field) => !known.has(field.referenceName));
+        if (extra.length > 0) {
+          keepOpen = true;
+          setPending({ ...pending, fields: [...pending.fields, ...extra] });
+        } else {
+          // Handed to the board, which rolls the card back and shows the
+          // message -- the same path as a drop DevOps refuses outright.
+          settle.reject(error);
+        }
       } finally {
-        settleRef.current = null;
+        if (!keepOpen) {
+          settleRef.current = null;
+          setPending(null);
+        }
         submittingRef.current = false;
         setIsSubmitting(false);
-        setPending(null);
       }
     },
-    [commit, pending]
+    [commitInTurn, pending]
   );
 
   /**
@@ -234,5 +313,10 @@ export function useBoardStateChange({ get, commit, scope }: Options): BoardState
     return () => cancel();
   }, [scope, cancel]);
 
-  return { pending, isSubmitting, requestStateChange, submit, cancel };
+  const supersede = useCallback((itemId: number) => {
+    if (!latestAttemptRef.current.has(itemId)) return;
+    latestAttemptRef.current.set(itemId, (latestAttemptRef.current.get(itemId) ?? 0) + 1);
+  }, []);
+
+  return { pending, isSubmitting, requestStateChange, submit, cancel, supersede };
 }

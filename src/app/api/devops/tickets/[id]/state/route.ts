@@ -5,6 +5,7 @@ import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devo
 import { sendStatusChangeNotification, assigneeEmailFrom } from '@/lib/email';
 import { notifiesCustomer, stateMoved, statusChangeRecipient } from '@/lib/status-notification';
 import { debugLog } from '@/lib/debug';
+import { describeFields } from '@/lib/describe-fields';
 
 /** Azure DevOps work item ids are positive int32 values. */
 /** Generous bound on a process-template state name. */
@@ -32,7 +33,46 @@ const RESERVED_FIELDS = new Set([
   'System.ChangedBy',
 ]);
 
+/**
+ * Where a refused update was headed, so the fields it left empty can be
+ * described for the dialog that asks for them (#663).
+ */
+interface RefusalContext {
+  accessToken: string;
+  organization: string;
+  project: string;
+  workItemType: string;
+}
+
+/**
+ * The fields to ask for, described, or nothing when there is nothing a
+ * required-fields dialog could fix. Never throws: this only improves an error
+ * response, and failing here must not replace the error being reported.
+ */
+async function missingFieldsFor(error: DevOpsApiError, context: RefusalContext | undefined) {
+  if (!context || error.status !== 400) return [];
+  const askable = error.missingFields.filter(
+    (field) => FIELD_REFERENCE.test(field) && !RESERVED_FIELDS.has(field)
+  );
+  if (askable.length === 0 || askable.length > MAX_ADDITIONAL_FIELDS) return [];
+  try {
+    return await describeFields(askable, {
+      organization: context.organization,
+      project: context.project,
+      workItemType: context.workItemType,
+      authHeaders: {
+        Authorization: `Bearer ${context.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+  } catch (describeError) {
+    console.error('Could not describe the fields a refused update needs:', describeError);
+    return [];
+  }
+}
+
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  let refusal: RefusalContext | undefined;
   try {
     const session = await getServerSessionWithToken();
 
@@ -158,6 +198,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       try {
         const existing = await devopsService.getWorkItem(projectHint, ticketId);
         oldState = existing?.fields?.['System.State'];
+        const workItemType = existing?.fields?.['System.WorkItemType'];
+        if (organization && typeof workItemType === 'string' && workItemType) {
+          refusal = {
+            accessToken: session.accessToken,
+            organization,
+            project: projectHint,
+            workItemType,
+          };
+        }
       } catch {
         // Continue without it. The update still goes ahead; the customer is
         // not mailed, because a move from an unknown state would be a guess.
@@ -192,6 +241,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (!workItem) continue;
 
       const oldState: string | undefined = workItem.fields?.['System.State'] || undefined;
+      const workItemType = workItem.fields?.['System.WorkItemType'];
+      if (organization && typeof workItemType === 'string' && workItemType) {
+        refusal = {
+          accessToken: session.accessToken,
+          organization,
+          project: project.name,
+          workItemType,
+        };
+      }
 
       const updatedWorkItem = await devopsService.updateTicketState(
         project.name,
@@ -227,6 +285,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       // ours to own, so it stays a 500.
       const passThrough = [400, 401, 403, 404, 409];
       const status = passThrough.includes(error.status) ? error.status : 500;
+      // A rule that wanted fields filled in names them. Hand them back so the
+      // board can ask for them -- the rules lookup before the drag fails open
+      // when the user may not read process rules, and this is then the only
+      // place the answer comes from (#663).
+      const missingFields = await missingFieldsFor(error, refusal);
+      if (missingFields.length > 0) {
+        return NextResponse.json({ error: error.message, missingFields }, { status });
+      }
       return NextResponse.json({ error: error.message }, { status });
     }
     return NextResponse.json({ error: 'Failed to update ticket state' }, { status: 500 });
