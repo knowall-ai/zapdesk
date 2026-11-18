@@ -1125,9 +1125,23 @@ function StandupPageContent() {
 
   return (
     <MainLayout>
-      <div className="flex h-full flex-col">
+      {/* One scrollbar, the board's own. The page fills the space under the
+          header exactly and clips anything that would spill past it: a
+          positioned element (a tooltip, a menu, a screen-reader-only label)
+          reaching below the bottom made the layout's <main> scroll as well,
+          so the board showed a second scrollbar outside its own. `relative`
+          makes this the containing block for those, so the clip applies to
+          them too.
+
+          On a short window the toolbar and the board cannot both fit. The
+          page then grows to the toolbar plus the board's 16rem minimum
+          (`min-h-fit`: the board's zero flex basis keeps its cards out of
+          that sum), and <main> scrolls to reach everything rather than the
+          clip hiding toolbar controls or squeezing the board to nothing
+          (#671 review). */}
+      <div className="relative flex h-full min-h-fit flex-col overflow-hidden">
         {/* Header */}
-        <div className="border-b p-4 md:p-6" style={{ borderColor: 'var(--border)' }}>
+        <div className="shrink-0 border-b p-4 md:p-6" style={{ borderColor: 'var(--border)' }}>
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -1352,7 +1366,11 @@ function StandupPageContent() {
             through the gap above them. The padding lives on the wrapper
             inside instead, which spaces the content identically while
             leaving the scroller's top edge where the headers can reach it. */}
-        <div ref={boardRef} onScroll={handleBoardScroll} className="flex-1 overflow-auto">
+        <div
+          ref={boardRef}
+          onScroll={handleBoardScroll}
+          className="min-h-64 grow basis-0 overflow-auto"
+        >
           <div className="p-4 md:p-6">
             {loading ? (
               <LoadingSpinner />
