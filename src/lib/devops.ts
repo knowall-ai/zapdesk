@@ -442,9 +442,10 @@ export function readIdentityField(raw: unknown): User | undefined {
   if (!raw) return undefined;
   if (typeof raw === 'object') {
     const identity = raw as { displayName?: unknown; uniqueName?: unknown; id?: unknown };
-    if (typeof identity.displayName !== 'string' || !identity.displayName) return undefined;
+    const name = typeof identity.displayName === 'string' ? identity.displayName.trim() : '';
+    if (!name) return undefined;
     return identityToUser({
-      displayName: identity.displayName,
+      displayName: name,
       uniqueName: typeof identity.uniqueName === 'string' ? identity.uniqueName : '',
       id: typeof identity.id === 'string' ? identity.id : '',
       imageUrl: (raw as { imageUrl?: string }).imageUrl,

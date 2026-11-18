@@ -53,6 +53,7 @@ describe('readIdentityField', () => {
     expect(readIdentityField('')).toBeUndefined();
     expect(readIdentityField({ uniqueName: 'x@example.com' })).toBeUndefined();
     expect(readIdentityField(42)).toBeUndefined();
+    expect(readIdentityField({ displayName: '   ', id: 'a1' })).toBeUndefined();
   });
 });
 

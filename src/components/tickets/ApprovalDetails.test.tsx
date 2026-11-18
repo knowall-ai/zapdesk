@@ -11,7 +11,9 @@ afterEach(() => {
 
 describe('ApprovalDetails', () => {
   it('shows who approved the item, and when', () => {
-    render(<ApprovalDetails approvedBy={approver} approvedDate={new Date(2026, 10, 18)} />);
+    render(
+      <ApprovalDetails approvedBy={approver} approvedDate={new Date(Date.UTC(2026, 10, 18))} />
+    );
 
     expect(screen.getByText('Approved By')).toBeTruthy();
     expect(screen.getByText('Alex Morgan')).toBeTruthy();
@@ -26,6 +28,16 @@ describe('ApprovalDetails', () => {
 
     expect(screen.getByText('18 Nov 2026')).toBeTruthy();
     expect(screen.queryByText('Approved By')).toBeNull();
+  });
+
+  // The form writes a day, which DevOps keeps as midnight UTC. Whatever the
+  // viewer's zone, that is the day shown -- not the day before, west of UTC.
+  it("shows the stored calendar day whatever the viewer's time zone", () => {
+    const { rerender } = render(<ApprovalDetails approvedDate="2026-11-18T00:00:00Z" />);
+    expect(screen.getByText('18 Nov 2026')).toBeTruthy();
+
+    rerender(<ApprovalDetails approvedDate="2026-11-18T23:59:00Z" />);
+    expect(screen.getByText('18 Nov 2026')).toBeTruthy();
   });
 
   it('shows nothing for an item with no approval', () => {

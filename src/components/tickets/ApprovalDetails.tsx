@@ -27,6 +27,17 @@ interface ApprovalDetailsProps {
  * not yet approved, shows nothing rather than two empty rows. Shared by the
  * pop-up's sidebar and the full view so the two cannot drift.
  */
+/**
+ * The calendar day an approval date names, as a local date for formatting.
+ *
+ * The approval form writes a day ('2026-11-18'), which DevOps keeps as
+ * midnight UTC. Formatting that instant in the viewer's zone showed 17 Nov
+ * to anyone west of Greenwich, so the day is read in UTC instead.
+ */
+function approvalDay(date: Date): Date {
+  return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
 export default function ApprovalDetails({ approvedBy, approvedDate }: ApprovalDetailsProps) {
   const date = approvedDate ? new Date(approvedDate) : undefined;
   const validDate = date && !Number.isNaN(date.getTime()) ? date : undefined;
@@ -40,7 +51,14 @@ export default function ApprovalDetails({ approvedBy, approvedDate }: ApprovalDe
             Approved By
           </span>
           <div className="flex items-center gap-2">
-            <Avatar name={approvedBy.displayName} image={approvedBy.avatarUrl} size="sm" />
+            {/* Keyed so a new approver, or a new image, gets a fresh load
+                rather than the previous one's failed-image fallback. */}
+            <Avatar
+              key={`${approvedBy.id}|${approvedBy.avatarUrl ?? ''}`}
+              name={approvedBy.displayName}
+              image={approvedBy.avatarUrl}
+              size="sm"
+            />
             <div className="min-w-0">
               <span className="block truncate text-sm" style={{ color: 'var(--text-primary)' }}>
                 {approvedBy.displayName}
@@ -63,7 +81,7 @@ export default function ApprovalDetails({ approvedBy, approvedDate }: ApprovalDe
           <div className="flex items-center gap-2">
             <CalendarCheck size={14} style={{ color: 'var(--text-muted)' }} />
             <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {format(validDate, 'dd MMM yyyy')}
+              {format(approvalDay(validDate), 'dd MMM yyyy')}
             </span>
           </div>
         </div>
