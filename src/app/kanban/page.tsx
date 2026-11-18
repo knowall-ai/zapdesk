@@ -24,7 +24,9 @@ import { StandupSummaryCards, KanbanGroupSection } from '@/components/standup';
 import type { GroupActivity } from '@/components/standup/KanbanGroupSection';
 import type { PullRequestLoadState } from '@/components/standup/ActivitySummaryBar';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
+import BoardStateChangeDialog from '@/components/tickets/BoardStateChangeDialog';
 import { useDevOpsApi } from '@/hooks';
+import { useBoardStateChange } from '@/hooks/useBoardStateChange';
 import {
   CLOSED_WINDOW_DAYS,
   CLOSED_WINDOW_LABELS,
@@ -41,6 +43,11 @@ import { ticketToWorkItem } from '@/lib/devops';
 import { debugLog } from '@/lib/debug';
 import { groupsWithColumn } from '@/lib/kanban-summary';
 import { responseErrorMessage } from '@/lib/response-error';
+import {
+  MissingFieldsError,
+  missingFieldsInBody,
+  missingFieldsProjectInBody,
+} from '@/lib/missing-fields-error';
 import { canonicalProject, filterStandupByProject } from '@/lib/kanban-project';
 import { createBoardCache } from '@/lib/standup-board-cache';
 import {
@@ -602,10 +609,26 @@ function StandupPageContent() {
 
   // Generic state-change. Pass `project` when known to avoid an
   // expensive cross-project scan on the server.
-  const handleStateChange = useCallback(
-    async (itemId: number, targetState: string, project?: string) => {
+  /**
+   * Write the state, with whatever fields the process required for it.
+   *
+   * `additionalFields` used to be missing from this path entirely. The pop-up
+   * collects them (#651) and hands them over, and they were dropped on the way
+   * here -- so the dialog asked for Approved By and an Approved Date, the user
+   * filled them in, and the PATCH went without them and was refused (#662).
+   */
+  const commitStateChange = useCallback(
+    async (
+      itemId: number,
+      targetState: string,
+      project?: string,
+      additionalFields?: Record<string, string>
+    ) => {
       const body: Record<string, unknown> = { state: targetState };
       if (project) body.project = project;
+      if (additionalFields && Object.keys(additionalFields).length > 0) {
+        body.additionalFields = additionalFields;
+      }
       debugLog('[Kanban] PATCH /state', { itemId, targetState, project });
       const response = await devOpsPatch(`/api/devops/tickets/${itemId}/state`, body);
 
@@ -614,6 +637,22 @@ function StandupPageContent() {
         // (KanbanBoard drag, dialog state dropdown) can show the actual
         // workflow-rule message — not just "Failed to update state".
         const data = await response.json().catch(() => ({}));
+        // DevOps named fields it wanted filled in. A board asks for them
+        // rather than showing the rule error; the pop-up shows the message
+        // as before (#663).
+        const missing = missingFieldsInBody(data);
+        if (missing) {
+          debugLog('[Kanban] state PATCH needs fields', {
+            itemId,
+            targetState,
+            fields: missing.map((field) => field.referenceName),
+          });
+          throw new MissingFieldsError(
+            data.error || 'Failed to update state',
+            missing,
+            missingFieldsProjectInBody(data)
+          );
+        }
         // Not gated: this only fires on a rejected transition, and the status
         // plus upstream reason is the whole point of issue #391.
         console.error('[Kanban] state PATCH rejected', {
@@ -631,6 +670,22 @@ function StandupPageContent() {
     },
     [refreshBoardAfterChange, devOpsPatch, selectedOrganization?.accountName]
   );
+
+  /**
+   * A drag asks the process for its required fields first (#662).
+   *
+   * Dragging a Bug out of New used to PATCH straight through and be refused by
+   * the "Approval Needed" rule, so the card sprang back wearing a raw DevOps
+   * error and the board gave you no way to satisfy it. The dialog the detail
+   * page has had since #651 opens here now instead.
+   */
+  const boardStateChange = useBoardStateChange({
+    get: devOpsGet,
+    commit: commitStateChange,
+    // A pending change is dropped if the organisation changes under it.
+    scope: selectedOrganization?.accountName,
+  });
+  const handleStateChange = boardStateChange.requestStateChange;
 
   // Fetch the full Ticket on card click and open the detail dialog.
   // Uses a monotonic seq id so out-of-order responses from rapid clicks
@@ -708,7 +763,7 @@ function StandupPageContent() {
   // Pass project so the server doesn't have to scan every project to find
   // the work item.
   const handleDialogStateChange = useCallback(
-    async (workItemId: number, state: string) => {
+    async (workItemId: number, state: string, additionalFields?: Record<string, string>) => {
       const open = selectedTicket?.id === workItemId ? selectedTicket : undefined;
 
       // A GitHub issue's status is written back to GitHub as a state and a
@@ -729,11 +784,14 @@ function StandupPageContent() {
         return;
       }
 
-      await handleStateChange(workItemId, state, open?.project);
+      // Straight to the write, not through `handleStateChange`: the pop-up has
+      // already asked for these fields with its own dialog, and routing it
+      // through the drag path would ask a second time for the same transition.
+      await commitStateChange(workItemId, state, open?.project, additionalFields);
       setSelectedTicket((prev) => (prev ? { ...prev, devOpsState: state } : null));
     },
     [
-      handleStateChange,
+      commitStateChange,
       selectedTicket,
       devOpsPatch,
       refreshBoardAfterChange,
@@ -1366,6 +1424,7 @@ function StandupPageContent() {
                       columns={group.columns}
                       allowedStatesByProjectType={standupData.allowedStatesByProjectType}
                       onStateChange={handleStateChange}
+                      onStateChangeAbandoned={boardStateChange.supersede}
                       onItemClick={handleItemClick}
                       activity={groupActivity.get(group.groupName)}
                       closedWindow={closedWindow}
@@ -1393,6 +1452,15 @@ function StandupPageContent() {
             <LoadingSpinner />
           </div>
         )}
+
+        {/* What the process demands for a state a card was dragged to (#662) */}
+        <BoardStateChangeDialog
+          pending={boardStateChange.pending}
+          isSubmitting={boardStateChange.isSubmitting}
+          get={devOpsGet}
+          onSubmit={boardStateChange.submit}
+          onCancel={boardStateChange.cancel}
+        />
 
         {/* Detail dialog (issue #368) */}
         <WorkItemDetailDialog

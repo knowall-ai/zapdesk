@@ -39,8 +39,12 @@ export async function fetchStateRequirements(
  * Stakeholders are dropped: they hold no work item licence, so DevOps refuses
  * an assignment to one and the pick would fail after the fact. Shared by the
  * assignee picker and both required-field dialogs, which had a copy each.
+ *
+ * Exported for the board dialog (#662), which is the fourth caller and has to
+ * offer the same people as the other three — a picker that listed stakeholders
+ * here would let you choose somebody DevOps then refuses.
  */
-function matchingMembers(members: User[], search: string): User[] {
+export function matchingMembers(members: User[], search: string): User[] {
   const needle = search.trim().toLowerCase();
   return members
     .filter((member) => {

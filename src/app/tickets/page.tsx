@@ -11,14 +11,22 @@ import { LoadingSpinner } from '@/components/common';
 import GitHubLabelNotice from '@/components/common/GitHubLabelNotice';
 import { TicketList } from '@/components/tickets';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
+import BoardStateChangeDialog from '@/components/tickets/BoardStateChangeDialog';
 import ZapDialog from '@/components/tickets/ZapDialog';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { useSourceFilter } from '@/components/providers/SourceProvider';
+import { useDevOpsApi } from '@/hooks';
+import { useBoardStateChange } from '@/hooks/useBoardStateChange';
 import { ticketToWorkItem } from '@/lib/devops';
 import { useDefaultView, viewToShow } from '@/lib/default-view';
 import { readGitHubLabelSummary, type GitHubLabelSummary } from '@/lib/github-label-notice';
 import { responseErrorMessage } from '@/lib/response-error';
+import {
+  MissingFieldsError,
+  missingFieldsInBody,
+  missingFieldsProjectInBody,
+} from '@/lib/missing-fields-error';
 import { gitHubTruncationMessage } from '@/lib/github-truncation';
 import type { Ticket, WorkItem, User, WorkItemType, EffortHoursUpdate } from '@/types';
 
@@ -52,6 +60,9 @@ function TicketsPageContent() {
   const searchParams = useSearchParams();
   const { selectedOrganization } = useOrganization();
   const { refresh: refreshCounts } = useTicketCounts();
+  // Only the GET is taken from here; the writes on this page build their own
+  // request so their error messages stay as they were.
+  const { get: devOpsGet } = useDevOpsApi();
   const { sourceFilter, gitHubConfigured, sourceReady } = useSourceFilter();
   // No view asked for: the one starred in the sidebar, if any (#7729).
   const defaultView = useDefaultView();
@@ -280,7 +291,18 @@ function TicketsPageContent() {
   );
 
   const handleTicketStateChange = useCallback(
-    async (ticketId: number, newState: string, additionalFields?: Record<string, string>) => {
+    async (
+      ticketId: number,
+      newState: string,
+      additionalFields?: Record<string, string>,
+      /**
+       * The board asks for fields a refusal names instead of showing it
+       * (#663), so it wants that refusal back quietly: a toast reading
+       * "Rule Error for field Approved By" over the dialog asking for Approved
+       * By would only contradict it. Other callers keep the toast.
+       */
+      { askForMissingFields = false }: { askForMissingFields?: boolean } = {}
+    ) => {
       try {
         const response = await fetch(`/api/devops/tickets/${ticketId}/state`, {
           method: 'PATCH',
@@ -293,7 +315,15 @@ function TicketsPageContent() {
           body: JSON.stringify({ state: newState, additionalFields }),
         });
         if (!response.ok) {
-          throw new Error(await responseErrorMessage(response, 'the status', 'update'));
+          const message = await responseErrorMessage(response, 'the status', 'update');
+          if (askForMissingFields) {
+            const body = await response.json().catch(() => null);
+            const missing = missingFieldsInBody(body);
+            if (missing) {
+              throw new MissingFieldsError(message, missing, missingFieldsProjectInBody(body));
+            }
+          }
+          throw new Error(message);
         }
         setTickets((prev) =>
           prev.map((t) => (t.id === ticketId ? { ...t, devOpsState: newState } : t))
@@ -301,6 +331,8 @@ function TicketsPageContent() {
         refreshCounts();
         toast.success(`Status updated to "${newState}"`);
       } catch (error) {
+        // The board opens the dialog for these, so this is not a failure yet.
+        if (error instanceof MissingFieldsError) throw error;
         console.error('Failed to update ticket state:', error);
         toast.error(error instanceof Error ? error.message : 'Failed to update status');
         throw error; // Re-throw so KanbanBoard can handle rollback
@@ -349,14 +381,49 @@ function TicketsPageContent() {
     [tickets, selectedOrganization]
   );
 
+  /**
+   * The pop-up's own state change.
+   *
+   * `additionalFields` is forwarded, which it was not before: the dialog from
+   * #651 collected Approved By and an Approved Date, this handler took two
+   * arguments, and they were dropped on the floor -- so the PATCH went without
+   * them and DevOps refused the transition the dialog had just asked about
+   * (#662).
+   */
   const handleDialogStateChange = useCallback(
-    async (workItemId: number, state: string) => {
-      await handleTicketStateChange(workItemId, state);
+    async (workItemId: number, state: string, additionalFields?: Record<string, string>) => {
+      await handleTicketStateChange(workItemId, state, additionalFields);
       // Update the selected ticket's state in the dialog
       setSelectedTicket((prev) => (prev ? { ...prev, devOpsState: state } : null));
     },
     [handleTicketStateChange]
   );
+
+  /**
+   * A drag on the board asks the process for its required fields first (#662).
+   *
+   * The project is used only to look the rules up: the PATCH body deliberately
+   * leaves it out, as it always has, so a card carrying a stale project name
+   * still goes through the route's own cross-project search rather than 404ing.
+   */
+  const boardStateChange = useBoardStateChange({
+    get: devOpsGet,
+    commit: useCallback(
+      async (
+        itemId: number,
+        state: string,
+        _project: string | undefined,
+        additionalFields?: Record<string, string>
+      ) => {
+        await handleTicketStateChange(itemId, state, additionalFields, {
+          askForMissingFields: true,
+        });
+      },
+      [handleTicketStateChange]
+    ),
+    // A pending change is dropped if the organisation changes under it.
+    scope: selectedOrganization?.accountName,
+  });
 
   const handleDialogAssigneeChange = useCallback(
     async (workItemId: number, assigneeId: string | null) => {
@@ -642,7 +709,8 @@ function TicketsPageContent() {
             title={title}
             onWorkItemClick={handleWorkItemClick}
             onZapClick={handleZapClick}
-            onStatusChange={handleTicketStateChange}
+            onStatusChange={boardStateChange.requestStateChange}
+            onStatusChangeAbandoned={boardStateChange.supersede}
             availableTypes={workItemTypes}
             defaultViewMode={defaultViewMode}
             hideTicketsOnlyToggle
@@ -651,6 +719,15 @@ function TicketsPageContent() {
             showSource={gitHubConfigured}
           />
         </div>
+
+        {/* What the process demands for a state a card was dragged to (#662) */}
+        <BoardStateChangeDialog
+          pending={boardStateChange.pending}
+          isSubmitting={boardStateChange.isSubmitting}
+          get={devOpsGet}
+          onSubmit={boardStateChange.submit}
+          onCancel={boardStateChange.cancel}
+        />
 
         {/* Work item detail dialog for list and kanban clicks */}
         <WorkItemDetailDialog
