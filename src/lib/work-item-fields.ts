@@ -46,6 +46,11 @@ export const OPTIONAL_TICKET_FIELDS = [
   'Microsoft.VSTS.Scheduling.RemainingWork',
   'Microsoft.VSTS.Scheduling.OriginalEstimate',
   'Microsoft.VSTS.Common.ClosedDate',
+  // Set by the approval rule some processes put on leaving New (#651): shown
+  // in the details panel so a missing approval is visible before a drag asks
+  // for it.
+  'Custom.ApprovedBy',
+  'Custom.ApprovedDate',
 ] as const;
 
 /**

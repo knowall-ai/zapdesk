@@ -365,6 +365,8 @@ export function ticketToWorkItem(ticket: Ticket): WorkItem {
     mitigation: ticket.mitigation,
     resolvedReason: ticket.resolvedReason,
     customerResponse: ticket.customerResponse,
+    approvedBy: ticket.approvedBy,
+    approvedDate: ticket.approvedDate,
     requester: ticket.requester,
     organization: ticket.organization,
     // Where the item came from, so the dialog knows to talk to GitHub rather
@@ -423,8 +425,42 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     completedWork: readEffortField(fields, 'Microsoft.VSTS.Scheduling.CompletedWork'),
     remainingWork: readEffortField(fields, 'Microsoft.VSTS.Scheduling.RemainingWork'),
     originalEstimate: readEffortField(fields, 'Microsoft.VSTS.Scheduling.OriginalEstimate'),
+    approvedBy: readIdentityField(fields['Custom.ApprovedBy']),
+    approvedDate: readDateField(fields['Custom.ApprovedDate']),
     comments: [],
   };
+}
+
+/**
+ * A person held in an identity field, as a User, or undefined when unset.
+ *
+ * The batch read returns an identity object; older responses and some
+ * customised fields hold the "Name <email>" string instead. Both are
+ * accepted, and anything else is treated as unset rather than shown wrongly.
+ */
+export function readIdentityField(raw: unknown): User | undefined {
+  if (!raw) return undefined;
+  if (typeof raw === 'object') {
+    const identity = raw as { displayName?: unknown; uniqueName?: unknown; id?: unknown };
+    if (typeof identity.displayName !== 'string' || !identity.displayName) return undefined;
+    return identityToUser({
+      displayName: identity.displayName,
+      uniqueName: typeof identity.uniqueName === 'string' ? identity.uniqueName : '',
+      id: typeof identity.id === 'string' ? identity.id : '',
+      imageUrl: (raw as { imageUrl?: string }).imageUrl,
+    });
+  }
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  const match = /^(.*?)\s*<([^>]+)>\s*$/.exec(raw.trim());
+  const displayName = (match ? match[1] : raw).trim();
+  return { id: '', displayName: displayName || raw.trim(), email: match ? match[2] : '' };
+}
+
+/** A date field as a Date, or undefined when unset or not a date. */
+export function readDateField(raw: unknown): Date | undefined {
+  if (typeof raw !== 'string' && !(raw instanceof Date)) return undefined;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
 /**
