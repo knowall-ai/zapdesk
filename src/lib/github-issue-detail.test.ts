@@ -129,9 +129,12 @@ describe('fetchIssueDetail', () => {
   it('says what a reader can do about a refusal', async () => {
     fetchMock.mockImplementation(async () => answer({ message: 'Forbidden' }, 403));
 
-    await expect(fetchIssueDetail('acme/portal', 12, 'token')).rejects.toThrow(
-      /Issues: Read & write/
-    );
+    // A read that is refused is not a write problem (#676)
+    const error = await fetchIssueDetail('acme/portal', 12, 'token').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(GitHubApiError);
+    expect((error as GitHubApiError).status).toBe(403);
+    expect((error as GitHubApiError).message).toMatch(/cannot read this repository/);
+    expect((error as GitHubApiError).message).not.toMatch(/cannot write/);
   });
 
   it('says plainly when an issue is gone', async () => {
@@ -219,5 +222,98 @@ describe('setIssueStatus', () => {
 
     await expect(setIssueStatus('acme/portal', 12, 'token', 'Pending', [])).rejects.toThrow();
     expect(calls()).toHaveLength(1);
+  });
+});
+
+/**
+ * Each GitHub failure gets its own message (#676). Every 401 and 403 used to
+ * say "cannot write to this repository", whatever the real cause.
+ */
+describe('failure messages', () => {
+  function refused(status: number, headers: Record<string, string> = {}, message = 'Forbidden') {
+    return new Response(JSON.stringify({ message }), {
+      status,
+      headers: { 'Content-Type': 'application/json', ...headers },
+    });
+  }
+
+  async function failureOf(run: () => Promise<unknown>): Promise<GitHubApiError> {
+    const error = await run().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(GitHubApiError);
+    return error as GitHubApiError;
+  }
+
+  const comment = () => addIssueComment('acme/portal', 12, 'token', 'On it.');
+
+  it('names the missing permission when a write is refused', async () => {
+    fetchMock.mockResolvedValue(refused(403, { 'x-ratelimit-remaining': '4999' }));
+
+    const error = await failureOf(comment);
+    expect(error.status).toBe(403);
+    expect(error.message).toMatch(/cannot write to this repository/);
+    expect(error.message).toMatch(/Issues: Read & write/);
+  });
+
+  it('says the credentials were not accepted on a 401, not that a permission is missing', async () => {
+    fetchMock.mockResolvedValue(refused(401, {}, 'Bad credentials'));
+
+    const error = await failureOf(comment);
+    expect(error.status).toBe(401);
+    expect(error.message).toMatch(/did not accept ZapDesk's credentials/);
+    expect(error.message).not.toMatch(/cannot write/);
+  });
+
+  it('reports an exhausted primary rate limit as 429, with when to retry', async () => {
+    const reset = Math.floor(Date.now() / 1000) + 5 * 60;
+    fetchMock.mockResolvedValue(
+      refused(
+        403,
+        { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(reset) },
+        'API rate limit exceeded'
+      )
+    );
+
+    const error = await failureOf(comment);
+    expect(error.status).toBe(429);
+    expect(error.message).toMatch(/limiting how often/);
+    expect(error.message).toMatch(/Try again in 5 minutes/);
+    expect(error.message).not.toMatch(/cannot write/);
+  });
+
+  it('reports a secondary rate limit, which GitHub sends as 403 with retry-after', async () => {
+    fetchMock.mockResolvedValue(
+      refused(403, { 'retry-after': '60' }, 'You have exceeded a secondary rate limit')
+    );
+
+    const error = await failureOf(comment);
+    expect(error.status).toBe(429);
+    expect(error.message).toMatch(/Try again in 1 minute\./);
+  });
+
+  it('recognises a secondary rate limit from the body alone', async () => {
+    fetchMock.mockResolvedValue(refused(403, {}, 'You have exceeded a secondary rate limit'));
+
+    const error = await failureOf(comment);
+    expect(error.status).toBe(429);
+    expect(error.message).toMatch(/Try again in a minute/);
+  });
+
+  it('passes a 429 through as a rate limit', async () => {
+    fetchMock.mockResolvedValue(refused(429, { 'retry-after': '120' }, 'Too many requests'));
+
+    const error = await failureOf(() => fetchIssueDetail('acme/portal', 12, 'token'));
+    expect(error.status).toBe(429);
+    expect(error.message).toMatch(/Try again in 2 minutes/);
+  });
+
+  it('treats an edit and a status change as writes', async () => {
+    fetchMock.mockResolvedValue(refused(403));
+
+    expect(
+      (await failureOf(() => updateIssue('acme/portal', 12, 'token', { title: 'x' }))).message
+    ).toMatch(/cannot write/);
+    expect(
+      (await failureOf(() => setIssueStatus('acme/portal', 12, 'token', 'Pending', []))).message
+    ).toMatch(/cannot write/);
   });
 });

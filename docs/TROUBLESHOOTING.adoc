@@ -160,6 +160,18 @@
 
 |**"Could not load GitHub issues from owner/repo"** (or **from owner/***)
 |For `owner/*`: the owner must be a GitHub organization, not a personal account, and the token must be allowed to read it. Otherwise: the token cannot read that repository. Check the repository name, that the token has read-only *Issues* access to it, and that it has not expired. The server log has the status GitHub returned: 404 means not found or no access, 401 an invalid token, 403 or 429 the rate limit.
+
+|**"ZapDesk cannot write to this repository"** when commenting on, editing or moving a GitHub issue
+|GitHub refused the change for want of permission. Give the ZapDesk GitHub App installation, or `GITHUB_TOKEN`, *Issues: Read & write* on that repository. With the App, check the repository is among those chosen under *Choose repositories on GitHub*; a fine-grained token must list the repository too.
+
+|**"ZapDesk cannot read this repository"** when opening a GitHub issue
+|The App installation or `GITHUB_TOKEN` cannot see that repository. Add the repository to the installation, or give the token *Issues: Read* access to it.
+
+|**"GitHub did not accept ZapDesk's credentials"**
+|GitHub answered 401: the token is expired, revoked or wrong. Reconnect GitHub from the project page, or replace `GITHUB_TOKEN` in the App Service configuration and restart.
+
+|**"GitHub is limiting how often ZapDesk can call it"**
+|GitHub's rate limit was reached (a 429, or a 403 with `x-ratelimit-remaining: 0`, a `retry-after` header, or a secondary-rate-limit message). Nothing is wrong with the permissions. Wait the time shown and try again.
 |===
 
 == Debugging Tips
