@@ -305,8 +305,11 @@ Create an app password in Microsoft 365 admin for the SMTP_PASSWORD.
 
 Optional. ZapDesk can show GitHub issues beside Azure DevOps work items in the
 tickets list and on the Kanban boards, for projects that track work in GitHub
-as well as, or instead of, DevOps. The issues are read-only in ZapDesk: each
-row or card links to the issue on GitHub.
+as well as, or instead of, DevOps. Each row or card links to the issue on
+GitHub, and the ticket pop-up can comment on it, edit it and change its status.
+Those changes need *Issues: Read and write*; with read-only access, issues
+still show, but every change fails with "ZapDesk cannot write to this
+repository".
 
 There are two ways to set this up; both can be used together.
 
@@ -331,8 +334,9 @@ connects to it.
 . *Webhook*: active, URL `https://zapdesk.yourdomain.com/api/github/webhook`,
   with a random secret (`GITHUB_APP_WEBHOOK_SECRET`). Optional: without it,
   changes show once the one-minute cache expires.
-. *Permissions*: Repository > *Issues*: read-only, *Pull requests*: read-only
-  (for the Kanban board's pull request counts), *Metadata*: read-only.
+. *Permissions*: Repository > *Issues*: read and write (to comment, edit and
+  change status from ZapDesk), *Pull requests*: read-only (for the Kanban
+  board's pull request counts), *Metadata*: read-only.
   *Subscribe to events*: *Issues*.
 . *Where can this GitHub App be installed?*: *Any account*.
 . After creating it, note the *App ID* (`GITHUB_APP_ID`) and *Client ID*
@@ -353,15 +357,31 @@ card then appears on each project page:
 * *Disconnect* removes the link. Uninstalling the App on GitHub stops it
   working too.
 
+An App registered with *Issues*: read-only can be raised to read and write
+without reinstalling it:
+
+. In the App's settings on GitHub, *Permissions & events*, set Repository >
+  *Issues* to *Read and write* and save.
+. GitHub asks every installation to accept the new permission. An owner of
+  each organisation that installed the App opens *Settings > GitHub Apps*,
+  then the App, and accepts the request. Until then, that organisation's
+  installation keeps the old permission.
+
+ZapDesk keeps each installation's token for up to an hour. With the webhook
+set up, accepting the request clears it, so the new permission applies at
+once. Without the webhook, it applies within the hour, or straight after a
+restart.
+
 === Token
 
-Create a GitHub token the server uses to read issues, and set it as
+Create a GitHub token the server uses to read and update issues, and set it as
 `GITHUB_TOKEN` in the App Service configuration.
 
 * A fine-grained personal access token is enough.
 * Repository access: only the repositories you will map.
-* Permissions: *Issues* and *Pull requests*, read-only. Pull requests feed the
-  Kanban board's 24h summary.
+* Permissions: *Issues*: read and write (to comment, edit and change status
+  from ZapDesk). *Pull requests*: read-only; they feed the Kanban board's 24h
+  summary.
 
 The token stays on the server. It is shared by every ZapDesk user, so it has
 one rate limit (5,000 requests an hour); ZapDesk reuses each repository's
