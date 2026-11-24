@@ -62,21 +62,70 @@ async function gitHub(
   });
 
   if (!response.ok) {
-    throw new GitHubApiError(response.status, describeFailure(response.status, path));
+    const isWrite = (rest.method ?? 'GET').toUpperCase() !== 'GET';
+    if (await isRateLimited(response)) {
+      // 429 whatever GitHub sent: a rate-limited 403 is not a refusal, and
+      // passing it on as 403 would read as a permission problem (#676).
+      throw new GitHubApiError(429, describeRateLimit(response));
+    }
+    throw new GitHubApiError(response.status, describeFailure(response.status, path, isWrite));
   }
   return response;
 }
 
 /**
+ * GitHub answers a rate-limited request with 429, or with 403 and either an
+ * exhausted `x-ratelimit-remaining`, a `retry-after`, or a body that says so
+ * (the secondary limit).
+ */
+async function isRateLimited(response: Response): Promise<boolean> {
+  if (response.status === 429) return true;
+  if (response.status !== 403) return false;
+  if (response.headers.get('x-ratelimit-remaining') === '0') return true;
+  if (response.headers.has('retry-after')) return true;
+  try {
+    const body: unknown = await response.clone().json();
+    const message =
+      body && typeof body === 'object' && 'message' in body
+        ? String((body as { message: unknown }).message)
+        : '';
+    return /rate limit/i.test(message);
+  } catch {
+    return false;
+  }
+}
+
+/** How long to wait, from `retry-after` (seconds) or `x-ratelimit-reset` (epoch seconds). */
+function describeRateLimit(response: Response): string {
+  const retryAfter = Number(response.headers.get('retry-after'));
+  const reset = Number(response.headers.get('x-ratelimit-reset'));
+  const seconds =
+    Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter
+      : Number.isFinite(reset) && reset > 0
+        ? reset - Math.floor(Date.now() / 1000)
+        : NaN;
+  const base = 'GitHub is limiting how often ZapDesk can call it.';
+  if (!Number.isFinite(seconds) || seconds <= 0) return `${base} Try again in a minute.`;
+  const minutes = Math.ceil(seconds / 60);
+  return `${base} Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`;
+}
+
+/**
  * What to tell the user, in words they can act on.
  *
- * A write failing for want of permission is the common case here and reads as
- * a bug unless it says so: the GitHub App, or the server token, needs Issues:
- * Read & write on that repository.
+ * Each cause gets its own message (#676). Every 401 and 403 used to say
+ * "cannot write to this repository", even when the failing request was a
+ * read, or the token had simply expired.
  */
-function describeFailure(status: number, path: string): string {
-  if (status === 403 || status === 401) {
-    return 'ZapDesk cannot write to this repository. Its GitHub App installation, or GITHUB_TOKEN, needs Issues: Read & write.';
+function describeFailure(status: number, path: string, isWrite: boolean): string {
+  if (status === 401) {
+    return "GitHub did not accept ZapDesk's credentials. Reconnect GitHub from the project page, or replace an expired or revoked GITHUB_TOKEN.";
+  }
+  if (status === 403) {
+    return isWrite
+      ? 'ZapDesk cannot write to this repository. Its GitHub App installation, or GITHUB_TOKEN, needs Issues: Read & write.'
+      : 'ZapDesk cannot read this repository. Add it to the GitHub App installation, or give GITHUB_TOKEN Issues: Read access to it.';
   }
   if (status === 404) {
     return 'That issue no longer exists, or ZapDesk cannot see it.';

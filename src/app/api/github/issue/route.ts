@@ -151,7 +151,7 @@ export async function PATCH(request: NextRequest) {
 function failure(error: unknown, what: 'read' | 'write'): NextResponse {
   if (error instanceof GitHubApiError) {
     console.error(`[GitHub] issue ${what} failed (${error.status}):`, error.message);
-    const status = [401, 403, 404, 410, 422].includes(error.status) ? error.status : 502;
+    const status = [401, 403, 404, 410, 422, 429].includes(error.status) ? error.status : 502;
     return NextResponse.json({ error: error.message }, { status });
   }
   console.error(`[GitHub] issue ${what} failed:`, error);
