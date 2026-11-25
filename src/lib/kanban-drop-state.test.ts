@@ -55,6 +55,23 @@ describe('resolveDropState', () => {
     });
   });
 
+  // #687 review: non-Latin names were all stripped to "" and matched each other.
+  it('tells non-Latin state names apart', () => {
+    const states: StateInfo[] = [
+      { name: '未着手', category: 'Proposed' },
+      { name: '進行中', category: 'InProgress' },
+    ];
+    expect(resolveDropState(states, { name: '進行中', category: 'InProgress' })).toEqual({
+      state: '進行中',
+    });
+    expect(
+      columnForState('進行中', states, [
+        { name: '未着手', category: 'Proposed' },
+        { name: '進行中', category: 'InProgress' },
+      ])
+    ).toBe('進行中');
+  });
+
   it('sends the column name when the type is unknown, as before', () => {
     expect(resolveDropState(undefined, CLOSED)).toEqual({ state: 'Closed' });
   });

@@ -29,8 +29,11 @@ import { dragFailureMessage } from '@/lib/drag-failure';
 import { isStateChangeSuperseded } from '@/lib/state-change-cancelled';
 import { columnForState, resolveDropState, type StateInfo } from '@/lib/kanban-drop-state';
 
-/** Project -> work item type -> that type's states there. */
-type TypeStates = Record<string, Record<string, StateInfo[]>>;
+/** Organisation -> project -> work item type -> that type's states there. */
+type TypeStates = Record<string, Record<string, Record<string, StateInfo[]>>>;
+
+/** The most types the states route takes in one request. */
+const STATES_TYPES_PER_REQUEST = 20;
 
 /** The work item type of a card, whichever shape it has. */
 function itemType(item: KanbanItem): string | undefined {
@@ -162,48 +165,60 @@ export default function KanbanBoard({
   }, [sourceItems]);
 
   useEffect(() => {
+    // Kept under the organisation they were asked of. The board is not
+    // remounted on a switch, and a project of the same name elsewhere can be
+    // on another process: a late answer for the old organisation lands under
+    // its own key, and is never read for the new one (#687 review).
+    const org = organization ?? '';
     for (const [itemProject, types] of typesByProject) {
-      const wanted = [...types].sort();
-      const key = `${organization ?? ''}|${itemProject}|${wanted.join(',')}`;
-      if (requestedRef.current.has(key)) continue;
-      requestedRef.current.add(key);
-      const params = new URLSearchParams({ project: itemProject, types: wanted.join(',') });
-      const headers: HeadersInit = {};
-      if (organization) headers['x-devops-org'] = organization;
-      fetch(`/api/devops/workitem-states?${params}`, {
-        headers,
-        signal: AbortSignal.timeout(10_000),
-      })
-        .then(async (response) => {
-          if (!response.ok) throw new Error(`states: ${response.status}`);
-          const data = (await response.json()) as {
-            statesByType?: { workItemType: string; states: StateInfo[] }[];
-          };
-          setTypeStates((prev) => {
-            const forProject = { ...(prev[itemProject] ?? {}) };
-            for (const entry of data.statesByType ?? []) {
-              forProject[entry.workItemType] = entry.states.map(({ name, category }) => ({
-                name,
-                category,
-              }));
-            }
-            return { ...prev, [itemProject]: forProject };
-          });
+      const all = [...types].sort();
+      // The route takes at most this many types per request.
+      for (let i = 0; i < all.length; i += STATES_TYPES_PER_REQUEST) {
+        const wanted = all.slice(i, i + STATES_TYPES_PER_REQUEST);
+        const key = `${org}|${itemProject}|${wanted.join(',')}`;
+        if (requestedRef.current.has(key)) continue;
+        requestedRef.current.add(key);
+        const params = new URLSearchParams({ project: itemProject, types: wanted.join(',') });
+        const headers: HeadersInit = {};
+        if (organization) headers['x-devops-org'] = organization;
+        fetch(`/api/devops/workitem-states?${params}`, {
+          headers,
+          signal: AbortSignal.timeout(10_000),
         })
-        .catch((error) => {
-          // Not fatal: without them a drop sends the column name, as before.
-          requestedRef.current.delete(key);
-          console.error('Failed to fetch states for', itemProject, error);
-        });
+          .then(async (response) => {
+            if (!response.ok) throw new Error(`states: ${response.status}`);
+            const data = (await response.json()) as {
+              statesByType?: { workItemType: string; states: StateInfo[] }[];
+            };
+            setTypeStates((prev) => {
+              const forOrg = { ...(prev[org] ?? {}) };
+              const forProject = { ...(forOrg[itemProject] ?? {}) };
+              for (const entry of data.statesByType ?? []) {
+                forProject[entry.workItemType] = entry.states.map(({ name, category }) => ({
+                  name,
+                  category,
+                }));
+              }
+              forOrg[itemProject] = forProject;
+              return { ...prev, [org]: forOrg };
+            });
+          })
+          .catch((error) => {
+            // Not fatal: without them a drop sends the column name, as before.
+            requestedRef.current.delete(key);
+            console.error('Failed to fetch states for', itemProject, error);
+          });
+      }
     }
   }, [typesByProject, organization]);
 
   const statesOf = useCallback(
     (item: KanbanItem): StateInfo[] | undefined => {
       const type = itemType(item);
-      return item.project && type ? typeStates[item.project]?.[type] : undefined;
+      if (!item.project || !type) return undefined;
+      return typeStates[organization ?? '']?.[item.project]?.[type];
     },
-    [typeStates]
+    [typeStates, organization]
   );
 
   // Adopt new items from the parent as they arrive, but not while a card is
@@ -447,7 +462,12 @@ export default function KanbanBoard({
             category: column?.category ?? '',
           });
       if ('blocked' in drop) {
+        // This drop replaces any earlier move of the card, which may still be
+        // waiting on its required-fields dialog: stand it down, as a drop
+        // back where it started does, so it cannot go on to write a state
+        // the board no longer shows (#687 review).
         claim();
+        onStateChangeAbandoned?.(activeItemId);
         restoreCard(activeItemId);
         const type = itemType(originalItem) ?? 'This item';
         toast.error(

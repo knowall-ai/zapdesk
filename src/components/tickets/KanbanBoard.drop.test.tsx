@@ -130,4 +130,49 @@ describe('Tickets board drop', () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(toastError).toHaveBeenCalledWith('Task in Contoso has no "Resolved" state');
   });
+
+  // #687 review: an earlier move of the card, still waiting on its dialog,
+  // must stand down when a later drop of it is refused.
+  it('stands down an earlier move of the card when a drop is refused', async () => {
+    const onAbandoned = vi.fn();
+    render(
+      <KanbanBoard
+        tickets={[ticket(2, 'Contoso', 'Active')]}
+        onTicketStateChange={vi.fn(async () => {})}
+        onStateChangeAbandoned={onAbandoned}
+        organization="Org"
+      />
+    );
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.length).toBeGreaterThanOrEqual(2));
+    await act(async () => {});
+
+    await drop(2, 'Resolved');
+
+    expect(onAbandoned).toHaveBeenCalledWith(2);
+  });
+
+  // #687 review: states belong to the organisation they were read from. After
+  // a switch whose lookup fails, the old organisation's Scrum states must not
+  // turn a drop on Closed into Done.
+  it("does not use another organisation's states", async () => {
+    const onChange = vi.fn(async () => {});
+    const tickets = [ticket(1, 'Fabrikam', 'In Progress')];
+    const { rerender } = render(
+      <KanbanBoard tickets={tickets} onTicketStateChange={onChange} organization="OrgA" />
+    );
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.length).toBeGreaterThanOrEqual(2));
+    await act(async () => {});
+
+    vi.mocked(fetch).mockImplementation(async (url) =>
+      String(url).includes('project=')
+        ? new Response('{}', { status: 500 })
+        : new Response(JSON.stringify({ allStates: COLUMNS }))
+    );
+    rerender(<KanbanBoard tickets={tickets} onTicketStateChange={onChange} organization="OrgB" />);
+    await act(async () => {});
+
+    await drop(1, 'Closed');
+
+    expect(onChange).toHaveBeenCalledWith(1, 'Closed', 'Fabrikam');
+  });
 });

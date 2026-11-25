@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSessionWithToken } from '@/lib/server-session';
 import { requestDevOpsOrg } from '@/lib/devops-org';
 
+/** The most work item types `types` may name. */
+const MAX_TYPES = 20;
+
 interface WorkItemState {
   name: string;
   color: string;
@@ -64,8 +67,15 @@ export async function GET(request: NextRequest) {
     const typesParam = (searchParams.get('types') ?? '')
       .split(',')
       .map((t) => t.trim())
-      .filter(Boolean)
-      .slice(0, 20);
+      .filter(Boolean);
+    // Refused rather than cut short: a shortened list answered 200 would look
+    // complete to the caller (#687 review). Callers send at most this many.
+    if (typesParam.length > MAX_TYPES) {
+      return NextResponse.json(
+        { error: `At most ${MAX_TYPES} work item types per request` },
+        { status: 400 }
+      );
+    }
     const workItemTypes = typeFilter
       ? [typeFilter]
       : typesParam.length > 0
