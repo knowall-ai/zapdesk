@@ -5,6 +5,9 @@ import { requestDevOpsOrg } from '@/lib/devops-org';
 /** The most work item types `types` may name. */
 const MAX_TYPES = 20;
 
+/** The query parameters this route understands; any other is refused. */
+const QUERY_KEYS = new Set(['type', 'types', 'project']);
+
 interface WorkItemState {
   name: string;
   color: string;
@@ -31,6 +34,15 @@ export async function GET(request: NextRequest) {
 
     // Optional query params to filter by specific work item type and project
     const { searchParams } = new URL(request.url);
+    // A misspelt key (`tyeps`) would otherwise be ignored and answered with
+    // the default types, which looks like success (#687 review).
+    const unknownKeys = [...new Set(searchParams.keys())].filter((key) => !QUERY_KEYS.has(key));
+    if (unknownKeys.length > 0) {
+      return NextResponse.json(
+        { error: `Unknown query parameter: ${unknownKeys.join(', ')}` },
+        { status: 400 }
+      );
+    }
     const typeFilter = searchParams.get('type');
     const projectFilter = searchParams.get('project');
 
@@ -86,20 +98,24 @@ export async function GET(request: NextRequest) {
     const allStates: WorkItemTypeStates[] = [];
     const uniqueStates = new Map<string, WorkItemState>();
 
-    // Fetch states for each work item type
-    for (const witType of workItemTypes) {
-      try {
-        const statesResponse = await fetch(
-          `https://dev.azure.com/${organization}/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(witType)}/states?api-version=7.0`,
-          {
-            headers: {
-              Authorization: `Bearer ${session.accessToken}`,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-
-        if (statesResponse.ok) {
+    // Fetch states for each work item type, all at once: one after another,
+    // a batch of many types could outlast the board's 10-second wait
+    // (#687 review). Results are taken in the requested order, and a type that
+    // fails is skipped without taking the others with it.
+    const project = projectName;
+    const fetched = await Promise.all(
+      workItemTypes.map(async (witType): Promise<WorkItemTypeStates | null> => {
+        try {
+          const statesResponse = await fetch(
+            `https://dev.azure.com/${organization}/${encodeURIComponent(project)}/_apis/wit/workitemtypes/${encodeURIComponent(witType)}/states?api-version=7.0`,
+            {
+              headers: {
+                Authorization: `Bearer ${session.accessToken}`,
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+          if (!statesResponse.ok) return null;
           const statesData = await statesResponse.json();
           const states: WorkItemState[] = (statesData.value || []).map(
             (s: { name: string; color: string; category: string }) => ({
@@ -108,21 +124,22 @@ export async function GET(request: NextRequest) {
               category: s.category,
             })
           );
-
-          allStates.push({
-            workItemType: witType,
-            states,
-          });
-
-          // Collect unique states
-          for (const state of states) {
-            if (!uniqueStates.has(state.name)) {
-              uniqueStates.set(state.name, state);
-            }
-          }
+          return { workItemType: witType, states };
+        } catch (error) {
+          console.error(`Error fetching states for ${witType}:`, error);
+          return null;
         }
-      } catch (error) {
-        console.error(`Error fetching states for ${witType}:`, error);
+      })
+    );
+
+    for (const entry of fetched) {
+      if (!entry) continue;
+      allStates.push(entry);
+      // Collect unique states
+      for (const state of entry.states) {
+        if (!uniqueStates.has(state.name)) {
+          uniqueStates.set(state.name, state);
+        }
       }
     }
 
