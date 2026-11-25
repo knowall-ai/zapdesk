@@ -35,6 +35,9 @@ type TypeStates = Record<string, Record<string, Record<string, StateInfo[]>>>;
 /** The most types the states route takes in one request. */
 const STATES_TYPES_PER_REQUEST = 20;
 
+/** How many times a batch of states is asked for before the board gives up. */
+const MAX_STATES_ATTEMPTS = 3;
+
 /** The work item type of a card, whichever shape it has. */
 function itemType(item: KanbanItem): string | undefined {
   return item.workItemType || undefined;
@@ -153,6 +156,8 @@ export default function KanbanBoard({
    */
   const [typeStates, setTypeStates] = useState<TypeStates>({});
   const requestedRef = useRef(new Set<string>());
+  /** How many times each batch has been asked for. */
+  const attemptsRef = useRef(new Map<string, number>());
   const typesByProject = useMemo(() => {
     const byProject = new Map<string, Set<string>>();
     for (const item of sourceItems) {
@@ -178,6 +183,16 @@ export default function KanbanBoard({
         const key = `${org}|${itemProject}|${wanted.join(',')}`;
         if (requestedRef.current.has(key)) continue;
         requestedRef.current.add(key);
+        const attempt = (attemptsRef.current.get(key) ?? 0) + 1;
+        attemptsRef.current.set(key, attempt);
+        /**
+         * Let a later render ask again, a bounded number of times. The route
+         * skips a type whose lookup failed and still answers 200, so a batch
+         * can come back incomplete as well as fail outright (#687 review).
+         */
+        const allowRetry = () => {
+          if (attempt < MAX_STATES_ATTEMPTS) requestedRef.current.delete(key);
+        };
         const params = new URLSearchParams({ project: itemProject, types: wanted.join(',') });
         const headers: HeadersInit = {};
         if (organization) headers['x-devops-org'] = organization;
@@ -202,10 +217,12 @@ export default function KanbanBoard({
               forOrg[itemProject] = forProject;
               return { ...prev, [org]: forOrg };
             });
+            const answered = new Set((data.statesByType ?? []).map((e) => e.workItemType));
+            if (wanted.some((type) => !answered.has(type))) allowRetry();
           })
           .catch((error) => {
             // Not fatal: without them a drop sends the column name, as before.
-            requestedRef.current.delete(key);
+            allowRetry();
             console.error('Failed to fetch states for', itemProject, error);
           });
       }

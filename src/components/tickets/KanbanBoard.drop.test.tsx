@@ -151,6 +151,31 @@ describe('Tickets board drop', () => {
     expect(onAbandoned).toHaveBeenCalledWith(2);
   });
 
+  // #687 review: the route skips a type whose lookup failed and still answers
+  // 200. The board asks again, but not for ever.
+  it('asks again for a type the answer left out, a bounded number of times', async () => {
+    const stateCalls = () =>
+      vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('project=')).length;
+    vi.mocked(fetch).mockImplementation(async (url) =>
+      String(url).includes('project=')
+        ? new Response(JSON.stringify({ statesByType: [], allStates: [] }))
+        : new Response(JSON.stringify({ allStates: COLUMNS }))
+    );
+    const props = { onTicketStateChange: vi.fn(async () => {}), organization: 'Org' };
+    const { rerender } = render(
+      <KanbanBoard tickets={[ticket(1, 'Fabrikam', 'In Progress')]} {...props} />
+    );
+    await waitFor(() => expect(stateCalls()).toBe(1));
+
+    // Each new list of tickets from the parent is a chance to ask again.
+    for (let i = 0; i < 5; i++) {
+      rerender(<KanbanBoard tickets={[ticket(1, 'Fabrikam', 'In Progress')]} {...props} />);
+      await act(async () => {});
+    }
+
+    expect(stateCalls()).toBe(3);
+  });
+
   // #687 review: states belong to the organisation they were read from. After
   // a switch whose lookup fails, the old organisation's Scrum states must not
   // turn a drop on Closed into Done.

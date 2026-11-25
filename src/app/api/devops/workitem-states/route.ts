@@ -34,6 +34,23 @@ export async function GET(request: NextRequest) {
     const typeFilter = searchParams.get('type');
     const projectFilter = searchParams.get('project');
 
+    // `types` (comma-separated) names the types the caller has cards of, so a
+    // board can learn each one's states in each project (Scrum's Product
+    // Backlog Item, say), not only the four defaults.
+    const typesParam = (searchParams.get('types') ?? '')
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+    // Refused rather than cut short: a shortened list answered 200 would look
+    // complete to the caller (#687 review). Checked before any DevOps call,
+    // project discovery included. Callers send at most this many.
+    if (typesParam.length > MAX_TYPES) {
+      return NextResponse.json(
+        { error: `At most ${MAX_TYPES} work item types per request` },
+        { status: 400 }
+      );
+    }
+
     // Determine which project to query
     let projectName = projectFilter;
     if (!projectName) {
@@ -61,21 +78,6 @@ export async function GET(request: NextRequest) {
     }
 
     // If a specific type is requested, fetch states for just that type
-    // `types` (comma-separated) names the types the caller has cards of, so a
-    // board can learn each one's states in each project (Scrum's Product
-    // Backlog Item, say), not only the four defaults.
-    const typesParam = (searchParams.get('types') ?? '')
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean);
-    // Refused rather than cut short: a shortened list answered 200 would look
-    // complete to the caller (#687 review). Callers send at most this many.
-    if (typesParam.length > MAX_TYPES) {
-      return NextResponse.json(
-        { error: `At most ${MAX_TYPES} work item types per request` },
-        { status: 400 }
-      );
-    }
     const workItemTypes = typeFilter
       ? [typeFilter]
       : typesParam.length > 0

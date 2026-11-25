@@ -31,6 +31,19 @@ describe('workitem-states types list', () => {
     expect((await response.json()).statesByType).toHaveLength(20);
   });
 
+  it('refuses 21 before looking up a project, when none is given', async () => {
+    const { GET } = await import('@/app/api/devops/workitem-states/route');
+    const types = Array.from({ length: 21 }, (_, i) => `Type${i}`).join(',');
+    const response = await GET(
+      new NextRequest(
+        `https://zapdesk.test/api/devops/workitem-states?types=${encodeURIComponent(types)}`,
+        { headers: { 'x-devops-org': 'KnowAllTest' } }
+      )
+    );
+    expect(response.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('refuses 21, without asking DevOps', async () => {
     const response = await call(Array.from({ length: 21 }, (_, i) => `Type${i}`));
     expect(response.status).toBe(400);
