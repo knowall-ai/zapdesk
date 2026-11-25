@@ -664,22 +664,11 @@ export default function KanbanGroupSection({
             {groupName}
           </h3>
 
-          {/* What is inside, readable without opening the group (#321). */}
+          {/* When the group last changed. The per-state counts that sat here
+              (#321) repeated the column headers right below them, so they
+              were removed. */}
           {totalItems > 0 && (
             <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              {summary.counts.map((count) => (
-                <span
-                  key={count.name}
-                  className="flex items-center gap-1 text-xs font-medium"
-                  style={{ color: getColumnColor(count.name, count.category) }}
-                >
-                  {getColumnIcon(count.name, count.category, 12)}
-                  {/* The name is written out: Resolved and Closed share an icon,
-                      and a tooltip is no help on a touch screen. */}
-                  <span style={{ color: 'var(--text-muted)' }}>{count.name}</span>
-                  <span style={{ color: 'var(--text-secondary)' }}>{count.count}</span>
-                </span>
-              ))}
               {summary.lastUpdated && (
                 <span
                   className="text-xs"

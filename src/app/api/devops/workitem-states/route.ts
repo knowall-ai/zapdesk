@@ -58,7 +58,19 @@ export async function GET(request: NextRequest) {
     }
 
     // If a specific type is requested, fetch states for just that type
-    const workItemTypes = typeFilter ? [typeFilter] : ['Bug', 'Task', 'Enhancement', 'Issue'];
+    // `types` (comma-separated) names the types the caller has cards of, so a
+    // board can learn each one's states in each project (Scrum's Product
+    // Backlog Item, say), not only the four defaults.
+    const typesParam = (searchParams.get('types') ?? '')
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .slice(0, 20);
+    const workItemTypes = typeFilter
+      ? [typeFilter]
+      : typesParam.length > 0
+        ? typesParam
+        : ['Bug', 'Task', 'Enhancement', 'Issue'];
     const allStates: WorkItemTypeStates[] = [];
     const uniqueStates = new Map<string, WorkItemState>();
 

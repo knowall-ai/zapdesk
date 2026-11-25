@@ -27,6 +27,15 @@ import SourceLegend from '@/components/common/SourceLegend';
 import { sourceKindOf, type SourceKind } from '@/lib/source-colors';
 import { dragFailureMessage } from '@/lib/drag-failure';
 import { isStateChangeSuperseded } from '@/lib/state-change-cancelled';
+import { columnForState, resolveDropState, type StateInfo } from '@/lib/kanban-drop-state';
+
+/** Project -> work item type -> that type's states there. */
+type TypeStates = Record<string, Record<string, StateInfo[]>>;
+
+/** The work item type of a card, whichever shape it has. */
+function itemType(item: KanbanItem): string | undefined {
+  return item.workItemType || undefined;
+}
 
 // KanbanBoard can work with either Ticket[] or WorkItem[]
 // WorkItem uses 'state' while Ticket uses 'devOpsState' for the state name
@@ -131,6 +140,72 @@ export default function KanbanBoard({
     fetchStates();
   }, [project, organization]);
 
+  /**
+   * Each project's own states for the types on the board.
+   *
+   * The columns above are one project's process, but a Tickets board holds
+   * tickets from every project, and a Scrum project has no "Closed" (it has
+   * "Done"). Dropping by column name was refused there, so each drop is
+   * translated into the card's own states (`resolveDropState`).
+   */
+  const [typeStates, setTypeStates] = useState<TypeStates>({});
+  const requestedRef = useRef(new Set<string>());
+  const typesByProject = useMemo(() => {
+    const byProject = new Map<string, Set<string>>();
+    for (const item of sourceItems) {
+      const type = itemType(item);
+      if (isGitHubItem(item) || !item.project || !type) continue;
+      if (!byProject.has(item.project)) byProject.set(item.project, new Set());
+      byProject.get(item.project)!.add(type);
+    }
+    return byProject;
+  }, [sourceItems]);
+
+  useEffect(() => {
+    for (const [itemProject, types] of typesByProject) {
+      const wanted = [...types].sort();
+      const key = `${organization ?? ''}|${itemProject}|${wanted.join(',')}`;
+      if (requestedRef.current.has(key)) continue;
+      requestedRef.current.add(key);
+      const params = new URLSearchParams({ project: itemProject, types: wanted.join(',') });
+      const headers: HeadersInit = {};
+      if (organization) headers['x-devops-org'] = organization;
+      fetch(`/api/devops/workitem-states?${params}`, {
+        headers,
+        signal: AbortSignal.timeout(10_000),
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`states: ${response.status}`);
+          const data = (await response.json()) as {
+            statesByType?: { workItemType: string; states: StateInfo[] }[];
+          };
+          setTypeStates((prev) => {
+            const forProject = { ...(prev[itemProject] ?? {}) };
+            for (const entry of data.statesByType ?? []) {
+              forProject[entry.workItemType] = entry.states.map(({ name, category }) => ({
+                name,
+                category,
+              }));
+            }
+            return { ...prev, [itemProject]: forProject };
+          });
+        })
+        .catch((error) => {
+          // Not fatal: without them a drop sends the column name, as before.
+          requestedRef.current.delete(key);
+          console.error('Failed to fetch states for', itemProject, error);
+        });
+    }
+  }, [typesByProject, organization]);
+
+  const statesOf = useCallback(
+    (item: KanbanItem): StateInfo[] | undefined => {
+      const type = itemType(item);
+      return item.project && type ? typeStates[item.project]?.[type] : undefined;
+    },
+    [typeStates]
+  );
+
   // Adopt new items from the parent as they arrive, but not while a card is
   // being dragged or its move is being saved: a refresh landing then put the
   // card back in its old column mid-drag, and the drop that followed looked
@@ -159,12 +234,17 @@ export default function KanbanBoard({
   // The column a card sits in. For a DevOps item that is its state. A GitHub
   // issue is only open or closed, so it is placed in the first or last column
   // instead (#447).
+  //
+  // A DevOps ticket whose state has no column of its own -- a Scrum ticket in
+  // Done, on columns drawn from another process -- goes in the column of the
+  // same category, rather than the first column.
   const columnOf = useCallback(
     (item: KanbanItem): string => {
       const state = getItemState(item);
-      return isGitHubItem(item) ? (gitHubColumnFor(state, kanbanStates) ?? state) : state;
+      if (isGitHubItem(item)) return gitHubColumnFor(state, kanbanStates) ?? state;
+      return columnForState(state, statesOf(item), kanbanStates) ?? state;
     },
-    [kanbanStates]
+    [kanbanStates, statesOf]
   );
 
   const sensors = useSensors(
@@ -338,7 +418,7 @@ export default function KanbanBoard({
         }
       }
 
-      const fromState = getItemState(originalItem);
+      const fromState = columnOf(originalItem);
       debugLog('[Kanban DnD] drag end', {
         itemId: activeItemId,
         overId,
@@ -356,15 +436,36 @@ export default function KanbanBoard({
         return;
       }
 
+      // The column is a state of one process; the card may belong to another.
+      // Move it to its own matching state, or say plainly that it has none,
+      // rather than let DevOps refuse a state the type does not have.
+      const column = kanbanStates.find((s) => s.name === targetState);
+      const drop = isGitHubItem(originalItem)
+        ? { state: targetState }
+        : resolveDropState(statesOf(originalItem), {
+            name: targetState,
+            category: column?.category ?? '',
+          });
+      if ('blocked' in drop) {
+        claim();
+        restoreCard(activeItemId);
+        const type = itemType(originalItem) ?? 'This item';
+        toast.error(
+          `${type} in ${originalItem.project ?? 'this project'} has no "${targetState}" state`
+        );
+        return;
+      }
+      const stateToWrite = drop.state;
+
       // Persist the state change
       if (onTicketStateChange) {
         // Put the card where it was dropped before anything is awaited: the
         // target came from `event.over`, and when no dragOver arrived for it
         // the card would sit in its old column all the while the
         // required-fields prompt is open (#663 review).
-        const drop = claim();
+        const claimed = claim();
         setLocalItems((prev) =>
-          prev.map((t) => (t.id === activeItemId ? setItemState(t, targetState!) : t))
+          prev.map((t) => (t.id === activeItemId ? setItemState(t, stateToWrite) : t))
         );
         setPendingMoves((count) => count + 1);
         try {
@@ -373,7 +474,7 @@ export default function KanbanBoard({
             fromState,
             targetState,
           });
-          await onTicketStateChange(activeItemId, targetState, originalItem.project);
+          await onTicketStateChange(activeItemId, stateToWrite, originalItem.project);
           debugLog('[Kanban DnD] state change succeeded', {
             itemId: activeItemId,
             targetState,
@@ -384,7 +485,7 @@ export default function KanbanBoard({
           if (isStateChangeSuperseded(error)) return;
           // A later drop of this card owns it now: neither undo that move nor
           // report this older one.
-          if (latestDropRef.current.get(activeItemId) !== drop) return;
+          if (latestDropRef.current.get(activeItemId) !== claimed) return;
           // If the card is being dragged again right now, that drag's
           // fallback is the move that just failed: point it at the server's
           // placement instead, so cancelling cannot bring the refused move
@@ -400,7 +501,7 @@ export default function KanbanBoard({
           restoreCard(activeItemId);
           // Null when the user closed the required-fields dialog, which is a
           // choice rather than a failure (#662).
-          const message = dragFailureMessage(error, targetState);
+          const message = dragFailureMessage(error, stateToWrite);
           if (!message) return;
           // Not gated: a rejected transition is rare and its detail is the
           // whole point of issue #391.
@@ -427,6 +528,8 @@ export default function KanbanBoard({
       putBackDragged,
       stateNames,
       columnOf,
+      kanbanStates,
+      statesOf,
     ]
   );
 
