@@ -77,6 +77,32 @@ export interface RequiredField {
    * which only ever covered the one field somebody had already hit.
    */
   isIdentity?: boolean;
+  /**
+   * Offered, not required. The process asks for it through a "make required"
+   * rule that has been switched off: the move goes ahead with or without it,
+   * and the dialog lets the user skip it.
+   */
+  optional?: boolean;
+}
+
+/**
+ * The values to send with a change, from what the dialog holds.
+ *
+ * Blank values are dropped: an untouched or cleared field means "not given",
+ * not "set this to nothing". With `skipOptional`, the optional fields are
+ * dropped too, so Skip moves without them even if something was typed first.
+ */
+export function valuesToSend(
+  fields: readonly RequiredField[],
+  values: Record<string, string>,
+  skipOptional = false
+): Record<string, string> {
+  const optional = new Set(fields.filter((f) => f.optional).map((f) => f.referenceName));
+  return Object.fromEntries(
+    Object.entries(values).filter(
+      ([field, value]) => value.trim() !== '' && !(skipOptional && optional.has(field))
+    )
+  );
 }
 
 interface UseWorkItemActionsOptions {
@@ -149,7 +175,7 @@ export interface WorkItemActions {
   pendingStateChange: { state: string; requiredFields: RequiredField[] } | null;
   pendingStateFieldValues: Record<string, string>;
   setPendingStateFieldValue: (fieldRef: string, value: string) => void;
-  confirmPendingStateChange: () => Promise<void>;
+  confirmPendingStateChange: (options?: { skipOptional?: boolean }) => Promise<void>;
   cancelPendingStateChange: () => void;
   pendingStateMemberSearch: string;
   setPendingStateMemberSearch: (search: string) => void;
@@ -437,25 +463,35 @@ export function useWorkItemActions({
     setPendingStateMemberSearch('');
   }, []);
 
-  const confirmPendingStateChange = useCallback(async () => {
-    if (!pendingStateChange || !onStateChange) return;
-    // Belt and braces with the clearing below: never apply one item's answer
-    // to another.
-    if (pendingStateChange.workItemId !== workItemId) {
-      setPendingStateChange(null);
-      return;
-    }
-    setIsUpdatingState(true);
-    try {
-      await onStateChange(pendingStateChange.state, pendingStateFieldValues);
-      setPendingStateChange(null);
-      setPendingStateFieldValues({});
-      setPendingStateMemberSearch('');
-      setIsStateDropdownOpen(false);
-    } finally {
-      setIsUpdatingState(false);
-    }
-  }, [pendingStateChange, pendingStateFieldValues, onStateChange, workItemId]);
+  const confirmPendingStateChange = useCallback(
+    async (options?: { skipOptional?: boolean }) => {
+      if (!pendingStateChange || !onStateChange) return;
+      // Belt and braces with the clearing below: never apply one item's answer
+      // to another.
+      if (pendingStateChange.workItemId !== workItemId) {
+        setPendingStateChange(null);
+        return;
+      }
+      setIsUpdatingState(true);
+      try {
+        await onStateChange(
+          pendingStateChange.state,
+          valuesToSend(
+            pendingStateChange.requiredFields,
+            pendingStateFieldValues,
+            options?.skipOptional
+          )
+        );
+        setPendingStateChange(null);
+        setPendingStateFieldValues({});
+        setPendingStateMemberSearch('');
+        setIsStateDropdownOpen(false);
+      } finally {
+        setIsUpdatingState(false);
+      }
+    },
+    [pendingStateChange, pendingStateFieldValues, onStateChange, workItemId]
+  );
 
   const handleAssigneeSelect = useCallback(
     async (memberId: string | null) => {

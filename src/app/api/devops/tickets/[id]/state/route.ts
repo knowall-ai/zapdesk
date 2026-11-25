@@ -199,6 +199,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         if (value.length > MAX_FIELD_VALUE_LENGTH) {
           return NextResponse.json({ error: `${field} is too long` }, { status: 400 });
         }
+        // A blank value means "not given". An optional field the user left
+        // empty must not go to DevOps as an attempt to set it to nothing.
+        if (value.trim() === '') continue;
         extraFields[field] = value;
       }
     }

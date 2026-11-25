@@ -19,7 +19,12 @@ interface RequiredFieldsDialogProps {
   requiredFields: RequiredField[];
   fieldValues: Record<string, string>;
   onFieldChange: (fieldRef: string, value: string) => void;
-  onConfirm: () => Promise<void>;
+  /**
+   * Make the change. `skipOptional` is Skip: go ahead without the optional
+   * fields, whatever was typed into them. The caller decides what to send,
+   * through `valuesToSend`.
+   */
+  onConfirm: (options?: { skipOptional?: boolean }) => Promise<void>;
   onCancel: () => void;
   isUpdating: boolean;
   // People picker support
@@ -51,6 +56,11 @@ export function isPeoplePickerField(field: RequiredField): boolean {
   return field.isIdentity === true || PEOPLE_PICKER_FIELDS.has(field.referenceName);
 }
 
+/** A field's label: required ones are starred, optional ones say so. */
+function fieldLabel(field: RequiredField): string {
+  return field.optional ? `${field.name} (optional)` : `${field.name} *`;
+}
+
 /** What can take keyboard focus inside the dialog. */
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -69,10 +79,15 @@ export default function RequiredFieldsDialog({
   onMemberSearchChange,
   filteredMembers,
 }: RequiredFieldsDialogProps) {
-  const allFieldsFilled = requiredFields.every((f) => {
-    const value = fieldValues[f.referenceName];
-    return !!value;
-  });
+  const isFilled = (field: RequiredField) => !!fieldValues[field.referenceName]?.trim();
+  const requiredFilled = requiredFields.filter((f) => !f.optional).every(isFilled);
+  // Fields from a switched-off rule are offered, not demanded (#7747 follow-up):
+  // the user can fill them in, or skip them and move anyway.
+  const hasOptional = requiredFields.some((f) => f.optional);
+  const allOptional = requiredFields.length > 0 && requiredFields.every((f) => f.optional);
+  // With nothing but optional fields, the main button means "with these
+  // values", so it waits for one; Skip is the way to move without them.
+  const canConfirm = requiredFilled && (!allOptional || requiredFields.some(isFilled));
 
   /**
    * Both ways out are shut while the write is away.
@@ -238,9 +253,11 @@ export default function RequiredFieldsDialog({
         {/* Body */}
         <div className="space-y-4 p-4">
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            {changing === 'state'
-              ? `${targetType} requires these before the ticket can move:`
-              : `The following fields are required for ${targetType} work items:`}
+            {allOptional
+              ? 'Add these now if you have them, or skip them and move the ticket:'
+              : changing === 'state'
+                ? `${targetType} requires these before the ticket can move:`
+                : `The following fields are required for ${targetType} work items:`}
           </p>
 
           {requiredFields.map((field, index) => {
@@ -260,7 +277,7 @@ export default function RequiredFieldsDialog({
                     className="mb-1 block text-xs uppercase"
                     style={{ color: 'var(--text-muted)' }}
                   >
-                    {field.name} *
+                    {fieldLabel(field)}
                   </label>
                   {members.length === 0 && membersLoading ? (
                     <div
@@ -359,7 +376,7 @@ export default function RequiredFieldsDialog({
                     className="mb-1 block text-xs uppercase"
                     style={{ color: 'var(--text-muted)' }}
                   >
-                    {field.name} *
+                    {fieldLabel(field)}
                   </label>
                   <select
                     id={inputId}
@@ -389,7 +406,7 @@ export default function RequiredFieldsDialog({
                     className="mb-1 block text-xs uppercase"
                     style={{ color: 'var(--text-muted)' }}
                   >
-                    {field.name} *
+                    {fieldLabel(field)}
                   </label>
                   <input
                     id={inputId}
@@ -410,7 +427,7 @@ export default function RequiredFieldsDialog({
                   className="mb-1 block text-xs uppercase"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  {field.name} *
+                  {fieldLabel(field)}
                 </label>
                 <input
                   id={inputId}
@@ -439,10 +456,21 @@ export default function RequiredFieldsDialog({
           >
             Cancel
           </button>
+          {hasOptional && (
+            <button
+              type="button"
+              onClick={() => onConfirm({ skipOptional: true })}
+              disabled={!requiredFilled || isUpdating}
+              className="rounded-md px-4 py-2 text-sm transition-colors hover:bg-[var(--surface-hover)] disabled:opacity-50"
+              style={{ color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+            >
+              {`Skip and ${verb.toLowerCase()}`}
+            </button>
+          )}
           <button
             type="button"
-            onClick={onConfirm}
-            disabled={!allFieldsFilled || isUpdating}
+            onClick={() => onConfirm()}
+            disabled={!canConfirm || isUpdating}
             className="btn-primary rounded-md px-4 py-2 text-sm disabled:opacity-50"
           >
             {isUpdating ? (

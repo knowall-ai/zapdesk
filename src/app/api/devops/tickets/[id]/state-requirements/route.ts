@@ -6,6 +6,7 @@ import { describeFields } from '@/lib/describe-fields';
 import {
   fieldHasValue,
   requiredFieldsForTransition,
+  suggestedFieldsForTransition,
   type ProcessRule,
 } from '@/lib/state-transition-rules';
 
@@ -22,6 +23,8 @@ import {
  * in neither.
  *
  * Answers `{ fields: [...] }`, empty when the transition needs nothing extra.
+ * A field marked `optional` comes from a "make required" rule that has been
+ * switched off: it is offered, and the move may go ahead without it.
  * `{ unavailable: true }` means the process rules could not be read -- they
  * need a permission an ordinary user may not have -- in which case the caller
  * should go ahead and let the server's own error speak, rather than block a
@@ -142,19 +145,23 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
     const rules = (await rulesResponse.json()) as { value?: ProcessRule[] };
 
-    const needed = requiredFieldsForTransition(rules.value ?? [], from, to, (field) =>
-      fieldHasValue(item.fields, field)
-    );
-    if (needed.length === 0) return NextResponse.json({ fields: [] });
+    const hasValue = (field: string) => fieldHasValue(item.fields, field);
+    const needed = requiredFieldsForTransition(rules.value ?? [], from, to, hasValue);
+    const suggested = suggestedFieldsForTransition(rules.value ?? [], from, to, hasValue);
+    if (needed.length === 0 && suggested.length === 0) return NextResponse.json({ fields: [] });
 
     // Describe each one well enough to draw a control for it: an identity
     // field wants a people picker, a date wants a date input.
-    const fields = await describeFields(needed, {
+    const described = await describeFields([...needed, ...suggested], {
       organization,
       project,
       workItemType: typeName,
       authHeaders,
     });
+    const offered = new Set(suggested);
+    const fields = described.map((field) =>
+      offered.has(field.referenceName) ? { ...field, optional: true } : field
+    );
 
     return NextResponse.json({ fields });
   } catch (error) {
