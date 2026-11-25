@@ -11,6 +11,7 @@ import { LoadingSpinner } from '@/components/common';
 import GitHubLabelNotice from '@/components/common/GitHubLabelNotice';
 import { TicketList } from '@/components/tickets';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
+import type { ApprovalUpdate } from '@/components/tickets/ApprovalField';
 import BoardStateChangeDialog from '@/components/tickets/BoardStateChangeDialog';
 import ZapDialog from '@/components/tickets/ZapDialog';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
@@ -503,6 +504,45 @@ function TicketsPageContent() {
     [tickets, selectedOrganization]
   );
 
+  // Approved By / Approved Date, from the details panel. The list row and the
+  // open dialog both take what DevOps saved.
+  const handleDialogApprovalChange = useCallback(
+    async (workItemId: number, update: ApprovalUpdate) => {
+      const ticket = findTicket(workItemId);
+      if (!ticket || !selectedOrganization) return;
+      try {
+        const response = await fetch(`/api/devops/tickets/${workItemId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-devops-org': selectedOrganization.accountName,
+          },
+          body: JSON.stringify({ ...update, project: ticket.project }),
+        });
+        if (!response.ok) {
+          throw new Error(await responseErrorMessage(response, 'the approval', 'update'));
+        }
+        const data = await response.json();
+        const updated: Ticket | undefined = data.ticket;
+        const applied = {
+          approvedBy: updated?.approvedBy,
+          approvedDate: updated?.approvedDate,
+        };
+        setTickets((prev) =>
+          prev.map((t) => (t.id === workItemId && t.source !== 'github' ? { ...t, ...applied } : t))
+        );
+        setSelectedTicket((prev) =>
+          prev && prev.id === workItemId ? { ...prev, ...applied } : prev
+        );
+        toast.success('Approval updated');
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to update approval');
+        throw error;
+      }
+    },
+    [findTicket, selectedOrganization]
+  );
+
   const handleDialogPriorityChange = useCallback(
     async (workItemId: number, priority: number) => {
       const ticket = findTicket(workItemId);
@@ -743,6 +783,7 @@ function TicketsPageContent() {
           onAssigneeChange={handleDialogAssigneeChange}
           onPriorityChange={handleDialogPriorityChange}
           onEffortChange={handleDialogEffortChange}
+          onApprovalChange={handleDialogApprovalChange}
           onTypeChange={handleDialogTypeChange}
           onTagsChange={handleDialogTagsChange}
           onUpdate={handleWorkItemUpdate}

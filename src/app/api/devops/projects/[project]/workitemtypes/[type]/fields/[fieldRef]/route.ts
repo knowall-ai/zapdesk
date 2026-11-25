@@ -24,6 +24,11 @@ export async function GET(
     return NextResponse.json(fieldData);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to fetch field info';
+    // A type without the field is an answer, not a failure: the details panel
+    // asks this of every type it shows, to see whether it has approval fields.
+    if (/not found/i.test(message)) {
+      return NextResponse.json({ error: 'Field not found on this type' }, { status: 404 });
+    }
     console.error('Error fetching field info:', message);
     return NextResponse.json({ error: message }, { status: 500 });
   }

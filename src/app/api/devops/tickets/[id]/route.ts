@@ -34,7 +34,27 @@ const PATCH_FIELDS = new Set([
   'workItemType',
   'completedWork',
   'remainingWork',
+  'approvedBy',
+  'approvedDate',
 ]);
+
+/** A calendar day, as a date input gives it. */
+const CALENDAR_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Longest identity string accepted for Approved By ("Name <email>"). */
+const MAX_IDENTITY_LENGTH = 512;
+
+/**
+ * Whether `value` names a real day, such as 2026-11-18.
+ *
+ * The pattern alone lets 2026-02-31 through, which DevOps would refuse with an
+ * error that names nothing useful.
+ */
+function isCalendarDay(value: string): boolean {
+  if (!CALENDAR_DAY.test(value)) return false;
+  const day = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(day.getTime()) && day.toISOString().slice(0, 10) === value;
+}
 
 /** Lowest priority DevOps uses: 1 is urgent, 4 is low. */
 const MAX_PRIORITY = 4;
@@ -241,6 +261,31 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Approval (set from the details panel). A string sets it, null clears it.
+    // Checked before the project lookup, so bad input costs no DevOps request.
+    if (
+      body.approvedBy !== undefined &&
+      body.approvedBy !== null &&
+      (typeof body.approvedBy !== 'string' ||
+        body.approvedBy.trim() === '' ||
+        body.approvedBy.length > MAX_IDENTITY_LENGTH)
+    ) {
+      return NextResponse.json(
+        { error: 'approvedBy must be a person, or null to clear it' },
+        { status: 400 }
+      );
+    }
+    if (
+      body.approvedDate !== undefined &&
+      body.approvedDate !== null &&
+      (typeof body.approvedDate !== 'string' || !isCalendarDay(body.approvedDate))
+    ) {
+      return NextResponse.json(
+        { error: 'approvedDate must be a day (YYYY-MM-DD), or null to clear it' },
+        { status: 400 }
+      );
+    }
+
     const {
       assignee,
       assignToMe,
@@ -254,6 +299,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       workItemType,
       completedWork,
       remainingWork,
+      approvedBy,
+      approvedDate,
     } = body;
 
     const organization = request.headers.get('x-devops-org') || undefined;
@@ -281,7 +328,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       workItemType?: string;
       completedWork?: number;
       remainingWork?: number;
+      approvedBy?: string | null;
+      approvedDate?: string | null;
     } = {};
+
+    if (approvedBy !== undefined) {
+      updates.approvedBy = approvedBy === null ? null : approvedBy.trim();
+    }
+    if (approvedDate !== undefined) updates.approvedDate = approvedDate;
 
     // Hours were checked above, before any DevOps lookup.
     if (completedWork !== undefined) updates.completedWork = completedWork;

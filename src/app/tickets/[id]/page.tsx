@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { TicketDetail } from '@/components/tickets';
+import type { ApprovalUpdate } from '@/components/tickets/ApprovalField';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { hasTicketTag } from '@/lib/tags';
@@ -411,6 +412,26 @@ export default function TicketDetailPage() {
     }
   };
 
+  const handleApprovalChange = async (update: ApprovalUpdate) => {
+    if (!ticket) return;
+    try {
+      const response = await fetch(`/api/devops/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: orgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ ...update, project: ticket.project }),
+      });
+      if (!response.ok) {
+        throw new Error(await responseErrorMessage(response, 'the approval', 'update'));
+      }
+      await fetchTicket();
+      toast.success('Approval updated');
+    } catch (error) {
+      console.error('Failed to update approval:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update approval');
+      throw error;
+    }
+  };
+
   const handleEffortChange = async (hours: EffortHoursUpdate) => {
     if (!ticket) return;
     try {
@@ -506,6 +527,7 @@ export default function TicketDetailPage() {
         onResolutionChange={handleResolutionChange}
         onMitigationChange={handleMitigationChange}
         onEffortChange={handleEffortChange}
+        onApprovalChange={handleApprovalChange}
         onUploadAttachment={handleUploadAttachment}
         onRefreshTicket={fetchTicket}
         onDelete={handleDelete}

@@ -20,7 +20,7 @@ import { useClickOutside } from '@/hooks';
 import { assigneeIdentity } from '@/lib/assignee';
 import { useCallback, useState } from 'react';
 import EffortHoursField from './EffortHoursField';
-import ApprovalDetails from './ApprovalDetails';
+import ApprovalField, { type ApprovalUpdate } from './ApprovalField';
 
 interface WorkItemDetailSidebarProps {
   workItem: WorkItem;
@@ -35,6 +35,8 @@ interface WorkItemDetailSidebarProps {
   onTagsChange?: (tags: string[]) => Promise<void>;
   /** Absent: effort hours are read-only. */
   onEffortChange?: (hours: EffortHoursUpdate) => Promise<void>;
+  /** Absent: Approved By and Approved Date are read-only. */
+  onApprovalChange?: (update: ApprovalUpdate) => Promise<void>;
 }
 
 const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
@@ -62,6 +64,7 @@ export default function WorkItemDetailSidebar({
   canEditTags = false,
   onTagsChange,
   onEffortChange,
+  onApprovalChange,
 }: WorkItemDetailSidebarProps) {
   const [newTag, setNewTag] = useState('');
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -377,6 +380,16 @@ export default function WorkItemDetailSidebar({
         </div>
       )}
 
+      {/* Approval, below Type: who approved it and when, editable when the
+          type has the fields. */}
+      <ApprovalField
+        project={workItem.project}
+        workItemType={workItem.workItemType}
+        approvedBy={workItem.approvedBy}
+        approvedDate={workItem.approvedDate}
+        onSave={onApprovalChange}
+      />
+
       {/* Project */}
       {workItem.project && (
         <div>
@@ -509,8 +522,6 @@ export default function WorkItemDetailSidebar({
           />
         </div>
       )}
-
-      <ApprovalDetails approvedBy={workItem.approvedBy} approvedDate={workItem.approvedDate} />
 
       {/* Dates */}
       <div>

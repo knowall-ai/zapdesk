@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import RequiredFieldsDialog, { isPeoplePickerField } from './RequiredFieldsDialog';
-import { matchingMembers } from '@/hooks/useWorkItemActions';
+import { matchingMembers, valuesToSend } from '@/hooks/useWorkItemActions';
 import type { BoardGet, PendingBoardStateChange } from '@/hooks/useBoardStateChange';
 import type { User } from '@/types';
 
@@ -112,9 +112,12 @@ function Fields({
     setValues((previous) => ({ ...previous, [fieldRef]: value }));
   }, []);
 
-  const handleConfirm = useCallback(async () => {
-    await onSubmit(values);
-  }, [onSubmit, values]);
+  const handleConfirm = useCallback(
+    async (options?: { skipOptional?: boolean }) => {
+      await onSubmit(valuesToSend(pending.fields, values, options?.skipOptional));
+    },
+    [onSubmit, values, pending.fields]
+  );
 
   return (
     <RequiredFieldsDialog

@@ -24,6 +24,7 @@ import { StandupSummaryCards, KanbanGroupSection } from '@/components/standup';
 import type { GroupActivity } from '@/components/standup/KanbanGroupSection';
 import type { PullRequestLoadState } from '@/components/standup/ActivitySummaryBar';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
+import type { ApprovalUpdate } from '@/components/tickets/ApprovalField';
 import BoardStateChangeDialog from '@/components/tickets/BoardStateChangeDialog';
 import { useDevOpsApi } from '@/hooks';
 import { useBoardStateChange } from '@/hooks/useBoardStateChange';
@@ -857,6 +858,22 @@ function StandupPageContent() {
     [patchTicket, selectedTicket]
   );
 
+  // Approved By / Approved Date, from the details panel. Through patchTicket,
+  // so the open dialog shows the saved values.
+  const handleDialogApprovalChange = useCallback(
+    async (workItemId: number, update: ApprovalUpdate) => {
+      const project = selectedTicket?.id === workItemId ? selectedTicket.project : undefined;
+      try {
+        await patchTicket(workItemId, { ...update, project });
+        toast.success('Approval updated');
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to update approval');
+        throw err;
+      }
+    },
+    [patchTicket, selectedTicket]
+  );
+
   const handleDialogPriorityChange = useCallback(
     async (workItemId: number, priority: number) => {
       const project = selectedTicket?.id === workItemId ? selectedTicket.project : undefined;
@@ -1483,6 +1500,7 @@ function StandupPageContent() {
           onAssigneeChange={handleDialogAssigneeChange}
           onPriorityChange={handleDialogPriorityChange}
           onEffortChange={handleDialogEffortChange}
+          onApprovalChange={handleDialogApprovalChange}
           onTypeChange={handleDialogTypeChange}
           onTagsChange={handleDialogTagsChange}
           onUpdate={handleDialogUpdate}

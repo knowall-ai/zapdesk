@@ -59,10 +59,14 @@ import FileIcon from '../common/FileIcon';
 import ZapDialog from './ZapDialog';
 import AttachmentList from './AttachmentList';
 import EffortHoursField from './EffortHoursField';
-import ApprovalDetails from './ApprovalDetails';
+import ApprovalField, { type ApprovalUpdate } from './ApprovalField';
 import TicketHistory from './TicketHistory';
 import RequiredFieldsDialog from './RequiredFieldsDialog';
-import { fetchStateRequirements, type RequiredField } from '@/hooks/useWorkItemActions';
+import {
+  fetchStateRequirements,
+  valuesToSend,
+  type RequiredField,
+} from '@/hooks/useWorkItemActions';
 import {
   getTemplateConfig,
   hasMitigationField,
@@ -93,6 +97,8 @@ interface TicketDetailProps {
   onResolutionChange?: (resolution: string) => Promise<void>;
   onMitigationChange?: (mitigation: string) => Promise<void>;
   onEffortChange?: (hours: EffortHoursUpdate) => Promise<void>;
+  /** Absent: Approved By and Approved Date are read-only. */
+  onApprovalChange?: (update: ApprovalUpdate) => Promise<void>;
   onUploadAttachment?: (file: File) => Promise<Attachment>;
   onRefreshTicket?: () => Promise<void>;
   // Move to DevOps Recycle Bin. Caller is responsible for navigation/refresh
@@ -132,6 +138,7 @@ export default function TicketDetail({
   onResolutionChange,
   onMitigationChange,
   onEffortChange,
+  onApprovalChange,
   onUploadAttachment,
   onRefreshTicket,
   onDelete,
@@ -473,11 +480,18 @@ export default function TicketDetail({
     }
   };
 
-  const handleConfirmPendingStateChange = async () => {
+  const handleConfirmPendingStateChange = async (options?: { skipOptional?: boolean }) => {
     if (!pendingStateChange || !onStateChange) return;
     setIsUpdatingState(true);
     try {
-      await onStateChange(pendingStateChange.state, pendingStateFieldValues);
+      await onStateChange(
+        pendingStateChange.state,
+        valuesToSend(
+          pendingStateChange.requiredFields,
+          pendingStateFieldValues,
+          options?.skipOptional
+        )
+      );
       setPendingStateChange(null);
       setPendingStateFieldValues({});
       setPendingStateMemberSearch('');
@@ -2099,6 +2113,16 @@ export default function TicketDetail({
               </div>
             )}
 
+            {/* Approval, below Type: who approved it and when, editable when
+                the type has the fields. */}
+            <ApprovalField
+              project={ticket.project}
+              workItemType={ticket.workItemType}
+              approvedBy={ticket.approvedBy}
+              approvedDate={ticket.approvedDate}
+              onSave={onApprovalChange}
+            />
+
             {/* Tags */}
             <div>
               <label
@@ -2214,8 +2238,6 @@ export default function TicketDetail({
                 onSave={onEffortChange}
               />
             </div>
-
-            <ApprovalDetails approvedBy={ticket.approvedBy} approvedDate={ticket.approvedDate} />
 
             {/* Dates */}
             <div>

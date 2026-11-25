@@ -2001,9 +2001,35 @@ export class AzureDevOpsService {
       workItemType?: string;
       completedWork?: number;
       remainingWork?: number;
+      /** "Name <email>" to set, null to clear. */
+      approvedBy?: string | null;
+      /** A day, YYYY-MM-DD, to set; null to clear. */
+      approvedDate?: string | null;
     }
   ): Promise<DevOpsWorkItem> {
     const patchDocument: Array<{ op: string; path: string; value: string | number | null }> = [];
+
+    // Approval, from the details panel. The day is stored as midnight UTC,
+    // which is how the state-change dialog's date input has always saved it,
+    // and how the panel reads it back.
+    if (updates.approvedBy !== undefined) {
+      patchDocument.push(
+        updates.approvedBy === null
+          ? { op: 'remove', path: '/fields/Custom.ApprovedBy', value: null }
+          : { op: 'add', path: '/fields/Custom.ApprovedBy', value: updates.approvedBy }
+      );
+    }
+    if (updates.approvedDate !== undefined) {
+      patchDocument.push(
+        updates.approvedDate === null
+          ? { op: 'remove', path: '/fields/Custom.ApprovedDate', value: null }
+          : {
+              op: 'add',
+              path: '/fields/Custom.ApprovedDate',
+              value: `${updates.approvedDate}T00:00:00Z`,
+            }
+      );
+    }
 
     // Time spent and remaining (#7728). 'add' sets the field whether or not it
     // already has a value.

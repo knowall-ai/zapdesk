@@ -15,6 +15,7 @@ import { fullViewHref } from '@/lib/full-view';
 import WorkItemDetailContent from './WorkItemDetailContent';
 import WorkItemDetailSidebar from './WorkItemDetailSidebar';
 import RequiredFieldsDialog from './RequiredFieldsDialog';
+import type { ApprovalUpdate } from './ApprovalField';
 
 interface WorkItemDetailDialogProps {
   workItem: WorkItem | null;
@@ -47,6 +48,8 @@ interface WorkItemDetailDialogProps {
    * it the hours are read-only.
    */
   onEffortChange?: (workItemId: number, hours: EffortHoursUpdate) => Promise<void>;
+  /** Save Approved By / Approved Date. Without it they are read-only. */
+  onApprovalChange?: (workItemId: number, update: ApprovalUpdate) => Promise<void>;
   onUpdate?: (
     workItemId: number,
     updates: { title?: string; description?: string; resolution?: string; mitigation?: string }
@@ -100,6 +103,7 @@ export default function WorkItemDetailDialog({
   onTypeChange,
   onTagsChange,
   onEffortChange,
+  onApprovalChange,
   onUpdate,
 }: WorkItemDetailDialogProps) {
   const router = useRouter();
@@ -566,6 +570,11 @@ export default function WorkItemDetailDialog({
         onEffortChange={
           onEffortChange && workItem.source !== 'github'
             ? (hours: EffortHoursUpdate) => onEffortChange(workItem.id, hours)
+            : undefined
+        }
+        onApprovalChange={
+          onApprovalChange && workItem.source !== 'github'
+            ? (update: ApprovalUpdate) => onApprovalChange(workItem.id, update)
             : undefined
         }
         actions={actions}

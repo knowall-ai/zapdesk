@@ -150,6 +150,45 @@ const HANDLED_BY_UI = new Set([
 ]);
 
 /**
+ * Fields that the live rules (`disabled` false) or the switched-off rules
+ * (`disabled` true) of this transition make required.
+ *
+ * Shared by {@link requiredFieldsForTransition} and
+ * {@link suggestedFieldsForTransition}, which differ only in which rules they
+ * read. Either way a field is left out when a live rule copies a value into
+ * it, because the process fills it.
+ */
+function transitionFields(
+  rules: readonly ProcessRule[],
+  from: string,
+  to: string,
+  hasValue: (referenceName: string) => boolean,
+  disabled: boolean
+): string[] {
+  const wanted = new Set<string>();
+  const filled = new Set<string>();
+
+  for (const rule of rules) {
+    if (!appliesToTransition(rule, from, to)) continue;
+    const switchedOff = rule.isDisabled === true;
+    for (const action of rule.actions ?? []) {
+      const target = action.targetField;
+      if (!target) continue;
+      const actionType = bare(action.actionType);
+      if (actionType === 'makeRequired') {
+        if (switchedOff === disabled) wanted.add(target);
+      } else if (actionType && SERVER_FILLS.has(actionType) && !switchedOff) {
+        filled.add(target);
+      }
+    }
+  }
+
+  return [...wanted]
+    .filter((field) => !HANDLED_BY_UI.has(field) && !filled.has(field) && !hasValue(field))
+    .sort();
+}
+
+/**
  * Field reference names this transition will require a value for.
  *
  * @param rules The work item type's process rules.
@@ -165,24 +204,30 @@ export function requiredFieldsForTransition(
   to: string,
   hasValue: (referenceName: string) => boolean
 ): string[] {
-  const required = new Set<string>();
-  const filled = new Set<string>();
+  return transitionFields(rules, from, to, hasValue, false);
+}
 
-  for (const rule of rules) {
-    if (rule.isDisabled) continue;
-    if (!appliesToTransition(rule, from, to)) continue;
-    for (const action of rule.actions ?? []) {
-      const target = action.targetField;
-      if (!target) continue;
-      const actionType = bare(action.actionType);
-      if (actionType === 'makeRequired') required.add(target);
-      else if (actionType && SERVER_FILLS.has(actionType)) filled.add(target);
-    }
-  }
-
-  return [...required]
-    .filter((field) => !HANDLED_BY_UI.has(field) && !filled.has(field) && !hasValue(field))
-    .sort();
+/**
+ * Fields worth offering on this transition, though nothing requires them.
+ *
+ * A switched-off "make required" rule still records which fields the process
+ * owner wanted on this move. Approval prompted this: the rule that demanded
+ * Approved By and Approved Date on leaving New was disabled so a ticket can
+ * move without them, but people still want to be offered them and be able to
+ * decline. Re-enabling the rule makes the fields required again; deleting it
+ * stops the offer.
+ *
+ * A field a live rule already requires is left to
+ * {@link requiredFieldsForTransition}, so no field is asked for twice.
+ */
+export function suggestedFieldsForTransition(
+  rules: readonly ProcessRule[],
+  from: string,
+  to: string,
+  hasValue: (referenceName: string) => boolean
+): string[] {
+  const required = new Set(requiredFieldsForTransition(rules, from, to, hasValue));
+  return transitionFields(rules, from, to, hasValue, true).filter((field) => !required.has(field));
 }
 
 /** Whether a work item field holds something. */
