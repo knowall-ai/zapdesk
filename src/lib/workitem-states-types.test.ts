@@ -82,16 +82,21 @@ describe('workitem-states types list', () => {
     }) as never);
 
     const pending = call(['Bug', 'Slow', 'Task']);
-    await vi.waitFor(() => expect(deadlines).toHaveLength(3));
-    expect(timeout).toHaveBeenCalledWith(7_000);
-    for (const deadline of deadlines) deadline.abort();
+    try {
+      await vi.waitFor(() => expect(deadlines).toHaveLength(3));
+      expect(timeout).toHaveBeenCalledWith(7_000);
+    } finally {
+      // Fired whatever happened above, so the hanging lookup settles and the
+      // real AbortSignal.timeout is back for the next test.
+      for (const deadline of deadlines) deadline.abort();
+      timeout.mockRestore();
+    }
     const response = await pending;
 
     expect(response.status).toBe(200);
     expect(
       (await response.json()).statesByType.map((t: { workItemType: string }) => t.workItemType)
     ).toEqual(['Bug', 'Task']);
-    timeout.mockRestore();
   });
 
   it('refuses 21 before looking up a project, when none is given', async () => {
