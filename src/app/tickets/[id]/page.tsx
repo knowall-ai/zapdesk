@@ -83,6 +83,11 @@ export default function TicketDetailPage() {
 
   const fetchTicket = useCallback(async () => {
     if (!selectedOrganization) return;
+    // A refresh for a ticket no longer on screen -- one a save started before
+    // an organisation switch -- stops before it touches anything shared.
+    // Bumping the sequence first would supersede the current ticket's fetch,
+    // and setting `loading` would leave Full View on its spinner.
+    if (currentLoadKeyRef.current !== loadKey) return;
     const seq = ++fetchSeqRef.current;
     // Newest, and still for the organisation and ticket on screen. A refresh
     // started after a save can finish after the user switched organisation;
