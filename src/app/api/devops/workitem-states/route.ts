@@ -5,6 +5,13 @@ import { requestDevOpsOrg } from '@/lib/devops-org';
 /** The most work item types `types` may name. */
 const MAX_TYPES = 20;
 
+/**
+ * How long one type's lookup may take, reading its answer included. Under the
+ * board's 10-second wait, so the types that did answer still reach it when
+ * one hangs (#687 review). A type that runs out of time is skipped.
+ */
+const STATE_LOOKUP_TIMEOUT_MS = 7_000;
+
 /** The query parameters this route understands; any other is refused. */
 const QUERY_KEYS = new Set(['type', 'types', 'project']);
 
@@ -113,6 +120,8 @@ export async function GET(request: NextRequest) {
                 Authorization: `Bearer ${session.accessToken}`,
                 'Content-Type': 'application/json',
               },
+              // Covers reading the body too: it is read under the same signal.
+              signal: AbortSignal.timeout(STATE_LOOKUP_TIMEOUT_MS),
             }
           );
           if (!statesResponse.ok) return null;

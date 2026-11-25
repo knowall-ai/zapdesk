@@ -63,6 +63,37 @@ describe('workitem-states types list', () => {
     ).toEqual(['Bug', 'Task', 'Issue']);
   });
 
+  // #687 review: one type that never answers must not hold back the others
+  // past the board's wait. Each lookup has its own deadline.
+  it('answers with the other types when one hangs past its deadline', async () => {
+    const deadlines: AbortController[] = [];
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => {
+      const controller = new AbortController();
+      deadlines.push(controller);
+      return controller.signal;
+    });
+    fetchMock.mockImplementation((async (url: string, init?: RequestInit) => {
+      if (!url.includes('/Slow/')) {
+        return new Response(JSON.stringify({ value: [{ name: 'New', category: 'Proposed' }] }));
+      }
+      return new Promise<Response>((_, reject) =>
+        init?.signal?.addEventListener('abort', () => reject(new Error('timed out')))
+      );
+    }) as never);
+
+    const pending = call(['Bug', 'Slow', 'Task']);
+    await vi.waitFor(() => expect(deadlines).toHaveLength(3));
+    expect(timeout).toHaveBeenCalledWith(7_000);
+    for (const deadline of deadlines) deadline.abort();
+    const response = await pending;
+
+    expect(response.status).toBe(200);
+    expect(
+      (await response.json()).statesByType.map((t: { workItemType: string }) => t.workItemType)
+    ).toEqual(['Bug', 'Task']);
+    timeout.mockRestore();
+  });
+
   it('refuses 21 before looking up a project, when none is given', async () => {
     const { GET } = await import('@/app/api/devops/workitem-states/route');
     const types = Array.from({ length: 21 }, (_, i) => `Type${i}`).join(',');
