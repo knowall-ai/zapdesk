@@ -22,7 +22,13 @@
  * strip case and everything that isn't alphanumeric.
  */
 export function normalizeStateName(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  // Letters and digits of any script are kept: stripping everything outside
+  // a-z0-9 turned every non-Latin name (未着手, 進行中) into "" and so made
+  // them all match one another (#687 review).
+  return name
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]/gu, '');
 }
 
 /** Project -> work item type -> the state names that type defines there. */
