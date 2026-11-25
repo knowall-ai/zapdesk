@@ -45,6 +45,12 @@ const CALENDAR_DAY = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_IDENTITY_LENGTH = 512;
 
 /**
+ * "Name <email>", the form the people picker sends and DevOps resolves to one
+ * person. A bare name can match several people, or nobody.
+ */
+const IDENTITY = /^[^<>]*[^<>\s][^<>]* <[^<>\s@]+@[^<>\s@]+>$/;
+
+/**
  * Whether `value` names a real day, such as 2026-11-18.
  *
  * The pattern alone lets 2026-02-31 through, which DevOps would refuse with an
@@ -267,11 +273,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       body.approvedBy !== undefined &&
       body.approvedBy !== null &&
       (typeof body.approvedBy !== 'string' ||
-        body.approvedBy.trim() === '' ||
-        body.approvedBy.length > MAX_IDENTITY_LENGTH)
+        body.approvedBy.length > MAX_IDENTITY_LENGTH ||
+        !IDENTITY.test(body.approvedBy.trim()))
     ) {
       return NextResponse.json(
-        { error: 'approvedBy must be a person, or null to clear it' },
+        { error: 'approvedBy must be "Name <email>", or null to clear it' },
         { status: 400 }
       );
     }

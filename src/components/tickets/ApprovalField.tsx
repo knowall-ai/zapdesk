@@ -18,6 +18,11 @@ export interface ApprovalUpdate {
 }
 
 interface ApprovalFieldProps {
+  /**
+   * The work item shown. A different item always gets a fresh editor, so a
+   * date typed for one ticket can never be saved to the next.
+   */
+  itemId: number | string;
   project?: string;
   workItemType?: string;
   approvedBy?: User;
@@ -28,6 +33,12 @@ interface ApprovalFieldProps {
 
 /** How long the field lookup and the members request may take. */
 const REQUEST_TIMEOUT_MS = 10_000;
+
+/** The longest the controls stay disabled waiting for a save. */
+const SAVE_BACKSTOP_MS = 30_000;
+
+/** How long a page gives the approval PATCH before giving up on it. */
+export const APPROVAL_SAVE_TIMEOUT_MS = 15_000;
 
 /**
  * Whether a work item type has the approval fields, per organisation, project
@@ -48,10 +59,16 @@ function typeHasApprovalFields(
     `/api/devops/projects/${encodeURIComponent(project)}/workitemtypes/${encodeURIComponent(workItemType)}/fields/${encodeURIComponent('Custom.ApprovedBy')}`,
     { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }
   )
-    .then((response) => response.ok)
+    .then((response) => {
+      if (response.ok) return true;
+      // Only a 404 says the type lacks the field. A 401, 429 or 503 says
+      // nothing about it, so it is not remembered and the next ticket asks
+      // again.
+      if (response.status !== 404) hasApprovalFields.delete(key);
+      return false;
+    })
     .catch(() => {
-      // A network failure says nothing about the type. Forget it, so the
-      // next ticket opened asks again.
+      // Nor does a network failure or a timeout.
       hasApprovalFields.delete(key);
       return false;
     });
@@ -85,6 +102,7 @@ function isPlausibleDay(value: string): boolean {
  * is nothing, unless a value is somehow set).
  */
 export default function ApprovalField({
+  itemId,
   project,
   workItemType,
   approvedBy,
@@ -122,9 +140,10 @@ export default function ApprovalField({
   }
   return (
     <Editor
-      // A new stored day starts a fresh draft, so a save, or another ticket,
-      // shows its own date rather than what was typed before.
-      key={storedDay(approvedDate)}
+      // Another ticket, or a new stored day, starts a fresh draft. Keyed by the
+      // day alone, two tickets approved on the same day shared one editor, and
+      // leaving the date field saved the first ticket's draft to the second.
+      key={`${organization ?? ''}|${itemId}|${storedDay(approvedDate)}`}
       project={project}
       approvedBy={approvedBy}
       approvedDate={approvedDate}
@@ -166,7 +185,6 @@ function Editor({
   useEffect(() => {
     if (!isOpen || members !== null) return;
     let current = true;
-    setMembersFailed(false);
     get(`/api/devops/projects/${encodeURIComponent(project)}/members`, {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
@@ -184,19 +202,41 @@ function Editor({
     };
   }, [isOpen, members, get, project]);
 
-  const filtered = useMemo(() => matchingMembers(members ?? [], search), [members, search]);
+  // Only people with an address: the route takes "Name <email>", which names
+  // one person, where a bare display name can match several or nobody.
+  const filtered = useMemo(
+    () => matchingMembers(members ?? [], search).filter((member) => !!member.email),
+    [members, search]
+  );
+
+  const toggle = () => {
+    // A failed load is retried by opening the picker again.
+    if (!isOpen) setMembersFailed(false);
+    setIsOpen(!isOpen);
+  };
 
   const save = useCallback(
     async (update: ApprovalUpdate) => {
       if (savingRef.current) return;
       savingRef.current = true;
       setIsSaving(true);
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        await onSave(update);
+        // A backstop: a save that never settles must not leave both controls
+        // disabled for good. The page bounds its own request; this bounds the
+        // wait here whatever the page does. The write may still land, and the
+        // page refreshes the ticket when it does.
+        await Promise.race([
+          onSave(update),
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, SAVE_BACKSTOP_MS);
+          }),
+        ]);
       } catch {
         // The page reports the failure; put the date back to what is stored.
         setDraftDay(day);
       } finally {
+        clearTimeout(timer);
         savingRef.current = false;
         setIsSaving(false);
       }
@@ -225,7 +265,7 @@ function Editor({
         </label>
         <button
           type="button"
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={toggle}
           disabled={isSaving}
           aria-haspopup="listbox"
           aria-expanded={isOpen}

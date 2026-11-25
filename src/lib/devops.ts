@@ -1672,7 +1672,13 @@ export class AzureDevOpsService {
     const response = await fetch(url, { headers: this.headers });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch field info: ${response.statusText}`);
+      // The status travels with the error: a type without the field is a
+      // 404, and callers tell that apart from a failure by the number, not
+      // by a status text that can be empty.
+      throw new DevOpsApiError(
+        response.status,
+        `Failed to fetch field info: ${response.statusText || response.status}`
+      );
     }
 
     const data = await response.json();

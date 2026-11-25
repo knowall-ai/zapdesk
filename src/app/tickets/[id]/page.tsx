@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { MainLayout } from '@/components/layout';
 import { LoadingSpinner } from '@/components/common';
 import { TicketDetail } from '@/components/tickets';
-import type { ApprovalUpdate } from '@/components/tickets/ApprovalField';
+import { APPROVAL_SAVE_TIMEOUT_MS, type ApprovalUpdate } from '@/components/tickets/ApprovalField';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
 import { useTicketCounts } from '@/components/providers/TicketCountsProvider';
 import { hasTicketTag } from '@/lib/tags';
@@ -69,6 +69,12 @@ export default function TicketDetailPage() {
     setLoading(true);
   }
 
+  // The organisation and ticket on screen now, for a fetch that finishes late.
+  const currentLoadKeyRef = useRef(loadKey);
+  useEffect(() => {
+    currentLoadKeyRef.current = loadKey;
+  }, [loadKey]);
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push(loginHref());
@@ -78,7 +84,11 @@ export default function TicketDetailPage() {
   const fetchTicket = useCallback(async () => {
     if (!selectedOrganization) return;
     const seq = ++fetchSeqRef.current;
-    const isLatest = () => seq === fetchSeqRef.current;
+    // Newest, and still for the organisation and ticket on screen. A refresh
+    // started after a save can finish after the user switched organisation;
+    // its answer is the old organisation's ticket and must not be shown under
+    // the new one.
+    const isLatest = () => seq === fetchSeqRef.current && currentLoadKeyRef.current === loadKey;
     if (loadedForRef.current !== loadKey) setLoading(true);
     // Track whether we kicked off a route-replace so the finally block knows
     // not to flip loading off — otherwise we render `null` (blank page) for
@@ -419,6 +429,7 @@ export default function TicketDetailPage() {
         method: 'PATCH',
         headers: orgHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ ...update, project: ticket.project }),
+        signal: AbortSignal.timeout(APPROVAL_SAVE_TIMEOUT_MS),
       });
       if (!response.ok) {
         throw new Error(await responseErrorMessage(response, 'the approval', 'update'));

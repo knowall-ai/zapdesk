@@ -24,7 +24,7 @@ import { StandupSummaryCards, KanbanGroupSection } from '@/components/standup';
 import type { GroupActivity } from '@/components/standup/KanbanGroupSection';
 import type { PullRequestLoadState } from '@/components/standup/ActivitySummaryBar';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
-import type { ApprovalUpdate } from '@/components/tickets/ApprovalField';
+import { APPROVAL_SAVE_TIMEOUT_MS, type ApprovalUpdate } from '@/components/tickets/ApprovalField';
 import BoardStateChangeDialog from '@/components/tickets/BoardStateChangeDialog';
 import { useDevOpsApi } from '@/hooks';
 import { useBoardStateChange } from '@/hooks/useBoardStateChange';
@@ -803,8 +803,8 @@ function StandupPageContent() {
   // Generic PATCH helper used by the dialog's assignee/priority/tags/update handlers.
   // The standup data refresh happens after the patch so the board stays in sync.
   const patchTicket = useCallback(
-    async (workItemId: number, body: Record<string, unknown>) => {
-      const response = await devOpsPatch(`/api/devops/tickets/${workItemId}`, body);
+    async (workItemId: number, body: Record<string, unknown>, signal?: AbortSignal) => {
+      const response = await devOpsPatch(`/api/devops/tickets/${workItemId}`, body, { signal });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to update work item');
@@ -864,7 +864,11 @@ function StandupPageContent() {
     async (workItemId: number, update: ApprovalUpdate) => {
       const project = selectedTicket?.id === workItemId ? selectedTicket.project : undefined;
       try {
-        await patchTicket(workItemId, { ...update, project });
+        await patchTicket(
+          workItemId,
+          { ...update, project },
+          AbortSignal.timeout(APPROVAL_SAVE_TIMEOUT_MS)
+        );
         toast.success('Approval updated');
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to update approval');

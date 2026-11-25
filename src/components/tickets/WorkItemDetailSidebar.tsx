@@ -383,6 +383,7 @@ export default function WorkItemDetailSidebar({
       {/* Approval, below Type: who approved it and when, editable when the
           type has the fields. */}
       <ApprovalField
+        itemId={workItem.id}
         project={workItem.project}
         workItemType={workItem.workItemType}
         approvedBy={workItem.approvedBy}

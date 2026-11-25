@@ -2116,6 +2116,7 @@ export default function TicketDetail({
             {/* Approval, below Type: who approved it and when, editable when
                 the type has the fields. */}
             <ApprovalField
+              itemId={ticket.id}
               project={ticket.project}
               workItemType={ticket.workItemType}
               approvedBy={ticket.approvedBy}

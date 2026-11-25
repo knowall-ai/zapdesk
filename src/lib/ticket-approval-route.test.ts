@@ -91,10 +91,19 @@ describe('PATCH /api/devops/tickets/[id] -- approval', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('refuses an empty approver', async () => {
-    const { status } = await patch({ project: 'Contoso', approvedBy: '   ' });
-
-    expect(status).toBe(400);
+  // #681 review: only "Name <email>" names one person.
+  it('refuses an approver that is not "Name <email>"', async () => {
+    for (const approvedBy of [
+      '   ',
+      'not-an-identity',
+      'Alex Morgan',
+      '<alex@example.com>',
+      'Alex <not an email>',
+      42,
+    ]) {
+      const { status } = await patch({ project: 'Contoso', approvedBy });
+      expect(status).toBe(400);
+    }
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

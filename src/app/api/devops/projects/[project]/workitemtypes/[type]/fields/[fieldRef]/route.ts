@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSessionWithToken } from '@/lib/server-session';
-import { AzureDevOpsService } from '@/lib/devops';
+import { AzureDevOpsService, DevOpsApiError } from '@/lib/devops';
 
 export async function GET(
   request: NextRequest,
@@ -26,7 +26,7 @@ export async function GET(
     const message = error instanceof Error ? error.message : 'Failed to fetch field info';
     // A type without the field is an answer, not a failure: the details panel
     // asks this of every type it shows, to see whether it has approval fields.
-    if (/not found/i.test(message)) {
+    if (error instanceof DevOpsApiError && error.status === 404) {
       return NextResponse.json({ error: 'Field not found on this type' }, { status: 404 });
     }
     console.error('Error fetching field info:', message);

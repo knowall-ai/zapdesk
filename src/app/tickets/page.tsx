@@ -11,7 +11,7 @@ import { LoadingSpinner } from '@/components/common';
 import GitHubLabelNotice from '@/components/common/GitHubLabelNotice';
 import { TicketList } from '@/components/tickets';
 import WorkItemDetailDialog from '@/components/tickets/WorkItemDetailDialog';
-import type { ApprovalUpdate } from '@/components/tickets/ApprovalField';
+import { APPROVAL_SAVE_TIMEOUT_MS, type ApprovalUpdate } from '@/components/tickets/ApprovalField';
 import BoardStateChangeDialog from '@/components/tickets/BoardStateChangeDialog';
 import ZapDialog from '@/components/tickets/ZapDialog';
 import { useOrganization } from '@/components/providers/OrganizationProvider';
@@ -506,23 +506,35 @@ function TicketsPageContent() {
 
   // Approved By / Approved Date, from the details panel. The list row and the
   // open dialog both take what DevOps saved.
+  // Read by a save when it completes, to see whether the organisation moved on.
+  const organizationRef = useRef(selectedOrganization?.accountName);
+  useEffect(() => {
+    organizationRef.current = selectedOrganization?.accountName;
+  }, [selectedOrganization?.accountName]);
+
   const handleDialogApprovalChange = useCallback(
     async (workItemId: number, update: ApprovalUpdate) => {
       const ticket = findTicket(workItemId);
       if (!ticket || !selectedOrganization) return;
+      // The organisation this save is for. The same id in another
+      // organisation is another item, so a result that comes back after a
+      // switch is not applied to anything on screen.
+      const organization = selectedOrganization.accountName;
       try {
         const response = await fetch(`/api/devops/tickets/${workItemId}`, {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
-            'x-devops-org': selectedOrganization.accountName,
+            'x-devops-org': organization,
           },
           body: JSON.stringify({ ...update, project: ticket.project }),
+          signal: AbortSignal.timeout(APPROVAL_SAVE_TIMEOUT_MS),
         });
         if (!response.ok) {
           throw new Error(await responseErrorMessage(response, 'the approval', 'update'));
         }
         const data = await response.json();
+        if (organizationRef.current !== organization) return;
         const updated: Ticket | undefined = data.ticket;
         const applied = {
           approvedBy: updated?.approvedBy,
