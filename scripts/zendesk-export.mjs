@@ -37,8 +37,23 @@ fs.mkdirSync(attDir, { recursive: true });
 
 // --- auth ------------------------------------------------------------------
 let token = null;
+/** A new read-only token, within its own deadline. */
 async function newToken() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60_000);
+  try {
+    token = await requestToken(controller.signal);
+  } catch (e) {
+    if (controller.signal.aborted) throw new Error('token request: no answer within 60s');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function requestToken(signal) {
   const r = await fetch(`${base}/oauth/tokens`, {
+    signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -51,7 +66,21 @@ async function newToken() {
   });
   const body = await r.json().catch(() => ({}));
   if (!r.ok || !body.access_token) throw new Error(`token request failed: HTTP ${r.status}`);
-  token = body.access_token;
+  return body.access_token;
+}
+
+/** The longest rate-limit wait honoured; a longer Retry-After stops the export instead. */
+const MAX_RETRY_WAIT_S = 120;
+
+/** Seconds to wait from a Retry-After header: whole seconds, 1 to MAX_RETRY_WAIT_S. */
+function retryWait(header) {
+  const value = String(header ?? '10').trim();
+  if (!/^d+$/.test(value)) return 10;
+  const seconds = Math.max(1, Number.parseInt(value, 10));
+  if (seconds > MAX_RETRY_WAIT_S) {
+    throw new Error(`Zendesk asks to wait ${seconds}s (rate limit); run the export again later`);
+  }
+  return seconds;
 }
 
 // The token only ever goes over HTTPS to Zendesk itself: the subdomain, or a
@@ -89,11 +118,13 @@ async function get(url, { raw = false } = {}) {
       }
       if (r.status === 401 && !renewed && sendsToken(target)) {
         renewed = true;
+        clearTimeout(timer); // renewal and backoff have deadlines of their own
         await newToken();
         continue;
       }
       if (r.status === 429) {
-        const wait = Number(r.headers.get('retry-after') ?? 10);
+        const wait = retryWait(r.headers.get('retry-after'));
+        clearTimeout(timer);
         await new Promise((res) => setTimeout(res, wait * 1000));
         continue;
       }
@@ -197,6 +228,8 @@ for (const t of live) {
         type: a.content_type,
         size: a.size,
         inline: Boolean(a.inline),
+        // Matches an inline picture to the <img> that shows it, at import.
+        url: a.content_url,
         saved,
         file: path.relative(outDir, file),
       });

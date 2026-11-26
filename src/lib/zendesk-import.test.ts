@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   assertSafeWrite,
+  attachmentKey,
   commentHeader,
   descriptionHeader,
   devopsPriority,
+  findImageSources,
   findZendeskImages,
   imageDownloadUrl,
   importTags,
@@ -257,5 +259,30 @@ describe('picture redirects', () => {
     expect(() =>
       redirectTarget('http://files.example-cdn.test/x', 'https://support.example.test/a')
     ).toThrow(/http:/);
+  });
+});
+
+describe('attachmentKey: one picture, whichever host serves it', () => {
+  it('matches the subdomain and the host-mapped domain by token', () => {
+    const a = attachmentKey('https://contoso.zendesk.com/attachments/token/Ab12/?name=image.png');
+    const b = attachmentKey(
+      'https://support.example.test/attachments/token/Ab12/?name=image.png&amp;x=1'
+    );
+    expect(a).toBe('token:Ab12');
+    expect(b).toBe(a);
+  });
+
+  it('keys any other URL by host and path, and ignores what is not a URL', () => {
+    expect(attachmentKey('https://CDN.example.test/a/b.png?sig=1')).toBe(
+      'cdn.example.test/a/b.png'
+    );
+    expect(attachmentKey('/relative.png')).toBeNull();
+  });
+
+  it('lists each img src once', () => {
+    expect(findImageSources('<img src="a"><p><img alt="x" src="b"><img src="a">')).toEqual([
+      'a',
+      'b',
+    ]);
   });
 });

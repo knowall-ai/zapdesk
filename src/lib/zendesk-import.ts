@@ -255,6 +255,28 @@ export function parseImportArgs(argv: string[]): ImportArgs {
   return { configFile, commit, ids: [...new Set(ids)] };
 }
 
+/** The src of every <img> in `html`, once each, as written. */
+export function findImageSources(html: string): string[] {
+  return [...new Set([...html.matchAll(/<img\b[^>]*?\bsrc="([^"]+)"/gi)].map((m) => m[1]))];
+}
+
+/**
+ * What identifies a Zendesk attachment across its URLs. The same file is
+ * served from the subdomain and from a host-mapped domain, and comment HTML
+ * may use either, but the `/attachments/token/<token>/` path is the same.
+ * Null for anything that isn't an absolute URL.
+ */
+export function attachmentKey(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url.replace(/&amp;/g, '&'));
+  } catch {
+    return null;
+  }
+  const token = parsed.pathname.match(/\/attachments\/token\/([^/]+)/);
+  return token ? `token:${token[1]}` : `${parsed.host.toLowerCase()}${parsed.pathname}`;
+}
+
 /** `html` with every `src="from"` pointing at `to` instead. */
 export function replaceImageSrc(html: string, from: string, to: string): string {
   return html.split(`src="${from}"`).join(`src="${escapeHtml(to)}"`);

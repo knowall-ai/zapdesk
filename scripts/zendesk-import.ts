@@ -27,6 +27,8 @@ import {
   commentHeader,
   commentHtml,
   descriptionHeader,
+  attachmentKey,
+  findImageSources,
   findZendeskImages,
   imageDownloadUrl,
   isConfiguredHost,
@@ -59,6 +61,8 @@ interface SavedAttachment {
   size: number;
   saved: string;
   file: string;
+  /** Where Zendesk served it: matches an inline picture to the img that shows it. */
+  url?: string;
   /** A picture pasted into the comment; those are relinked in place, not attached. */
   inline?: boolean;
 }
@@ -317,7 +321,19 @@ await assertNoHooks([...new Set(ready.map((p) => p.plan.project as string))]);
 for (const { ticket, plan } of ready) {
   const project = plan.project as string;
   const comments = commentsOf(ticket.id);
-  const files = attachments.filter((a) => a.ticket === ticket.id && !a.inline);
+  const saved = attachments.filter((a) => a.ticket === ticket.id);
+
+  // Every inline picture the export saved must end up in DevOps: relinked where
+  // a comment shows it, attached as a file where none does (#704 review).
+  const inline = saved.filter((a) => a.inline);
+  if (inline.some((a) => !a.url)) {
+    throw new Error(`#${ticket.id}: the export predates source URLs; export again`);
+  }
+  const inlineByKey = new Map(inline.map((a) => [attachmentKey(a.url as string), a]));
+  const shown = new Set(
+    comments.flatMap((c) => findImageSources(commentHtml(c)).map((src) => attachmentKey(src)))
+  );
+  const files = saved.filter((a) => !a.inline || !shown.has(attachmentKey(a.url as string)));
 
   const found = await alreadyImported(project, ticket.id);
   if (found.length > 1) {
@@ -336,18 +352,27 @@ for (const { ticket, plan } of ready) {
     );
   }
 
-  const missing = files.filter((a) => !fs.existsSync(path.join(config.exportDir, a.file)));
+  const missing = saved.filter(
+    (a) => a.saved !== 'yes' || !fs.existsSync(path.join(config.exportDir, a.file))
+  );
   if (missing.length) {
     throw new Error(`#${ticket.id}: ${missing.length} attachment(s) missing from the export`);
   }
 
-  // Inline pictures: downloaded either way, uploaded and relinked only on --commit.
+  // Inline pictures: the export's copy where there is one, whatever host the
+  // HTML names; otherwise downloaded from a configured Zendesk host. Uploaded
+  // and relinked only on --commit.
   let pictures = 0;
   const bodies: string[] = [];
   for (const comment of comments) {
     let html = commentHtml(comment);
-    for (const src of findZendeskImages(html, config.zendeskImageHosts)) {
-      const picture = await download(src);
+    const zendesk = new Set(findZendeskImages(html, config.zendeskImageHosts));
+    for (const src of findImageSources(html)) {
+      const copy = inlineByKey.get(attachmentKey(src));
+      if (!copy && !zendesk.has(src)) continue; // someone else's picture, left as it is
+      const picture = copy
+        ? { bytes: fs.readFileSync(path.join(config.exportDir, copy.file)), type: copy.type }
+        : await download(src);
       pictures++;
       if (commit) {
         const ext = picture.type.split('/')[1].split(/[;+]/)[0].replace('jpeg', 'jpg');
