@@ -5,9 +5,13 @@ import {
   descriptionHeader,
   devopsPriority,
   findZendeskImages,
+  imageDownloadUrl,
   importTags,
+  isConfiguredHost,
   isEmailTag,
+  parseImportArgs,
   planTicket,
+  redirectTarget,
   replaceImageSrc,
   type ImportConfig,
   type ZendeskTicket,
@@ -175,5 +179,83 @@ describe('headers', () => {
     expect(header).toBe(
       '<p><em>From Zendesk &middot; Alex Morgan &middot; 2025-03-02 08:30 UTC &middot; internal note</em></p>'
     );
+  });
+});
+
+describe('imageDownloadUrl: the token only goes to a configured host over HTTPS', () => {
+  const hosts = ['support.example.test'];
+
+  it('allows HTTPS to a configured host, decoding the HTML entity', () => {
+    expect(imageDownloadUrl('https://support.example.test/a/?name=x.png&amp;y=1', hosts)).toBe(
+      'https://support.example.test/a/?name=x.png&y=1'
+    );
+  });
+
+  it('refuses plain HTTP, even to a configured host', () => {
+    expect(() => imageDownloadUrl('http://support.example.test/a.png', hosts)).toThrow(/http:/);
+  });
+
+  it('refuses any other host', () => {
+    expect(() => imageDownloadUrl('https://elsewhere.example/a.png', hosts)).toThrow(
+      /unconfigured/
+    );
+  });
+});
+
+describe('parseImportArgs: strict, so a typo cannot turn a dry run into an import', () => {
+  it('reads a dry run and a commit', () => {
+    expect(parseImportArgs(['--config', 'c.json', '46', '21'])).toEqual({
+      configFile: 'c.json',
+      commit: false,
+      ids: [46, 21],
+    });
+    expect(parseImportArgs(['--commit', '--config', 'c.json', 'all'])).toEqual({
+      configFile: 'c.json',
+      commit: true,
+      ids: 'all',
+    });
+  });
+
+  it('rejects an unknown flag instead of ignoring it', () => {
+    expect(() => parseImportArgs(['--config', 'c.json', '--commit', '46', '--dry-run'])).toThrow(
+      /Unknown option --dry-run/
+    );
+  });
+
+  it('rejects malformed or out-of-range ids', () => {
+    for (const id of ['4.6', '0', '-1', '1e3', '046', 'abc', '999999999999']) {
+      expect(() => parseImportArgs(['--config', 'c.json', id])).toThrow();
+    }
+  });
+
+  it('needs a config and something to import, and does not mix all with ids', () => {
+    expect(() => parseImportArgs(['46'])).toThrow(/--config/);
+    expect(() => parseImportArgs(['--config'])).toThrow(/needs a file/);
+    expect(() => parseImportArgs(['--config', 'c.json'])).toThrow(/ticket ids/);
+    expect(() => parseImportArgs(['--config', 'c.json', 'all', '46'])).toThrow(/combined/);
+  });
+});
+
+describe('picture redirects', () => {
+  const hosts = ['support.example.test'];
+
+  it('only sends the token to a configured host', () => {
+    expect(isConfiguredHost('https://support.example.test/a', hosts)).toBe(true);
+    expect(isConfiguredHost('https://files.example-cdn.test/a', hosts)).toBe(false);
+  });
+
+  it('follows a redirect to the file host over HTTPS, resolving a relative one', () => {
+    expect(
+      redirectTarget('https://files.example-cdn.test/x?sig=1', 'https://support.example.test/a')
+    ).toBe('https://files.example-cdn.test/x?sig=1');
+    expect(redirectTarget('/b.png', 'https://support.example.test/a')).toBe(
+      'https://support.example.test/b.png'
+    );
+  });
+
+  it('refuses a redirect to plain HTTP', () => {
+    expect(() =>
+      redirectTarget('http://files.example-cdn.test/x', 'https://support.example.test/a')
+    ).toThrow(/http:/);
   });
 });

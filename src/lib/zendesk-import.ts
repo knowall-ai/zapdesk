@@ -169,6 +169,92 @@ export function findZendeskImages(html: string, hosts: string[]): string[] {
   return [...found];
 }
 
+/**
+ * The URL to fetch a found picture from, for a request that may carry the
+ * Zendesk token: HTTPS to a configured host only, so the token never travels
+ * in clear text or to anyone else (#704 review).
+ */
+export function imageDownloadUrl(src: string, hosts: string[]): string {
+  const url = new URL(src.replace(/&amp;/g, '&'));
+  if (url.protocol !== 'https:') {
+    throw new Error(`Refusing to fetch a picture over ${url.protocol} (${url.host})`);
+  }
+  if (!hosts.map((h) => h.toLowerCase()).includes(url.host.toLowerCase())) {
+    throw new Error(`Refusing to fetch a picture from an unconfigured host (${url.host})`);
+  }
+  return url.toString();
+}
+
+/** True when `url` is on one of the configured hosts: the only ones the token may go to. */
+export function isConfiguredHost(url: string, hosts: string[]): boolean {
+  const host = new URL(url).host.toLowerCase();
+  return hosts.some((h) => h.toLowerCase() === host);
+}
+
+/**
+ * Where a picture download's redirect leads. Zendesk sends it on to a
+ * pre-signed link on its file host; any host is followed, without the token
+ * unless it is configured (see isConfiguredHost), but only over HTTPS.
+ */
+export function redirectTarget(location: string, from: string): string {
+  const next = new URL(location, from);
+  if (next.protocol !== 'https:') {
+    throw new Error(`Refusing a picture redirect to ${next.protocol} (${next.host})`);
+  }
+  return next.toString();
+}
+
+export interface ImportArgs {
+  configFile: string;
+  commit: boolean;
+  /** Zendesk ticket ids, or 'all'. */
+  ids: number[] | 'all';
+}
+
+/** The largest Zendesk ticket id accepted; anything above is a typo. */
+export const MAX_ZENDESK_ID = 100_000_000;
+
+/**
+ * The import's command line, strictly: an unknown flag or a malformed id is an
+ * error, never ignored, since ignoring one could turn a dry run into a real
+ * import (#704 review).
+ */
+export function parseImportArgs(argv: string[]): ImportArgs {
+  let configFile: string | null = null;
+  let commit = false;
+  const rest: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--config') {
+      const value = argv[++i];
+      if (!value || value.startsWith('--')) throw new Error('--config needs a file');
+      if (configFile !== null) throw new Error('--config given twice');
+      configFile = value;
+    } else if (arg === '--commit') {
+      commit = true;
+    } else if (arg.startsWith('-')) {
+      throw new Error(`Unknown option ${arg}`);
+    } else {
+      rest.push(arg);
+    }
+  }
+  if (configFile === null) throw new Error('--config <file> is required');
+  if (rest.length === 0) throw new Error('Name the Zendesk ticket ids to import, or "all"');
+  if (rest.includes('all')) {
+    if (rest.length > 1) throw new Error('"all" cannot be combined with ticket ids');
+    return { configFile, commit, ids: 'all' };
+  }
+  const ids = rest.map((value) => {
+    if (!/^[1-9]\d*$/.test(value)) throw new Error(`Not a Zendesk ticket id: ${value}`);
+    const id = Number.parseInt(value, 10);
+    if (!Number.isSafeInteger(id) || id > MAX_ZENDESK_ID) {
+      throw new Error(`Not a Zendesk ticket id: ${value}`);
+    }
+    return id;
+  });
+  return { configFile, commit, ids: [...new Set(ids)] };
+}
+
 /** `html` with every `src="from"` pointing at `to` instead. */
 export function replaceImageSrc(html: string, from: string, to: string): string {
   return html.split(`src="${from}"`).join(`src="${escapeHtml(to)}"`);

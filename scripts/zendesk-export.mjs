@@ -54,33 +54,70 @@ async function newToken() {
   token = body.access_token;
 }
 
-/** GET with a bearer token; renews an expired token and waits out rate limits. */
+// The token only ever goes over HTTPS to Zendesk itself: the subdomain, or a
+// configured host-mapped domain. An attachment's content_url can point at an
+// external host, and Zendesk redirects downloads to pre-signed links on its file
+// host; neither gets the token (#704 review).
+const tokenHosts = new Set(
+  [new URL(base).host, ...(config.zendeskImageHosts ?? [])].map((h) => h.toLowerCase())
+);
+const sendsToken = (u) => u.protocol === 'https:' && tokenHosts.has(u.host.toLowerCase());
+
+/** A deadline covering the whole request, body included. */
+const DEADLINE_MS = 120_000;
+
+/**
+ * GET as JSON (or the raw bytes). Renews an expired token once and waits out
+ * rate limits, each counted on its own, and follows redirects by hand so each
+ * hop is HTTPS and only token hosts see the token.
+ */
 async function get(url, { raw = false } = {}) {
-  const full = url.startsWith('http') ? url : `${base}${url}`;
-  for (let attempt = 0; attempt < 6; attempt++) {
-    const r = await fetch(full, { headers: { Authorization: `Bearer ${token}` } });
-    if (r.status === 401 && attempt === 0) {
-      await newToken();
-      continue;
+  let target = new URL(url.startsWith('http') ? url : `${base}${url}`);
+  let renewed = false;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (target.protocol !== 'https:')
+      throw new Error(`refusing ${target.protocol} URL (${target.host})`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DEADLINE_MS);
+    try {
+      const headers = sendsToken(target) ? { Authorization: `Bearer ${token}` } : {};
+      const r = await fetch(target, { headers, redirect: 'manual', signal: controller.signal });
+      const location = r.headers.get('location');
+      if (r.status >= 300 && r.status < 400 && location) {
+        target = new URL(location, target);
+        continue;
+      }
+      if (r.status === 401 && !renewed && sendsToken(target)) {
+        renewed = true;
+        await newToken();
+        continue;
+      }
+      if (r.status === 429) {
+        const wait = Number(r.headers.get('retry-after') ?? 10);
+        await new Promise((res) => setTimeout(res, wait * 1000));
+        continue;
+      }
+      if (!r.ok) throw new Error(`GET ${target.host}${target.pathname} -> ${r.status}`);
+      return raw ? Buffer.from(await r.arrayBuffer()) : await r.json();
+    } catch (e) {
+      if (controller.signal.aborted)
+        throw new Error(`GET ${target.host}${target.pathname}: no answer in time`);
+      throw e;
+    } finally {
+      clearTimeout(timer);
     }
-    if (r.status === 429) {
-      const wait = Number(r.headers.get('retry-after') ?? 10);
-      await new Promise((res) => setTimeout(res, wait * 1000));
-      continue;
-    }
-    if (!r.ok) throw new Error(`GET ${full} -> ${r.status} ${(await r.text()).slice(0, 200)}`);
-    return raw ? r : r.json();
   }
-  throw new Error(`GET ${full} kept failing`);
+  throw new Error(`GET ${target.host}${target.pathname} kept failing`);
 }
 
+/** Every item of a list endpoint, by cursor pagination (offset paging stops at 10,000). */
 async function getAll(url, key) {
   const items = [];
   let next = url;
   while (next) {
     const page = await get(next);
     items.push(...(page[key] ?? []));
-    next = page.next_page ?? null;
+    next = page.meta?.has_more ? page.links?.next : null;
   }
   return items;
 }
@@ -108,11 +145,11 @@ for (;;) {
 }
 console.log(`tickets: ${tickets.length}`);
 
-const ticketFields = await getAll('/api/v2/ticket_fields.json', 'ticket_fields');
-for (const o of await getAll('/api/v2/organizations.json?per_page=100', 'organizations')) {
+const ticketFields = await getAll('/api/v2/ticket_fields.json?page[size]=100', 'ticket_fields');
+for (const o of await getAll('/api/v2/organizations.json?page[size]=100', 'organizations')) {
   orgs.set(o.id, o);
 }
-for (const g of await getAll('/api/v2/groups.json?per_page=100', 'groups')) groups.set(g.id, g);
+for (const g of await getAll('/api/v2/groups.json?page[size]=100', 'groups')) groups.set(g.id, g);
 
 const live = tickets.filter((t) => t.status !== 'deleted').sort((a, b) => a.id - b.id);
 
@@ -122,12 +159,12 @@ const attachments = [];
 let n = 0;
 for (const t of live) {
   const comments = [];
-  let next = `/api/v2/tickets/${t.id}/comments.json?include=users&per_page=100`;
+  let next = `/api/v2/tickets/${t.id}/comments.json?include=users&include_inline_images=true&page[size]=100`;
   while (next) {
     const page = await get(next);
     comments.push(...page.comments);
     for (const u of page.users ?? []) users.set(u.id, u);
-    next = page.next_page ?? null;
+    next = page.meta?.has_more ? page.links?.next : null;
   }
   commentsByTicket.set(t.id, comments);
   fs.writeFileSync(
@@ -142,10 +179,14 @@ for (const t of live) {
       const file = path.join(dir, safe);
       let saved = 'yes';
       if (!fs.existsSync(file)) {
+        // Written beside the final name and renamed once complete, so a failed
+        // download never leaves a partial file a rerun would take as done.
+        const partial = `${file}.partial`;
         try {
-          const r = await get(a.content_url, { raw: true });
-          fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
+          fs.writeFileSync(partial, await get(a.content_url, { raw: true }));
+          fs.renameSync(partial, file);
         } catch (e) {
+          fs.rmSync(partial, { force: true });
           saved = `failed: ${String(e.message).slice(0, 80)}`;
         }
       }
@@ -155,6 +196,7 @@ for (const t of live) {
         name: a.file_name,
         type: a.content_type,
         size: a.size,
+        inline: Boolean(a.inline),
         saved,
         file: path.relative(outDir, file),
       });
