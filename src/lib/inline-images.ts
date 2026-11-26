@@ -42,16 +42,58 @@ const EXTENSIONS: Record<string, string> = {
 
 /** An <img> tag. A `>` inside a quoted attribute (`alt="a > b"`) does not end it. */
 const IMG_TAG = /<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi;
-/** Its src attribute, when it is an inline image of a kind we store. */
-const INLINE_SRC =
-  /(\bsrc\s*=\s*)(["'])data:image\/(png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=\s]*)\2/i;
-const ALT = /\balt\s*=\s*(["'])([^"']*)\1/i;
+/**
+ * One attribute of a tag: a name, then an optional value, quoted or bare. A
+ * quoted value is consumed whole, so text inside one (an alt that mentions
+ * `src='data:…'`) is never read as an attribute of its own (#697 review).
+ */
+const ATTRIBUTE = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`]+)))?/g;
+/** A src value that is an inline image of a kind we store. */
+const INLINE_DATA = /^data:image\/(png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=\s]*)$/i;
+
+/** An inline image found in the HTML: where its src value sits, and what it holds. */
+interface InlineImage {
+  /** The src value's position in the HTML, quotes excluded. */
+  start: number;
+  end: number;
+  kind: string;
+  base64: string;
+  alt: string;
+}
+
+/** Every <img> whose own src attribute is an inline image, in document order. */
+function findInlineImages(html: string): InlineImage[] {
+  const found: InlineImage[] = [];
+  for (const tag of html.matchAll(IMG_TAG)) {
+    // Attributes start after "<img" and end before ">".
+    const offset = (tag.index ?? 0) + 4;
+    const inner = tag[0].slice(4, -1);
+    let src: { value: string; start: number; end: number } | null = null;
+    let alt = '';
+    for (const attr of inner.matchAll(ATTRIBUTE)) {
+      const name = attr[1].toLowerCase();
+      const quoted = attr[2] !== undefined || attr[3] !== undefined;
+      const value = attr[2] ?? attr[3] ?? attr[4] ?? '';
+      if (name === 'alt') alt = value;
+      // The first src wins, as it does in a browser.
+      if (name === 'src' && !src) {
+        const end = offset + (attr.index ?? 0) + attr[0].length - (quoted ? 1 : 0);
+        src = { value, start: end - value.length, end };
+      }
+    }
+    const data = src?.value.match(INLINE_DATA);
+    if (src && data) {
+      found.push({ start: src.start, end: src.end, kind: data[1], base64: data[2], alt });
+    }
+  }
+  return found;
+}
 
 /** A file name for the upload: the image's alt text when it looks like one, else a numbered one. */
-function fileNameFor(tag: string, kind: string, index: number): string {
+function fileNameFor(alt: string, kind: string, index: number): string {
   const ext = EXTENSIONS[kind.toLowerCase()];
-  const alt = tag.match(ALT)?.[2]?.trim() ?? '';
   const base = alt
+    .trim()
     .replace(/\.[a-z0-9]{1,5}$/i, '')
     .replace(/[^\w\- ]+/g, '')
     .trim()
@@ -69,37 +111,42 @@ export async function uploadInlineImages(
   project: string,
   uploader: AttachmentUploader
 ): Promise<string> {
-  const matches = [...html.matchAll(IMG_TAG)]
-    .map((tag) => ({ tag: tag[0], src: tag[0].match(INLINE_SRC) }))
-    .filter((m): m is { tag: string; src: RegExpMatchArray } => m.src !== null);
-  if (matches.length === 0) return html;
-  if (matches.length > MAX_INLINE_IMAGES) {
+  const images = findInlineImages(html);
+  if (images.length === 0) return html;
+  if (images.length > MAX_INLINE_IMAGES) {
     throw new InlineImageError(
       `At most ${MAX_INLINE_IMAGES} pasted images per description; attach the rest as files`,
       400
     );
   }
 
+  // Every image is checked before any is uploaded, so a refused request
+  // leaves no attachment behind (#697 review).
+  const decoded = images.map((image, index) => {
+    const bytes = Buffer.from(image.base64.replace(/\s+/g, ''), 'base64');
+    if (bytes.length === 0) {
+      throw new InlineImageError(`Pasted image ${index + 1} is empty`, 400);
+    }
+    if (bytes.length > MAX_INLINE_IMAGE_BYTES) {
+      throw new InlineImageError(
+        `Pasted image ${index + 1} is larger than ${MAX_INLINE_IMAGE_BYTES / 1024 / 1024} MB`,
+        400
+      );
+    }
+    return bytes;
+  });
+
   const urls = await Promise.all(
-    matches.map(async ({ tag, src }, index) => {
-      const [, , , kind, base64] = src;
-      const bytes = Buffer.from(base64.replace(/\s+/g, ''), 'base64');
-      if (bytes.length === 0) {
-        throw new InlineImageError(`Pasted image ${index + 1} is empty`, 400);
-      }
-      if (bytes.length > MAX_INLINE_IMAGE_BYTES) {
-        throw new InlineImageError(
-          `Pasted image ${index + 1} is larger than ${MAX_INLINE_IMAGE_BYTES / 1024 / 1024} MB`,
-          400
-        );
-      }
-      const fileName = fileNameFor(tag, kind, index);
+    images.map(async (image, index) => {
+      const bytes = decoded[index];
+      const kind = image.kind.toLowerCase();
+      const fileName = fileNameFor(image.alt, kind, index);
       try {
         const { url } = await uploader.uploadAttachment(
           project,
           fileName,
           bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-          `image/${kind.toLowerCase() === 'jpg' ? 'jpeg' : kind.toLowerCase()}`
+          `image/${kind === 'jpg' ? 'jpeg' : kind}`
         );
         return url;
       } catch (error) {
@@ -112,13 +159,13 @@ export async function uploadInlineImages(
     })
   );
 
-  let index = 0;
-  return html.replace(IMG_TAG, (tag) => {
-    if (!INLINE_SRC.test(tag)) return tag;
-    const url = urls[index++];
-    return tag.replace(
-      INLINE_SRC,
-      (_src, prefix: string, quote: string) => `${prefix}${quote}${url}${quote}`
-    );
+  // Rebuilt from the positions found above, so each URL replaces exactly the
+  // src value it was uploaded from.
+  let result = '';
+  let cursor = 0;
+  images.forEach((image, index) => {
+    result += html.slice(cursor, image.start) + urls[index];
+    cursor = image.end;
   });
+  return result + html.slice(cursor);
 }

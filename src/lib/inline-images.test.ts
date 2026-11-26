@@ -105,3 +105,45 @@ describe('uploadInlineImages: tags with a quoted ">"', () => {
     expect(devops.uploadAttachment.mock.calls[0]).toContain('expected  actual-1.png');
   });
 });
+
+describe('uploadInlineImages: the img own src, and checks before uploads', () => {
+  // #697 review: the first `src=` anywhere in the tag was taken, so an alt
+  // that mentions one hid the real src.
+  it('uploads the real src when the alt text contains a src= data URL', async () => {
+    const devops = uploader();
+    const decoy = `data:image/png;base64,${Buffer.from('decoy').toString('base64')}`;
+    const html = `<img alt="example > src='${decoy}'" src="data:image/png;base64,${PNG}">`;
+
+    const stored = await uploadInlineImages(html, 'Contoso', devops);
+
+    expect(stored).toBe(`<img alt="example > src='${decoy}'" src="${ATTACHMENT}">`);
+    expect(devops.uploadAttachment).toHaveBeenCalledTimes(1);
+    const bytes = (devops.uploadAttachment.mock.calls[0] as unknown[])[2] as ArrayBuffer;
+    expect(Buffer.from(bytes).toString()).toBe('fake png bytes');
+  });
+
+  it('does not take data-src for src', async () => {
+    const devops = uploader();
+    const html = `<img data-src="data:image/png;base64,${PNG}" src="${ATTACHMENT}">`;
+    expect(await uploadInlineImages(html, 'Contoso', devops)).toBe(html);
+    expect(devops.uploadAttachment).not.toHaveBeenCalled();
+  });
+
+  // #697 review: a bad second image must not leave the first one uploaded.
+  it('uploads nothing when a later image is refused', async () => {
+    const devops = uploader();
+    const html = `<img src="data:image/png;base64,${PNG}"><img src="data:image/png;base64,">`;
+    const error = await uploadInlineImages(html, 'Contoso', devops).catch((e) => e);
+    expect(error).toBeInstanceOf(InlineImageError);
+    expect(error.status).toBe(400);
+    expect(devops.uploadAttachment).not.toHaveBeenCalled();
+  });
+
+  it('handles unquoted and single-quoted src values', async () => {
+    const devops = uploader();
+    const html = `<img src=data:image/png;base64,${PNG} alt=x><img src='data:image/png;base64,${PNG}'>`;
+    expect(await uploadInlineImages(html, 'Contoso', devops)).toBe(
+      `<img src=${ATTACHMENT} alt=x><img src='${ATTACHMENT}'>`
+    );
+  });
+});
