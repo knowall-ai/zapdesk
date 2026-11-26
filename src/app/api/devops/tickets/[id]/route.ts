@@ -17,6 +17,7 @@ import {
 import type { TicketFieldChange } from '@/lib/email-templates';
 import { titleProblem } from '@/lib/ticket-title';
 import { updateFailureStatus } from '@/lib/devops-error';
+import { InlineImageError, uploadInlineImages } from '@/lib/inline-images';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -399,6 +400,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updates.mitigation = mitigation;
     }
 
+    // Pasted screenshots become DevOps attachments first: DevOps strips an
+    // inline data: image, and the picture was lost. Done after every check
+    // above, so a request that is refused uploads nothing (#697 review).
+    if (typeof updates.description === 'string') {
+      updates.description = await uploadInlineImages(
+        updates.description,
+        projectName,
+        devopsService
+      );
+    }
+
     // Snapshot what the customer can see before changing it, so they can be
     // told what changed (#7724). Only fetched when one of those fields moves.
     const customerVisibleChange = title !== undefined || priority !== undefined;
@@ -505,6 +517,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ ticket });
   } catch (error) {
     console.error('Error updating ticket:', error);
+    if (error instanceof InlineImageError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     // Say why, with a status the client can tell apart (#531): every refusal
     // used to come back as a 500, so a DevOps rule violation, an expired
     // token and a missing permission all reached the user as one "Failed to
