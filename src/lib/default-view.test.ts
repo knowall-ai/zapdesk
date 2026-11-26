@@ -56,6 +56,6 @@ describe('viewToShow', () => {
   it('uses the view asked for first, then the default, then all unsolved', () => {
     expect(viewToShow('pending', 'your-active')).toBe('pending');
     expect(viewToShow(null, 'your-active')).toBe('your-active');
-    expect(viewToShow(null, null)).toBe('all-unsolved');
+    expect(viewToShow(null, null)).toBe('all-active');
   });
 });

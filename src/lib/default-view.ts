@@ -25,8 +25,8 @@ export const DEFAULT_VIEW_IDS = [
 
 export type DefaultViewId = (typeof DEFAULT_VIEW_IDS)[number];
 
-/** The view the Tickets page opens on when none is asked for. */
-export const FALLBACK_VIEW = 'all-unsolved';
+/** The view the Tickets page opens on when none is asked for or starred. */
+export const FALLBACK_VIEW: DefaultViewId = 'all-active';
 
 export function isDefaultViewId(value: unknown): value is DefaultViewId {
   return typeof value === 'string' && (DEFAULT_VIEW_IDS as readonly string[]).includes(value);

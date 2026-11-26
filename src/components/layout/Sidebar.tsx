@@ -25,7 +25,12 @@ import {
   Star,
 } from 'lucide-react';
 import ZapDeskIcon from '@/components/common/ZapDeskIcon';
-import { isDefaultViewId, saveDefaultView, useDefaultView } from '@/lib/default-view';
+import {
+  FALLBACK_VIEW,
+  isDefaultViewId,
+  saveDefaultView,
+  useDefaultView,
+} from '@/lib/default-view';
 
 interface ViewItem {
   id: string;
@@ -131,7 +136,7 @@ export default function Sidebar({
     },
     {
       id: 'all-active',
-      name: 'All active tickets',
+      name: 'All tickets',
       icon: <AlertCircle size={16} />,
       href: '/tickets?view=all-active',
       count: counts.allActive,
@@ -264,10 +269,13 @@ export default function Sidebar({
               const currentSearch = searchParams.toString();
               const currentUrl = pathname + (currentSearch ? `?${currentSearch}` : '');
               const isDefault = defaultView === view.id;
-              // "/tickets" with no view shows the default, so that row is current too.
+              // "/tickets" with no view shows the starred view, or All tickets
+              // when none is starred, so that row is current too.
               const isActive =
                 currentUrl === view.href ||
-                (isDefault && pathname === '/tickets' && !searchParams.get('view'));
+                ((defaultView ?? FALLBACK_VIEW) === view.id &&
+                  pathname === '/tickets' &&
+                  !searchParams.get('view'));
               const starLabel = isDefault
                 ? `Stop opening "${view.name}" by default`
                 : `Open "${view.name}" by default`;
