@@ -15,10 +15,16 @@ vi.mock('sonner', () => ({ toast: { error: (m: string) => toastError(m) } }));
 
 /** The board's drop handler, captured from the drag context. */
 let onDragEnd: ((event: DragEndEvent) => void | Promise<void>) | undefined;
+/** Every drop target id the columns registered, in order. */
+const droppableIds: string[] = [];
 vi.mock('@dnd-kit/core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@dnd-kit/core')>();
   return {
     ...actual,
+    useDroppable: (args: Parameters<typeof actual.useDroppable>[0]) => {
+      droppableIds.push(String(args.id));
+      return actual.useDroppable(args);
+    },
     DndContext: (props: { children: React.ReactNode; onDragEnd?: typeof onDragEnd }) => {
       onDragEnd = props.onDragEnd;
       return <actual.DndContext>{props.children}</actual.DndContext>;
@@ -78,6 +84,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   toastError.mockReset();
   onDragEnd = undefined;
+  droppableIds.length = 0;
 });
 
 const drop = (id: number, column: string) =>
@@ -199,5 +206,37 @@ describe('Tickets board drop', () => {
     await drop(1, 'Closed');
 
     expect(onChange).toHaveBeenCalledWith(1, 'Closed', 'Fabrikam');
+  });
+
+  // Swim lanes (grouped by assignee): every lane draws every column. They all
+  // registered under the state name, dnd-kit kept one per name, and a lane's
+  // own empty column could not be dropped on.
+  it('gives each lane its own drop targets, and a drop on one moves the card', async () => {
+    const onChange = vi.fn(async () => {});
+    const mine = ticket(2, 'Contoso', 'Active');
+    const theirs = ticket(3, 'Contoso', 'New');
+    render(
+      <KanbanBoard
+        tickets={[mine, theirs]}
+        groupBy="assignee"
+        groupedItems={{ 'Alex Morgan': [mine], 'Sam Taylor': [theirs] } as never}
+        onTicketStateChange={onChange}
+        organization="Org"
+      />
+    );
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.length).toBeGreaterThanOrEqual(2));
+    await act(async () => {});
+
+    const lastRender = droppableIds.slice(-COLUMNS.length * 2);
+    expect(new Set(lastRender).size).toBe(COLUMNS.length * 2);
+
+    await act(async () => {
+      await onDragEnd?.({
+        active: { id: 2 },
+        over: { id: 'lane:Alex Morgan:New', data: { current: { columnState: 'New' } } },
+      } as unknown as DragEndEvent);
+    });
+
+    expect(onChange).toHaveBeenCalledWith(2, 'New', 'Contoso');
   });
 });

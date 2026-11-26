@@ -384,7 +384,11 @@ export default function KanbanBoard({
       let targetState: string | null = null;
 
       // Check if we're over a column (state name)
-      if (stateNames.includes(overId)) {
+      // A column carries its state; in swim lanes its id is the lane's own.
+      const overColumn = over.data?.current?.columnState as string | undefined;
+      if (overColumn !== undefined) {
+        targetState = overColumn;
+      } else if (stateNames.includes(overId)) {
         targetState = overId;
       } else {
         // We're over another item - find its state
@@ -441,7 +445,11 @@ export default function KanbanBoard({
       // Determine the target state
       let targetState: string | null = null;
 
-      if (stateNames.includes(overId)) {
+      // A column carries its state; in swim lanes its id is the lane's own.
+      const overColumn = over.data?.current?.columnState as string | undefined;
+      if (overColumn !== undefined) {
+        targetState = overColumn;
+      } else if (stateNames.includes(overId)) {
         targetState = overId;
       } else {
         const overItem = localItems.find((t) => t.id === Number(overId));
@@ -612,12 +620,13 @@ export default function KanbanBoard({
   }
 
   // Render columns for a set of items
-  const renderColumns = (stateItems: Record<string, KanbanItem[]>) => (
+  const renderColumns = (stateItems: Record<string, KanbanItem[]>, lane?: string) => (
     <div className="kanban-columns">
       {kanbanStates.map((state) => (
         <KanbanColumn
           key={state.name}
           stateName={state.name}
+          droppableId={lane === undefined ? undefined : `lane:${lane}:${state.name}`}
           stateColor={state.color}
           items={stateItems[state.name] || []}
           activeId={readOnly ? null : activeId}
@@ -659,7 +668,7 @@ export default function KanbanBoard({
                 {groupItems.length}
               </span>
             </div>
-            {renderColumns(laneItemsByState)}
+            {renderColumns(laneItemsByState, groupName)}
           </div>
         );
       })}
