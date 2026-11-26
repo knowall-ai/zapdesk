@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
           activeStatuses.includes(t.status) && t.assignee?.email?.toLowerCase() === currentUserEmail
       ).length,
       unassigned: tickets.filter((t) => activeStatuses.includes(t.status) && !t.assignee).length,
-      allActive: tickets.filter((t) => activeStatuses.includes(t.status)).length,
+      allActive: tickets.filter((t) => t.status !== 'Closed').length,
       recentlyUpdated: tickets.filter((t) => t.updatedAt >= sevenDaysAgo).length,
       createdToday: tickets.filter((t) => t.createdAt >= today).length,
       pending: tickets.filter((t) => t.status === 'Pending').length,

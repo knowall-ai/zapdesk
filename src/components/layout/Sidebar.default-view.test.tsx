@@ -28,7 +28,7 @@ describe('Sidebar: choosing the view that opens by default (#7729)', () => {
     for (const view of [
       'Your active tickets',
       'Unassigned tickets',
-      'All active tickets',
+      'All tickets',
       'Recently updated tickets',
       'Created today',
       'Pending tickets',
@@ -85,5 +85,22 @@ describe('Sidebar: choosing the view that opens by default (#7729)', () => {
     const heading = within(container).getByText('Views');
     const header = heading.parentElement as HTMLElement;
     expect(header.querySelectorAll('button')).toHaveLength(0);
+  });
+});
+
+describe('Sidebar: the view /tickets opens on with nothing starred', () => {
+  beforeEach(() => window.localStorage.clear());
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+  });
+
+  it('marks All tickets as the current view', () => {
+    render(<Sidebar />);
+    const row = screen.getByRole('link', { name: /All tickets/ });
+    expect(row.className).toContain('text-brand');
+    expect(screen.getByRole('link', { name: /Pending tickets/ }).className).not.toContain(
+      'text-brand'
+    );
   });
 });
