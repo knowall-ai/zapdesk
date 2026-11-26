@@ -136,7 +136,7 @@ export default function Sidebar({
     },
     {
       id: 'all-active',
-      name: 'All tickets',
+      name: 'All open tickets',
       icon: <AlertCircle size={16} />,
       href: '/tickets?view=all-active',
       count: counts.allActive,
@@ -269,7 +269,7 @@ export default function Sidebar({
               const currentSearch = searchParams.toString();
               const currentUrl = pathname + (currentSearch ? `?${currentSearch}` : '');
               const isDefault = defaultView === view.id;
-              // "/tickets" with no view shows the starred view, or All tickets
+              // "/tickets" with no view shows the starred view, or All open tickets
               // when none is starred, so that row is current too.
               const isActive =
                 currentUrl === view.href ||

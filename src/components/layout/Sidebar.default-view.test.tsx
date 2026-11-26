@@ -28,7 +28,7 @@ describe('Sidebar: choosing the view that opens by default (#7729)', () => {
     for (const view of [
       'Your active tickets',
       'Unassigned tickets',
-      'All tickets',
+      'All open tickets',
       'Recently updated tickets',
       'Created today',
       'Pending tickets',
@@ -95,9 +95,9 @@ describe('Sidebar: the view /tickets opens on with nothing starred', () => {
     window.localStorage.clear();
   });
 
-  it('marks All tickets as the current view', () => {
+  it('marks All open tickets as the current view', () => {
     render(<Sidebar />);
-    const row = screen.getByRole('link', { name: /All tickets/ });
+    const row = screen.getByRole('link', { name: /All open tickets/ });
     expect(row.className).toContain('text-brand');
     expect(screen.getByRole('link', { name: /Pending tickets/ }).className).not.toContain(
       'text-brand'
