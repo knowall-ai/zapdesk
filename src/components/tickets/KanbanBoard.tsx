@@ -5,7 +5,6 @@ import { toast } from 'sonner';
 import {
   DndContext,
   DragOverlay,
-  closestCorners,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -15,6 +14,7 @@ import {
   type DragOverEvent,
   type DragCancelEvent,
 } from '@dnd-kit/core';
+import { kanbanCollision } from '@/lib/kanban-collision';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import KanbanColumn from './KanbanColumn';
 import KanbanCard from './KanbanCard';
@@ -704,7 +704,7 @@ export default function KanbanBoard({
 
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={kanbanCollision}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}

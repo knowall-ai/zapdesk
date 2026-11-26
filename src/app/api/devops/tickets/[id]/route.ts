@@ -17,6 +17,7 @@ import {
 import type { TicketFieldChange } from '@/lib/email-templates';
 import { titleProblem } from '@/lib/ticket-title';
 import { updateFailureStatus } from '@/lib/devops-error';
+import { InlineImageError, uploadInlineImages } from '@/lib/inline-images';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -371,7 +372,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     if (description !== undefined) {
-      updates.description = description;
+      // Pasted screenshots become DevOps attachments first: DevOps strips an
+      // inline data: image, and the picture was lost.
+      updates.description =
+        typeof description === 'string'
+          ? await uploadInlineImages(description, projectName, devopsService)
+          : description;
     }
 
     if (tags !== undefined && Array.isArray(tags)) {
@@ -505,6 +511,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ ticket });
   } catch (error) {
     console.error('Error updating ticket:', error);
+    if (error instanceof InlineImageError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     // Say why, with a status the client can tell apart (#531): every refusal
     // used to come back as a 500, so a DevOps rule violation, an expired
     // token and a missing permission all reached the user as one "Failed to

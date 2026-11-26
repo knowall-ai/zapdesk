@@ -7,6 +7,7 @@ import { filterTicketsByView } from '@/lib/ticket-views';
 import { sendAssignmentNotification, sendNewTicketNotification } from '@/lib/email';
 import { supportTeamRecipients } from '@/lib/support-team';
 import { getTemplateConfig } from '@/config/process-templates';
+import { InlineImageError, uploadInlineImages } from '@/lib/inline-images';
 
 // TTL cache for state categories (avoids refetching on every request)
 let stateCategoryCacheData: {
@@ -253,10 +254,18 @@ export async function POST(request: NextRequest) {
         .defaultTicketType;
     }
 
+    // Pasted screenshots become DevOps attachments first: DevOps strips an
+    // inline data: image, and the picture was lost.
+    const storedDescription = await uploadInlineImages(
+      typeof description === 'string' ? description : '',
+      project,
+      devopsService
+    );
+
     const workItem = await devopsService.createTicketWithAssignee(
       project,
       title,
-      description || '',
+      storedDescription,
       {
         priority,
         tags: allTags,
@@ -329,6 +338,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ticket, success: true });
   } catch (error) {
     console.error('Error creating ticket:', error);
+    if (error instanceof InlineImageError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     const errorMessage = error instanceof Error ? error.message : 'Failed to create ticket';
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
