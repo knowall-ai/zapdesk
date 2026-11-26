@@ -20,7 +20,7 @@ export function filterTicketsByView(
     case 'unassigned':
       return tickets.filter((t) => !t.assignee && activeStatuses.includes(t.status));
 
-    // "All tickets": everything still open in any way -- Pending and Resolved
+    // "All open tickets": everything still open in any way -- Pending and Resolved
     // included -- so only Closed (and Removed, which maps to Closed) drop out.
     case 'all-active':
       return tickets.filter((t) => t.status !== 'Closed');

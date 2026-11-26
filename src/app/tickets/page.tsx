@@ -45,7 +45,7 @@ function reviveTicketDates(tickets: TicketJson[]): Ticket[] {
 const viewTitles: Record<string, string> = {
   'your-active': 'Your active tickets',
   unassigned: 'Unassigned tickets',
-  'all-active': 'All tickets',
+  'all-active': 'All open tickets',
   'recently-updated': 'Recently updated tickets',
   'created-today': 'Created today',
   pending: 'Pending tickets',

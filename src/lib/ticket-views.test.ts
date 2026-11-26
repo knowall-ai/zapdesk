@@ -9,7 +9,7 @@ const STATUSES: TicketStatus[] = ['New', 'Open', 'In Progress', 'Pending', 'Reso
 const tickets = STATUSES.map((s, i) => ticket(i + 1, s));
 const statuses = (view: string) => filterTicketsByView(tickets, view).map((t) => t.status);
 
-describe('All tickets view', () => {
+describe('All open tickets view', () => {
   // Pending tickets only showed under "Recently updated" before: the view
   // left out everything past In Progress.
   it('shows every ticket that is not Closed, Pending and Resolved included', () => {
