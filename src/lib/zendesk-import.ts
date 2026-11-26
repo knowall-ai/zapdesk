@@ -157,16 +157,13 @@ export function commentHtml(comment: ZendeskComment): string {
  */
 export function findZendeskImages(html: string, hosts: string[]): string[] {
   const wanted = new Set(hosts.map((h) => h.toLowerCase()));
-  const found = new Set<string>();
-  for (const match of html.matchAll(/<img\b[^>]*?\bsrc="([^"]+)"/gi)) {
+  return findImageSources(html).filter((src) => {
     try {
-      const host = new URL(match[1].replace(/&amp;/g, '&')).host.toLowerCase();
-      if (wanted.has(host)) found.add(match[1]);
+      return wanted.has(new URL(src.replace(/&amp;/g, '&')).host.toLowerCase());
     } catch {
-      // A relative or broken src is not a Zendesk picture.
+      return false; // A relative or broken src is not a Zendesk picture.
     }
-  }
-  return [...found];
+  });
 }
 
 /**
@@ -255,9 +252,40 @@ export function parseImportArgs(argv: string[]): ImportArgs {
   return { configFile, commit, ids: [...new Set(ids)] };
 }
 
-/** The src of every <img> in `html`, once each, as written. */
+/**
+ * The src of every <img> in `html`, once each, as written. The attribute must
+ * be `src` itself: whitespace before it, so `data-src` doesn't count (#704 review).
+ */
 export function findImageSources(html: string): string[] {
-  return [...new Set([...html.matchAll(/<img\b[^>]*?\bsrc="([^"]+)"/gi)].map((m) => m[1]))];
+  return [...new Set([...html.matchAll(/<img\b[^>]*?\ssrc="([^"]+)"/gi)].map((m) => m[1]))];
+}
+
+export interface SavedPicture {
+  inline?: boolean;
+  url?: string;
+}
+
+/**
+ * How a ticket's saved attachments come across. An inline picture that a
+ * comment shows is relinked from `byKey`; every other attachment, including an
+ * inline picture no comment shows or one whose URL can't be keyed, is attached
+ * as a file, so none is lost. Only absolute URLs ever match (#704 review).
+ */
+export function sortAttachments<T extends SavedPicture>(
+  saved: T[],
+  htmls: string[]
+): { byKey: Map<string, T>; files: T[] } {
+  const shown = new Set(
+    htmls.flatMap((html) => findImageSources(html).map(attachmentKey)).filter((k) => k !== null)
+  );
+  const byKey = new Map<string, T>();
+  const files: T[] = [];
+  for (const a of saved) {
+    const key = a.inline && a.url ? attachmentKey(a.url) : null;
+    if (key !== null && shown.has(key) && !byKey.has(key)) byKey.set(key, a);
+    else files.push(a);
+  }
+  return { byKey, files };
 }
 
 /**

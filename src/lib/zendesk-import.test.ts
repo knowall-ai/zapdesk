@@ -15,6 +15,7 @@ import {
   planTicket,
   redirectTarget,
   replaceImageSrc,
+  sortAttachments,
   type ImportConfig,
   type ZendeskTicket,
   type ZendeskUser,
@@ -284,5 +285,50 @@ describe('attachmentKey: one picture, whichever host serves it', () => {
       'a',
       'b',
     ]);
+  });
+});
+
+describe('findImageSources reads src itself', () => {
+  it('does not take data-src for src', () => {
+    expect(findImageSources('<img data-src="preview.png" src="original.png">')).toEqual([
+      'original.png',
+    ]);
+    expect(
+      findZendeskImages(
+        '<img data-src="https://support.example.test/a" src="x.png">',
+        config.zendeskImageHosts
+      )
+    ).toEqual([]);
+  });
+});
+
+describe('sortAttachments: every saved picture ends up somewhere', () => {
+  const shownUrl = 'https://contoso.zendesk.com/attachments/token/Shown/?name=a.png';
+  const html =
+    '<img src="https://support.example.test/attachments/token/Shown/?name=a.png"><img src="/relative.png">';
+
+  it('relinks an inline picture a comment shows, and attaches the rest', () => {
+    const shown = { id: 1, inline: true, url: shownUrl };
+    const unshown = {
+      id: 2,
+      inline: true,
+      url: 'https://contoso.zendesk.com/attachments/token/Hidden/',
+    };
+    const file = {
+      id: 3,
+      inline: false,
+      url: 'https://contoso.zendesk.com/attachments/token/File/',
+    };
+    const { byKey, files } = sortAttachments([shown, unshown, file], [html]);
+    expect([...byKey.values()]).toEqual([shown]);
+    expect(files).toEqual([unshown, file]);
+  });
+
+  it('attaches inline pictures with relative URLs, and never matches them to a relative src', () => {
+    const a = { id: 1, inline: true, url: '/relative.png' };
+    const b = { id: 2, inline: true, url: 'other/relative.png' };
+    const { byKey, files } = sortAttachments([a, b], [html]);
+    expect(byKey.size).toBe(0);
+    expect(files).toEqual([a, b]);
   });
 });

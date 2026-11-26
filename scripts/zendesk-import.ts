@@ -36,6 +36,7 @@ import {
   planTicket,
   redirectTarget,
   replaceImageSrc,
+  sortAttachments,
   sourceTag,
   type ImportConfig,
   type JsonPatchOp,
@@ -325,15 +326,10 @@ for (const { ticket, plan } of ready) {
 
   // Every inline picture the export saved must end up in DevOps: relinked where
   // a comment shows it, attached as a file where none does (#704 review).
-  const inline = saved.filter((a) => a.inline);
-  if (inline.some((a) => !a.url)) {
+  if (saved.some((a) => a.inline && !a.url)) {
     throw new Error(`#${ticket.id}: the export predates source URLs; export again`);
   }
-  const inlineByKey = new Map(inline.map((a) => [attachmentKey(a.url as string), a]));
-  const shown = new Set(
-    comments.flatMap((c) => findImageSources(commentHtml(c)).map((src) => attachmentKey(src)))
-  );
-  const files = saved.filter((a) => !a.inline || !shown.has(attachmentKey(a.url as string)));
+  const { byKey: inlineByKey, files } = sortAttachments(saved, comments.map(commentHtml));
 
   const found = await alreadyImported(project, ticket.id);
   if (found.length > 1) {
@@ -368,7 +364,8 @@ for (const { ticket, plan } of ready) {
     let html = commentHtml(comment);
     const zendesk = new Set(findZendeskImages(html, config.zendeskImageHosts));
     for (const src of findImageSources(html)) {
-      const copy = inlineByKey.get(attachmentKey(src));
+      const key = attachmentKey(src);
+      const copy = key === null ? undefined : inlineByKey.get(key);
       if (!copy && !zendesk.has(src)) continue; // someone else's picture, left as it is
       const picture = copy
         ? { bytes: fs.readFileSync(path.join(config.exportDir, copy.file)), type: copy.type }

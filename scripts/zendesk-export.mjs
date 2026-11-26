@@ -75,7 +75,7 @@ const MAX_RETRY_WAIT_S = 120;
 /** Seconds to wait from a Retry-After header: whole seconds, 1 to MAX_RETRY_WAIT_S. */
 function retryWait(header) {
   const value = String(header ?? '10').trim();
-  if (!/^d+$/.test(value)) return 10;
+  if (!/^\d+$/.test(value)) return 10;
   const seconds = Math.max(1, Number.parseInt(value, 10));
   if (seconds > MAX_RETRY_WAIT_S) {
     throw new Error(`Zendesk asks to wait ${seconds}s (rate limit); run the export again later`);
