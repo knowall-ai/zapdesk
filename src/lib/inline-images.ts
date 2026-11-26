@@ -40,8 +40,8 @@ const EXTENSIONS: Record<string, string> = {
   webp: 'webp',
 };
 
-/** An <img> tag. */
-const IMG_TAG = /<img\b[^>]*>/gi;
+/** An <img> tag. A `>` inside a quoted attribute (`alt="a > b"`) does not end it. */
+const IMG_TAG = /<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi;
 /** Its src attribute, when it is an inline image of a kind we store. */
 const INLINE_SRC =
   /(\bsrc\s*=\s*)(["'])data:image\/(png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=\s]*)\2/i;

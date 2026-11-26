@@ -91,3 +91,17 @@ describe('uploadInlineImages', () => {
     expect(devops.uploadAttachment).not.toHaveBeenCalled();
   });
 });
+
+describe('uploadInlineImages: tags with a quoted ">"', () => {
+  // #697 review: `[^>]*` ended the tag inside the alt text, and the image was
+  // left inline for DevOps to strip.
+  it('still finds the image when an attribute before src contains ">"', async () => {
+    const devops = uploader();
+    const html = `<img alt="expected > actual" src="data:image/png;base64,${PNG}">`;
+
+    const stored = await uploadInlineImages(html, 'Contoso', devops);
+
+    expect(stored).toBe(`<img alt="expected > actual" src="${ATTACHMENT}">`);
+    expect(devops.uploadAttachment.mock.calls[0]).toContain('expected  actual-1.png');
+  });
+});

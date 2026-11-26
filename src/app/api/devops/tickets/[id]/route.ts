@@ -372,12 +372,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     if (description !== undefined) {
-      // Pasted screenshots become DevOps attachments first: DevOps strips an
-      // inline data: image, and the picture was lost.
-      updates.description =
-        typeof description === 'string'
-          ? await uploadInlineImages(description, projectName, devopsService)
-          : description;
+      updates.description = description;
     }
 
     if (tags !== undefined && Array.isArray(tags)) {
@@ -403,6 +398,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (mitigation !== undefined) {
       updates.mitigation = mitigation;
+    }
+
+    // Pasted screenshots become DevOps attachments first: DevOps strips an
+    // inline data: image, and the picture was lost. Done after every check
+    // above, so a request that is refused uploads nothing (#697 review).
+    if (typeof updates.description === 'string') {
+      updates.description = await uploadInlineImages(
+        updates.description,
+        projectName,
+        devopsService
+      );
     }
 
     // Snapshot what the customer can see before changing it, so they can be
