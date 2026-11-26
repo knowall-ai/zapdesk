@@ -11,6 +11,13 @@ type KanbanItem = Ticket | WorkItem;
 
 interface KanbanColumnProps {
   stateName: string; // DevOps state name (e.g., 'New', 'Approved', 'In Progress')
+  /**
+   * The drop target's id, when the state name alone is not unique on the
+   * board: each swim lane draws every column, and dnd-kit keeps one target
+   * per id, so a lane's own empty column could not be dropped on. Defaults
+   * to the state name. The state travels in the target's data either way.
+   */
+  droppableId?: string;
   stateColor?: string; // Hex color from DevOps (without #)
   items: KanbanItem[];
   activeId?: number | null;
@@ -23,6 +30,7 @@ interface KanbanColumnProps {
 
 export default function KanbanColumn({
   stateName,
+  droppableId,
   stateColor,
   items,
   activeId,
@@ -36,7 +44,8 @@ export default function KanbanColumn({
 
   // Only use droppable in interactive mode
   const { setNodeRef, isOver } = useDroppable({
-    id: stateName,
+    id: droppableId ?? stateName,
+    data: { columnState: stateName },
     disabled: readOnly,
   });
 
