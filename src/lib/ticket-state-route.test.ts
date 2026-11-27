@@ -14,10 +14,12 @@ vi.mock('@/lib/server-session', () => ({
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
 const sendStatusChangeNotification = vi.fn();
+const isEmailConfigured = vi.fn(() => true);
 vi.mock('@/lib/email', async () => {
   const actual = await vi.importActual<typeof import('./email')>('./email');
   return {
     ...actual,
+    isEmailConfigured: () => isEmailConfigured(),
     sendStatusChangeNotification: (...args: unknown[]) => sendStatusChangeNotification(...args),
   };
 });
@@ -25,6 +27,7 @@ vi.mock('@/lib/email', async () => {
 const getWorkItem = vi.fn();
 const getProjects = vi.fn();
 const updateTicketState = vi.fn();
+const getOriginalTitle = vi.fn<(...args: unknown[]) => Promise<string | null>>(async () => null);
 vi.mock('@/lib/devops', async () => {
   const actual = await vi.importActual<typeof import('./devops')>('./devops');
   return {
@@ -33,6 +36,7 @@ vi.mock('@/lib/devops', async () => {
       getWorkItem = getWorkItem;
       getProjects = getProjects;
       updateTicketState = updateTicketState;
+      getOriginalTitle = getOriginalTitle;
     },
   };
 });
@@ -77,6 +81,7 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     getServerSession.mockResolvedValue({ accessToken: 'token' });
     sendStatusChangeNotification.mockResolvedValue(undefined);
+    isEmailConfigured.mockReturnValue(true);
     getProjects.mockResolvedValue([{ id: 'p1', name: 'Internal' }]);
     getWorkItem.mockResolvedValue(workItem(42, 'Active'));
     updateTicketState.mockImplementation(async (_p: string, id: number, state: string) =>
@@ -263,7 +268,7 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
 
       expect(sendStatusChangeNotification).toHaveBeenCalledWith(
         42,
-        'Printer offline',
+        { thread: 'Printer offline', current: 'Printer offline' },
         'requester@example.test',
         'Active',
         'Resolved',
@@ -299,7 +304,7 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
 
       expect(sendStatusChangeNotification).toHaveBeenCalledWith(
         42,
-        'Printer offline',
+        { thread: 'Printer offline', current: 'Printer offline' },
         'requester@example.test',
         'Active',
         expect.any(String),
@@ -364,7 +369,7 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
       expect(sendStatusChangeNotification).toHaveBeenCalledTimes(1);
       expect(sendStatusChangeNotification).toHaveBeenCalledWith(
         42,
-        'Printer offline',
+        { thread: 'Printer offline', current: 'Printer offline' },
         'requester@example.test',
         'Active',
         'Resolved',
@@ -405,7 +410,7 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
 
         expect(sendStatusChangeNotification).toHaveBeenCalledWith(
           42,
-          'Printer offline',
+          { thread: 'Printer offline', current: 'Printer offline' },
           'requester@example.test',
           'New',
           state,
@@ -426,7 +431,7 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
 
       expect(sendStatusChangeNotification).toHaveBeenCalledWith(
         42,
-        'Printer offline',
+        { thread: 'Printer offline', current: 'Printer offline' },
         'requester@example.test',
         'Active',
         'Resolved',
@@ -434,6 +439,120 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
         undefined,
         'Internal'
       );
+    });
+
+    // Customer mail threads by subject, so a status change after a rename
+    // keeps the subject the conversation started under, as the title and
+    // priority mails do; the body still shows the title as it now is.
+    it.each(['Active', 'Resolved', 'Closed'])(
+      'keeps the original subject for %s after the ticket was renamed',
+      async (state) => {
+        getWorkItem.mockResolvedValue(workItem(42, 'New', EMAIL_TAGS));
+        updateTicketState.mockResolvedValue(workItem(42, state, EMAIL_TAGS));
+        getOriginalTitle.mockResolvedValueOnce('Cannot print');
+
+        await patch('42', { state, project: 'Internal' });
+
+        expect(getOriginalTitle).toHaveBeenCalledWith('Internal', 42);
+        expect(sendStatusChangeNotification).toHaveBeenCalledWith(
+          42,
+          { thread: 'Cannot print', current: 'Printer offline' },
+          'requester@example.test',
+          'New',
+          state,
+          undefined,
+          undefined,
+          'Internal'
+        );
+      }
+    );
+
+    it('keeps the original subject when the project was found by scanning', async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Active', EMAIL_TAGS));
+      updateTicketState.mockResolvedValue(workItem(42, 'Resolved', EMAIL_TAGS));
+      getOriginalTitle.mockResolvedValueOnce('Cannot print');
+
+      await patch('42', { state: 'Resolved' });
+
+      expect(getOriginalTitle).toHaveBeenCalledWith('Internal', 42);
+      expect(sendStatusChangeNotification).toHaveBeenCalledWith(
+        42,
+        { thread: 'Cannot print', current: 'Printer offline' },
+        'requester@example.test',
+        'Active',
+        'Resolved',
+        undefined,
+        undefined,
+        'Internal'
+      );
+    });
+
+    // No history to read is no reason to stay quiet: the current title is
+    // what the subject was before this fix.
+    it('falls back to the current title when the original cannot be read', async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Active', EMAIL_TAGS));
+      updateTicketState.mockResolvedValue(workItem(42, 'Resolved', EMAIL_TAGS));
+      getOriginalTitle.mockResolvedValueOnce(null);
+
+      await patch('42', { state: 'Resolved', project: 'Internal' });
+
+      expect(sendStatusChangeNotification).toHaveBeenCalledWith(
+        42,
+        { thread: 'Printer offline', current: 'Printer offline' },
+        'requester@example.test',
+        'Active',
+        'Resolved',
+        undefined,
+        undefined,
+        'Internal'
+      );
+    });
+
+    // A saved state must never be reported as failed because the lookup of
+    // the original title broke: the current title stands in for it.
+    it('saves and mails under the current title when the lookup rejects', async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Active', EMAIL_TAGS));
+      updateTicketState.mockResolvedValue(workItem(42, 'Resolved', EMAIL_TAGS));
+      getOriginalTitle.mockRejectedValueOnce(new Error('x'));
+
+      const { status } = await patch('42', { state: 'Resolved', project: 'Internal' });
+
+      expect(status).toBe(200);
+      expect(updateTicketState).toHaveBeenCalledTimes(1);
+      expect(sendStatusChangeNotification).toHaveBeenCalledTimes(1);
+      expect(sendStatusChangeNotification).toHaveBeenCalledWith(
+        42,
+        { thread: 'Printer offline', current: 'Printer offline' },
+        'requester@example.test',
+        'Active',
+        'Resolved',
+        undefined,
+        undefined,
+        'Internal'
+      );
+    });
+
+    // Without outbound mail nothing can be sent, so the DevOps call is waste.
+    it('does not read the history when outbound mail is not configured', async () => {
+      isEmailConfigured.mockReturnValue(false);
+      getWorkItem.mockResolvedValue(workItem(42, 'Active', EMAIL_TAGS));
+      updateTicketState.mockResolvedValue(workItem(42, 'Resolved', EMAIL_TAGS));
+
+      const { status, body } = await patch('42', { state: 'Resolved', project: 'Internal' });
+
+      expect(status).toBe(200);
+      expect(body.ticket.id).toBe(42);
+      expect(getOriginalTitle).not.toHaveBeenCalled();
+    });
+
+    // Only a mail that will actually be sent pays for the history lookup.
+    it('does not read the history for a ticket that is not mailed', async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Active'));
+      updateTicketState.mockResolvedValue(workItem(42, 'Resolved'));
+
+      await patch('42', { state: 'Resolved', project: 'Internal' });
+
+      expect(getOriginalTitle).not.toHaveBeenCalled();
     });
 
     // Nothing to send to is not the same as nothing to say: it leaves a line

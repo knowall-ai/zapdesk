@@ -8,6 +8,7 @@ import {
   sendAgentReply,
   assigneeEmailFrom,
   sendInternalNoteNotification,
+  isEmailConfigured,
 } from '@/lib/email';
 import { supportTeamRecipients } from '@/lib/support-team';
 
@@ -196,7 +197,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (isEmail) {
       const requesterEmail = extractRequesterEmail(tags);
       if (requesterEmail) {
-        const subject = workItem.fields?.['System.Title'] || 'Your ticket';
+        // The title the ticket was created with, as for every other mail to
+        // the customer, so a reply after a rename stays in their thread
+        // (https://github.com/knowall-ai/zapdesk/issues/726). The comment is
+        // already saved, so a failed lookup falls back to the current title;
+        // with outbound mail off nothing is sent, so the lookup is skipped.
+        const original = isEmailConfigured()
+          ? await devopsService.getOriginalTitle(project.name, ticketId).catch(() => null)
+          : null;
+        const subject = original ?? (workItem.fields?.['System.Title'] || 'Your ticket');
         const agentName = session.user?.name || 'Support Agent';
         // Fire-and-forget — never block the response on outbound mail.
         // Blind-copy the assigned engineer so the thread reaches the

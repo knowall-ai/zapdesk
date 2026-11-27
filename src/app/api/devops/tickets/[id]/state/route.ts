@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSessionWithToken } from '@/lib/server-session';
 import { parseWorkItemId } from '@/lib/work-item-id';
 import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
-import { sendStatusChangeNotification, assigneeEmailFrom } from '@/lib/email';
+import { sendStatusChangeNotification, assigneeEmailFrom, isEmailConfigured } from '@/lib/email';
 import { notifiesCustomer, stateMoved, statusChangeRecipient } from '@/lib/status-notification';
 import { debugLog } from '@/lib/debug';
 import { describeFields } from '@/lib/describe-fields';
@@ -258,7 +258,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         state,
         extraFields
       );
-      notifyStateChange(updatedWorkItem, ticketId, oldState, state);
+      await notifyStateChange(
+        devopsService,
+        projectHint,
+        updatedWorkItem,
+        ticketId,
+        oldState,
+        state
+      );
       const ticket = workItemToTicket(updatedWorkItem);
       return NextResponse.json({ ticket });
     }
@@ -298,7 +305,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         extraFields
       );
 
-      notifyStateChange(updatedWorkItem, ticketId, oldState, state);
+      await notifyStateChange(
+        devopsService,
+        project.name,
+        updatedWorkItem,
+        ticketId,
+        oldState,
+        state
+      );
 
       const ticket = workItemToTicket(updatedWorkItem, {
         id: project.id,
@@ -345,7 +359,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 }
 
 /**
- * Fire-and-forget email to the customer about a state change.
+ * Email the customer about a state change. Only the lookup of the ticket's
+ * original title is awaited; the send itself is fire-and-forget.
  *
  * Sent only when all of these hold, and each reason to stay quiet leaves a
  * line in the log:
@@ -357,7 +372,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
  *   whoever created the work item -- usually a colleague, not a customer.
  * - The new state is one customers are told about.
  */
-function notifyStateChange(
+async function notifyStateChange(
+  devopsService: AzureDevOpsService,
+  projectName: string,
   workItem: { fields?: Record<string, unknown> },
   ticketId: number,
   oldState: string | undefined,
@@ -391,13 +408,24 @@ function notifyStateChange(
     return;
   }
 
-  const subject = String(workItem.fields?.['System.Title'] || 'Your ticket');
+  const current = String(workItem.fields?.['System.Title'] || 'Your ticket');
+  // The mail subject is the title the ticket was created with, as for the
+  // title and priority mails, so a status change after a rename stays in the
+  // customer's thread (https://github.com/knowall-ai/zapdesk/issues/726).
+  // The current title is the fallback when the history can't be read, and is
+  // what the body shows either way. The state is already saved, so a failed
+  // lookup must not reach the response; and with outbound mail off nothing
+  // is sent, so the lookup is skipped.
+  const original = isEmailConfigured()
+    ? await devopsService.getOriginalTitle(projectName, ticketId).catch(() => null)
+    : null;
+  const thread = original ?? current;
   // Blind-copy the assigned engineer: this message is part of the customer's
   // thread, and until now only the agent's own replies reached them (#7384).
   const assigneeEmail = assigneeEmailFrom(workItem.fields?.['System.AssignedTo']);
   sendStatusChangeNotification(
     ticketId,
-    subject,
+    { thread, current },
     requesterEmail,
     oldState,
     newState,

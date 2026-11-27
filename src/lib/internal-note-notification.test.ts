@@ -23,19 +23,22 @@ type NoteMail = {
   recipients: string;
 };
 const sendInternalNoteNotification = vi.fn<(mail: NoteMail) => Promise<void>>(async () => {});
-const sendAgentReply = vi.fn(async () => {});
+const sendAgentReply = vi.fn<(...args: unknown[]) => Promise<void>>(async () => {});
+const isEmailConfigured = vi.fn(() => true);
 vi.mock('@/lib/email', async () => {
   const actual = await vi.importActual<typeof import('./email')>('./email');
   return {
     ...actual,
     sendInternalNoteNotification: (mail: NoteMail) => sendInternalNoteNotification(mail),
-    sendAgentReply: () => sendAgentReply(),
+    sendAgentReply: (...args: unknown[]) => sendAgentReply(...args),
+    isEmailConfigured: () => isEmailConfigured(),
   };
 });
 
 const addComment = vi.fn(async () => {});
 const getWorkItemComments = vi.fn(async () => []);
 const findProjectForWorkItem = vi.fn();
+const getOriginalTitle = vi.fn<(...args: unknown[]) => Promise<string | null>>(async () => null);
 vi.mock('@/lib/devops', async () => {
   const actual = await vi.importActual<typeof import('./devops')>('./devops');
   return {
@@ -45,6 +48,7 @@ vi.mock('@/lib/devops', async () => {
       addComment = addComment;
       getWorkItemComments = getWorkItemComments;
       findProjectForWorkItem = findProjectForWorkItem;
+      getOriginalTitle = getOriginalTitle;
     },
   };
 });
@@ -68,7 +72,7 @@ const post = async (body: unknown) => {
     body: JSON.stringify(body),
   });
   const response = await POST(request, { params: Promise.resolve({ id: '7' }) });
-  return { status: response.status };
+  return { status: response.status, body: await response.json() };
 };
 
 const ORIGINAL = { ...process.env };
@@ -76,6 +80,7 @@ const ORIGINAL = { ...process.env };
 describe('internal note tells the support team (7767)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    isEmailConfigured.mockReturnValue(true);
     process.env.SUPPORT_TEAM_NOTIFY_EMAIL = 'support@example.test; sam@example.test';
     process.env.MAIL_POLL_MAILBOX = 'inbox@example.test';
     getServerSession.mockResolvedValue({
@@ -150,5 +155,64 @@ describe('internal note tells the support team (7767)', () => {
     expect(status).toBe(200);
     expect(addComment).toHaveBeenCalled();
     expect(sendInternalNoteNotification).not.toHaveBeenCalled();
+  });
+
+  // Customer mail threads by subject: a reply on a renamed ticket keeps the
+  // subject the conversation started under, as every other mail to them does.
+  it('replies to the customer under the original subject after a rename', async () => {
+    findProjectForWorkItem.mockResolvedValue({
+      project: { name: 'Internal' },
+      workItem: workItem('ticket; email; email-from:customer@example.test'),
+    });
+    getOriginalTitle.mockResolvedValueOnce('Cannot print');
+
+    await post({ comment: 'Thanks, looking now', isInternal: false });
+
+    expect(getOriginalTitle).toHaveBeenCalledWith('Internal', 7);
+    expect(sendAgentReply.mock.calls[0][1]).toBe('Cannot print');
+  });
+
+  // The comment is already saved, so a broken lookup must not turn the
+  // request into a failure: the current title stands in.
+  it('saves and replies under the current title when the lookup rejects', async () => {
+    findProjectForWorkItem.mockResolvedValue({
+      project: { name: 'Internal' },
+      workItem: workItem('ticket; email; email-from:customer@example.test'),
+    });
+    getOriginalTitle.mockRejectedValueOnce(new Error('x'));
+
+    const { status, body } = await post({ comment: 'Thanks, looking now', isInternal: false });
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ success: true });
+    expect(addComment).toHaveBeenCalledTimes(1);
+    expect(sendAgentReply).toHaveBeenCalledTimes(1);
+    expect(sendAgentReply.mock.calls[0][1]).toBe('Printer offline');
+  });
+
+  // Without outbound mail nothing can be sent, so the DevOps call is waste.
+  it('does not read the history when outbound mail is not configured', async () => {
+    isEmailConfigured.mockReturnValue(false);
+    findProjectForWorkItem.mockResolvedValue({
+      project: { name: 'Internal' },
+      workItem: workItem('ticket; email; email-from:customer@example.test'),
+    });
+
+    const { status, body } = await post({ comment: 'Thanks, looking now', isInternal: false });
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ success: true });
+    expect(getOriginalTitle).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the current title when the original cannot be read', async () => {
+    findProjectForWorkItem.mockResolvedValue({
+      project: { name: 'Internal' },
+      workItem: workItem('ticket; email; email-from:customer@example.test'),
+    });
+
+    await post({ comment: 'Thanks, looking now', isInternal: false });
+
+    expect(sendAgentReply.mock.calls[0][1]).toBe('Printer offline');
   });
 });
