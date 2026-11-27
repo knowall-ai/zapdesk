@@ -130,6 +130,22 @@ describe('reachedByInAppNavigation (7771)', () => {
     expect(reachedByInAppNavigation()).toBe(false);
   });
 
+  it.each([
+    ['https://zapdesk.test/tickets/7', 'https://zapdesk.test/workitems/7'],
+    ['https://zapdesk.test/workitems/7', 'https://zapdesk.test/tickets/7'],
+  ])('is false when the page loaded at %s only moved itself to %s', (first, now) => {
+    // The full page swaps /tickets/<id> and /workitems/<id> to match what the
+    // item is. That replaces the history entry, so there is still nothing in
+    // the app to go back to.
+    navigatedTo(first, now);
+    expect(reachedByInAppNavigation()).toBe(false);
+  });
+
+  it('is true when the user went on to another item', () => {
+    navigatedTo('https://zapdesk.test/tickets/7', 'https://zapdesk.test/workitems/8');
+    expect(reachedByInAppNavigation()).toBe(true);
+  });
+
   it('is false when the browser keeps no navigation entry', () => {
     vi.stubGlobal('window', { location: new URL('https://zapdesk.test/tickets/7') });
     vi.stubGlobal('performance', { getEntriesByType: () => [] });
