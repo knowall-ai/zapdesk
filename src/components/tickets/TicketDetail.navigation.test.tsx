@@ -88,3 +88,40 @@ describe('leaving a ticket opened from outside the app', () => {
     expect(back).not.toHaveBeenCalled();
   });
 });
+
+describe('leaving a work item opened from a /tickets link', () => {
+  const loadedAt = (url: string) =>
+    vi
+      .spyOn(performance, 'getEntriesByType')
+      .mockImplementation((type: string) =>
+        type === 'navigation' ? [{ name: url } as PerformanceEntry] : []
+      );
+  const workItem = { ...ticket, tags: [] } as unknown as Ticket;
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('goes to the Kanban board after the page moved itself to /workitems', () => {
+    // An assignment email links to /tickets/<id>; the page replaces that with
+    // /workitems/<id> as the item has no ticket tag. The tab has nothing in
+    // the app to go back to.
+    loadedAt(`${window.location.origin}/tickets/7`);
+    window.history.replaceState({}, '', '/workitems/7');
+
+    render(<TicketDetail ticket={workItem} comments={[]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Go back' }));
+
+    expect(push).toHaveBeenCalledWith('/kanban');
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it('still goes back when it was opened from a page in the app', () => {
+    loadedAt(`${window.location.origin}/dashboard`);
+    window.history.replaceState({}, '', '/workitems/7');
+
+    render(<TicketDetail ticket={workItem} comments={[]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Go back' }));
+
+    expect(back).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+});

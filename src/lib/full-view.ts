@@ -127,13 +127,18 @@ export function restoreBoardView<T>(): Partial<T> | null {
  * navigation entry still names the page the tab first loaded. When that is
  * this page, it was opened directly -- a link in an email, a bookmark, a
  * refresh -- and "back" may lead to a sign-in redirect or another site (7771).
+ *
+ * The full page also moves itself between /tickets/<id> and /workitems/<id>
+ * to match what the item is, replacing the history entry. That is still the
+ * page the tab loaded: an assignment email links a work item at /tickets/<id>.
  */
 export function reachedByInAppNavigation(): boolean {
   if (typeof window === 'undefined' || typeof performance === 'undefined') return false;
   const [entry] = performance.getEntriesByType('navigation');
   if (!entry) return false;
+  const samePage = (path: string) => path.replace(/^\/workitems\//, '/tickets/');
   try {
-    return new URL(entry.name).pathname !== window.location.pathname;
+    return samePage(new URL(entry.name).pathname) !== samePage(window.location.pathname);
   } catch {
     return false;
   }
