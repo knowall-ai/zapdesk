@@ -265,6 +265,6 @@ The import never emails a customer, and checks that in code rather than relying 
 
 Each ticket keeps its title, first message, every later comment in order (opened with the original author and date, since DevOps shows the importer as the author), attachments, state, assignee, priority and original created date. Pictures pasted into comments are downloaded during the import over HTTPS, with the Zendesk token sent only to the configured hosts, then uploaded to DevOps and relinked. The export also keeps copies of them. The requester's name and address open the description.
 
-Each ticket is tagged `zendesk-import` and `zendesk:<id>`, so the import can be found, or removed, by tag. A rerun skips a ticket whose comments and files are all there, and stops at one that is only partly imported, so nothing is skipped or written twice: delete that Task and run again.
+Each ticket is tagged `ticket`, so ZapDesk lists it, and `zendesk-import` and `zendesk:<id>`, so the import can be found, or removed, by tag. `ticket` carries no address, so ZapDesk still has no customer to email. A rerun skips a ticket whose comments and files are all there, and stops at one that is only partly imported, so nothing is skipped or written twice: delete that Task and run again.
 
 States: new → New, open → Active, pending → Pending, hold → Blocked, solved and closed → Closed (the T-Minus-15 Task has no Resolved).

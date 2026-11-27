@@ -16,6 +16,7 @@ import {
   redirectTarget,
   replaceImageSrc,
   sortAttachments,
+  withMissingTags,
   type ImportConfig,
   type ZendeskTicket,
   type ZendeskUser,
@@ -88,8 +89,9 @@ describe('assertSafeWrite: no write can email anyone', () => {
 });
 
 describe('importTags', () => {
-  it('marks the ticket and never carries an email tag', () => {
-    expect(importTags(46)).toEqual(['zendesk-import', 'zendesk:46']);
+  // #709: without `ticket` ZapDesk does not list the imported Task at all.
+  it('marks the ticket, shows it in ZapDesk and never carries an email tag', () => {
+    expect(importTags(46)).toEqual(['ticket', 'zendesk-import', 'zendesk:46']);
     expect(importTags(46).some(isEmailTag)).toBe(false);
   });
 });
@@ -104,6 +106,23 @@ describe('devopsPriority', () => {
   });
 });
 
+describe('withMissingTags', () => {
+  // #710 review: a Task imported before `ticket` existed gets it on a rerun.
+  it('adds the tags a complete import lacks, keeping the rest', () => {
+    expect(withMissingTags('zendesk:7; zendesk-import', importTags(7))).toBe(
+      'zendesk:7; zendesk-import; ticket'
+    );
+  });
+
+  it('returns null when nothing is missing, whatever the case', () => {
+    expect(withMissingTags('Ticket; zendesk-import; zendesk:7', importTags(7))).toBeNull();
+  });
+
+  it('starts from no tags', () => {
+    expect(withMissingTags('', ['ticket'])).toBe('ticket');
+  });
+});
+
 describe('planTicket', () => {
   it('places a ticket by requester domain and maps assignee, state and priority', () => {
     expect(planTicket(ticket({ status: 'pending', priority: 'high' }), users, config)).toEqual({
@@ -112,7 +131,7 @@ describe('planTicket', () => {
       assignee: 'Alex Morgan <alex.morgan@example.com>',
       state: 'Pending',
       priority: 2,
-      tags: ['zendesk-import', 'zendesk:7'],
+      tags: ['ticket', 'zendesk-import', 'zendesk:7'],
       problems: [],
     });
   });

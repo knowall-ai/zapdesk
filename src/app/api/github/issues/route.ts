@@ -84,7 +84,11 @@ export async function GET(request: NextRequest) {
       config,
       devOpsUsers,
       linkedAccounts,
-      closedWindow
+      closedWindow,
+      new Date(),
+      // Closed issues without the ticket label never reach this list, so they
+      // are not read (#708).
+      gitHubTicketLabel()
     );
 
     const failedRepos = [...config.failed, ...failedReads];

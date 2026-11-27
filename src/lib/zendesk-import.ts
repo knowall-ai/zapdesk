@@ -78,14 +78,35 @@ export function devopsPriority(priority: string | null | undefined): number {
   return PRIORITY[(priority ?? '').toLowerCase()] ?? 3;
 }
 
+/**
+ * A work item's tags with any of `wanted` it lacks added, or null when none
+ * is missing (#710 review). A Task imported before `ticket` was added is
+ * complete and skipped on a rerun, so the rerun adds the tag instead.
+ * Compared case-insensitively, as DevOps treats tags.
+ */
+export function withMissingTags(existing: string, wanted: readonly string[]): string | null {
+  const tags = existing
+    .split(';')
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const have = new Set(tags.map((t) => t.toLowerCase()));
+  const missing = wanted.filter((t) => !have.has(t.toLowerCase()));
+  return missing.length ? [...tags, ...missing].join('; ') : null;
+}
+
 /** The tag that marks an imported ticket, and lets a rerun find and skip it. */
 export function sourceTag(zendeskId: number): string {
   return `zendesk:${zendeskId}`;
 }
 
-/** Every tag an imported ticket gets. Never `email` or `email-from:`. */
+/**
+ * Every tag an imported ticket gets. Never `email` or `email-from:`.
+ *
+ * `ticket` is what makes ZapDesk list a work item at all (#709). It carries
+ * no address, so ZapDesk still has nobody to email about the ticket.
+ */
 export function importTags(zendeskId: number): string[] {
-  return ['zendesk-import', sourceTag(zendeskId)];
+  return ['ticket', 'zendesk-import', sourceTag(zendeskId)];
 }
 
 /** True for a tag that would let ZapDesk email the ticket's requester. */

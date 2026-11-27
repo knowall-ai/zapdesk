@@ -500,6 +500,19 @@ export function gitHubIssueToTicket(
  * One page of issues. `scope` is `owner/repo` for a repository, or `owner/*`
  * for every repository of an organization the token can read.
  */
+/**
+ * The `labels` filter for a closed-issue read, or nothing (#708).
+ *
+ * The Tickets tab only shows issues with the ticket label, so it asks GitHub
+ * for closed ones with that label alone. Reading every closed issue and pull
+ * request and filtering afterwards ran an organization past the page cap,
+ * and left older labelled issues unread. Open issues are still read in full,
+ * so the page can tell "no issue carries the label" from "no issues" (#607).
+ */
+function closedLabelClause(closedLabel?: string): string {
+  return closedLabel ? `&labels=${encodeURIComponent(closedLabel)}` : '';
+}
+
 async function fetchIssuePage(scope: string, token: string, query: string): Promise<GitHubIssue[]> {
   const url = isOrgWildcard(scope)
     ? `${GITHUB_API_URL}/orgs/${scope.slice(0, -2)}/issues?filter=all&${query}`
@@ -538,9 +551,10 @@ async function fetchIssuePage(scope: string, token: string, query: string): Prom
 export async function fetchRepoIssues(
   repo: string,
   token: string,
-  closedSince: string | null = closedIssuesSince()
+  closedSince: string | null = closedIssuesSince(),
+  closedLabel?: string
 ): Promise<GitHubIssue[]> {
-  return (await readRepoIssues(repo, token, closedSince)).issues;
+  return (await readRepoIssues(repo, token, closedSince, closedLabel)).issues;
 }
 
 /**
@@ -553,7 +567,8 @@ export async function fetchRepoIssues(
 export async function readRepoIssues(
   repo: string,
   token: string,
-  closedSince: string | null = closedIssuesSince()
+  closedSince: string | null = closedIssuesSince(),
+  closedLabel?: string
 ): Promise<{ issues: GitHubIssue[]; truncated: boolean }> {
   const issues: GitHubIssue[] = [];
   let truncated = false;
@@ -579,7 +594,7 @@ export async function readRepoIssues(
     const batch = await fetchIssuePage(
       repo,
       token,
-      `state=closed${sinceClause}&per_page=${PAGE_SIZE}&page=${page}`
+      `state=closed${sinceClause}${closedLabelClause(closedLabel)}&per_page=${PAGE_SIZE}&page=${page}`
     );
     issues.push(...batch);
     if (batch.length < PAGE_SIZE) break;
@@ -611,13 +626,17 @@ export async function readRepoIssues(
 export async function fetchOrgIssues(
   wildcard: string,
   token: string,
-  closedSince: string | null = closedIssuesSince()
+  closedSince: string | null = closedIssuesSince(),
+  closedLabel?: string
 ): Promise<{ issues: GitHubIssue[]; truncated: boolean }> {
   const issues: GitHubIssue[] = [];
   const sinceClause = closedSince ? `&since=${encodeURIComponent(closedSince)}` : '';
   let truncated = false;
 
-  for (const query of ['state=open', `state=closed${sinceClause}`]) {
+  for (const query of [
+    'state=open',
+    `state=closed${sinceClause}${closedLabelClause(closedLabel)}`,
+  ]) {
     for (let page = 1; page <= MAX_ORG_PAGES; page++) {
       const batch = await fetchIssuePage(
         wildcard,
@@ -711,7 +730,8 @@ async function cachedRepoIssues(
   token: string,
   credential: string,
   closedWindow: ClosedWindow = 'recent',
-  boardDate: Date = new Date()
+  boardDate: Date = new Date(),
+  closedLabel?: string
 ): Promise<CachedIssues> {
   // The board day is only part of the key for the bounded window. "All" has no
   // `since` bound at all, so its read is identical whatever day the board is
@@ -719,15 +739,17 @@ async function cachedRepoIssues(
   // history and repeat the same paged reads against a rate limit every ZapDesk
   // user shares.
   const dayKey = closedWindow === 'all' ? 'any-day' : boardDayKey(boardDate);
-  const key = `${credential}|${repo.toLowerCase()}|${closedWindow}|${dayKey}`;
+  // The label last, and encoded: it holds different issues, so it must not
+  // share an entry, and keyParts splits on '|'.
+  const key = `${credential}|${repo.toLowerCase()}|${closedWindow}|${dayKey}|${encodeURIComponent(closedLabel ?? '')}`;
   const cached = issuesCache.get(key);
   if (cached && Date.now() - cached.timestamp < ISSUES_CACHE_TTL_MS) {
     return { issues: cached.issues, truncated: cached.truncated };
   }
   const closedSince = closedIssuesSince(closedWindow, boardDate);
   const read: CachedIssues = isOrgWildcard(repo)
-    ? await fetchOrgIssues(repo, token, closedSince)
-    : await readRepoIssues(repo, token, closedSince);
+    ? await fetchOrgIssues(repo, token, closedSince, closedLabel)
+    : await readRepoIssues(repo, token, closedSince, closedLabel);
   issuesCache.set(key, { ...read, timestamp: Date.now() });
   return read;
 }
@@ -809,7 +831,12 @@ export async function getGitHubTickets(
    */
   closedWindow: ClosedWindow = 'recent',
   /** The day the board is showing, so a historical board reads its own window. */
-  boardDate: Date = new Date()
+  boardDate: Date = new Date(),
+  /**
+   * Read only closed issues with this label (#708). The Tickets tab passes the
+   * ticket label; the boards pass nothing, since they show every issue.
+   */
+  closedLabel?: string
 ): Promise<GitHubTicketsResult> {
   const people: GitHubPeople = { userMap: config.userMap ?? {}, devOpsUsers, linkedAccounts };
   const byName = new Map(projects.map((p) => [p.name.toLowerCase(), p]));
@@ -840,8 +867,22 @@ export async function getGitHubTickets(
     targets.map(({ repo }) => {
       const credential = config.credentialFor?.(repo);
       return credential
-        ? cachedRepoIssues(repo, credential.token, credential.id, closedWindow, boardDate)
-        : cachedRepoIssues(repo, config.token, SERVER_CREDENTIAL, closedWindow, boardDate);
+        ? cachedRepoIssues(
+            repo,
+            credential.token,
+            credential.id,
+            closedWindow,
+            boardDate,
+            closedLabel
+          )
+        : cachedRepoIssues(
+            repo,
+            config.token,
+            SERVER_CREDENTIAL,
+            closedWindow,
+            boardDate,
+            closedLabel
+          );
     })
   );
 

@@ -235,6 +235,20 @@ describe('GitHub issue routes', () => {
       expect(closedReads().every((u) => u.searchParams.has('since'))).toBe(true);
     });
 
+    // #708: closed issues without the ticket label never reach the Tickets tab,
+    // so only labelled ones are read. Open issues are still read in full, so
+    // the "none carries the label" notice keeps working (#607).
+    it('reads only labelled closed issues, and every open one', async () => {
+      await getIssues({ view: 'closed' });
+      const urls = fetchMock.mock.calls.map(([url]) => new URL(String(url)));
+      const closed = urls.filter((u) => u.searchParams.get('state') === 'closed');
+      const open = urls.filter((u) => u.searchParams.get('state') === 'open');
+      expect(closed.length).toBeGreaterThan(0);
+      expect(closed.every((u) => u.searchParams.get('labels') === 'ticket')).toBe(true);
+      expect(open.length).toBeGreaterThan(0);
+      expect(open.every((u) => !u.searchParams.has('labels'))).toBe(true);
+    });
+
     it('returns nothing for the removed view', async () => {
       const { body } = await getIssues({ view: 'removed' });
       expect(body.tickets).toEqual([]);
