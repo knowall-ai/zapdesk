@@ -46,7 +46,12 @@ import { configuredDevOpsOrg, devOpsOrgOrDefault } from './devops-org';
 import { boardFieldsToRequest, ticketFieldsToRequest } from './work-item-fields';
 import { BOARD_WORK_ITEM_TYPES } from './board-work-item-types';
 import { isPendingStateName, statusNamedByState } from './state-categories';
-import { recordedAuthorFor, recordedAuthors, type RecordedAuthor } from './comment-revisions';
+import {
+  recordedAuthorFor,
+  recordedAuthors,
+  type RawRevision,
+  type RecordedAuthor,
+} from './comment-revisions';
 
 /**
  * Read the resolution value from a work item, checking all possible field names
@@ -1252,14 +1257,24 @@ export class AzureDevOpsService {
     projectName: string,
     workItemId: number
   ): Promise<Map<string, RecordedAuthor>> {
+    const PAGE = 200;
+    const MAX_PAGES = 25;
+    const revisions: RawRevision[] = [];
     try {
-      const response = await fetch(
-        `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/updates?$top=200&api-version=7.0`,
-        { headers: this.headers }
-      );
-      if (!response.ok) return new Map();
-      const data = await response.json();
-      return recordedAuthors(Array.isArray(data.value) ? data.value : []);
+      // One deadline for every page, body reads included.
+      const signal = AbortSignal.timeout(ORG_LOOKUP_TIMEOUT_MS);
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const response = await fetch(
+          `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/updates?$top=${PAGE}&$skip=${page * PAGE}&api-version=7.0`,
+          { headers: this.headers, signal }
+        );
+        if (!response.ok) return new Map();
+        const data = await response.json();
+        const batch: RawRevision[] = Array.isArray(data.value) ? data.value : [];
+        revisions.push(...batch);
+        if (batch.length < PAGE) break;
+      }
+      return recordedAuthors(revisions);
     } catch {
       return new Map();
     }

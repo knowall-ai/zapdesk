@@ -69,6 +69,23 @@ describe('recordedAuthorFor', () => {
     ).toBeNull();
   });
 
+  it('keeps the author of the revision before when one is left out', () => {
+    const second = revision(
+      '<p>Second reply</p>',
+      AGENT,
+      '2026-04-23T05:46:12Z',
+      '2026-11-27T11:50:33.000Z'
+    );
+    delete second.fields!['System.ChangedBy'];
+    const recorded = recordedAuthors([
+      { ...second, rev: 3 },
+      { ...revision('<p>First reply</p>', AGENT, '2026-04-22T11:18:04Z'), rev: 2 },
+    ]);
+    expect(
+      recordedAuthorFor(comment('<p>Second reply</p>', '2026-11-27T11:50:33.000Z'), recorded)
+    ).toEqual({ by: AGENT, at: '2026-04-23T05:46:12Z' });
+  });
+
   it('skips revisions that added no comment', () => {
     expect(recordedAuthors([{ fields: { 'System.ChangedBy': { newValue: AGENT } } }]).size).toBe(0);
     expect(recordedAuthors([{}]).size).toBe(0);
@@ -121,6 +138,37 @@ describe('getWorkItemComments shows the recorded author', () => {
     expect(imported.createdAt.toISOString()).toBe('2026-04-22T07:58:00.000Z');
     expect(ordinary.author.displayName).toBe('Import Account');
     expect(ordinary.createdAt.toISOString()).toBe('2026-11-27T12:00:00.000Z');
+  });
+
+  it('reads every page of a long history', async () => {
+    const filler = Array.from({ length: 200 }, () => ({ fields: {} }));
+    const fetchMock = vi.fn(async (url: string) =>
+      url.includes('/updates')
+        ? Response.json({
+            value: url.includes('$skip=0')
+              ? filler
+              : [revision('<p>Printer fixed </p>', AGENT, '2026-04-22T07:58:00Z')],
+          })
+        : Response.json({
+            comments: [
+              {
+                id: 1,
+                text: '<p>Printer fixed </p>',
+                createdDate: WRITTEN_AT,
+                createdBy: IMPORTER,
+              },
+            ],
+          })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const [imported] = await new AzureDevOpsService('token', 'acme').getWorkItemComments(
+      'Contoso Ltd',
+      8001
+    );
+    expect(imported.author.displayName).toBe('Sam Taylor');
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/updates'))).toHaveLength(
+      2
+    );
   });
 
   it('still loads the comments when the history cannot be read', async () => {

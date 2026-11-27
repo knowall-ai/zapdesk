@@ -28,8 +28,12 @@ interface FieldChange<T> {
   newValue?: T;
 }
 
-/** One entry from the work item `updates` API, only the fields read here. */
+/**
+ * One entry from the work item `updates` API, only the fields read here. Each
+ * entry lists only the fields that changed, so an unchanged ChangedBy is absent.
+ */
 export interface RawRevision {
+  rev?: number;
   fields?: {
     'System.History'?: FieldChange<string>;
     'System.AuthorizedDate'?: FieldChange<string>;
@@ -46,14 +50,20 @@ export interface RecordedAuthor {
 
 const key = (when: string, text: string) => `${new Date(when).getTime()}|${text}`;
 
-/** The recorded author of each comment-adding revision, keyed for lookup. */
+/**
+ * The recorded author of each comment-adding revision, keyed for lookup. A
+ * revision that leaves ChangedBy out keeps the one before it, as when one
+ * person writes two replies in a row.
+ */
 export function recordedAuthors(revisions: readonly RawRevision[]): Map<string, RecordedAuthor> {
   const found = new Map<string, RecordedAuthor>();
-  for (const revision of revisions) {
+  const inOrder = [...revisions].sort((a, b) => (a.rev ?? 0) - (b.rev ?? 0));
+  let by: RevisionIdentity | string | undefined;
+  for (const revision of inOrder) {
     const f = revision.fields ?? {};
+    by = f['System.ChangedBy']?.newValue ?? by;
     const text = f['System.History']?.newValue;
     const authorized = f['System.AuthorizedDate']?.newValue;
-    const by = f['System.ChangedBy']?.newValue;
     const at = f['System.ChangedDate']?.newValue;
     if (!text || !authorized || !by || !at || Number.isNaN(new Date(authorized).getTime()))
       continue;
