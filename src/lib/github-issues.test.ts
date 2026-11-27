@@ -9,6 +9,7 @@ import {
   devOpsUsersForGitHub,
   fetchOrgIssues,
   fetchRepoIssues,
+  readRepoIssues,
   closedIssuesSince,
   boardDayKey,
   forgetCredentialIssues,
@@ -572,6 +573,30 @@ describe('fetching', () => {
 
       expect(issues).toHaveLength(101);
       expect(issues[100].id).toBe(500);
+    });
+
+    // #705: past the page cap the rest are not read, and the read says so
+    // instead of passing a short list off as complete.
+    it('says when the page cap cut the read short', async () => {
+      const full = (page: number) =>
+        Array.from({ length: 100 }, (_, i) => issue({ id: page * 1000 + i, state: 'closed' }));
+      fetchMock.mockImplementation(async (input: string) => {
+        const url = new URL(input);
+        if (url.searchParams.get('state') !== 'closed') return Response.json([]);
+        return Response.json(full(Number(url.searchParams.get('page'))));
+      });
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const { issues, truncated } = await readRepoIssues('acme/portal', 'secret-token', null);
+
+      expect(issues).toHaveLength(500);
+      expect(truncated).toBe(true);
+    });
+
+    it('says nothing was cut when the last page is short', async () => {
+      gitHub({ 'acme/portal': { closed: [issue({ id: 3, state: 'closed' })] } });
+      const { truncated } = await readRepoIssues('acme/portal', 'secret-token', null);
+      expect(truncated).toBe(false);
     });
   });
 

@@ -14,9 +14,14 @@
  */
 export function gitHubTruncationMessage(truncatedRepos: readonly string[]): string | null {
   if (truncatedRepos.length === 0) return null;
+  // A named repository past its own caps (#705) can't be split any further,
+  // so only an organization gets the advice to name repositories.
+  const advice = truncatedRepos.some((repo) => repo.endsWith('/*'))
+    ? 'Map the repositories you need by name to see all of their issues.'
+    : '';
   return (
     `Some GitHub issues from ${truncatedRepos.join(', ')} may be missing: ` +
-    'the organization has more issues than ZapDesk reads at once. ' +
-    'Map the repositories you need by name to see all of their issues.'
+    'there are more issues than ZapDesk reads at once.' +
+    (advice ? ` ${advice}` : '')
   );
 }
