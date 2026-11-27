@@ -69,11 +69,23 @@ export async function GET(request: NextRequest) {
       () => devopsService.getOrganizationUsers(),
       session.tenantId
     );
+    const view = request.nextUrl.searchParams.get('view') || 'all-unsolved';
+    // Closed issues are normally read only for the recent window, which keeps
+    // every view quick. The Closed tickets view lists them however old, so it
+    // alone reads the whole history (#705).
+    const closedWindow = view === 'closed' ? 'all' : 'recent';
     const {
       tickets,
       failedRepos: failedReads,
       truncatedRepos,
-    } = await getGitHubTickets(projects, organization, config, devOpsUsers, linkedAccounts);
+    } = await getGitHubTickets(
+      projects,
+      organization,
+      config,
+      devOpsUsers,
+      linkedAccounts,
+      closedWindow
+    );
 
     const failedRepos = [...config.failed, ...failedReads];
 
@@ -82,7 +94,6 @@ export async function GET(request: NextRequest) {
     // development issues stay on the boards and off this list.
     const supportTickets = tickets.filter(isGitHubSupportTicket);
 
-    const view = request.nextUrl.searchParams.get('view') || 'all-unsolved';
     // GitHub has no Removed state, and the shared filter returns everything for
     // a view it does not know.
     const filtered =

@@ -13,4 +13,13 @@ describe('gitHubTruncationMessage', () => {
     expect(message).toContain('may be missing');
     expect(message).toContain('Map the repositories you need by name');
   });
+
+  // #705: a named repository past its page caps is reported too, but naming
+  // it again would not help, so the advice is left out.
+  it('names a repository read in part without advice that would not help', () => {
+    const message = gitHubTruncationMessage(['acme/portal']);
+    expect(message).toContain('acme/portal');
+    expect(message).toContain('may be missing');
+    expect(message).not.toContain('Map the repositories');
+  });
 });

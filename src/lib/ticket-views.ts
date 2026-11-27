@@ -1,5 +1,10 @@
 import type { Ticket, TicketStatus } from '@/types';
 
+/** Closed, and not merely Removed (which also shows as Closed). */
+export function isClosedNotRemoved(ticket: Ticket): boolean {
+  return ticket.status === 'Closed' && ticket.devOpsState !== 'Removed';
+}
+
 /** Narrow a ticket list to one of the sidebar views. Unknown views return everything. */
 export function filterTicketsByView(
   tickets: Ticket[],
@@ -47,6 +52,11 @@ export function filterTicketsByView(
       return tickets.filter(
         (t) => (t.status === 'Resolved' || t.status === 'Closed') && t.updatedAt >= weekAgoSolved
       );
+
+    // Every closed ticket, however long ago. Removed maps to Closed as well, so
+    // those are left out by their DevOps state: they have a view of their own.
+    case 'closed':
+      return tickets.filter(isClosedNotRemoved);
 
     default:
       return tickets;

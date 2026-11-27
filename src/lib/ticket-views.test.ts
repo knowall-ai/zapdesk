@@ -20,3 +20,22 @@ describe('All open tickets view', () => {
     expect(statuses('all-unsolved')).toEqual(['New', 'Open', 'In Progress']);
   });
 });
+
+describe('Closed tickets view', () => {
+  const old = new Date('2020-01-01');
+  const closed = (id: number, devOpsState: string): Ticket =>
+    ({ id, status: 'Closed', devOpsState, createdAt: old, updatedAt: old }) as unknown as Ticket;
+
+  it('shows every closed ticket, however long ago it was closed', () => {
+    const list = [...tickets, closed(10, 'Closed'), closed(11, 'Done')];
+    expect(filterTicketsByView(list, 'closed').map((t) => t.id)).toEqual([6, 10, 11]);
+  });
+
+  it('leaves out Removed tickets, which also show as Closed', () => {
+    expect(filterTicketsByView([closed(12, 'Removed')], 'closed')).toEqual([]);
+  });
+
+  it('leaves out Resolved tickets, which are not closed yet', () => {
+    expect(statuses('closed')).toEqual(['Closed']);
+  });
+});

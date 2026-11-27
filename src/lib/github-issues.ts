@@ -540,7 +540,23 @@ export async function fetchRepoIssues(
   token: string,
   closedSince: string | null = closedIssuesSince()
 ): Promise<GitHubIssue[]> {
+  return (await readRepoIssues(repo, token, closedSince)).issues;
+}
+
+/**
+ * `fetchRepoIssues`, saying whether a page cap was reached (#705).
+ *
+ * The caps bound each request, since every ZapDesk user shares the token's
+ * rate limit, so a repository past them is read only in part. `truncated`
+ * says so, so the page can warn rather than show a short list as complete.
+ */
+export async function readRepoIssues(
+  repo: string,
+  token: string,
+  closedSince: string | null = closedIssuesSince()
+): Promise<{ issues: GitHubIssue[]; truncated: boolean }> {
   const issues: GitHubIssue[] = [];
+  let truncated = false;
 
   for (let page = 1; page <= MAX_OPEN_PAGES; page++) {
     const batch = await fetchIssuePage(
@@ -550,6 +566,12 @@ export async function fetchRepoIssues(
     );
     issues.push(...batch);
     if (batch.length < PAGE_SIZE) break;
+    if (page === MAX_OPEN_PAGES) {
+      truncated = true;
+      console.warn(
+        `[GitHub] ${repo} has more than ${MAX_OPEN_PAGES * PAGE_SIZE} open items; the rest are not shown.`
+      );
+    }
   }
 
   const sinceClause = closedSince ? `&since=${encodeURIComponent(closedSince)}` : '';
@@ -562,13 +584,14 @@ export async function fetchRepoIssues(
     issues.push(...batch);
     if (batch.length < PAGE_SIZE) break;
     if (page === MAX_OPEN_PAGES) {
+      truncated = true;
       console.warn(
-        `[GitHub] ${repo} has more than ${MAX_OPEN_PAGES * PAGE_SIZE} recently closed items; the rest are not shown.`
+        `[GitHub] ${repo} has more than ${MAX_OPEN_PAGES * PAGE_SIZE} closed items in the window read; the rest are not shown.`
       );
     }
   }
 
-  return issues.filter((issue) => !issue.pull_request);
+  return { issues: issues.filter((issue) => !issue.pull_request), truncated };
 }
 
 /**
@@ -704,7 +727,7 @@ async function cachedRepoIssues(
   const closedSince = closedIssuesSince(closedWindow, boardDate);
   const read: CachedIssues = isOrgWildcard(repo)
     ? await fetchOrgIssues(repo, token, closedSince)
-    : { issues: await fetchRepoIssues(repo, token, closedSince), truncated: false };
+    : await readRepoIssues(repo, token, closedSince);
   issuesCache.set(key, { ...read, timestamp: Date.now() });
   return read;
 }
@@ -743,9 +766,9 @@ export interface GitHubTicketsResult {
   /** Repositories that could not be read; the rest are still returned. */
   failedRepos: string[];
   /**
-   * `owner/*` entries whose organization has more issues than one read takes,
-   * so some of its repositories may be missing (#621). Repositories the mapping
-   * names are read on their own and are complete whatever this says.
+   * Mapping entries read only in part, so some of their issues may be missing:
+   * an `owner/*` organization with more issues than one read takes (#621), or
+   * a named repository past its own page caps (#705).
    */
   truncatedRepos: string[];
 }
