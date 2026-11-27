@@ -1258,12 +1258,12 @@ export class AzureDevOpsService {
     workItemId: number
   ): Promise<Map<string, RecordedAuthor>> {
     const PAGE = 200;
-    const MAX_PAGES = 25;
     const revisions: RawRevision[] = [];
     try {
-      // One deadline for every page, body reads included.
+      // One deadline for every page, body reads included: it, not a page
+      // count, bounds the read, so a long history is read to its end.
       const signal = AbortSignal.timeout(ORG_LOOKUP_TIMEOUT_MS);
-      for (let page = 0; page < MAX_PAGES; page++) {
+      for (let page = 0; ; page++) {
         const response = await fetch(
           `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/updates?$top=${PAGE}&$skip=${page * PAGE}&api-version=7.0`,
           { headers: this.headers, signal }
