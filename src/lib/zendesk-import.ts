@@ -83,9 +83,14 @@ export function sourceTag(zendeskId: number): string {
   return `zendesk:${zendeskId}`;
 }
 
-/** Every tag an imported ticket gets. Never `email` or `email-from:`. */
+/**
+ * Every tag an imported ticket gets. Never `email` or `email-from:`.
+ *
+ * `ticket` is what makes ZapDesk list a work item at all (#709). It carries
+ * no address, so ZapDesk still has nobody to email about the ticket.
+ */
 export function importTags(zendeskId: number): string[] {
-  return ['zendesk-import', sourceTag(zendeskId)];
+  return ['ticket', 'zendesk-import', sourceTag(zendeskId)];
 }
 
 /** True for a tag that would let ZapDesk email the ticket's requester. */

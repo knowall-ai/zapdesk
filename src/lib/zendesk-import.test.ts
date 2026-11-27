@@ -88,8 +88,9 @@ describe('assertSafeWrite: no write can email anyone', () => {
 });
 
 describe('importTags', () => {
-  it('marks the ticket and never carries an email tag', () => {
-    expect(importTags(46)).toEqual(['zendesk-import', 'zendesk:46']);
+  // #709: without `ticket` ZapDesk does not list the imported Task at all.
+  it('marks the ticket, shows it in ZapDesk and never carries an email tag', () => {
+    expect(importTags(46)).toEqual(['ticket', 'zendesk-import', 'zendesk:46']);
     expect(importTags(46).some(isEmailTag)).toBe(false);
   });
 });
@@ -112,7 +113,7 @@ describe('planTicket', () => {
       assignee: 'Alex Morgan <alex.morgan@example.com>',
       state: 'Pending',
       priority: 2,
-      tags: ['zendesk-import', 'zendesk:7'],
+      tags: ['ticket', 'zendesk-import', 'zendesk:7'],
       problems: [],
     });
   });

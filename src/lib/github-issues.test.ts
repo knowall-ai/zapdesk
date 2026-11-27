@@ -593,6 +593,20 @@ describe('fetching', () => {
       expect(truncated).toBe(true);
     });
 
+    // #708: the Tickets tab reads only labelled closed issues; open ones and
+    // callers that pass no label (the boards) read everything as before.
+    it('filters only the closed read by a label, when given one', async () => {
+      gitHub({ 'acme/portal': {} });
+      await readRepoIssues('acme/portal', 'secret-token', null, 'ticket');
+      const byState = (s: string) => calledUrls().filter((u) => u.searchParams.get('state') === s);
+      expect(byState('closed')[0].searchParams.get('labels')).toBe('ticket');
+      expect(byState('open')[0].searchParams.has('labels')).toBe(false);
+
+      fetchMock.mockClear();
+      await readRepoIssues('acme/portal', 'secret-token', null);
+      expect(calledUrls().some((u) => u.searchParams.has('labels'))).toBe(false);
+    });
+
     it('says nothing was cut when the last page is short', async () => {
       gitHub({ 'acme/portal': { closed: [issue({ id: 3, state: 'closed' })] } });
       const { truncated } = await readRepoIssues('acme/portal', 'secret-token', null);
@@ -631,6 +645,14 @@ describe('fetching', () => {
       expect(first.pathname).toBe('/orgs/acme/issues');
       expect(first.searchParams.get('filter')).toBe('all');
       expect(first.searchParams.get('state')).toBe('open');
+    });
+
+    it('filters only the closed organization read by a label, when given one', async () => {
+      gitHubOrg([[inRepo('acme/portal', { id: 1 })]]);
+      await fetchOrgIssues('acme/*', 'secret-token', null, 'ticket');
+      const byState = (s: string) => calledUrls().filter((u) => u.searchParams.get('state') === s);
+      expect(byState('closed')[0].searchParams.get('labels')).toBe('ticket');
+      expect(byState('open')[0].searchParams.has('labels')).toBe(false);
     });
 
     it('returns open and recently closed issues, without pull requests', async () => {
