@@ -614,9 +614,23 @@ export async function sendAgentReply(
   }
 }
 
+/**
+ * Tell the customer their ticket's status changed.
+ *
+ * Takes the same two titles as sendTicketUpdateNotification: `titles.thread`
+ * for the mail subject, so a status change after a rename stays in the
+ * customer's existing thread
+ * (https://github.com/knowall-ai/zapdesk/issues/726);
+ * `titles.current` is shown in the body.
+ */
 export async function sendStatusChangeNotification(
   ticketId: number,
-  subject: string,
+  titles: {
+    /** The title the customer's thread is under, for the mail subject. */
+    thread: string;
+    /** The ticket's title now, shown in the body. */
+    current: string;
+  },
   requesterEmail: string,
   oldStatus: string,
   newStatus: string,
@@ -634,14 +648,14 @@ export async function sendStatusChangeNotification(
     const messageId = generateMessageId(ticketId);
     const html = statusChangeTemplate({
       ticketId,
-      subject,
+      subject: titles.current,
       requesterName: nameFromEmail(requesterEmail),
       oldStatus,
       newStatus,
     });
     await sendViaGraph({
       to: requesterEmail,
-      subject: threadedSubject(ticketId, `Re: ${subject}`),
+      subject: threadedSubject(ticketId, `Re: ${titles.thread}`),
       html,
       messageId,
       cc: managerEmailsFor(project, requesterEmail),

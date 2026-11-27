@@ -254,6 +254,31 @@ describe('assigned engineer is copied on a reply (#7384)', () => {
   });
 });
 
+// Customer mail threads by subject. A renamed ticket's status mail used the
+// new title for its subject while the title and priority mails kept the old
+// one, so the customer's conversation split in two.
+describe('status change subject after a rename', () => {
+  let graph: ReturnType<typeof stubGraph>;
+  beforeEach(() => {
+    configure();
+    graph = stubGraph();
+  });
+
+  it('uses the thread title for the subject and the current title in the body', async () => {
+    await sendStatusChangeNotification(
+      7400,
+      { thread: 'Cannot print', current: 'Printer jam in tray 2' },
+      'customer@example.test',
+      'Active',
+      'Resolved'
+    );
+    const message = graph.sent().message as Record<string, unknown>;
+    expect(message.subject).toBe('[ZapDesk #7400] Re: Cannot print');
+    const body = (message.body as { content: string }).content;
+    expect(body).toContain('Printer jam in tray 2');
+  });
+});
+
 // The agent's reply was only one message in the thread. The customer also
 // gets a mail for every status change and every title or priority change,
 // and none of those reached the engineer who owns the ticket -- so their
@@ -276,7 +301,7 @@ describe('the rest of the customer thread reaches the engineer (#7384)', () => {
   const statusChange = (assignee?: string) =>
     sendStatusChangeNotification(
       7400,
-      'Printer jam',
+      { thread: 'Printer jam', current: 'Printer jam' },
       'customer@example.test',
       'Active',
       'Resolved',

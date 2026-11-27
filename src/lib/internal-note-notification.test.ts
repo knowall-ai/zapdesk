@@ -23,19 +23,20 @@ type NoteMail = {
   recipients: string;
 };
 const sendInternalNoteNotification = vi.fn<(mail: NoteMail) => Promise<void>>(async () => {});
-const sendAgentReply = vi.fn(async () => {});
+const sendAgentReply = vi.fn<(...args: unknown[]) => Promise<void>>(async () => {});
 vi.mock('@/lib/email', async () => {
   const actual = await vi.importActual<typeof import('./email')>('./email');
   return {
     ...actual,
     sendInternalNoteNotification: (mail: NoteMail) => sendInternalNoteNotification(mail),
-    sendAgentReply: () => sendAgentReply(),
+    sendAgentReply: (...args: unknown[]) => sendAgentReply(...args),
   };
 });
 
 const addComment = vi.fn(async () => {});
 const getWorkItemComments = vi.fn(async () => []);
 const findProjectForWorkItem = vi.fn();
+const getOriginalTitle = vi.fn<(...args: unknown[]) => Promise<string | null>>(async () => null);
 vi.mock('@/lib/devops', async () => {
   const actual = await vi.importActual<typeof import('./devops')>('./devops');
   return {
@@ -45,6 +46,7 @@ vi.mock('@/lib/devops', async () => {
       addComment = addComment;
       getWorkItemComments = getWorkItemComments;
       findProjectForWorkItem = findProjectForWorkItem;
+      getOriginalTitle = getOriginalTitle;
     },
   };
 });
@@ -150,5 +152,31 @@ describe('internal note tells the support team (7767)', () => {
     expect(status).toBe(200);
     expect(addComment).toHaveBeenCalled();
     expect(sendInternalNoteNotification).not.toHaveBeenCalled();
+  });
+
+  // Customer mail threads by subject: a reply on a renamed ticket keeps the
+  // subject the conversation started under, as every other mail to them does.
+  it('replies to the customer under the original subject after a rename', async () => {
+    findProjectForWorkItem.mockResolvedValue({
+      project: { name: 'Internal' },
+      workItem: workItem('ticket; email; email-from:customer@example.test'),
+    });
+    getOriginalTitle.mockResolvedValueOnce('Cannot print');
+
+    await post({ comment: 'Thanks, looking now', isInternal: false });
+
+    expect(getOriginalTitle).toHaveBeenCalledWith('Internal', 7);
+    expect(sendAgentReply.mock.calls[0][1]).toBe('Cannot print');
+  });
+
+  it('falls back to the current title when the original cannot be read', async () => {
+    findProjectForWorkItem.mockResolvedValue({
+      project: { name: 'Internal' },
+      workItem: workItem('ticket; email; email-from:customer@example.test'),
+    });
+
+    await post({ comment: 'Thanks, looking now', isInternal: false });
+
+    expect(sendAgentReply.mock.calls[0][1]).toBe('Printer offline');
   });
 });
