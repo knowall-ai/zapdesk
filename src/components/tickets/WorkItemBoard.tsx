@@ -106,9 +106,12 @@ export function itemSortNumber(item: { id: number; source?: string; sourceRef?: 
   return gitHubIssueNumber(item.sourceRef) ?? 0;
 }
 
+/** The issue number after the last `#` of `owner/repo#42`, or null unless it is a positive whole number. */
 function gitHubIssueNumber(sourceRef: string | undefined): number | null {
-  const number = Number(sourceRef?.split('#').pop());
-  return sourceRef?.includes('#') && Number.isInteger(number) ? number : null;
+  const digits = /#([0-9]+)$/.exec(sourceRef ?? '')?.[1];
+  if (!digits) return null;
+  const number = Number.parseInt(digits, 10);
+  return Number.isSafeInteger(number) && number > 0 ? number : null;
 }
 
 /** GitHub issues are read-only here: no selection, bulk actions, drag or tips. */
