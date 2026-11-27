@@ -74,4 +74,18 @@ describe('the saved choice', () => {
     expect(readCommentOrder()).toBe('oldest');
     blocked.mockRestore();
   });
+
+  it('lets an unsaved choice win over an older saved one, until a save works', () => {
+    window.localStorage.setItem(STORAGE_KEY, 'oldest');
+    const blocked = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    saveCommentOrder('newest');
+    expect(readCommentOrder()).toBe('newest');
+    blocked.mockRestore();
+
+    saveCommentOrder('oldest');
+    window.localStorage.setItem(STORAGE_KEY, 'newest'); // another tab
+    expect(readCommentOrder()).toBe('newest');
+  });
 });

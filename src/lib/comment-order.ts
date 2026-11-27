@@ -16,9 +16,10 @@ export const STORAGE_KEY = 'zapdesk:comment-order';
 const CHANGE_EVENT = 'zapdesk:comment-order-change';
 export const DEFAULT_COMMENT_ORDER: CommentOrder = 'oldest';
 
-// The choice made in this page, used when storage is blocked so the button
-// still works until the page is reloaded.
-let chosen: CommentOrder | null = null;
+// A choice made in this page that could not be saved, so the button still
+// works until reload. Cleared by any successful save, so changes made in other
+// tabs show again.
+let unsaved: CommentOrder | null = null;
 
 type Orderable = { id: number | string; createdAt: Date | string };
 
@@ -44,26 +45,26 @@ export function orderComments<T extends Orderable>(
   return order === 'newest' ? newestFirst(comments) : oldestFirst(comments);
 }
 
-/** The saved order; the in-page choice when nothing could be saved; else the default. */
+/** An unsaved choice from this page, else the saved order, else the default. */
 export function readCommentOrder(): CommentOrder {
   if (typeof window === 'undefined') return DEFAULT_COMMENT_ORDER;
+  if (unsaved) return unsaved;
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY);
     if (saved === 'newest' || saved === 'oldest') return saved;
-    if (saved !== null) return DEFAULT_COMMENT_ORDER;
   } catch {
-    // Storage blocked: fall through to the in-page choice.
+    // Storage blocked: use the default.
   }
-  return chosen ?? DEFAULT_COMMENT_ORDER;
+  return DEFAULT_COMMENT_ORDER;
 }
 
 export function saveCommentOrder(order: CommentOrder): void {
   if (typeof window === 'undefined') return;
-  chosen = order;
   try {
     window.localStorage.setItem(STORAGE_KEY, order);
+    unsaved = null;
   } catch {
-    // Storage blocked: `chosen` keeps it until the page is reloaded.
+    unsaved = order;
   }
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }
