@@ -70,6 +70,7 @@ export interface ColumnConfig {
 // Default columns for tickets view (backwards compatible)
 export const TICKET_COLUMNS: ColumnConfig[] = [
   { id: 'checkbox', label: '', width: 'w-10' },
+  { id: 'id', label: 'ID', sortField: 'id', width: 'w-16' },
   { id: 'type', label: 'Type', sortField: 'type' },
   { id: 'status', label: 'Ticket Status', sortField: 'status' },
   { id: 'subject', label: 'Subject', sortField: 'subject' },
@@ -88,6 +89,16 @@ export const TICKET_COLUMNS: ColumnConfig[] = [
 export const TICKET_COLUMNS_WITH_SOURCE: ColumnConfig[] = TICKET_COLUMNS.flatMap((column) =>
   column.id === 'type' ? [column, { id: 'source' as const, label: 'Source' }] : [column]
 );
+
+/**
+ * The number a row is known by: the work item id, or a GitHub issue's own
+ * number (its ZapDesk id is GitHub's internal id, negated).
+ */
+export function itemNumber(item: { id: number; source?: string; sourceRef?: string }): string {
+  if (item.source !== 'github') return String(item.id);
+  const number = item.sourceRef?.split('#').pop();
+  return number ? `#${number}` : '';
+}
 
 /** GitHub issues are read-only here: no selection, bulk actions, drag or tips. */
 function isGitHubItem(item: { source?: string }): boolean {
@@ -1389,7 +1400,7 @@ export default function WorkItemBoard({
                           className={`${cellPadding} text-sm`}
                           style={{ color: 'var(--text-muted)' }}
                         >
-                          {item.id}
+                          {itemNumber(item)}
                         </td>
                       )}
                       {hasColumn('type') && (
