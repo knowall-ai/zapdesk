@@ -15,6 +15,7 @@ import {
   Clock,
   UserCheck,
   AlertCircle,
+  Archive,
   CheckCircle,
   CalendarCheck,
   ClipboardList,
@@ -80,6 +81,7 @@ interface SidebarProps {
     recentlyUpdated: number;
     pending: number;
     recentlySolved: number;
+    closed: number;
     createdToday: number;
     failedProjects?: string[];
   };
@@ -113,6 +115,7 @@ export default function Sidebar({
     recentlyUpdated: 0,
     pending: 0,
     recentlySolved: 0,
+    closed: 0,
     createdToday: 0,
   };
 
@@ -168,6 +171,13 @@ export default function Sidebar({
       icon: <CheckCircle size={16} />,
       href: '/tickets?view=recently-solved',
       count: counts.recentlySolved,
+    },
+    {
+      id: 'closed',
+      name: 'Closed tickets',
+      icon: <Archive size={16} />,
+      href: '/tickets?view=closed',
+      count: counts.closed,
     },
   ];
 

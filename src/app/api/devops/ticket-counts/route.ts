@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSessionWithToken } from '@/lib/server-session';
 import { AzureDevOpsService } from '@/lib/devops';
+import { isClosedNotRemoved } from '@/lib/ticket-views';
 import type { TicketStatus } from '@/types';
 
 export async function GET(request: NextRequest) {
@@ -45,6 +46,7 @@ export async function GET(request: NextRequest) {
         const recent = t.updatedAt >= sevenDaysAgo;
         return solved && recent;
       }).length,
+      closed: tickets.filter(isClosedNotRemoved).length,
     };
 
     // A project that failed contributes no tickets, so every count below is

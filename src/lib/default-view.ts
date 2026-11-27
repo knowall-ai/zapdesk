@@ -21,6 +21,7 @@ export const DEFAULT_VIEW_IDS = [
   'created-today',
   'pending',
   'recently-solved',
+  'closed',
 ] as const;
 
 export type DefaultViewId = (typeof DEFAULT_VIEW_IDS)[number];

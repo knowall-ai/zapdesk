@@ -50,6 +50,7 @@ const viewTitles: Record<string, string> = {
   'created-today': 'Created today',
   pending: 'Pending tickets',
   'recently-solved': 'Recently solved tickets',
+  closed: 'Closed tickets',
   removed: 'Removed tickets',
   kanban: 'Kanban Board',
 };
