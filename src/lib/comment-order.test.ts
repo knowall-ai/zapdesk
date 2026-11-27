@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   DEFAULT_COMMENT_ORDER,
   STORAGE_KEY,
@@ -62,5 +62,16 @@ describe('the saved choice', () => {
   it('ignores a value it does not know', () => {
     window.localStorage.setItem(STORAGE_KEY, 'sideways');
     expect(readCommentOrder()).toBe('oldest');
+  });
+
+  it('still switches when storage is blocked', () => {
+    const blocked = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    saveCommentOrder('newest');
+    expect(readCommentOrder()).toBe('newest');
+    saveCommentOrder('oldest');
+    expect(readCommentOrder()).toBe('oldest');
+    blocked.mockRestore();
   });
 });
