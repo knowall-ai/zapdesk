@@ -121,6 +121,27 @@ describe('GET /api/devops/workitem-states', () => {
     expect(body.statesByType[0].workItemType).toBe('Bug');
   });
 
+  // One named type is the whole answer: an empty 200 read as "this type has no
+  // states" and the menu offered nothing, or a lone made-up Active (#725).
+  it('answers an error when the one requested type cannot be read', async () => {
+    devOps({ Bug: 'error' });
+    const failed = await getStates({ project: 'Internal', type: 'Bug' });
+    expect(failed.status).toBe(502);
+    expect(failed.body.error).toMatch(/Bug/);
+
+    devOps({});
+    const missing = await getStates({ project: 'Internal', type: 'Bug' });
+    expect(missing.status).toBe(404);
+
+    fetchMock.mockImplementation(async (url: string) =>
+      url.includes('/states')
+        ? new Response('Forbidden', { status: 403 })
+        : Response.json({ value: [{ name: 'Internal' }] })
+    );
+    const refused = await getStates({ project: 'Internal', type: 'Bug' });
+    expect(refused.status).toBe(502);
+  });
+
   it('falls back to the first project when none is given', async () => {
     devOps(AGILE_STATES, ['First', 'Second']);
     await getStates();

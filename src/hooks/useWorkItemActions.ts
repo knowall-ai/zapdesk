@@ -287,7 +287,11 @@ export function useWorkItemActions({
           );
           if (response.ok) {
             const data = await response.json();
-            setAvailableStates(ensureActiveState(data.allStates || []));
+            const states: WorkItemState[] = data.allStates || [];
+            // Named type: exactly its states. The Active fallback is for the
+            // mixed list only; added to a type without Active, it offered a
+            // state the type cannot take (#725).
+            setAvailableStates(workItemType ? states : ensureActiveState(states));
           }
         } catch (err) {
           console.error('Failed to fetch work item states:', err);

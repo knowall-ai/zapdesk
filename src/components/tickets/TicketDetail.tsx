@@ -109,6 +109,9 @@ interface TicketDetailProps {
   processTemplate?: string;
 }
 
+/** One empty list, so "no states yet" is the same value on every render. */
+const NO_STATES: WorkItemState[] = [];
+
 const priorityOptions: Array<{ value: number; label: TicketPriority }> = [
   { value: 1, label: 'Urgent' },
   { value: 2, label: 'High' },
@@ -212,7 +215,24 @@ export default function TicketDetail({
 
   // State editing
   const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
-  const [availableStates, setAvailableStates] = useState<WorkItemState[]>([]);
+  /**
+   * The states last read, with the type and project they were read for. The
+   * menu shows them only while those still match the ticket, so a type change
+   * empties it at once and an answer for the previous type that lands late is
+   * never shown (#725).
+   */
+  const [loadedStates, setLoadedStates] = useState<{
+    key: string;
+    states: WorkItemState[];
+    failed: boolean;
+  } | null>(null);
+  const statesKey = `${ticket.workItemType ?? ''}|${ticket.project ?? ''}`;
+  const availableStates = loadedStates?.key === statesKey ? loadedStates.states : NO_STATES;
+  const statesLoadFailed = loadedStates?.key === statesKey && loadedStates.failed;
+  const statesKeyRef = useRef(statesKey);
+  useEffect(() => {
+    statesKeyRef.current = statesKey;
+  }, [statesKey]);
   const [isLoadingStates, setIsLoadingStates] = useState(false);
   const [isUpdatingState, setIsUpdatingState] = useState(false);
 
@@ -402,21 +422,19 @@ export default function TicketDetail({
   );
   const typeDropdownRef = useClickOutside<HTMLDivElement>(closeTypeDropdown, isTypeDropdownOpen);
 
-  // Fetch available states when state dropdown opens
+  // Fetch available states when the menu opens, and again for a new type or
+  // project. Nothing to show -- a failed or empty answer -- is asked for again
+  // the next time the menu opens.
   useEffect(() => {
     if (isStateDropdownOpen && availableStates.length === 0) {
-      fetchAvailableStates();
+      fetchAvailableStates(statesKey);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isStateDropdownOpen]);
+  }, [isStateDropdownOpen, statesKey]);
 
-  // A type change gives the ticket a different set of states.
-  useEffect(() => {
-    setAvailableStates([]);
-  }, [ticket.workItemType, ticket.project]);
-
-  const fetchAvailableStates = async () => {
+  const fetchAvailableStates = async (key: string) => {
     setIsLoadingStates(true);
+    let states: WorkItemState[] = [];
     try {
       // This ticket's own type in its own project, as the quick view asks:
       // without them the route answers every default type's states in the
@@ -429,15 +447,19 @@ export default function TicketDetail({
       const response = await devOpsGet(`/api/devops/workitem-states${query ? `?${query}` : ''}`);
       if (response.ok) {
         const data = await response.json();
-        // Use shared utility to ensure "Active" state exists
-        const states = ensureActiveState(data.allStates || []);
-        setAvailableStates(states);
+        const answered: WorkItemState[] = data.allStates || [];
+        // A named type gets exactly its states. The Active fallback is for the
+        // mixed list only: added to a type without Active, it offered a state
+        // the type cannot take (#725).
+        states = ticket.workItemType ? answered : ensureActiveState(answered);
       }
     } catch (err) {
       console.error('Failed to fetch work item states:', err);
-    } finally {
-      setIsLoadingStates(false);
     }
+    // An answer for a type or project the ticket no longer has is dropped.
+    if (statesKeyRef.current !== key) return;
+    setLoadedStates({ key, states, failed: states.length === 0 });
+    setIsLoadingStates(false);
   };
 
   /** People for an identity field's picker, loaded once per ticket. */
@@ -1166,6 +1188,10 @@ export default function TicketDetail({
                     >
                       <Loader2 size={14} className="animate-spin" />
                       Loading...
+                    </div>
+                  ) : statesLoadFailed ? (
+                    <div className="p-3 text-sm" style={{ color: 'var(--text-muted)' }}>
+                      Could not load statuses
                     </div>
                   ) : (
                     <div className="max-h-64 overflow-auto py-1">
