@@ -3,6 +3,7 @@ import { getServerSessionWithToken } from '@/lib/server-session';
 import { parseWorkItemId } from '@/lib/work-item-id';
 import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
 import { resolveStateForStatus, categoriesForStatus } from '@/lib/state-categories';
+import { notifyStateChange } from '@/lib/notify-state-change';
 import type { TicketStatus } from '@/types';
 
 const VALID_STATUSES: TicketStatus[] = [
@@ -151,6 +152,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       ticketId,
       devOpsState
     );
+
+    // The same email, under the same rules, as a change made on the ticket
+    // page: the bulk actions on the tickets list come through here
+    // (https://github.com/knowall-ai/zapdesk/issues/728).
+    notifyStateChange(updatedWorkItem, ticketId, currentState, devOpsState);
 
     const ticket = workItemToTicket(updatedWorkItem);
     return NextResponse.json({ ticket, state: devOpsState });
