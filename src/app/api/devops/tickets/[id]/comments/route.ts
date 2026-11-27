@@ -10,6 +10,7 @@ import {
   sendInternalNoteNotification,
 } from '@/lib/email';
 import { supportTeamRecipients } from '@/lib/support-team';
+import { claimsZendeskImport } from '@/lib/imported-attribution';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -61,7 +62,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
  * to the assignee. The email is sent after responding and cannot fail the
  * comment.
  *
- * 400 for an empty comment or one forging the email-origin marker, 401 without
+ * 400 for an empty comment or one forging the email-origin marker or the
+ * Zendesk import header, 401 without
  * a session, 404 when the ticket cannot be found, 500 otherwise.
  */
 export async function POST(request: NextRequest, { params }: RouteParams) {
@@ -93,6 +95,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (claimsEmailOrigin(comment)) {
       return NextResponse.json(
         { error: 'A comment cannot begin with an email-origin marker.' },
+        { status: 400 }
+      );
+    }
+    // Likewise the header an imported Zendesk comment opens with, which names
+    // its author and date (#712). Only the import writes it, straight to DevOps.
+    if (claimsZendeskImport(comment)) {
+      return NextResponse.json(
+        { error: 'A comment cannot begin with a Zendesk import header.' },
         { status: 400 }
       );
     }

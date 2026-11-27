@@ -23,6 +23,11 @@ interface TicketHistoryProps {
    * the one being fixed.
    */
   emailRequester?: { displayName: string; avatarUrl?: string };
+  /**
+   * How the requester raised it, shown after their name: "by email" unless
+   * said otherwise, e.g. "from Zendesk" for an imported ticket (#712).
+   */
+  requesterVia?: string;
 }
 
 // Friendly labels for Azure DevOps field reference names
@@ -55,7 +60,12 @@ function formatFieldValue(field: string, value?: string): string {
   return value;
 }
 
-export default function TicketHistory({ updates, loading, emailRequester }: TicketHistoryProps) {
+export default function TicketHistory({
+  updates,
+  loading,
+  emailRequester,
+  requesterVia = 'by email',
+}: TicketHistoryProps) {
   if (loading) {
     return (
       <div
@@ -126,7 +136,7 @@ export default function TicketHistory({ updates, loading, emailRequester }: Tick
                 </span>
                 {viaEmail && (
                   <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    by email
+                    {requesterVia}
                   </span>
                 )}
                 {isValid(new Date(update.revisedDate)) && (

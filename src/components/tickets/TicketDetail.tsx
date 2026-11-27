@@ -48,6 +48,7 @@ import {
   attachedFilesHtml,
 } from '@/lib/attachment-utils';
 import { emailFromTag, hasEmailTag, hasTicketTag, tagsAtCreation } from '@/lib/tags';
+import { isZendeskImport } from '@/lib/imported-attribution';
 import { exitFullViewHref, reachedByInAppNavigation } from '@/lib/full-view';
 import StatusBadge from '../common/StatusBadge';
 import Avatar from '../common/Avatar';
@@ -964,6 +965,13 @@ export default function TicketDetail({
     : senderAtCreation && senderAtCreation.toLowerCase() !== requesterEmail
       ? { displayName: senderAtCreation }
       : { displayName: ticket.requester.displayName, avatarUrl: ticket.requester.avatarUrl };
+  // An imported Zendesk ticket was created through the import's PAT; its
+  // requester is already resolved from the import header, so the timeline
+  // credits them with raising it too (#712).
+  const importedRequester =
+    !timelineEmailRequester && isZendeskImport(ticket.tags)
+      ? { displayName: ticket.requester.displayName, avatarUrl: ticket.requester.avatarUrl }
+      : undefined;
 
   return (
     <div className="flex h-full">
@@ -1595,7 +1603,8 @@ export default function TicketDetail({
             <TicketHistory
               updates={history}
               loading={historyLoading}
-              emailRequester={timelineEmailRequester}
+              emailRequester={timelineEmailRequester ?? importedRequester}
+              requesterVia={importedRequester ? 'from Zendesk' : undefined}
             />
           </div>
         )}

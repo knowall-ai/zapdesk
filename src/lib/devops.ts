@@ -37,6 +37,11 @@ import { historyFieldValue } from './history-values';
 // so pulling in the Graph helpers alongside the parser costs nothing here.
 import { extractRequesterEmail } from './email';
 import {
+  isZendeskImport,
+  parseImportedComment,
+  parseImportedRequester,
+} from './imported-attribution';
+import {
   getMitigationFieldRef,
   getResolutionFieldRef,
   getTemplateConfig,
@@ -233,14 +238,31 @@ function identityToUser(identity?: {
  */
 function resolveRequester(
   tags: string | undefined,
-  createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string }
+  createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string },
+  description?: string
 ): Customer {
   const email = extractRequesterEmail(tags ?? '');
   // Tags are editable by anyone with work item access, so the value after
   // `email-from:` is not trustworthy. Anything that is not an address is
   // treated as absent rather than displayed as one -- it would otherwise
   // become the display name and the Customer id too.
-  if (!email || !looksLikeEmail(email)) return identityToCustomer(createdBy);
+  if (!email || !looksLikeEmail(email)) {
+    // A ticket imported from Zendesk was created through the import's PAT;
+    // its description opens with the original requester (#712). Display
+    // only: mail still goes by the email tags alone, which imports never get.
+    const imported = isZendeskImport(tags) ? parseImportedRequester(description) : null;
+    if (imported) {
+      return {
+        id: imported.email,
+        displayName: imported.name,
+        email: imported.email,
+        timezone: 'Europe/Dublin',
+        tags: [],
+        lastUpdated: new Date(),
+      };
+    }
+    return identityToCustomer(createdBy);
+  }
 
   return {
     id: email,
@@ -402,7 +424,11 @@ export function workItemToTicket(workItem: DevOpsWorkItem, organization?: Organi
     devOpsState: fields['System.State'], // Preserve original DevOps state
     workItemType: fields['System.WorkItemType'], // Azure DevOps work item type
     priority: mapPriority(fields['Microsoft.VSTS.Common.Priority']),
-    requester: resolveRequester(fields['System.Tags'], fields['System.CreatedBy']),
+    requester: resolveRequester(
+      fields['System.Tags'],
+      fields['System.CreatedBy'],
+      fields['System.Description']
+    ),
     assignee: identityToUser(fields['System.AssignedTo']),
     organization,
     tags:
@@ -1217,13 +1243,32 @@ export class AzureDevOpsService {
           text: string;
           createdDate: string;
           createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string };
-        }) => ({
-          id: c.id,
-          content: stripInternalNoteMarker(c.text),
-          createdAt: new Date(c.createdDate),
-          author: commentAuthor(c.text, c.createdBy),
-          isInternal: isInternalNote(c.text),
-        })
+        }) => {
+          // Imported from Zendesk: the original author, time and kind, from
+          // the header the import opened it with (#712). DevOps only knows
+          // the import's PAT owner and the day it ran.
+          const imported = parseImportedComment(c.text);
+          if (imported) {
+            return {
+              id: c.id,
+              content: stripInternalNoteMarker(imported.content),
+              createdAt: imported.createdAt,
+              author: {
+                id: `zendesk:${imported.authorName}`,
+                displayName: imported.authorName,
+                email: '',
+              },
+              isInternal: imported.isInternal || isInternalNote(c.text),
+            };
+          }
+          return {
+            id: c.id,
+            content: stripInternalNoteMarker(c.text),
+            createdAt: new Date(c.createdDate),
+            author: commentAuthor(c.text, c.createdBy),
+            isInternal: isInternalNote(c.text),
+          };
+        }
       ) || []
     );
   }

@@ -65,6 +65,16 @@ describe('the comments endpoint refuses a forged email-origin marker', () => {
     expect(addComment).not.toHaveBeenCalled();
   });
 
+  // #712: the Zendesk import header names a comment's author and date too.
+  it('rejects a comment opening with a Zendesk import header', async () => {
+    const response = await post(
+      '<p><em>From Zendesk &middot; Alex Morgan &middot; 2026-04-22 07:58 UTC &middot; public reply</em></p><p>Hi</p>'
+    );
+
+    expect(response.status).toBe(400);
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
   it('still accepts an ordinary comment', async () => {
     const response = await post('Looking into it now.');
 

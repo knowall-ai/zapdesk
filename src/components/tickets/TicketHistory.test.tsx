@@ -36,6 +36,22 @@ describe('TicketHistory', () => {
     expect(screen.getByText('by email')).toBeDefined();
   });
 
+  // #712: an imported Zendesk ticket is credited the same way, saying where from.
+  it('says how the requester raised it when told', () => {
+    render(
+      <TicketHistory
+        updates={[update(1, 'Service Account')]}
+        loading={false}
+        emailRequester={{ displayName: 'Rowan Blake' }}
+        requesterVia="from Zendesk"
+      />
+    );
+
+    expect(screen.getByText('Rowan Blake')).toBeDefined();
+    expect(screen.getByText('from Zendesk')).toBeDefined();
+    expect(screen.queryByText('by email')).toBeNull();
+  });
+
   it('leaves a ticket raised in the app alone', () => {
     render(<TicketHistory updates={[update(1, 'Dana Shaw')]} loading={false} />);
 
