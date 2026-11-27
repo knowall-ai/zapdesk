@@ -38,6 +38,7 @@ import {
   replaceImageSrc,
   sortAttachments,
   sourceTag,
+  withMissingTags,
   type ImportConfig,
   type JsonPatchOp,
   type ZendeskComment,
@@ -288,11 +289,14 @@ async function alreadyImported(project: string, zendeskId: number): Promise<numb
 }
 
 /** How many comments and attached files an existing work item has. */
-async function contents(project: string, id: number): Promise<{ comments: number; files: number }> {
-  const { json: item } = await devops<{ relations?: { rel: string }[] }>(
-    'GET',
-    `${ORG}/_apis/wit/workitems/${id}?$expand=relations&api-version=7.1`
-  );
+async function contents(
+  project: string,
+  id: number
+): Promise<{ comments: number; files: number; tags: string }> {
+  const { json: item } = await devops<{
+    relations?: { rel: string }[];
+    fields?: Record<string, unknown>;
+  }>('GET', `${ORG}/_apis/wit/workitems/${id}?$expand=relations&api-version=7.1`);
   const { json: page } = await devops<{ totalCount: number }>(
     'GET',
     `${ORG}/${encodeURIComponent(project)}/_apis/wit/workItems/${id}/comments?$top=1&api-version=7.1-preview.4`
@@ -300,6 +304,7 @@ async function contents(project: string, id: number): Promise<{ comments: number
   return {
     comments: page.totalCount,
     files: (item.relations ?? []).filter((r) => r.rel === 'AttachedFile').length,
+    tags: String(item.fields?.['System.Tags'] ?? ''),
   };
 }
 
@@ -339,6 +344,18 @@ for (const { ticket, plan } of ready) {
     const has = await contents(project, found[0]);
     const want = { comments: comments.length - 1, files: files.length };
     if (has.comments === want.comments && has.files === want.files) {
+      // Imported before a tag was added to importTags (`ticket`, #709): add
+      // it, or ZapDesk keeps the Task out of its lists. Same safe write as
+      // any other: suppressNotifications, and never an email tag.
+      const tags = withMissingTags(has.tags, plan.tags);
+      if (tags) {
+        const retag = `${ORG}/_apis/wit/workitems/${found[0]}?bypassRules=true&suppressNotifications=true${commit ? '' : '&validateOnly=true'}&api-version=7.1`;
+        await write('PATCH', retag, [{ op: 'add', path: '/fields/System.Tags', value: tags }]);
+        console.log(
+          `#${ticket.id}: already imported as ${found[0]}, complete; ${commit ? 'tags updated' : 'would update tags'} to ${tags}`
+        );
+        continue;
+      }
       console.log(`#${ticket.id}: already imported as ${found[0]}, complete, skipped`);
       continue;
     }

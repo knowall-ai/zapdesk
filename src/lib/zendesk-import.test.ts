@@ -16,6 +16,7 @@ import {
   redirectTarget,
   replaceImageSrc,
   sortAttachments,
+  withMissingTags,
   type ImportConfig,
   type ZendeskTicket,
   type ZendeskUser,
@@ -102,6 +103,23 @@ describe('devopsPriority', () => {
     expect(devopsPriority('normal')).toBe(3);
     expect(devopsPriority('low')).toBe(4);
     expect(devopsPriority(null)).toBe(3);
+  });
+});
+
+describe('withMissingTags', () => {
+  // #710 review: a Task imported before `ticket` existed gets it on a rerun.
+  it('adds the tags a complete import lacks, keeping the rest', () => {
+    expect(withMissingTags('zendesk:7; zendesk-import', importTags(7))).toBe(
+      'zendesk:7; zendesk-import; ticket'
+    );
+  });
+
+  it('returns null when nothing is missing, whatever the case', () => {
+    expect(withMissingTags('Ticket; zendesk-import; zendesk:7', importTags(7))).toBeNull();
+  });
+
+  it('starts from no tags', () => {
+    expect(withMissingTags('', ['ticket'])).toBe('ticket');
   });
 });
 
