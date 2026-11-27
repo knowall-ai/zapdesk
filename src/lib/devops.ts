@@ -1256,7 +1256,7 @@ export class AzureDevOpsService {
   private async getRecordedCommentAuthors(
     projectName: string,
     workItemId: number
-  ): Promise<Map<string, RecordedAuthor>> {
+  ): Promise<Map<number, RecordedAuthor>> {
     const PAGE = 200;
     const revisions: RawRevision[] = [];
     try {
