@@ -4,7 +4,8 @@ import { parseWorkItemId } from '@/lib/work-item-id';
 import {
   AzureDevOpsService,
   DevOpsApiError,
-  StateNotAvailableError,
+  StateValueRefusedError,
+  describeStateRefusal,
   workItemToTicket,
 } from '@/lib/devops';
 import { sendStatusChangeNotification, assigneeEmailFrom } from '@/lib/email';
@@ -115,6 +116,13 @@ async function missingFieldsFor(
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let refusal: RefusalContext | undefined;
+  /**
+   * The item a refused state is being moved, so the refusal can be worded
+   * against its type's own states (#725). Set only once the item was read.
+   */
+  let moving:
+    | { service: AzureDevOpsService; project: string; workItemType: string; fromState?: string }
+    | undefined;
   try {
     const session = await getServerSessionWithToken();
 
@@ -244,6 +252,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const existing = await devopsService.getWorkItem(projectHint, ticketId);
         oldState = existing?.fields?.['System.State'];
         const workItemType = existing?.fields?.['System.WorkItemType'];
+        if (typeof workItemType === 'string' && workItemType) {
+          moving = {
+            service: devopsService,
+            project: projectHint,
+            workItemType,
+            fromState: oldState,
+          };
+        }
         if (organization && typeof workItemType === 'string' && workItemType) {
           refusal = {
             accessToken: session.accessToken,
@@ -287,6 +303,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
       const oldState: string | undefined = workItem.fields?.['System.State'] || undefined;
       const workItemType = workItem.fields?.['System.WorkItemType'];
+      if (typeof workItemType === 'string' && workItemType) {
+        moving = {
+          service: devopsService,
+          project: project.name,
+          workItemType,
+          fromState: oldState,
+        };
+      }
       if (organization && typeof workItemType === 'string' && workItemType) {
         refusal = {
           accessToken: session.accessToken,
@@ -330,12 +354,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       // ours to own, so it stays a 500.
       const passThrough = [400, 401, 403, 404, 409];
       const status = passThrough.includes(error.status) ? error.status : 500;
-      // The type has no such state: say which type, so the user knows the
-      // choice cannot be made for this ticket at all (#725).
-      if (error instanceof StateNotAvailableError) {
-        const message = refusal?.workItemType
-          ? `The "${error.state}" state is not available for the ${refusal.workItemType} work item type.`
-          : error.message;
+      // DevOps refused the state as a value: either the type has no such
+      // state or a rule forbids it from here. Its states say which -- one read,
+      // only on this path (#725).
+      if (error instanceof StateValueRefusedError) {
+        const states = moving
+          ? await moving.service.getWorkItemTypeStates(moving.project, moving.workItemType)
+          : [];
+        const message = describeStateRefusal(
+          error,
+          moving?.workItemType ?? '',
+          moving?.fromState,
+          states
+        );
         return NextResponse.json({ error: message }, { status });
       }
       // A rule that wanted fields filled in names them. Hand them back so the

@@ -25,6 +25,7 @@ vi.mock('@/lib/email', async () => {
 const getWorkItem = vi.fn();
 const getProjects = vi.fn();
 const updateTicketState = vi.fn();
+const getWorkItemTypeStates = vi.fn();
 vi.mock('@/lib/devops', async () => {
   const actual = await vi.importActual<typeof import('./devops')>('./devops');
   return {
@@ -33,6 +34,7 @@ vi.mock('@/lib/devops', async () => {
       getWorkItem = getWorkItem;
       getProjects = getProjects;
       updateTicketState = updateTicketState;
+      getWorkItemTypeStates = getWorkItemTypeStates;
     },
   };
 });
@@ -42,7 +44,7 @@ vi.mock('@/lib/describe-fields', () => ({
   describeFields: (...args: unknown[]) => describeFields(...args),
 }));
 
-const { DevOpsApiError, StateNotAvailableError } = await import('./devops');
+const { DevOpsApiError, StateValueRefusedError } = await import('./devops');
 
 const workItem = (id: number, state: string, tags = '') => ({
   id,
@@ -465,30 +467,72 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
       expect(body.error).toContain('not allowed');
     });
 
-    // A Task with no Resolved state, sent Resolved (#725): the answer names the
-    // type, so the page can say why nothing changed.
-    it('says the state is not available for the work item type', async () => {
+    // DevOps flags System.State InvalidListValue both for a state the type
+    // does not have and for one it has but a rule forbids from here, so the
+    // route reads the type's states before it says which (#725).
+    const REASON = 'TF401320: Rule Error for field State. Error code: InvalidListValue.';
+    const refused = () => new StateValueRefusedError(400, 'Resolved', REASON);
+    const BUG_STATES = [
+      { name: 'New', color: '', category: 'Proposed' },
+      { name: 'Active', color: '', category: 'InProgress' },
+      { name: 'Closed', color: '', category: 'Completed' },
+    ];
+
+    it('says the state is not available when the type does not have it', async () => {
       getWorkItem.mockResolvedValue(workItem(42, 'Active'));
-      updateTicketState.mockRejectedValue(new StateNotAvailableError(400, 'Resolved'));
+      updateTicketState.mockRejectedValue(refused());
+      getWorkItemTypeStates.mockResolvedValue(BUG_STATES);
       const { status, body } = await patch('42', { state: 'Resolved', project: 'Internal' });
       expect(status).toBe(400);
       expect(body.error).toBe('The "Resolved" state is not available for the Bug work item type.');
+      expect(getWorkItemTypeStates).toHaveBeenCalledWith('Internal', 'Bug');
     });
 
     it('says so on the project search too', async () => {
       getWorkItem.mockResolvedValue(workItem(42, 'Active'));
-      updateTicketState.mockRejectedValue(new StateNotAvailableError(400, 'Resolved'));
+      updateTicketState.mockRejectedValue(refused());
+      getWorkItemTypeStates.mockResolvedValue(BUG_STATES);
       const { status, body } = await patch('42', { state: 'Resolved' });
       expect(status).toBe(400);
       expect(body.error).toBe('The "Resolved" state is not available for the Bug work item type.');
     });
 
-    it('still says so when the work item could not be read first', async () => {
-      getWorkItem.mockRejectedValue(new Error('timeout'));
-      updateTicketState.mockRejectedValue(new StateNotAvailableError(400, 'Resolved'));
+    it('a state the type has, refused by a rule, is not reported as unavailable', async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'New'));
+      updateTicketState.mockRejectedValue(refused());
+      getWorkItemTypeStates.mockResolvedValue([
+        ...BUG_STATES,
+        { name: 'Resolved', color: '', category: 'Resolved' },
+      ]);
       const { status, body } = await patch('42', { state: 'Resolved', project: 'Internal' });
       expect(status).toBe(400);
-      expect(body.error).toBe('The "Resolved" state is not available for this work item type.');
+      expect(body.error).not.toMatch(/not available/);
+      expect(body.error).toBe(`Cannot move this Bug from "New" to "Resolved". ${REASON}`);
+    });
+
+    it("gives DevOps's own reason when the type's states cannot be read", async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Active'));
+      updateTicketState.mockRejectedValue(refused());
+      getWorkItemTypeStates.mockResolvedValue([]);
+      const { status, body } = await patch('42', { state: 'Resolved', project: 'Internal' });
+      expect(status).toBe(400);
+      expect(body.error).toBe(`Failed to update work item state: ${REASON}`);
+    });
+
+    it("gives DevOps's own reason when the work item could not be read first", async () => {
+      getWorkItem.mockRejectedValue(new Error('timeout'));
+      updateTicketState.mockRejectedValue(refused());
+      const { status, body } = await patch('42', { state: 'Resolved', project: 'Internal' });
+      expect(status).toBe(400);
+      expect(body.error).toBe(`Failed to update work item state: ${REASON}`);
+      expect(getWorkItemTypeStates).not.toHaveBeenCalled();
+    });
+
+    it("never reads the type's states when the change succeeds", async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'New'));
+      updateTicketState.mockResolvedValue(workItem(42, 'Active'));
+      await patch('42', { state: 'Active', project: 'Internal' });
+      expect(getWorkItemTypeStates).not.toHaveBeenCalled();
     });
 
     it.each([401, 403, 404])('passes through a %i from DevOps', async (code) => {

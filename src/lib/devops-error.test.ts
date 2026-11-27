@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { describeUpdateFailure, devOpsErrorDetail, updateFailureStatus } from './devops-error';
-import { AzureDevOpsService, DevOpsApiError, StateNotAvailableError } from './devops';
+import { AzureDevOpsService, DevOpsApiError, StateValueRefusedError } from './devops';
 
 /**
  * Every refused work item update used to reach the user as one "Failed to
@@ -142,9 +142,10 @@ describe('updateTicketState', () => {
     vi.restoreAllMocks();
   });
 
-  // A Task with no Resolved state, sent Resolved (#725). DevOps's own message
-  // ("Rule Error for field State") does not tell the user what went wrong.
-  it('says plainly when the type has no such state', async () => {
+  // A state DevOps refused as a value (#725): a type without it, or a rule
+  // against it from the current state. Which one is for the route to find out,
+  // so the error keeps DevOps's own reason and the state asked for.
+  it('marks a refused state value, keeping the reason', async () => {
     const body = JSON.stringify({
       message:
         'TF401320: Rule Error for field State. Error code: Required, HasValues, LimitedToValues, AllowsOldValue, InvalidListValue.',
@@ -168,11 +169,14 @@ describe('updateTicketState', () => {
       .updateTicketState('ABC Inc', 7, 'Resolved')
       .catch((e: unknown) => e);
 
-    expect(error).toBeInstanceOf(StateNotAvailableError);
-    expect((error as StateNotAvailableError).status).toBe(400);
-    expect((error as StateNotAvailableError).state).toBe('Resolved');
-    expect((error as StateNotAvailableError).message).toBe(
-      'The "Resolved" state is not available for this work item type.'
+    expect(error).toBeInstanceOf(StateValueRefusedError);
+    expect((error as StateValueRefusedError).status).toBe(400);
+    expect((error as StateValueRefusedError).state).toBe('Resolved');
+    expect((error as StateValueRefusedError).detail).toMatch(
+      /^TF401320: Rule Error for field State/
+    );
+    expect((error as StateValueRefusedError).message).toBe(
+      `Failed to update work item state: ${(error as StateValueRefusedError).detail}`
     );
   });
 
@@ -187,7 +191,7 @@ describe('updateTicketState', () => {
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(DevOpsApiError);
-    expect(error).not.toBeInstanceOf(StateNotAvailableError);
+    expect(error).not.toBeInstanceOf(StateValueRefusedError);
     expect((error as DevOpsApiError).message).toMatch(/Rule Error for field Severity/);
   });
 });
