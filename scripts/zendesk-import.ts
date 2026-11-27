@@ -32,6 +32,7 @@ import {
   findZendeskImages,
   imageDownloadUrl,
   isConfiguredHost,
+  isEmailTag,
   parseImportArgs,
   planTicket,
   redirectTarget,
@@ -348,6 +349,16 @@ for (const { ticket, plan } of ready) {
       // it, or ZapDesk keeps the Task out of its lists. Same safe write as
       // any other: suppressNotifications, and never an email tag.
       const tags = withMissingTags(has.tags, plan.tags);
+      // Someone may since have tagged it for email by hand. Rewriting the
+      // tags would carry that along, which the write guard rightly refuses;
+      // report it and go on with the rest rather than stop the batch.
+      if (tags && has.tags.split(';').some(isEmailTag)) {
+        console.log(
+          `#${ticket.id}: already imported as ${found[0]}, complete, but it has an email tag; ` +
+            'tags left alone. Remove the email tag in DevOps and run again to add the rest.'
+        );
+        continue;
+      }
       if (tags) {
         const retag = `${ORG}/_apis/wit/workitems/${found[0]}?bypassRules=true&suppressNotifications=true${commit ? '' : '&validateOnly=true'}&api-version=7.1`;
         await write('PATCH', retag, [{ op: 'add', path: '/fields/System.Tags', value: tags }]);
