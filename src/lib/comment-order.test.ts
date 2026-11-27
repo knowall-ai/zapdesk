@@ -1,16 +1,30 @@
-import { describe, it, expect } from 'vitest';
-import { newestFirst } from './comment-order';
+// @vitest-environment jsdom
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  DEFAULT_COMMENT_ORDER,
+  STORAGE_KEY,
+  newestFirst,
+  oldestFirst,
+  orderComments,
+  readCommentOrder,
+  saveCommentOrder,
+} from './comment-order';
 
 const c = (id: number, createdAt: string | Date) => ({ id, createdAt });
+const list = [
+  c(1, '2026-10-21T08:18:00Z'),
+  c(2, '2026-10-21T08:23:00Z'),
+  c(3, '2026-10-20T09:00:00Z'),
+];
 
-describe('newestFirst (#486)', () => {
-  it('puts the latest comment at the top', () => {
-    const ordered = newestFirst([
-      c(1, '2026-10-21T08:18:00Z'),
-      c(2, '2026-10-21T08:23:00Z'),
-      c(3, '2026-10-20T09:00:00Z'),
-    ]);
-    expect(ordered.map((x) => x.id)).toEqual([2, 1, 3]);
+describe('comment order', () => {
+  it('reads top to bottom by default, latest at the bottom', () => {
+    expect(DEFAULT_COMMENT_ORDER).toBe('oldest');
+    expect(orderComments(list, DEFAULT_COMMENT_ORDER).map((x) => x.id)).toEqual([3, 1, 2]);
+  });
+
+  it('puts the latest at the top when asked (#486)', () => {
+    expect(orderComments(list, 'newest').map((x) => x.id)).toEqual([2, 1, 3]);
   });
 
   it('accepts Date objects as well as strings', () => {
@@ -18,14 +32,60 @@ describe('newestFirst (#486)', () => {
     expect(ordered.map((x) => x.id)).toEqual([2, 1]);
   });
 
-  it('breaks a tie with the later comment id', () => {
+  it('breaks a tie with the comment id', () => {
     const at = '2026-10-21T08:18:00Z';
+    expect(oldestFirst([c(5, at), c(9, at), c(7, at)]).map((x) => x.id)).toEqual([5, 7, 9]);
     expect(newestFirst([c(5, at), c(9, at), c(7, at)]).map((x) => x.id)).toEqual([9, 7, 5]);
   });
 
   it('does not change the list it was given', () => {
-    const list = [c(1, '2026-01-01'), c(2, '2026-02-01')];
-    newestFirst(list);
-    expect(list.map((x) => x.id)).toEqual([1, 2]);
+    const given = [c(2, '2026-02-01'), c(1, '2026-01-01')];
+    oldestFirst(given);
+    newestFirst(given);
+    expect(given.map((x) => x.id)).toEqual([2, 1]);
+  });
+});
+
+describe('the saved choice', () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it('is oldest first until changed', () => {
+    expect(readCommentOrder()).toBe('oldest');
+  });
+
+  it('is kept once chosen', () => {
+    saveCommentOrder('newest');
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('newest');
+    expect(readCommentOrder()).toBe('newest');
+  });
+
+  it('ignores a value it does not know', () => {
+    window.localStorage.setItem(STORAGE_KEY, 'sideways');
+    expect(readCommentOrder()).toBe('oldest');
+  });
+
+  it('still switches when storage is blocked', () => {
+    const blocked = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    saveCommentOrder('newest');
+    expect(readCommentOrder()).toBe('newest');
+    saveCommentOrder('oldest');
+    expect(readCommentOrder()).toBe('oldest');
+    blocked.mockRestore();
+  });
+
+  it('lets an unsaved choice win over an older saved one, until a save works', () => {
+    window.localStorage.setItem(STORAGE_KEY, 'oldest');
+    const blocked = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    saveCommentOrder('newest');
+    expect(readCommentOrder()).toBe('newest');
+    blocked.mockRestore();
+
+    saveCommentOrder('oldest');
+    window.localStorage.setItem(STORAGE_KEY, 'newest'); // another tab
+    expect(readCommentOrder()).toBe('newest');
   });
 });

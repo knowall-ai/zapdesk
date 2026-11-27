@@ -75,7 +75,9 @@ import {
 import { useClickOutside } from '@/hooks';
 import { useDevOpsApi } from '@/hooks/useDevOpsApi';
 import { assigneeIdentity } from '@/lib/assignee';
-import { newestFirst } from '@/lib/comment-order';
+import { orderComments, useCommentOrder } from '@/lib/comment-order';
+import { formatUkTime } from '@/lib/uk-time';
+import CommentOrderToggle from './CommentOrderToggle';
 import { MAX_TITLE_LENGTH, titleProblem } from '@/lib/ticket-title';
 
 type DetailTab = 'details' | 'history';
@@ -153,6 +155,7 @@ export default function TicketDetail({
   // should read as a Work Item, not a Ticket (issue #372).
   const isTicket = hasTicketTag(ticket.tags);
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
+  const commentOrder = useCommentOrder();
   const [newComment, setNewComment] = useState('');
 
   // Public is the default because it is the common action and matches what
@@ -1528,15 +1531,18 @@ export default function TicketDetail({
 
             {/* Comments */}
             <div className="card p-4">
-              <h3
-                className="mb-3 text-xs font-medium uppercase"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                Comments ({comments.length})
-              </h3>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3
+                  className="text-xs font-medium uppercase"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Comments ({comments.length})
+                </h3>
+                {comments.length > 1 && <CommentOrderToggle order={commentOrder} />}
+              </div>
               {comments.length > 0 ? (
                 <div className="space-y-4">
-                  {newestFirst(comments).map((comment) => (
+                  {orderComments(comments, commentOrder).map((comment) => (
                     <div
                       key={comment.id}
                       className={`rounded-md p-3 ${comment.isInternal ? 'border-l-4' : ''}`}
@@ -1568,7 +1574,7 @@ export default function TicketDetail({
                               </span>
                             )}
                             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                              {format(comment.createdAt, 'dd MMM yyyy, HH:mm')}
+                              {formatUkTime(comment.createdAt)}
                             </span>
                           </div>
                           <UserHtml
