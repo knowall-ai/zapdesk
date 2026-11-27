@@ -216,6 +216,25 @@ describe('GitHub issue routes', () => {
       expect(body.tickets.map((t: { status: string }) => t.status)).toEqual(['Closed']);
     });
 
+    // #705: the Closed view lists closed issues however old, so it alone
+    // reads closed issues with no `since` bound.
+    it('reads every closed issue for the closed view, and only for it', async () => {
+      const closedReads = () =>
+        fetchMock.mock.calls
+          .map(([url]) => new URL(String(url)))
+          .filter((u) => u.searchParams.get('state') === 'closed');
+
+      const { body } = await getIssues({ view: 'closed' });
+      expect(body.tickets.map((t: { status: string }) => t.status)).toEqual(['Closed']);
+      expect(closedReads().length).toBeGreaterThan(0);
+      expect(closedReads().every((u) => !u.searchParams.has('since'))).toBe(true);
+
+      fetchMock.mockClear();
+      await getIssues({ view: 'recently-solved' });
+      expect(closedReads().length).toBeGreaterThan(0);
+      expect(closedReads().every((u) => u.searchParams.has('since'))).toBe(true);
+    });
+
     it('returns nothing for the removed view', async () => {
       const { body } = await getIssues({ view: 'removed' });
       expect(body.tickets).toEqual([]);
