@@ -226,3 +226,45 @@ The data structure is:
 
 - `generate-icons.mjs` - Generate icon assets
 - `generate-logo.js` - Generate logo assets
+
+## zendesk-export.mjs and zendesk-import.ts
+
+Move tickets out of Zendesk into Azure DevOps: export everything read-only, review it, then import one Task per ticket.
+
+Both read one config file. It holds the real organisation, mapping and secret paths, so keep it **outside this repository**. Keep the export folder outside it too, because the export is customer data. `scripts/zendesk-import.config.example.json` shows the shape; `scripts/zendesk-import.config.json` is git-ignored in case one is put here by mistake.
+
+| Key                                                        | What it is                                                                                                                    |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `devopsOrg`, `devopsPatFile`                               | The Azure DevOps organisation, and a file holding a PAT with Work Items (Read & Write)                                        |
+| `exportDir`                                                | Where the export is written and the import reads it                                                                           |
+| `zendeskSubdomain`, `zendeskClientId`, `zendeskSecretFile` | A Zendesk OAuth client (client credentials, scope `read`) and the file holding its secret                                     |
+| `zendeskImageHosts`                                        | Hosts serving pictures pasted into Zendesk comments: the subdomain, and any host-mapped domain                                |
+| `projects`                                                 | Requester email domain → DevOps project. Tickets from other domains are skipped                                               |
+| `assignees`                                                | Zendesk assignee name → DevOps identity. Tickets assigned to anyone else are skipped, so this also picks the subset to import |
+| `workItemType`                                             | What to create; `Task` by default                                                                                             |
+
+The PAT needs the Work Items (Read & Write), Project and Team (Read) and Service Hooks (Read) scopes. Scopes aren't enough on their own: the account that owns the PAT also needs these permissions in each target project (Project settings → Permissions, or on the area path), or the import stops with a permission error:
+
+- **Bypass rules on work item updates**: every write uses `bypassRules=true`, so a Task can be created already Closed or Pending and keep its original created date.
+- **Suppress notifications for work item updates**: every write uses `suppressNotifications=true`.
+- **View subscriptions** for service hooks, which Project Collection Administrators have, so the import can check that no hook fires.
+
+```bash
+node scripts/zendesk-export.mjs --config ../private/zendesk.json      # read-only; writes raw/, attachments/, zendesk-export.xlsx
+bun scripts/zendesk-import.ts --config ../private/zendesk.json 46 21  # dry run: validates, writes nothing
+bun scripts/zendesk-import.ts --config ../private/zendesk.json --commit 46 21
+bun scripts/zendesk-import.ts --config ../private/zendesk.json all    # every ticket in the export
+```
+
+The import never emails a customer, and checks that in code rather than relying on whoever runs it:
+
+- It writes to DevOps directly, never through ZapDesk's API, whose routes send mail.
+- It never adds the `email` or `email-from:` tags, so later replies from ZapDesk don't mail the requester either.
+- Every write carries `suppressNotifications=true`, and only the configured work item type is created. `src/lib/zendesk-import.ts` refuses any write that breaks either rule.
+- Before writing, it lists the organisation's service hooks (which `suppressNotifications` doesn't stop) and stops if any would fire for that work item type in a target project, or belongs to a project it can't identify.
+
+Each ticket keeps its title, first message, every later comment in order (opened with the original author and date, since DevOps shows the importer as the author), attachments, state, assignee, priority and original created date. Pictures pasted into comments are downloaded during the import over HTTPS, with the Zendesk token sent only to the configured hosts, then uploaded to DevOps and relinked. The export also keeps copies of them. The requester's name and address open the description.
+
+Each ticket is tagged `zendesk-import` and `zendesk:<id>`, so the import can be found, or removed, by tag. A rerun skips a ticket whose comments and files are all there, and stops at one that is only partly imported, so nothing is skipped or written twice: delete that Task and run again.
+
+States: new → New, open → Active, pending → Pending, hold → Blocked, solved and closed → Closed (the T-Minus-15 Task has no Resolved).
