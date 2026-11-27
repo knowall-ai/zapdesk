@@ -96,8 +96,19 @@ export const TICKET_COLUMNS_WITH_SOURCE: ColumnConfig[] = TICKET_COLUMNS.flatMap
  */
 export function itemNumber(item: { id: number; source?: string; sourceRef?: string }): string {
   if (item.source !== 'github') return String(item.id);
-  const number = item.sourceRef?.split('#').pop();
-  return number ? `#${number}` : '';
+  const number = gitHubIssueNumber(item.sourceRef);
+  return number === null ? '' : `#${number}`;
+}
+
+/** What the ID column sorts on: the number it shows. */
+export function itemSortNumber(item: { id: number; source?: string; sourceRef?: string }): number {
+  if (item.source !== 'github') return item.id;
+  return gitHubIssueNumber(item.sourceRef) ?? 0;
+}
+
+function gitHubIssueNumber(sourceRef: string | undefined): number | null {
+  const number = Number(sourceRef?.split('#').pop());
+  return sourceRef?.includes('#') && Number.isInteger(number) ? number : null;
 }
 
 /** GitHub issues are read-only here: no selection, bulk actions, drag or tips. */
@@ -837,7 +848,7 @@ export default function WorkItemBoard({
 
     switch (sortField) {
       case 'id':
-        return multiplier * (a.id - b.id);
+        return multiplier * (itemSortNumber(a) - itemSortNumber(b));
       case 'type':
         return multiplier * (a.workItemType || '').localeCompare(b.workItemType || '');
       case 'status':
