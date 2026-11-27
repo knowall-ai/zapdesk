@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { describeUpdateFailure, devOpsErrorDetail, updateFailureStatus } from './devops-error';
-import { AzureDevOpsService, DevOpsApiError } from './devops';
+import { AzureDevOpsService, DevOpsApiError, StateNotAvailableError } from './devops';
 
 /**
  * Every refused work item update used to reach the user as one "Failed to
@@ -133,5 +133,61 @@ describe('updateFailureStatus', () => {
   it('reports an upstream outage as a bad gateway', () => {
     expect(updateFailureStatus(500)).toBe(502);
     expect(updateFailureStatus(503)).toBe(502);
+  });
+});
+
+describe('updateTicketState', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  // A Task with no Resolved state, sent Resolved (#725). DevOps's own message
+  // ("Rule Error for field State") does not tell the user what went wrong.
+  it('says plainly when the type has no such state', async () => {
+    const body = JSON.stringify({
+      message:
+        'TF401320: Rule Error for field State. Error code: Required, HasValues, LimitedToValues, AllowsOldValue, InvalidListValue.',
+      typeName: 'Microsoft.TeamFoundation.WorkItemTracking.Server.RuleValidationException',
+      customProperties: {
+        RuleValidationErrors: [
+          {
+            fieldReferenceName: 'System.State',
+            fieldStatusFlags:
+              'Required, HasValues, LimitedToValues, AllowsOldValue, InvalidListValue',
+          },
+        ],
+      },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(body, { status: 400 }))
+    );
+
+    const error = await new AzureDevOpsService('token', 'Contoso')
+      .updateTicketState('ABC Inc', 7, 'Resolved')
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(StateNotAvailableError);
+    expect((error as StateNotAvailableError).status).toBe(400);
+    expect((error as StateNotAvailableError).state).toBe('Resolved');
+    expect((error as StateNotAvailableError).message).toBe(
+      'The "Resolved" state is not available for this work item type.'
+    );
+  });
+
+  it('keeps the DevOps reason for any other refusal', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(ruleError, { status: 400 }))
+    );
+
+    const error = await new AzureDevOpsService('token', 'Contoso')
+      .updateTicketState('ABC Inc', 7, 'Active')
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(DevOpsApiError);
+    expect(error).not.toBeInstanceOf(StateNotAvailableError);
+    expect((error as DevOpsApiError).message).toMatch(/Rule Error for field Severity/);
   });
 });

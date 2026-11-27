@@ -42,7 +42,7 @@ vi.mock('@/lib/describe-fields', () => ({
   describeFields: (...args: unknown[]) => describeFields(...args),
 }));
 
-const { DevOpsApiError } = await import('./devops');
+const { DevOpsApiError, StateNotAvailableError } = await import('./devops');
 
 const workItem = (id: number, state: string, tags = '') => ({
   id,
@@ -463,6 +463,32 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
       const { status, body } = await patch('42', { state: 'Done', project: 'Internal' });
       expect(status).toBe(code);
       expect(body.error).toContain('not allowed');
+    });
+
+    // A Task with no Resolved state, sent Resolved (#725): the answer names the
+    // type, so the page can say why nothing changed.
+    it('says the state is not available for the work item type', async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Active'));
+      updateTicketState.mockRejectedValue(new StateNotAvailableError(400, 'Resolved'));
+      const { status, body } = await patch('42', { state: 'Resolved', project: 'Internal' });
+      expect(status).toBe(400);
+      expect(body.error).toBe('The "Resolved" state is not available for the Bug work item type.');
+    });
+
+    it('says so on the project search too', async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Active'));
+      updateTicketState.mockRejectedValue(new StateNotAvailableError(400, 'Resolved'));
+      const { status, body } = await patch('42', { state: 'Resolved' });
+      expect(status).toBe(400);
+      expect(body.error).toBe('The "Resolved" state is not available for the Bug work item type.');
+    });
+
+    it('still says so when the work item could not be read first', async () => {
+      getWorkItem.mockRejectedValue(new Error('timeout'));
+      updateTicketState.mockRejectedValue(new StateNotAvailableError(400, 'Resolved'));
+      const { status, body } = await patch('42', { state: 'Resolved', project: 'Internal' });
+      expect(status).toBe(400);
+      expect(body.error).toBe('The "Resolved" state is not available for this work item type.');
     });
 
     it.each([401, 403, 404])('passes through a %i from DevOps', async (code) => {

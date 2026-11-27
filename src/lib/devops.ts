@@ -5,7 +5,7 @@ function escapeWiql(value: string): string {
   return value.replace(/'/g, "''");
 }
 import { closedWindowEndDay, closedWindowStartDay, type ClosedWindow } from './closed-window';
-import { missingFieldsFromRuleError } from './rule-validation';
+import { missingFieldsFromRuleError, refusesStateValue } from './rule-validation';
 import type {
   DevOpsWorkItem,
   DevOpsWorkItemRelation,
@@ -518,6 +518,21 @@ export class DevOpsApiError extends Error {
   ) {
     super(message);
     this.name = 'DevOpsApiError';
+  }
+}
+
+/**
+ * DevOps refused a state change because the work item's type has no such
+ * state (#725). The message says so in plain words; the state route adds the
+ * type's name when it knows it.
+ */
+export class StateNotAvailableError extends DevOpsApiError {
+  constructor(
+    status: number,
+    public readonly state: string
+  ) {
+    super(status, `The "${state}" state is not available for this work item type.`);
+    this.name = 'StateNotAvailableError';
   }
 }
 
@@ -2003,12 +2018,14 @@ export class AzureDevOpsService {
       // collapsing it to a bare status code (issue #391).
       let detail = response.statusText;
       let missingFields: string[] = [];
+      let stateNotAvailable = false;
       try {
         const body = await response.text();
         if (body) {
           try {
             const parsed = JSON.parse(body) as { message?: string };
             if (parsed.message) detail = parsed.message;
+            stateNotAvailable = refusesStateValue(parsed);
             // Which fields the rule wanted, so the board can ask for them
             // rather than show this message (#663).
             missingFields = missingFieldsFromRuleError(parsed);
@@ -2034,6 +2051,7 @@ export class AzureDevOpsService {
       } catch {
         // Body read failure — keep the status-text fallback above.
       }
+      if (stateNotAvailable) throw new StateNotAvailableError(response.status, state);
       throw new DevOpsApiError(
         response.status,
         `Failed to update work item state: ${detail}`,

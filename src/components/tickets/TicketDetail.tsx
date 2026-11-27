@@ -410,10 +410,23 @@ export default function TicketDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStateDropdownOpen]);
 
+  // A type change gives the ticket a different set of states.
+  useEffect(() => {
+    setAvailableStates([]);
+  }, [ticket.workItemType, ticket.project]);
+
   const fetchAvailableStates = async () => {
     setIsLoadingStates(true);
     try {
-      const response = await devOpsGet('/api/devops/workitem-states');
+      // This ticket's own type in its own project, as the quick view asks:
+      // without them the route answers every default type's states in the
+      // first project, and a Task with no Resolved state was offered Resolved
+      // (#725).
+      const params = new URLSearchParams();
+      if (ticket.workItemType) params.set('type', ticket.workItemType);
+      if (ticket.project) params.set('project', ticket.project);
+      const query = params.toString();
+      const response = await devOpsGet(`/api/devops/workitem-states${query ? `?${query}` : ''}`);
       if (response.ok) {
         const data = await response.json();
         // Use shared utility to ensure "Active" state exists
@@ -477,8 +490,11 @@ export default function TicketDetail({
     setIsUpdatingState(true);
     try {
       await onStateChange(state);
-      setIsStateDropdownOpen(false);
+    } catch {
+      // The page has already said why (a toast). Closing the menu either way
+      // keeps it from sitting open as if the choice had not been made (#725).
     } finally {
+      setIsStateDropdownOpen(false);
       setIsUpdatingState(false);
     }
   };

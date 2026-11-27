@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSessionWithToken } from '@/lib/server-session';
 import { parseWorkItemId } from '@/lib/work-item-id';
-import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
+import {
+  AzureDevOpsService,
+  DevOpsApiError,
+  StateNotAvailableError,
+  workItemToTicket,
+} from '@/lib/devops';
 import { sendStatusChangeNotification, assigneeEmailFrom } from '@/lib/email';
 import { notifiesCustomer, stateMoved, statusChangeRecipient } from '@/lib/status-notification';
 import { debugLog } from '@/lib/debug';
@@ -325,6 +330,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       // ours to own, so it stays a 500.
       const passThrough = [400, 401, 403, 404, 409];
       const status = passThrough.includes(error.status) ? error.status : 500;
+      // The type has no such state: say which type, so the user knows the
+      // choice cannot be made for this ticket at all (#725).
+      if (error instanceof StateNotAvailableError) {
+        const message = refusal?.workItemType
+          ? `The "${error.state}" state is not available for the ${refusal.workItemType} work item type.`
+          : error.message;
+        return NextResponse.json({ error: message }, { status });
+      }
       // A rule that wanted fields filled in names them. Hand them back so the
       // board can ask for them -- the rules lookup before the drag fails open
       // when the user may not read process rules, and this is then the only
