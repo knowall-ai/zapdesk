@@ -46,6 +46,7 @@ import { configuredDevOpsOrg, devOpsOrgOrDefault } from './devops-org';
 import { boardFieldsToRequest, ticketFieldsToRequest } from './work-item-fields';
 import { BOARD_WORK_ITEM_TYPES } from './board-work-item-types';
 import { isPendingStateName, statusNamedByState } from './state-categories';
+import { recordedAuthorFor, recordedAuthors, type RecordedAuthor } from './comment-revisions';
 
 /**
  * Read the resolution value from a work item, checking all possible field names
@@ -1200,10 +1201,13 @@ export class AzureDevOpsService {
 
   // Get comments for a work item
   async getWorkItemComments(projectName: string, workItemId: number): Promise<TicketComment[]> {
-    const response = await fetch(
-      `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/comments?api-version=7.0-preview`,
-      { headers: this.headers }
-    );
+    const [response, recorded] = await Promise.all([
+      fetch(
+        `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/comments?api-version=7.0-preview`,
+        { headers: this.headers }
+      ),
+      this.getRecordedCommentAuthors(projectName, workItemId),
+    ]);
 
     if (!response.ok) {
       throw new Error(`Failed to fetch comments: ${response.statusText}`);
@@ -1217,15 +1221,48 @@ export class AzureDevOpsService {
           text: string;
           createdDate: string;
           createdBy: { displayName: string; uniqueName: string; id: string; imageUrl?: string };
-        }) => ({
-          id: c.id,
-          content: stripInternalNoteMarker(c.text),
-          createdAt: new Date(c.createdDate),
-          author: commentAuthor(c.text, c.createdBy),
-          isInternal: isInternalNote(c.text),
-        })
+        }) => {
+          // An imported comment: the history names its real author and time.
+          const original = recordedAuthorFor(c, recorded);
+          return {
+            id: c.id,
+            content: stripInternalNoteMarker(c.text),
+            createdAt: new Date(original?.at ?? c.createdDate),
+            author: original
+              ? {
+                  id: original.by.id ?? original.by.displayName ?? '',
+                  displayName: original.by.displayName ?? '',
+                  email: original.by.uniqueName?.includes('@') ? original.by.uniqueName : '',
+                  avatarUrl: original.by.imageUrl,
+                }
+              : commentAuthor(c.text, c.createdBy),
+            isInternal: isInternalNote(c.text),
+          };
+        }
       ) || []
     );
+  }
+
+  /**
+   * The author and time each comment-adding revision records (see
+   * comment-revisions.ts). Comments still load if this read fails; they
+   * then show as the Comments list has them.
+   */
+  private async getRecordedCommentAuthors(
+    projectName: string,
+    workItemId: number
+  ): Promise<Map<string, RecordedAuthor>> {
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/${encodeURIComponent(projectName)}/_apis/wit/workitems/${workItemId}/updates?$top=200&api-version=7.0`,
+        { headers: this.headers }
+      );
+      if (!response.ok) return new Map();
+      const data = await response.json();
+      return recordedAuthors(Array.isArray(data.value) ? data.value : []);
+    } catch {
+      return new Map();
+    }
   }
 
   // Get work item update history (revisions with field changes)
