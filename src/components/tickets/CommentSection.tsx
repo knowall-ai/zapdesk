@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { format } from 'date-fns';
 import { Send, Zap, Paperclip, Loader2, Lock, X } from 'lucide-react';
 import Avatar from '@/components/common/Avatar';
 import FileIcon from '@/components/common/FileIcon';
@@ -16,7 +15,9 @@ import {
 import { ALLOWED_ATTACHMENT_TYPES } from '@/types';
 import { useMentionableUsers } from '@/hooks/useMentionableUsers';
 import type { TicketComment, User, Attachment } from '@/types';
-import { newestFirst } from '@/lib/comment-order';
+import { orderComments, useCommentOrder } from '@/lib/comment-order';
+import { formatUkTime } from '@/lib/uk-time';
+import CommentOrderToggle from './CommentOrderToggle';
 
 interface CommentSectionProps {
   comments: TicketComment[];
@@ -158,6 +159,7 @@ export default function CommentSection({
   };
 
   const avatarSize = compact ? 'sm' : 'md';
+  const commentOrder = useCommentOrder();
 
   return (
     <div>
@@ -176,7 +178,12 @@ export default function CommentSection({
         </p>
       ) : (
         <div className={compact ? 'mb-4 space-y-3' : 'mb-4 space-y-4'}>
-          {newestFirst(comments).map((comment) => (
+          {comments.length > 1 && (
+            <div className="flex justify-end">
+              <CommentOrderToggle order={commentOrder} />
+            </div>
+          )}
+          {orderComments(comments, commentOrder).map((comment) => (
             <div
               key={comment.id}
               className={`${compact ? 'rounded-md p-3' : 'card p-4'} ${comment.isInternal ? 'border-l-4' : ''}`}
@@ -208,7 +215,7 @@ export default function CommentSection({
                       </span>
                     )}
                     <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      {format(comment.createdAt, 'dd MMM yyyy, HH:mm')}
+                      {formatUkTime(comment.createdAt)}
                     </span>
                   </div>
                   <UserHtml
