@@ -135,11 +135,22 @@ describe('GET /api/devops/workitem-states', () => {
 
     fetchMock.mockImplementation(async (url: string) =>
       url.includes('/states')
-        ? new Response('Forbidden', { status: 403 })
+        ? new Response('Bad gateway', { status: 500 })
         : Response.json({ value: [{ name: 'Internal' }] })
     );
-    const refused = await getStates({ project: 'Internal', type: 'Bug' });
-    expect(refused.status).toBe(502);
+    const broken = await getStates({ project: 'Internal', type: 'Bug' });
+    expect(broken.status).toBe(502);
+  });
+
+  // The user's own access is theirs to fix, so it is not hidden behind a 502.
+  it.each([401, 403])('passes an upstream %i through for the one requested type', async (code) => {
+    fetchMock.mockImplementation(async (url: string) =>
+      url.includes('/states')
+        ? new Response('Refused', { status: code })
+        : Response.json({ value: [{ name: 'Internal' }] })
+    );
+    const { status } = await getStates({ project: 'Internal', type: 'Bug' });
+    expect(status).toBe(code);
   });
 
   it('falls back to the first project when none is given', async () => {

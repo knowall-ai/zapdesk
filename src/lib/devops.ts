@@ -553,11 +553,15 @@ export function describeStateRefusal(
   states: { name: string }[]
 ): string {
   if (!workItemType || states.length === 0) return error.message;
-  if (!states.some((s) => s.name === error.state)) {
+  // "resolved" or "Resolved " asked of a type that has Resolved is still that
+  // state, refused by a rule: matched loosely, named as the type spells it.
+  const asked = error.state.trim().toLowerCase();
+  const found = states.find((s) => s.name.trim().toLowerCase() === asked);
+  if (!found) {
     return `The "${error.state}" state is not available for the ${workItemType} work item type.`;
   }
   const from = fromState ? ` from "${fromState}"` : '';
-  return `Cannot move this ${workItemType}${from} to "${error.state}". ${error.detail}`;
+  return `Cannot move this ${workItemType}${from} to "${found.name}". ${error.detail}`;
 }
 
 /** Ceiling on the org-level work item lookup, which callers await inline. */

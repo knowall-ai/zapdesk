@@ -528,6 +528,33 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
       expect(getWorkItemTypeStates).not.toHaveBeenCalled();
     });
 
+    // The read only improves the wording; it must not hold the answer back
+    // or turn a 400 into a 500.
+    it("gives DevOps's own reason when the type's states never arrive", async () => {
+      vi.useFakeTimers();
+      try {
+        getWorkItem.mockResolvedValue(workItem(42, 'Active'));
+        updateTicketState.mockRejectedValue(refused());
+        getWorkItemTypeStates.mockReturnValue(new Promise(() => {}));
+        const pending = patch('42', { state: 'Resolved', project: 'Internal' });
+        await vi.advanceTimersByTimeAsync(10_000);
+        const { status, body } = await pending;
+        expect(status).toBe(400);
+        expect(body.error).toBe(`Failed to update work item state: ${REASON}`);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("gives DevOps's own reason when reading the type's states fails", async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Active'));
+      updateTicketState.mockRejectedValue(refused());
+      getWorkItemTypeStates.mockRejectedValue(new Error('socket hang up'));
+      const { status, body } = await patch('42', { state: 'Resolved', project: 'Internal' });
+      expect(status).toBe(400);
+      expect(body.error).toBe(`Failed to update work item state: ${REASON}`);
+    });
+
     it("never reads the type's states when the change succeeds", async () => {
       getWorkItem.mockResolvedValue(workItem(42, 'New'));
       updateTicketState.mockResolvedValue(workItem(42, 'Active'));

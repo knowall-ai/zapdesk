@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { describeUpdateFailure, devOpsErrorDetail, updateFailureStatus } from './devops-error';
-import { AzureDevOpsService, DevOpsApiError, StateValueRefusedError } from './devops';
+import {
+  AzureDevOpsService,
+  DevOpsApiError,
+  StateValueRefusedError,
+  describeStateRefusal,
+} from './devops';
 
 /**
  * Every refused work item update used to reach the user as one "Failed to
@@ -193,5 +198,37 @@ describe('updateTicketState', () => {
     expect(error).toBeInstanceOf(DevOpsApiError);
     expect(error).not.toBeInstanceOf(StateValueRefusedError);
     expect((error as DevOpsApiError).message).toMatch(/Rule Error for field Severity/);
+  });
+});
+
+describe('describeStateRefusal', () => {
+  const R = 'TF401320: Rule Error for field State. Error code: InvalidListValue.';
+
+  // A caller's spelling of a state the type has is still that state: the
+  // refusal is a rule, and the message uses the list's own spelling.
+  it('matches the state trimmed and in any case', () => {
+    const message = describeStateRefusal(
+      new StateValueRefusedError(400, 'resolved', R),
+      'Bug',
+      'New',
+      [{ name: 'Resolved' }]
+    );
+    expect(message.startsWith('Cannot move this Bug')).toBe(true);
+    expect(message).toBe(`Cannot move this Bug from "New" to "Resolved". ${R}`);
+
+    expect(
+      describeStateRefusal(new StateValueRefusedError(400, 'Resolved ', R), 'Bug', 'New', [
+        { name: 'Resolved' },
+      ])
+    ).toBe(`Cannot move this Bug from "New" to "Resolved". ${R}`);
+  });
+
+  it('still says not available for a state the type does not have', () => {
+    expect(
+      describeStateRefusal(new StateValueRefusedError(400, 'Resolved', R), 'Task', 'New', [
+        { name: 'New' },
+        { name: 'Closed' },
+      ])
+    ).toBe('The "Resolved" state is not available for the Task work item type.');
   });
 });

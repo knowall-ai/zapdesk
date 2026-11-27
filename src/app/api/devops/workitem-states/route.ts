@@ -155,7 +155,9 @@ export async function GET(request: NextRequest) {
       const upstream = failures.get(typeFilter);
       return NextResponse.json(
         { error: `Could not read the states of the "${typeFilter}" work item type` },
-        { status: upstream === 404 ? 404 : 502 }
+        // The user's own access (401, 403) and a type that does not exist
+        // (404) keep their status; anything else is DevOps failing us.
+        { status: upstream === 401 || upstream === 403 || upstream === 404 ? upstream : 502 }
       );
     }
 

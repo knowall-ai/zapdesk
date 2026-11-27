@@ -51,4 +51,36 @@ describe('useWorkItemActions states', () => {
       expect(result.current.availableStates.map((s) => s.name)).toEqual(['New', 'Active', 'Closed'])
     );
   });
+
+  // The route answers 404/502 for a named type it cannot read, and the menu
+  // must say so rather than open on an empty box.
+  it('flags a failed load and asks again when reopened', async () => {
+    get.mockResolvedValue(
+      new Response(JSON.stringify({ error: 'Could not read' }), { status: 502 })
+    );
+    const result = await openMenu({ workItemId: 7, project: 'Contoso', workItemType: 'Issue' });
+    await waitFor(() => expect(result.current.statesLoadFailed).toBe(true));
+    expect(result.current.availableStates).toEqual([]);
+
+    get.mockResolvedValue(answer([state('To Do', 'Proposed'), state('Done', 'Completed')]));
+    act(() => result.current.setIsStateDropdownOpen(false));
+    act(() => result.current.setIsStateDropdownOpen(true));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(result.current.availableStates.map((s) => s.name)).toEqual(['To Do', 'Done'])
+    );
+    expect(result.current.statesLoadFailed).toBe(false);
+  });
+
+  it('flags a thrown request and an empty answer the same way', async () => {
+    get.mockRejectedValue(new Error('network down'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const thrown = await openMenu({ workItemId: 7, project: 'Contoso', workItemType: 'Issue' });
+    await waitFor(() => expect(thrown.current.statesLoadFailed).toBe(true));
+
+    get.mockReset();
+    get.mockResolvedValue(answer([]));
+    const empty = await openMenu({ workItemId: 7, project: 'Contoso', workItemType: 'Issue' });
+    await waitFor(() => expect(empty.current.statesLoadFailed).toBe(true));
+  });
 });

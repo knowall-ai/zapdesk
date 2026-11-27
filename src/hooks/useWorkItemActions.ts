@@ -131,6 +131,8 @@ export interface WorkItemActions {
   setIsStateDropdownOpen: (open: boolean) => void;
   availableStates: WorkItemState[];
   isLoadingStates: boolean;
+  /** The last load failed or found no states; the menu says so (#725). */
+  statesLoadFailed: boolean;
   isUpdatingState: boolean;
   handleStateSelect: (state: string) => Promise<void>;
 
@@ -201,6 +203,7 @@ export function useWorkItemActions({
   const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
   const [availableStates, setAvailableStates] = useState<WorkItemState[]>([]);
   const [isLoadingStates, setIsLoadingStates] = useState(false);
+  const [statesLoadFailed, setStatesLoadFailed] = useState(false);
   const [isUpdatingState, setIsUpdatingState] = useState(false);
 
   // Assignee dropdown
@@ -277,6 +280,9 @@ export function useWorkItemActions({
     if (isStateDropdownOpen && availableStates.length === 0) {
       const fetchStates = async () => {
         setIsLoadingStates(true);
+        // Nothing to offer -- a refused or thrown request, or no states -- is
+        // said in the menu, and asked for again the next time it opens.
+        let loaded: WorkItemState[] = [];
         try {
           const params = new URLSearchParams();
           if (workItemType) params.set('type', workItemType);
@@ -291,11 +297,13 @@ export function useWorkItemActions({
             // Named type: exactly its states. The Active fallback is for the
             // mixed list only; added to a type without Active, it offered a
             // state the type cannot take (#725).
-            setAvailableStates(workItemType ? states : ensureActiveState(states));
+            loaded = workItemType ? states : ensureActiveState(states);
+            setAvailableStates(loaded);
           }
         } catch (err) {
           console.error('Failed to fetch work item states:', err);
         } finally {
+          setStatesLoadFailed(loaded.length === 0);
           setIsLoadingStates(false);
         }
       };
@@ -637,6 +645,7 @@ export function useWorkItemActions({
 
   const resetStates = useCallback(() => {
     setAvailableStates([]);
+    setStatesLoadFailed(false);
   }, []);
 
   return {
@@ -644,6 +653,7 @@ export function useWorkItemActions({
     setIsStateDropdownOpen,
     availableStates: states ?? availableStates,
     isLoadingStates,
+    statesLoadFailed: states ? false : statesLoadFailed,
     isUpdatingState,
     handleStateSelect,
 

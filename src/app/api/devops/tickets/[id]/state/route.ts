@@ -58,6 +58,37 @@ interface RefusalContext {
  */
 const DESCRIBE_DEADLINE_MS = 5_000;
 
+/**
+ * The type's states, for wording a refused state (#725), or none. Like the
+ * field descriptions above, this only improves an error already known: it is
+ * held to the same deadline, and a failure or a timeout gives an empty list,
+ * so the refusal goes out with DevOps's own reason rather than late or as a
+ * 500.
+ */
+async function typeStatesWithin(
+  service: AzureDevOpsService,
+  project: string,
+  workItemType: string
+): Promise<{ name: string }[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), DESCRIBE_DEADLINE_MS);
+  });
+  try {
+    const states = await Promise.race([
+      service.getWorkItemTypeStates(project, workItemType),
+      deadline,
+    ]);
+    if (states) return states;
+    console.error('Reading the states of a refused state change ran out of time');
+  } catch (statesError) {
+    console.error('Could not read the states of a refused state change:', statesError);
+  } finally {
+    clearTimeout(timer);
+  }
+  return [];
+}
+
 /** A field asked for by name only: a text box, which DevOps still checks. */
 const byName = (referenceName: string): RequiredField => ({
   referenceName,
@@ -359,7 +390,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       // only on this path (#725).
       if (error instanceof StateValueRefusedError) {
         const states = moving
-          ? await moving.service.getWorkItemTypeStates(moving.project, moving.workItemType)
+          ? await typeStatesWithin(moving.service, moving.project, moving.workItemType)
           : [];
         const message = describeStateRefusal(
           error,
