@@ -59,14 +59,31 @@ describe('recordedAuthorFor', () => {
     expect(recordedAuthorFor(comment('<p>Looking now</p>'), recorded)).toBeNull();
   });
 
-  it('needs both the write time and the text to match', () => {
+  it('needs the write time to match', () => {
     const recorded = recordedAuthors([
       revision('<p>Printer fixed </p>', AGENT, '2026-04-22T07:58:00Z'),
     ]);
-    expect(recordedAuthorFor(comment('<p>Something else</p>'), recorded)).toBeNull();
     expect(
       recordedAuthorFor(comment('<p>Printer fixed </p>', '2026-11-27T11:50:33.000Z'), recorded)
     ).toBeNull();
+  });
+
+  // The Comments list and the history write a picture's address with
+  // different ids, and a comment can be edited later: the text is not a key.
+  it('pairs a comment whose text differs from its revision', () => {
+    const recorded = recordedAuthors([
+      revision(
+        '<p><img src="https://example.test/project-a/pic.png"></p>',
+        AGENT,
+        '2026-04-27T15:59:16Z'
+      ),
+    ]);
+    expect(
+      recordedAuthorFor(
+        comment('<p><img src="https://example.test/project-b/pic.png"></p>'),
+        recorded
+      )?.by
+    ).toEqual(AGENT);
   });
 
   it('keeps the author of the revision before when one is left out', () => {

@@ -9,8 +9,10 @@
  * reads them back from it.
  *
  * A comment and its revision are paired on the revision's AuthorizedDate,
- * the real moment of the write, which equals the comment's createdDate, and
- * on the text. Only that permission can make ChangedBy differ from the
+ * the real moment of the write, which the server stamps and which equals the
+ * comment's createdDate to the millisecond. Not on the text: the two copies
+ * write a picture's address with different ids, and a comment can be edited
+ * after it was added. Only that permission can make ChangedBy differ from the
  * account that wrote it, so a recorded author is not something an ordinary
  * user can forge.
  */
@@ -48,15 +50,15 @@ export interface RecordedAuthor {
   at: string;
 }
 
-const key = (when: string, text: string) => `${new Date(when).getTime()}|${text}`;
+const key = (when: string) => new Date(when).getTime();
 
 /**
  * The recorded author of each comment-adding revision, keyed for lookup. A
  * revision that leaves ChangedBy out keeps the one before it, as when one
  * person writes two replies in a row.
  */
-export function recordedAuthors(revisions: readonly RawRevision[]): Map<string, RecordedAuthor> {
-  const found = new Map<string, RecordedAuthor>();
+export function recordedAuthors(revisions: readonly RawRevision[]): Map<number, RecordedAuthor> {
+  const found = new Map<number, RecordedAuthor>();
   const inOrder = [...revisions].sort((a, b) => (a.rev ?? 0) - (b.rev ?? 0));
   let by: RevisionIdentity | string | undefined;
   for (const revision of inOrder) {
@@ -67,7 +69,7 @@ export function recordedAuthors(revisions: readonly RawRevision[]): Map<string, 
     const at = f['System.ChangedDate']?.newValue;
     if (!text || !authorized || !by || !at || Number.isNaN(new Date(authorized).getTime()))
       continue;
-    found.set(key(authorized, text), {
+    found.set(key(authorized), {
       by: typeof by === 'string' ? { displayName: by } : by,
       at,
     });
@@ -84,9 +86,9 @@ const sameIdentity = (a: RevisionIdentity, b: RevisionIdentity) =>
  */
 export function recordedAuthorFor(
   comment: { text: string; createdDate: string; createdBy: RevisionIdentity },
-  recorded: Map<string, RecordedAuthor>
+  recorded: Map<number, RecordedAuthor>
 ): RecordedAuthor | null {
-  const found = recorded.get(key(comment.createdDate, comment.text));
+  const found = recorded.get(key(comment.createdDate));
   if (!found?.by.displayName) return null;
   const sameTime = new Date(found.at).getTime() === new Date(comment.createdDate).getTime();
   return sameTime && sameIdentity(found.by, comment.createdBy) ? null : found;
