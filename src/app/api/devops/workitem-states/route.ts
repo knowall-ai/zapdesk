@@ -110,6 +110,8 @@ export async function GET(request: NextRequest) {
     // (#687 review). Results are taken in the requested order, and a type that
     // fails is skipped without taking the others with it.
     const project = projectName;
+    // The upstream status of each type that could not be read (0: no answer).
+    const failures = new Map<string, number>();
     const fetched = await Promise.all(
       workItemTypes.map(async (witType): Promise<WorkItemTypeStates | null> => {
         try {
@@ -124,7 +126,10 @@ export async function GET(request: NextRequest) {
               signal: AbortSignal.timeout(STATE_LOOKUP_TIMEOUT_MS),
             }
           );
-          if (!statesResponse.ok) return null;
+          if (!statesResponse.ok) {
+            failures.set(witType, statesResponse.status);
+            return null;
+          }
           const statesData = await statesResponse.json();
           const states: WorkItemState[] = (statesData.value || []).map(
             (s: { name: string; color: string; category: string }) => ({
@@ -136,10 +141,25 @@ export async function GET(request: NextRequest) {
           return { workItemType: witType, states };
         } catch (error) {
           console.error(`Error fetching states for ${witType}:`, error);
+          failures.set(witType, 0);
           return null;
         }
       })
     );
+
+    // One named type is the whole answer. An empty 200 would read as "this
+    // type has no states", and a menu offered nothing -- or a made-up Active
+    // -- with no word of the failure (#725). Skipping a failed type stays
+    // right for the lists, where the other types still answer.
+    if (typeFilter && !fetched[0]) {
+      const upstream = failures.get(typeFilter);
+      return NextResponse.json(
+        { error: `Could not read the states of the "${typeFilter}" work item type` },
+        // The user's own access (401, 403) and a type that does not exist
+        // (404) keep their status; anything else is DevOps failing us.
+        { status: upstream === 401 || upstream === 403 || upstream === 404 ? upstream : 502 }
+      );
+    }
 
     for (const entry of fetched) {
       if (!entry) continue;

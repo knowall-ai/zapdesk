@@ -459,6 +459,10 @@ export default function WorkItemDetailDialog({
                 <Loader2 size={14} className="animate-spin" />
                 Loading...
               </div>
+            ) : actions.statesLoadFailed ? (
+              <div className="p-3 text-sm" style={{ color: 'var(--text-muted)' }}>
+                Could not load statuses
+              </div>
             ) : (
               <div className="max-h-64 overflow-auto py-1">
                 {actions.availableStates.map((state) => (

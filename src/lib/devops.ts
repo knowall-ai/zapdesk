@@ -5,7 +5,7 @@ function escapeWiql(value: string): string {
   return value.replace(/'/g, "''");
 }
 import { closedWindowEndDay, closedWindowStartDay, type ClosedWindow } from './closed-window';
-import { missingFieldsFromRuleError } from './rule-validation';
+import { missingFieldsFromRuleError, refusesStateValue } from './rule-validation';
 import type {
   DevOpsWorkItem,
   DevOpsWorkItemRelation,
@@ -519,6 +519,49 @@ export class DevOpsApiError extends Error {
     super(message);
     this.name = 'DevOpsApiError';
   }
+}
+
+/**
+ * DevOps refused the state asked for as a value: `System.State` flagged
+ * `InvalidListValue` (#725). That flag covers both a state the work item's
+ * type does not have and one it has but a rule forbids from the current
+ * state, so this does not say which: the caller checks the type's states
+ * before wording it. The message is DevOps's own reason, as for any other
+ * refusal, and `detail` keeps that reason for the caller's wording.
+ */
+export class StateValueRefusedError extends DevOpsApiError {
+  constructor(
+    status: number,
+    public readonly state: string,
+    public readonly detail: string
+  ) {
+    super(status, `Failed to update work item state: ${detail}`);
+    this.name = 'StateValueRefusedError';
+  }
+}
+
+/**
+ * The words for a refused state change, once the type's states are known
+ * (#725). Absent from the list: the type does not have it. Present: a rule
+ * forbids the move from where the item is. Unknown (`states` empty or not
+ * read): DevOps's own reason, as `error.message` already says.
+ */
+export function describeStateRefusal(
+  error: StateValueRefusedError,
+  workItemType: string,
+  fromState: string | undefined,
+  states: { name: string }[]
+): string {
+  if (!workItemType || states.length === 0) return error.message;
+  // "resolved" or "Resolved " asked of a type that has Resolved is still that
+  // state, refused by a rule: matched loosely, named as the type spells it.
+  const asked = error.state.trim().toLowerCase();
+  const found = states.find((s) => s.name.trim().toLowerCase() === asked);
+  if (!found) {
+    return `The "${error.state}" state is not available for the ${workItemType} work item type.`;
+  }
+  const from = fromState ? ` from "${fromState}"` : '';
+  return `Cannot move this ${workItemType}${from} to "${found.name}". ${error.detail}`;
 }
 
 /** Ceiling on the org-level work item lookup, which callers await inline. */
@@ -2003,12 +2046,14 @@ export class AzureDevOpsService {
       // collapsing it to a bare status code (issue #391).
       let detail = response.statusText;
       let missingFields: string[] = [];
+      let stateValueRefused = false;
       try {
         const body = await response.text();
         if (body) {
           try {
             const parsed = JSON.parse(body) as { message?: string };
             if (parsed.message) detail = parsed.message;
+            stateValueRefused = refusesStateValue(parsed);
             // Which fields the rule wanted, so the board can ask for them
             // rather than show this message (#663).
             missingFields = missingFieldsFromRuleError(parsed);
@@ -2034,6 +2079,7 @@ export class AzureDevOpsService {
       } catch {
         // Body read failure — keep the status-text fallback above.
       }
+      if (stateValueRefused) throw new StateValueRefusedError(response.status, state, detail);
       throw new DevOpsApiError(
         response.status,
         `Failed to update work item state: ${detail}`,

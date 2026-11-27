@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSessionWithToken } from '@/lib/server-session';
 import { parseWorkItemId } from '@/lib/work-item-id';
-import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
+import {
+  AzureDevOpsService,
+  DevOpsApiError,
+  StateValueRefusedError,
+  describeStateRefusal,
+  workItemToTicket,
+} from '@/lib/devops';
 import { sendStatusChangeNotification, assigneeEmailFrom } from '@/lib/email';
 import { notifiesCustomer, stateMoved, statusChangeRecipient } from '@/lib/status-notification';
 import { debugLog } from '@/lib/debug';
@@ -51,6 +57,37 @@ interface RefusalContext {
  * back for half a minute (#663 review).
  */
 const DESCRIBE_DEADLINE_MS = 5_000;
+
+/**
+ * The type's states, for wording a refused state (#725), or none. Like the
+ * field descriptions above, this only improves an error already known: it is
+ * held to the same deadline, and a failure or a timeout gives an empty list,
+ * so the refusal goes out with DevOps's own reason rather than late or as a
+ * 500.
+ */
+async function typeStatesWithin(
+  service: AzureDevOpsService,
+  project: string,
+  workItemType: string
+): Promise<{ name: string }[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), DESCRIBE_DEADLINE_MS);
+  });
+  try {
+    const states = await Promise.race([
+      service.getWorkItemTypeStates(project, workItemType),
+      deadline,
+    ]);
+    if (states) return states;
+    console.error('Reading the states of a refused state change ran out of time');
+  } catch (statesError) {
+    console.error('Could not read the states of a refused state change:', statesError);
+  } finally {
+    clearTimeout(timer);
+  }
+  return [];
+}
 
 /** A field asked for by name only: a text box, which DevOps still checks. */
 const byName = (referenceName: string): RequiredField => ({
@@ -110,6 +147,13 @@ async function missingFieldsFor(
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let refusal: RefusalContext | undefined;
+  /**
+   * The item a refused state is being moved, so the refusal can be worded
+   * against its type's own states (#725). Set only once the item was read.
+   */
+  let moving:
+    | { service: AzureDevOpsService; project: string; workItemType: string; fromState?: string }
+    | undefined;
   try {
     const session = await getServerSessionWithToken();
 
@@ -239,6 +283,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const existing = await devopsService.getWorkItem(projectHint, ticketId);
         oldState = existing?.fields?.['System.State'];
         const workItemType = existing?.fields?.['System.WorkItemType'];
+        if (typeof workItemType === 'string' && workItemType) {
+          moving = {
+            service: devopsService,
+            project: projectHint,
+            workItemType,
+            fromState: oldState,
+          };
+        }
         if (organization && typeof workItemType === 'string' && workItemType) {
           refusal = {
             accessToken: session.accessToken,
@@ -282,6 +334,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
       const oldState: string | undefined = workItem.fields?.['System.State'] || undefined;
       const workItemType = workItem.fields?.['System.WorkItemType'];
+      if (typeof workItemType === 'string' && workItemType) {
+        moving = {
+          service: devopsService,
+          project: project.name,
+          workItemType,
+          fromState: oldState,
+        };
+      }
       if (organization && typeof workItemType === 'string' && workItemType) {
         refusal = {
           accessToken: session.accessToken,
@@ -325,6 +385,21 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       // ours to own, so it stays a 500.
       const passThrough = [400, 401, 403, 404, 409];
       const status = passThrough.includes(error.status) ? error.status : 500;
+      // DevOps refused the state as a value: either the type has no such
+      // state or a rule forbids it from here. Its states say which -- one read,
+      // only on this path (#725).
+      if (error instanceof StateValueRefusedError) {
+        const states = moving
+          ? await typeStatesWithin(moving.service, moving.project, moving.workItemType)
+          : [];
+        const message = describeStateRefusal(
+          error,
+          moving?.workItemType ?? '',
+          moving?.fromState,
+          states
+        );
+        return NextResponse.json({ error: message }, { status });
+      }
       // A rule that wanted fields filled in names them. Hand them back so the
       // board can ask for them -- the rules lookup before the drag fails open
       // when the user may not read process rules, and this is then the only

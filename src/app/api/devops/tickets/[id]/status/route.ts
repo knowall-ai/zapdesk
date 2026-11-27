@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSessionWithToken } from '@/lib/server-session';
 import { parseWorkItemId } from '@/lib/work-item-id';
-import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
+import {
+  AzureDevOpsService,
+  DevOpsApiError,
+  StateValueRefusedError,
+  describeStateRefusal,
+  workItemToTicket,
+} from '@/lib/devops';
 import { resolveStateForStatus, categoriesForStatus } from '@/lib/state-categories';
 import type { TicketStatus } from '@/types';
 
@@ -19,6 +25,12 @@ const VALID_STATUSES: TicketStatus[] = [
 const MAX_PROJECT_LENGTH = 64;
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  /**
+   * What the move was checked against, for wording a refusal (#725). The
+   * state comes from this type's own list, so a refusal is a rule against
+   * the move, never a state the type lacks.
+   */
+  let moving: { workItemType: string; fromState?: string; states: { name: string }[] } | undefined;
   try {
     const session = await getServerSessionWithToken();
 
@@ -130,6 +142,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     const devOpsState = resolveStateForStatus(ticketStatus, states, currentState);
+    moving = { workItemType, fromState: currentState, states };
 
     if (!devOpsState) {
       // Say what went wrong. The old code guessed a state name and let DevOps
@@ -161,6 +174,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (error instanceof DevOpsApiError) {
       const passThrough = [400, 401, 403, 404, 409];
       const status = passThrough.includes(error.status) ? error.status : 500;
+      if (error instanceof StateValueRefusedError && moving) {
+        const message = describeStateRefusal(
+          error,
+          moving.workItemType,
+          moving.fromState,
+          moving.states
+        );
+        return NextResponse.json({ error: message }, { status });
+      }
       return NextResponse.json({ error: error.message }, { status });
     }
     return NextResponse.json({ error: 'Failed to update ticket status' }, { status: 500 });

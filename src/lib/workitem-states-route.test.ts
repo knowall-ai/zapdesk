@@ -121,6 +121,38 @@ describe('GET /api/devops/workitem-states', () => {
     expect(body.statesByType[0].workItemType).toBe('Bug');
   });
 
+  // One named type is the whole answer: an empty 200 read as "this type has no
+  // states" and the menu offered nothing, or a lone made-up Active (#725).
+  it('answers an error when the one requested type cannot be read', async () => {
+    devOps({ Bug: 'error' });
+    const failed = await getStates({ project: 'Internal', type: 'Bug' });
+    expect(failed.status).toBe(502);
+    expect(failed.body.error).toMatch(/Bug/);
+
+    devOps({});
+    const missing = await getStates({ project: 'Internal', type: 'Bug' });
+    expect(missing.status).toBe(404);
+
+    fetchMock.mockImplementation(async (url: string) =>
+      url.includes('/states')
+        ? new Response('Bad gateway', { status: 500 })
+        : Response.json({ value: [{ name: 'Internal' }] })
+    );
+    const broken = await getStates({ project: 'Internal', type: 'Bug' });
+    expect(broken.status).toBe(502);
+  });
+
+  // The user's own access is theirs to fix, so it is not hidden behind a 502.
+  it.each([401, 403])('passes an upstream %i through for the one requested type', async (code) => {
+    fetchMock.mockImplementation(async (url: string) =>
+      url.includes('/states')
+        ? new Response('Refused', { status: code })
+        : Response.json({ value: [{ name: 'Internal' }] })
+    );
+    const { status } = await getStates({ project: 'Internal', type: 'Bug' });
+    expect(status).toBe(code);
+  });
+
   it('falls back to the first project when none is given', async () => {
     devOps(AGILE_STATES, ['First', 'Second']);
     await getStates();

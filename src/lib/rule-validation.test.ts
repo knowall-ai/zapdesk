@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { missingFieldsFromRuleError } from './rule-validation';
+import { missingFieldsFromRuleError, refusesStateValue } from './rule-validation';
 
 /**
  * Reading the fields a refused update left empty (#663).
@@ -89,5 +89,50 @@ describe('missingFieldsFromRuleError', () => {
     expect(missingFieldsFromRuleError({ customProperties: { RuleValidationErrors: 'x' } })).toEqual(
       []
     );
+  });
+});
+
+// A state the work item's type does not have (#725): a Task with no Resolved
+// state, sent Resolved.
+describe('refusesStateValue', () => {
+  const STATE_FLAGS = 'Required, HasValues, LimitedToValues, AllowsOldValue, InvalidListValue';
+
+  it('recognises a state the type does not have', () => {
+    expect(
+      refusesStateValue(
+        refusal([{ fieldReferenceName: 'System.State', fieldStatusFlags: STATE_FLAGS }])
+      )
+    ).toBe(true);
+  });
+
+  it('finds it nested under another error', () => {
+    const body = refusal([
+      {
+        fieldReferenceName: 'Custom.ApprovedBy',
+        fieldStatusFlags: FLAGS,
+        ruleValidationErrors: [
+          { fieldReferenceName: 'System.State', fieldStatusFlags: 'InvalidListValue' },
+        ],
+      },
+    ]);
+    expect(refusesStateValue(body)).toBe(true);
+  });
+
+  it('is false for another field refused for its value, or an empty field', () => {
+    expect(
+      refusesStateValue(
+        refusal([
+          { fieldReferenceName: 'Microsoft.VSTS.Common.Severity', fieldStatusFlags: STATE_FLAGS },
+          { fieldReferenceName: 'Custom.ApprovedBy', fieldStatusFlags: FLAGS },
+        ])
+      )
+    ).toBe(false);
+  });
+
+  it('is false for anything that is not a rule error', () => {
+    expect(refusesStateValue(null)).toBe(false);
+    expect(refusesStateValue('TF401320')).toBe(false);
+    expect(refusesStateValue({ message: 'Not found' })).toBe(false);
+    expect(refusesStateValue({ customProperties: { RuleValidationErrors: 'x' } })).toBe(false);
   });
 });

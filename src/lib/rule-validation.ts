@@ -84,3 +84,32 @@ export function missingFieldsFromRuleError(body: unknown): string[] {
   visit(top, 0);
   return found;
 }
+
+/**
+ * Whether DevOps refused the update because the state asked for is not one
+ * this work item's type has: `System.State` flagged `InvalidListValue`, as
+ * when a Task with no Resolved state is sent Resolved (#725). The message
+ * alone ("Rule Error for field State") does not say so in words a user reads.
+ */
+export function refusesStateValue(body: unknown): boolean {
+  if (!body || typeof body !== 'object') return false;
+  const customProperties = (body as { customProperties?: unknown }).customProperties;
+  if (!customProperties || typeof customProperties !== 'object') return false;
+  const top = (customProperties as { RuleValidationErrors?: unknown }).RuleValidationErrors;
+
+  const visit = (errors: unknown, depth: number): boolean => {
+    if (!Array.isArray(errors) || depth > 3) return false;
+    return (errors as RuleValidationError[]).some(
+      (error) =>
+        !!error &&
+        typeof error === 'object' &&
+        ((error.fieldReferenceName === 'System.State' &&
+          typeof error.fieldStatusFlags === 'string' &&
+          error.fieldStatusFlags
+            .split(',')
+            .some((flag) => flag.trim().toLowerCase() === 'invalidlistvalue')) ||
+          visit(error.ruleValidationErrors, depth + 1))
+    );
+  };
+  return visit(top, 0);
+}
