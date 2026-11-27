@@ -1,0 +1,18 @@
+{
+  "devopsOrg": "Contoso",
+  "devopsPatFile": "/path/outside/the/repo/devops-pat.txt",
+  "exportDir": "/path/outside/the/repo/zendesk-export",
+  "zendeskSubdomain": "contoso",
+  "zendeskClientId": "zendesk-export-readonly",
+  "zendeskSecretFile": "/path/outside/the/repo/zendesk-secret.txt",
+  "zendeskImageHosts": ["contoso.zendesk.com", "support.example.com"],
+  "workItemType": "Task",
+  "projects": {
+    "example.com": "ABC Inc",
+    "contoso.example": "Contoso Ltd"
+  },
+  "assignees": {
+    "Alex Morgan": "Alex Morgan <alex.morgan@example.com>",
+    "Sam Taylor": "sam.taylor@example.com"
+  }
+}
