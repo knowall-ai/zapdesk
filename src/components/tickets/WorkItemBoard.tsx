@@ -70,6 +70,7 @@ export interface ColumnConfig {
 // Default columns for tickets view (backwards compatible)
 export const TICKET_COLUMNS: ColumnConfig[] = [
   { id: 'checkbox', label: '', width: 'w-10' },
+  { id: 'id', label: 'ID', sortField: 'id', width: 'w-16' },
   { id: 'type', label: 'Type', sortField: 'type' },
   { id: 'status', label: 'Ticket Status', sortField: 'status' },
   { id: 'subject', label: 'Subject', sortField: 'subject' },
@@ -88,6 +89,30 @@ export const TICKET_COLUMNS: ColumnConfig[] = [
 export const TICKET_COLUMNS_WITH_SOURCE: ColumnConfig[] = TICKET_COLUMNS.flatMap((column) =>
   column.id === 'type' ? [column, { id: 'source' as const, label: 'Source' }] : [column]
 );
+
+/**
+ * The number a row is known by: the work item id, or a GitHub issue's own
+ * number (its ZapDesk id is GitHub's internal id, negated).
+ */
+export function itemNumber(item: { id: number; source?: string; sourceRef?: string }): string {
+  if (item.source !== 'github') return String(item.id);
+  const number = gitHubIssueNumber(item.sourceRef);
+  return number === null ? '' : `#${number}`;
+}
+
+/** What the ID column sorts on: the number it shows. */
+export function itemSortNumber(item: { id: number; source?: string; sourceRef?: string }): number {
+  if (item.source !== 'github') return item.id;
+  return gitHubIssueNumber(item.sourceRef) ?? 0;
+}
+
+/** The issue number after the last `#` of `owner/repo#42`, or null unless it is a positive whole number. */
+function gitHubIssueNumber(sourceRef: string | undefined): number | null {
+  const digits = /#([0-9]+)$/.exec(sourceRef ?? '')?.[1];
+  if (!digits) return null;
+  const number = Number.parseInt(digits, 10);
+  return Number.isSafeInteger(number) && number > 0 ? number : null;
+}
 
 /** GitHub issues are read-only here: no selection, bulk actions, drag or tips. */
 function isGitHubItem(item: { source?: string }): boolean {
@@ -826,7 +851,7 @@ export default function WorkItemBoard({
 
     switch (sortField) {
       case 'id':
-        return multiplier * (a.id - b.id);
+        return multiplier * (itemSortNumber(a) - itemSortNumber(b));
       case 'type':
         return multiplier * (a.workItemType || '').localeCompare(b.workItemType || '');
       case 'status':
@@ -1389,7 +1414,7 @@ export default function WorkItemBoard({
                           className={`${cellPadding} text-sm`}
                           style={{ color: 'var(--text-muted)' }}
                         >
-                          {item.id}
+                          {itemNumber(item)}
                         </td>
                       )}
                       {hasColumn('type') && (
