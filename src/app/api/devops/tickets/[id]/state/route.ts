@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSessionWithToken } from '@/lib/server-session';
 import { parseWorkItemId } from '@/lib/work-item-id';
 import { AzureDevOpsService, DevOpsApiError, workItemToTicket } from '@/lib/devops';
-import { sendStatusChangeNotification, assigneeEmailFrom } from '@/lib/email';
+import { sendStatusChangeNotification, assigneeEmailFrom, isEmailConfigured } from '@/lib/email';
 import { notifiesCustomer, stateMoved, statusChangeRecipient } from '@/lib/status-notification';
 import { debugLog } from '@/lib/debug';
 import { describeFields } from '@/lib/describe-fields';
@@ -413,8 +413,13 @@ async function notifyStateChange(
   // title and priority mails, so a status change after a rename stays in the
   // customer's thread (https://github.com/knowall-ai/zapdesk/issues/726).
   // The current title is the fallback when the history can't be read, and is
-  // what the body shows either way.
-  const thread = (await devopsService.getOriginalTitle(projectName, ticketId)) ?? current;
+  // what the body shows either way. The state is already saved, so a failed
+  // lookup must not reach the response; and with outbound mail off nothing
+  // is sent, so the lookup is skipped.
+  const original = isEmailConfigured()
+    ? await devopsService.getOriginalTitle(projectName, ticketId).catch(() => null)
+    : null;
+  const thread = original ?? current;
   // Blind-copy the assigned engineer: this message is part of the customer's
   // thread, and until now only the agent's own replies reached them (#7384).
   const assigneeEmail = assigneeEmailFrom(workItem.fields?.['System.AssignedTo']);

@@ -14,10 +14,12 @@ vi.mock('@/lib/server-session', () => ({
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
 const sendStatusChangeNotification = vi.fn();
+const isEmailConfigured = vi.fn(() => true);
 vi.mock('@/lib/email', async () => {
   const actual = await vi.importActual<typeof import('./email')>('./email');
   return {
     ...actual,
+    isEmailConfigured: () => isEmailConfigured(),
     sendStatusChangeNotification: (...args: unknown[]) => sendStatusChangeNotification(...args),
   };
 });
@@ -79,6 +81,7 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     getServerSession.mockResolvedValue({ accessToken: 'token' });
     sendStatusChangeNotification.mockResolvedValue(undefined);
+    isEmailConfigured.mockReturnValue(true);
     getProjects.mockResolvedValue([{ id: 'p1', name: 'Internal' }]);
     getWorkItem.mockResolvedValue(workItem(42, 'Active'));
     updateTicketState.mockImplementation(async (_p: string, id: number, state: string) =>
@@ -503,6 +506,43 @@ describe('PATCH /api/devops/tickets/[id]/state', () => {
         undefined,
         'Internal'
       );
+    });
+
+    // A saved state must never be reported as failed because the lookup of
+    // the original title broke: the current title stands in for it.
+    it('saves and mails under the current title when the lookup rejects', async () => {
+      getWorkItem.mockResolvedValue(workItem(42, 'Active', EMAIL_TAGS));
+      updateTicketState.mockResolvedValue(workItem(42, 'Resolved', EMAIL_TAGS));
+      getOriginalTitle.mockRejectedValueOnce(new Error('x'));
+
+      const { status } = await patch('42', { state: 'Resolved', project: 'Internal' });
+
+      expect(status).toBe(200);
+      expect(updateTicketState).toHaveBeenCalledTimes(1);
+      expect(sendStatusChangeNotification).toHaveBeenCalledTimes(1);
+      expect(sendStatusChangeNotification).toHaveBeenCalledWith(
+        42,
+        { thread: 'Printer offline', current: 'Printer offline' },
+        'requester@example.test',
+        'Active',
+        'Resolved',
+        undefined,
+        undefined,
+        'Internal'
+      );
+    });
+
+    // Without outbound mail nothing can be sent, so the DevOps call is waste.
+    it('does not read the history when outbound mail is not configured', async () => {
+      isEmailConfigured.mockReturnValue(false);
+      getWorkItem.mockResolvedValue(workItem(42, 'Active', EMAIL_TAGS));
+      updateTicketState.mockResolvedValue(workItem(42, 'Resolved', EMAIL_TAGS));
+
+      const { status, body } = await patch('42', { state: 'Resolved', project: 'Internal' });
+
+      expect(status).toBe(200);
+      expect(body.ticket.id).toBe(42);
+      expect(getOriginalTitle).not.toHaveBeenCalled();
     });
 
     // Only a mail that will actually be sent pays for the history lookup.
